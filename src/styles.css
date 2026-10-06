@@ -174,3 +174,32 @@ td.act { white-space: nowrap; text-align: right; }
 .fm-row td { vertical-align: middle; }
 .fm-row input[type='text'] { width: 100%; }
 .hint { font-size: 12px; color: var(--muted); margin: 4px 0 10px; }
+/* Luồng xe */
+.badge.purple { background: #f3e8fd; color: #6a1b9a; }
+.badge.teal { background: #e0f4f1; color: #00695c; }
+.mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+.pipeline { display: flex; gap: 3px; min-width: 120px; }
+.pipeline span { flex: 1; height: 6px; border-radius: 99px; background: #e3e7ed; }
+.pipeline span.on { background: #78909c; }
+.pipeline span.on.amber { background: var(--amber); }
+.pipeline span.on.blue { background: var(--primary); }
+.pipeline span.on.purple { background: #8e24aa; }
+.pipeline span.on.teal { background: #00897b; }
+.pipeline span.on.green { background: var(--green); }
+.section { margin-bottom: 22px; }
+.section-head { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-weight: 700; font-size: 15px; }
+.section-head .count { background: #eef1f5; border-radius: 99px; padding: 1px 9px; font-size: 12px; }
+.trip-card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 8px; }
+.trip-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.trip-main { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.trip-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.trip-sub { margin-top: 4px; }
+.plate { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 700; font-size: 15px; background: #fffbe6; border: 1px solid #e6d27a; border-radius: 6px; padding: 1px 8px; }
+.trip-lines { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+.trip-lines li { margin: 2px 0; }
+.line-row { display: grid; grid-template-columns: 1.3fr 1.3fr .6fr auto; gap: 8px; align-items: end; padding: 8px; border: 1px dashed var(--line); border-radius: 8px; margin-bottom: 6px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: none; background: #fff; padding: 8px 14px; cursor: pointer; font: inherit; }
+.seg button.on { background: var(--primary); color: #fff; }
+.success-card { max-width: 520px; margin: 30px auto; text-align: center; background: var(--green-soft); border: 1px solid #b7dfba; border-radius: 12px; padding: 24px; }
+@media (max-width: 700px) { .line-row { grid-template-columns: 1fr; } }

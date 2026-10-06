@@ -34,6 +34,43 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ==== Chuyến xe ====
+    // Chuyển trạng thái hợp lệ theo vai trò (quản trị được làm mọi bước)
+    function st(from, to) { return resource.data.status == from && request.resource.data.status == to; }
+    function guardStep() {
+      return st('arrived', 'waiting_gate')
+        || st('waiting_exit', 'waiting_delivery') || st('waiting_exit', 'completed');
+    }
+    function dockStep() {
+      return st('waiting_gate', 'processing')
+        || st('processing', 'waiting_exit') || st('processing', 'waiting_delivery') || st('processing', 'completed');
+    }
+    function sameTrip() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'status', 'gateConfirmTime', 'dock', 'dockAssignTime', 'processDoneTime', 'gateExitTime',
+        'deliveryCompleteTime', 'updatedAt', 'updatedBy', 'history']);
+    }
+    match /trips/{id} {
+      allow read: if isStaff();
+      allow create: if (isAdmin() || ((hasRole('bao_ve') || hasRole('thu_kho')) && inMyWarehouse(request.resource.data.warehouse)))
+        && request.resource.data.status in ['arrived', 'waiting_gate']
+        && request.resource.data.createdBy == me();
+      allow update: if isAdmin()
+        || (inMyWarehouse(resource.data.warehouse) && sameTrip()
+            && ((hasRole('bao_ve') && guardStep()) || (hasRole('thu_kho') && dockStep())));
+      allow delete: if isAdmin();
+    }
+
+    // Cấp số chứng từ: nhân viên vận hành chỉ được tăng "Số tiếp theo"
+    match /codeRules/{code} {
+      allow create: if (hasRole('bao_ve') || hasRole('thu_kho')) && code in ['GRP', 'SP']
+        && request.resource.data.next > 1;
+      allow update: if (hasRole('bao_ve') || hasRole('thu_kho'))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['next'])
+        && request.resource.data.next > resource.data.next
+        && request.resource.data.next <= resource.data.next + 10;
+    }
+
     // Danh mục thủ kho được sửa trong kho của mình (không sửa tồn kho hiện tại)
     match /{coll}/{id} {
       allow read: if isStaff() && coll in [

@@ -4,14 +4,21 @@ import { useApp } from '../context/AppContext';
 import { CATALOGS, GROUPS, roleLabel } from '../catalogs';
 
 export default function Layout() {
-  const { name, email, role, isAdmin, logout, settings } = useApp();
+  const { name, email, role, isAdmin, hasRole, logout, settings } = useApp();
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
   return (
     <div className="shell">
       <aside className={'side' + (open ? ' open' : '')}>
-        <div className="brand">{settings.companyName}<small>Thiết lập danh mục</small></div>
+        <div className="brand">{settings.companyName}<small>Kho & vận tải</small></div>
         <nav>
+          <div className="nav-group">Vận hành xe</div>
+          {hasRole('bao_ve', 'thu_kho') && <NavLink to="/xe/dang-ky" onClick={close}><span className="ico">🚚</span>Đăng ký xe</NavLink>}
+          {hasRole('bao_ve') && <NavLink to="/xe/bao-ve" onClick={close}><span className="ico">🛡️</span>Bảo vệ cổng</NavLink>}
+          {hasRole('thu_kho') && <NavLink to="/xe/thu-kho" onClick={close}><span className="ico">📦</span>Thủ kho điều phối</NavLink>}
+          {isAdmin && <NavLink to="/xe/giao-hang" onClick={close}><span className="ico">✅</span>Xác nhận giao hàng</NavLink>}
+          <NavLink to="/xe/tong-quan" onClick={close}><span className="ico">📊</span>Tổng quan chuyến xe</NavLink>
+          <div className="nav-group">Danh mục</div>
           <NavLink to="/" end onClick={close}><span className="ico">🏠</span>Tổng quan danh mục</NavLink>
           {GROUPS.map((g) => {
             const list = CATALOGS.filter((c) => c.group === g && (isAdmin || !c.adminOnly));

@@ -7,9 +7,12 @@ import Login from './pages/Login';
 import Home from './pages/Home';
 import CatalogPage from './pages/CatalogPage';
 import FieldManager from './pages/FieldManager';
+import Register from './pages/transport/Register';
+import { Delivery, Dock, Guard } from './pages/transport/Ops';
+import Overview from './pages/transport/Overview';
 
 export default function App() {
-  const { user, allowed, isAdmin, loading, logout, email } = useApp();
+  const { user, allowed, isAdmin, hasRole, loading, logout, email } = useApp();
   if (loading) return <div className="center">Đang tải…</div>;
   if (!user) return <Login />;
   if (!user.emailVerified) return <VerifyEmail user={user} logout={logout} />;
@@ -28,6 +31,11 @@ export default function App() {
       <Route element={<Layout />}>
         <Route index element={<Home />} />
         <Route path="dm/:key" element={<CatalogPage />} />
+        {hasRole('bao_ve', 'thu_kho') && <Route path="xe/dang-ky" element={<Register />} />}
+        {hasRole('bao_ve') && <Route path="xe/bao-ve" element={<Guard />} />}
+        {hasRole('thu_kho') && <Route path="xe/thu-kho" element={<Dock />} />}
+        {isAdmin && <Route path="xe/giao-hang" element={<Delivery />} />}
+        <Route path="xe/tong-quan" element={<Overview />} />
         {isAdmin && <Route path="hang-muc" element={<FieldManager />} />}
         <Route path="*" element={<Navigate to="/" />} />
       </Route>
