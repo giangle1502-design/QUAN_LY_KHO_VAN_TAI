@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { arrayUnion, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
@@ -129,6 +130,7 @@ export function Dock() {
       <Section title="Đang xuất/nhập" count={processing.length}>
         {processing.length ? processing.map((t) => (
           <TripCard key={t.id} trip={t} timeLabel="Vào cửa" timeValue={t.dockAssignTime}>
+            <Link className="btn" to={`/kho/${t.purpose === 'import' ? 'in' : 'out'}?trip=${t.id}`}>Lập phiếu {t.purpose === 'import' ? 'nhập' : 'xuất'}</Link>
             <button className="btn primary" onClick={() => {
               const status = afterProcess(t);
               const at = nowISO();

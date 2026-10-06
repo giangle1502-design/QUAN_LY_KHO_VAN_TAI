@@ -10,6 +10,9 @@ import FieldManager from './pages/FieldManager';
 import Register from './pages/transport/Register';
 import { Delivery, Dock, Guard } from './pages/transport/Ops';
 import Overview from './pages/transport/Overview';
+import Stock from './pages/stock/Stock';
+import Movements from './pages/stock/Movements';
+import MovementForm from './pages/stock/MovementForm';
 
 export default function App() {
   const { user, allowed, isAdmin, hasRole, loading, logout, email } = useApp();
@@ -36,6 +39,9 @@ export default function App() {
         {hasRole('thu_kho') && <Route path="xe/thu-kho" element={<Dock />} />}
         {isAdmin && <Route path="xe/giao-hang" element={<Delivery />} />}
         <Route path="xe/tong-quan" element={<Overview />} />
+        <Route path="kho/ton" element={<Stock />} />
+        <Route path="kho/phieu" element={<Movements />} />
+        <Route path="kho/:type" element={<MovementForm />} />
         {isAdmin && <Route path="hang-muc" element={<FieldManager />} />}
         <Route path="*" element={<Navigate to="/" />} />
       </Route>

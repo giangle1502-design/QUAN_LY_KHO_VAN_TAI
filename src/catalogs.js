@@ -21,9 +21,9 @@ export const FIELD_TYPES = [
 
 export const ROLES = [
   ['admin', 'Quản trị', 'Toàn quyền, sửa mọi danh mục, phân quyền'],
-  ['thu_kho', 'Thủ kho', 'Xem danh mục; sửa vị trí lưu trữ và cửa xuất/nhập của kho được giao'],
+  ['thu_kho', 'Thủ kho', 'Nhập, xuất, chuyển vị trí, điều chỉnh tồn; sửa vị trí lưu trữ và cửa xuất/nhập của kho được giao'],
   ['bao_ve', 'Bảo vệ', 'Xem danh mục (xác nhận xe vào/ra cổng ở bước sau)'],
-  ['ke_toan', 'Kế toán', 'Xem danh mục (đối chiếu Ecount, tình trạng thế chấp)'],
+  ['ke_toan', 'Kế toán', 'Xem danh mục và tồn kho; đổi tình trạng thế chấp (KTC, HTC, DGC)'],
   ['xem', 'Chỉ xem', 'Chỉ xem danh mục'],
 ];
 export const roleLabel = (r) => ROLES.find((x) => x[0] === r)?.[1] || r || '';
@@ -240,6 +240,9 @@ export const CATALOGS = [
     seed: [
       { code: 'PN', name: 'Phiếu nhập kho', prefix: 'PN', digits: 6, next: 1 },
       { code: 'PX', name: 'Phiếu xuất kho', prefix: 'PX', digits: 6, next: 1 },
+      { code: 'CV', name: 'Phiếu chuyển vị trí', prefix: 'CV', digits: 6, next: 1 },
+      { code: 'TC', name: 'Phiếu đổi tình trạng thế chấp', prefix: 'TC', digits: 6, next: 1 },
+      { code: 'DC', name: 'Phiếu điều chỉnh tồn', prefix: 'DC', digits: 6, next: 1 },
       { code: 'GRP', name: 'Chuyến xe (đăng ký cổng)', prefix: 'GRP', digits: 5, next: 1 },
       { code: 'SP', name: 'Lô vận chuyển', prefix: 'SP', digits: 5, next: 1 },
       { code: 'KH', name: 'Mã khách hàng mới', prefix: 'KH', digits: 6, next: 1 },

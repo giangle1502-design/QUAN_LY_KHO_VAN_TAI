@@ -2,7 +2,7 @@
 
 - Bước 1: **Thiết lập danh mục** dùng chung cho kho và vận tải.
 - Bước 2: **Luồng xe vận tải** như app QLVT, chọn xe, tài xế, khách từ danh mục.
-- Bước tiếp theo: nhập kho, xuất kho, tồn theo vị trí, lô và tình trạng thế chấp.
+- Bước 3: **Nhập kho, xuất kho, tồn kho** theo vị trí, lô và tình trạng thế chấp.
 
 **Công nghệ:** React + Vite · Firebase (Auth + Firestore, realtime) · Vercel. Giống app Sale_control: đăng nhập thật, mỗi danh mục là một collection riêng, phân quyền kiểm tra cả trên máy chủ (Firestore rules).
 
@@ -45,14 +45,32 @@ Xe đến kho → Chờ vào cửa → Đang xuất/nhập → Chờ ra cổng �
 - **Xe nhập hàng**: hoàn thành khi ra cổng, không có bước giao hàng.
 - Mỗi người chỉ thấy và thao tác chuyến xe thuộc kho được giao. Firestore rules chỉ cho mỗi vai trò làm đúng bước của mình.
 
+## Kho hàng
+
+Mọi thay đổi tồn đi qua 1 phiếu, ghi trong cùng 1 giao dịch: phiếu + dòng tồn + số pallet ở Vị trí lưu trữ (% lưu trữ, Empty bin tự cập nhật).
+
+| Phiếu | Ai lập | Ghi chú |
+|---|---|---|
+| Nhập kho (PN) | Thủ kho | Gắn chuyến xe nhập đang ở cửa (tự điền nhà cung cấp). Mỗi dòng: mã hàng, lot, NSX, HSD, vị trí, tình trạng (HTC phải chọn bên nhận thế chấp), số bao → tự gợi ý pallet và kg theo quy cách mã hàng. Vị trí đang khóa không chọn được |
+| Xuất kho (PX) | Thủ kho | Gắn chuyến xe lấy hàng (tự điền khách, Shipto). Chọn dòng tồn theo FIFO (nhập trước hiện trước). **Hàng HTC bị khóa xuất**; không xuất quá tồn |
+| Chuyển vị trí (CV) | Thủ kho | Giữ nguyên lot, ngày nhập, tình trạng |
+| Đổi tình trạng thế chấp (TC) | Kế toán | KTC → HTC (chọn bên nhận thế chấp), HTC → DGC… |
+| Điều chỉnh tồn (DC) | Thủ kho | Tăng/giảm, bắt buộc chọn lý do |
+
+- Màn hình **Thủ kho điều phối** có nút *Lập phiếu nhập/xuất* cho xe đang ở cửa.
+- **Tồn kho**: xem theo vị trí và lô, hoặc theo mã hàng; tổng tấn theo KTC/HTC/DGC; tuổi tồn; Excel 3 sheet (chi tiết, theo mã hàng, tuổi tồn).
+- **Phiếu kho**: lọc theo ngày, kho, loại; Excel từng dòng; quản trị **hủy phiếu** (đảo lại tồn, giữ lịch sử).
+- Firestore rules: thủ kho/kế toán chỉ sửa được tồn và pallet vị trí khi kèm 1 phiếu mới do chính họ lập trong cùng giao dịch, đúng kho được giao.
+
 ## Vai trò
 
 | Vai trò | Quyền |
 |---|---|
 | Quản trị | Toàn quyền, sửa mọi danh mục, phân quyền, quản lý hạng mục |
-| Thủ kho | Xem danh mục; thêm/sửa Vị trí lưu trữ và Cửa xuất/nhập; đăng ký xe, gán cửa, xác nhận xuất/nhập xong ở kho được giao |
+| Thủ kho | Thêm/sửa Vị trí lưu trữ và Cửa xuất/nhập; đăng ký xe, gán cửa, xác nhận xuất/nhập xong; lập phiếu nhập, xuất, chuyển vị trí, điều chỉnh ở kho được giao |
 | Bảo vệ | Xem danh mục; đăng ký xe, cho vào/ra cổng ở kho được giao |
-| Kế toán, Chỉ xem | Xem danh mục và tổng quan chuyến xe |
+| Kế toán | Xem mọi thứ; lập phiếu đổi tình trạng thế chấp |
+| Chỉ xem | Xem danh mục, chuyến xe, tồn kho |
 
 "Kho được thao tác" để trống = tất cả kho. Người không phải quản trị chỉ thấy vị trí và cửa của kho được giao.
 
@@ -102,6 +120,8 @@ src/
 ├── pages/CatalogPage.jsx  # Trang danh mục dùng chung (bảng, form, Excel)
 ├── pages/FieldManager.jsx # Quản lý hạng mục
 ├── pages/transport/       # Đăng ký xe, Bảo vệ, Thủ kho, Giao hàng, Tổng quan
+├── pages/stock/           # Tồn kho, Phiếu kho, form lập phiếu
+├── lib/stock.js           # Ghi phiếu và cập nhật tồn trong 1 giao dịch
 ├── lib/trips.js           # Trạng thái và quy tắc luồng xe, cấp mã GRP/SP
 ├── components/            # Layout, ô nhập theo kiểu dữ liệu
 └── lib/                   # Gộp trường, Excel, tiện ích

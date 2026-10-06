@@ -62,13 +62,45 @@ service cloud.firestore {
     }
 
     // Cấp số chứng từ: nhân viên vận hành chỉ được tăng "Số tiếp theo"
+    function opStaff() { return hasRole('bao_ve') || hasRole('thu_kho') || hasRole('ke_toan'); }
     match /codeRules/{code} {
-      allow create: if (hasRole('bao_ve') || hasRole('thu_kho')) && code in ['GRP', 'SP']
+      allow create: if opStaff() && code in ['GRP', 'SP', 'PN', 'PX', 'CV', 'TC', 'DC']
         && request.resource.data.next > 1;
-      allow update: if (hasRole('bao_ve') || hasRole('thu_kho'))
+      allow update: if opStaff()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['next'])
         && request.resource.data.next > resource.data.next
         && request.resource.data.next <= resource.data.next + 10;
+    }
+
+    // ==== Phiếu kho và tồn kho ====
+    // Tồn và pallet vị trí chỉ được đổi cùng lúc với 1 phiếu mới do chính người đó lập
+    function mvPath(mid) { return /databases/$(database)/documents/movements/$(mid); }
+    function freshMovement(mid, wh) {
+      return !exists(mvPath(mid)) && existsAfter(mvPath(mid))
+        && getAfter(mvPath(mid)).data.createdBy == me()
+        && getAfter(mvPath(mid)).data.warehouse == wh;
+    }
+    match /movements/{id} {
+      allow read: if isStaff();
+      allow create: if request.resource.data.createdBy == me() && request.resource.data.status == 'posted'
+        && request.resource.data.id == id
+        && (isAdmin() || (inMyWarehouse(request.resource.data.warehouse)
+          && ((hasRole('thu_kho') && request.resource.data.type in ['in', 'out', 'move', 'adjust'])
+            || (hasRole('ke_toan') && request.resource.data.type == 'status'))));
+      allow update: if isAdmin();
+    }
+    match /stock/{id} {
+      allow read: if isStaff();
+      allow create, update: if isAdmin()
+        || ((hasRole('thu_kho') || hasRole('ke_toan')) && inMyWarehouse(request.resource.data.warehouse)
+          && (resource == null || resource.data.warehouse == request.resource.data.warehouse)
+          && freshMovement(request.resource.data.lastMovement, request.resource.data.warehouse));
+    }
+    match /locations/{id} {
+      allow update: if (hasRole('thu_kho') || hasRole('ke_toan')) && inMyWarehouse(resource.data.warehouse)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['currentPallets', 'usedPct', 'emptyBin', 'lastMovement', 'updatedAt', 'updatedBy'])
+        && freshMovement(request.resource.data.lastMovement, resource.data.warehouse);
     }
 
     // Danh mục thủ kho được sửa trong kho của mình (không sửa tồn kho hiện tại)

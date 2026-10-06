@@ -203,3 +203,9 @@ td.act { white-space: nowrap; text-align: right; }
 .seg button.on { background: var(--primary); color: #fff; }
 .success-card { max-width: 520px; margin: 30px auto; text-align: center; background: var(--green-soft); border: 1px solid #b7dfba; border-radius: 12px; padding: 24px; }
 @media (max-width: 700px) { .line-row { grid-template-columns: 1fr; } }
+/* Phiếu kho */
+.mv-line { display: flex; gap: 6px; align-items: flex-start; padding: 8px; border: 1px dashed var(--line); border-radius: 8px; margin-bottom: 6px; }
+.mv-line > .mv-grid { flex: 1; }
+.mv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 10px; }
+.mv-grid .field input, .mv-grid .field select { padding: 6px 8px; }
+a.btn { text-decoration: none; display: inline-block; }

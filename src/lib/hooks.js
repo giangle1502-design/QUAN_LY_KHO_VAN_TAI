@@ -55,3 +55,22 @@ export function useTrips(statuses, wh) {
   );
   return { ...state, rows };
 }
+
+// Tồn kho của 1 kho (hoặc mọi kho được giao khi wh rỗng), bỏ dòng đã hết hàng
+export function useStock(wh) {
+  const [state, setState] = useState({ rows: [], loading: true, error: '' });
+  const { inMyWarehouses } = useApp();
+  useEffect(() => {
+    const q = wh ? query(collection(db, 'stock'), where('warehouse', '==', wh)) : collection(db, 'stock');
+    return onSnapshot(
+      q,
+      (snap) => setState({ rows: snap.docs.map((d) => ({ _id: d.id, ...d.data() })), loading: false, error: '' }),
+      (e) => setState({ rows: [], loading: false, error: e.message })
+    );
+  }, [wh]);
+  const rows = useMemo(
+    () => state.rows.filter((r) => inMyWarehouses(r.warehouse) && (Number(r.bags) > 0 || Number(r.pallets) > 0)),
+    [state.rows, inMyWarehouses]
+  );
+  return { ...state, rows };
+}
