@@ -247,7 +247,8 @@ function Form({ type }) {
         <h1>{meta.icon} {meta.label}</h1>
         <Link className="btn" to="/kho/phieu">Danh sách phiếu</Link>
       </div>
-      {done && <div className="ok-box" style={{ marginBottom: 10 }}>Đã lập phiếu <b className="mono">{done}</b>. Tồn kho đã cập nhật. <Link to={`/kho/phieu/${done}/in`} target="_blank">🖨 In phiếu</Link></div>}
+      {done && <div className="ok-box" style={{ marginBottom: 10 }}>Đã lập phiếu <b className="mono">{done}</b>. Tồn kho đã cập nhật. <Link to={`/kho/phieu/${done}/in`} target="_blank">🖨 In phiếu</Link>
+        {type === 'in' && <> · <Link className="btn primary sm" to={`/kho/phieu/${done}/nhan`} target="_blank">🏷️ In nhãn pallet</Link></>}</div>}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="form-grid">
           <Field label="Kho" required>

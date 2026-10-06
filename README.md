@@ -100,6 +100,7 @@ Mọi lần hàng ra khỏi kho đều đi qua **phiếu xuất kho**, mọi l�
 
 - **Tổng quan** (trang đầu): số xe theo từng bước, xe đang trong kho kèm thời gian chờ, tồn theo KTC/HTC/DGC, vị trí ≥ 85%, hàng hết hạn trong 30 ngày, phiếu kho hôm nay.
 - **Nhập tồn đầu kỳ** (thủ kho): tải File mẫu, điền vị trí, mã hàng, lot, NSX, HSD, tình trạng, bên nhận thế chấp, số bao, ngày nhập (pallet và kg tự tính nếu để trống). Hệ thống kiểm tra từng dòng (mã hàng, vị trí, vị trí khóa, HTC thiếu bên nhận thế chấp) và chỉ cho ghi khi file sạch lỗi; ghi thành phiếu nhập lý do "Tồn đầu kỳ", mỗi phiếu tối đa 150 dòng, hủy được nếu sai.
+- **In nhãn pallet** (phiếu nhập kho): theo mẫu *In nhãn pallet*, nhãn nhiệt 10,2 × 15 cm. Số nhãn = số kg nhập ÷ kg 1 pallet chẵn (trọng lượng pallet của mã hàng, hoặc số bao/lớp × số lớp × kg/bao), làm tròn lên; pallet lẻ ghi đúng số kg thực. Nhãn có ngày nhập, công ty, mã/tên hàng, lot, TTHH, SL/pallet, số bao, lớp/pallet, vị trí nhập chữ lớn. Nút *In nhãn pallet* hiện ngay sau khi lập phiếu nhập, trong chi tiết phiếu và trên bản in phiếu.
 - **In phiếu**: mọi phiếu kho có bản in A4 (In → Lưu PDF) với thông tin xe, khách, chữ ký. Tên và địa chỉ công ty nhập ở Tổng quan danh mục.
 
 ## Vai trò

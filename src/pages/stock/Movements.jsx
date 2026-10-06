@@ -108,7 +108,8 @@ function Detail({ m, onClose }) {
         {m.reason ? ` · Lý do: ${m.reason}` : ''}
       </p>
       {m.note && <p className="small">Ghi chú: {m.note}</p>}
-      <p><Link className="btn sm" to={`/kho/phieu/${m.id}/in`} target="_blank">🖨 In phiếu</Link></p>
+      <p><Link className="btn sm" to={`/kho/phieu/${m.id}/in`} target="_blank">🖨 In phiếu</Link>
+        {m.type === 'in' && m.status !== 'cancelled' && <> <Link className="btn sm" to={`/kho/phieu/${m.id}/nhan`} target="_blank">🏷️ In nhãn pallet</Link></>}</p>
       {m.status === 'cancelled' && <div className="error-box">Đã hủy: {m.cancelReason}</div>}
       <div className="table-wrap" style={{ marginBottom: 12 }}>
         <table>

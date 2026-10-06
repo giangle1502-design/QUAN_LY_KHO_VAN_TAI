@@ -36,6 +36,7 @@ export default function PrintMovement() {
       <div className="no-print toolbar">
         <Link className="btn" to="/kho/phieu">← Phiếu kho</Link>
         <button className="btn primary" onClick={() => window.print()}>🖨 In / Lưu PDF</button>
+        {m.type === 'in' && m.status !== 'cancelled' && <Link className="btn" to={`/kho/phieu/${m.id}/nhan`}>🏷️ In nhãn pallet</Link>}
       </div>
       <div className="print-head">
         <div><b>{settings.companyName}</b>{settings.companyAddress ? <><br /><span className="small">{settings.companyAddress}</span></> : null}<br /><span className="small">{wh ? `${wh.name}${wh.address ? ' – ' + wh.address : ''}` : `Kho ${m.warehouse}`}</span></div>

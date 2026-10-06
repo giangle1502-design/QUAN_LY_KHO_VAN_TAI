@@ -15,6 +15,7 @@ import Movements from './pages/stock/Movements';
 import MovementForm from './pages/stock/MovementForm';
 import OpeningImport from './pages/stock/OpeningImport';
 import PrintMovement from './pages/stock/PrintMovement';
+import PrintLabels from './pages/stock/PrintLabels';
 import Dashboard from './pages/Dashboard';
 import Orders from './pages/orders/Orders';
 
@@ -36,6 +37,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="kho/phieu/:id/in" element={<PrintMovement />} />
+      <Route path="kho/phieu/:id/nhan" element={<PrintLabels />} />
       <Route element={<Layout />}>
         <Route index element={<Dashboard />} />
         <Route path="dm" element={<Home />} />
