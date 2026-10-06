@@ -16,6 +16,7 @@ import MovementForm from './pages/stock/MovementForm';
 import OpeningImport from './pages/stock/OpeningImport';
 import PrintMovement from './pages/stock/PrintMovement';
 import PrintLabels from './pages/stock/PrintLabels';
+import Release, { PrintRelease } from './pages/stock/Release';
 import Dashboard from './pages/Dashboard';
 import Orders from './pages/orders/Orders';
 import Reports from './pages/reports/Reports';
@@ -39,6 +40,7 @@ export default function App() {
     <Routes>
       <Route path="kho/phieu/:id/in" element={<PrintMovement />} />
       <Route path="kho/phieu/:id/nhan" element={<PrintLabels />} />
+      <Route path="kho/giai-chap/:id/in" element={<PrintRelease />} />
       <Route element={<Layout />}>
         <Route index element={<Dashboard />} />
         <Route path="dm" element={<Home />} />
@@ -53,6 +55,7 @@ export default function App() {
         <Route path="bao-cao/:report" element={<Reports />} />
         <Route path="kho/ton" element={<Stock />} />
         <Route path="kho/phieu" element={<Movements />} />
+        <Route path="kho/giai-chap" element={<Release />} />
         {hasRole('thu_kho') && <Route path="kho/ton-dau-ky" element={<OpeningImport />} />}
         <Route path="kho/:type" element={<MovementForm />} />
         {isAdmin && <Route path="hang-muc" element={<FieldManager />} />}

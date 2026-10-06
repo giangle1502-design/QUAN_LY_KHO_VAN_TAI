@@ -72,6 +72,22 @@ service cloud.firestore {
         && request.resource.data.next <= resource.data.next + 10;
     }
 
+    // Số thứ tự theo ngày (vd. đề nghị giải chấp HSGC + yymmdd + NN): chỉ tăng dần
+    match /counters/{id} {
+      allow read: if isStaff();
+      allow create: if (isAdmin() || hasRole('ke_toan')) && request.resource.data.next == 2;
+      allow update: if (isAdmin() || hasRole('ke_toan')) && request.resource.data.next == resource.data.next + 1;
+    }
+
+    // ==== Đề nghị giải chấp (kế toán lập, in gửi ngân hàng; ngân hàng duyệt thì giải chấp HTC → DGC) ====
+    match /releaseRequests/{id} {
+      allow read: if isStaff();
+      allow create: if (isAdmin() || hasRole('ke_toan')) && inMyWarehouse(request.resource.data.warehouse)
+        && request.resource.data.id == id && request.resource.data.createdBy == me() && request.resource.data.status == 'sent';
+      allow update: if (isAdmin() || hasRole('ke_toan')) && inMyWarehouse(resource.data.warehouse)
+        && request.resource.data.id == resource.data.id && request.resource.data.warehouse == resource.data.warehouse;
+    }
+
     // ==== Phiếu kho và tồn kho ====
     // Tồn và pallet vị trí chỉ được đổi cùng lúc với 1 phiếu mới do chính người đó lập
     function mvPath(mid) { return /databases/$(database)/documents/movements/$(mid); }

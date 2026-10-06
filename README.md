@@ -81,6 +81,16 @@ Mọi thay đổi tồn đi qua 1 phiếu, ghi trong cùng 1 giao dịch: phiế
 - **Phiếu kho**: lọc theo ngày, kho, loại; Excel từng dòng; quản trị **hủy phiếu** (đảo lại tồn, giữ lịch sử).
 - Firestore rules: thủ kho/kế toán chỉ sửa được tồn và pallet vị trí khi kèm 1 phiếu mới do chính họ lập trong cùng giao dịch, đúng kho được giao.
 
+## Đề nghị giải chấp
+
+Menu *Kho → Đề nghị giải chấp* (kế toán, quản trị):
+
+1. **+ Lập đề nghị giải chấp**: chọn công ty, ngân hàng nhận thế chấp, kho → hiện hàng HTC của công ty đó tại ngân hàng đó. Tích dòng cần giải chấp, sửa số tấn (giải chấp một phần được), Số CT (mặc định số lot) và Vị trí hàng hóa in trên đề nghị (mặc định tên kho). Hàng đã nằm trong đề nghị khác đang chờ duyệt không chọn lại được.
+2. Số đề nghị tự cấp: **HSGC + yymmdd + số thứ tự trong ngày** (vd. HSGC26070210).
+3. **🖨 In**: đúng mẫu "ĐỀ NGHỊ GIẢI CHẤP" gửi ngân hàng (A4). Thông tin lấy từ danh mục: *Công ty* (tên, số ĐKKD + nơi cấp, người đại diện, chức vụ, địa chỉ, điện thoại, fax, email, nơi lập) và *Bên nhận thế chấp* (tên đầy đủ, tên gọi tắt).
+4. Ngân hàng duyệt → **✅ Giải chấp**: hệ thống lập phiếu đổi tình trạng (TC) HTC → DGC cho đúng các dòng trong đề nghị. Nếu hàng đã bị xuất/chuyển sau khi lập đề nghị thì báo lỗi, không giải chấp.
+5. Ngân hàng không duyệt → **Hủy** (ghi lý do), hàng được nhả ra để lập đề nghị khác.
+
 ## Đơn hàng (SO / PO)
 
 Đơn là kế hoạch, phiếu kho là thực hiện. Ví dụ: SO 100 tấn, xuất 20 tấn → đơn hiện *Đã giao 20, Còn phải giao 80*. PO 100 tấn, về 20 tấn → *Đã nhận 20, Còn chưa về 80*.

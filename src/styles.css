@@ -276,3 +276,24 @@ a.btn { text-decoration: none; display: inline-block; }
 .suffix-input { display: flex; align-items: center; gap: 6px; }
 .suffix-input input { flex: 1; min-width: 0; }
 .suffix-input b { color: var(--muted); font-weight: 600; }
+
+/* Đề nghị giải chấp (mẫu ngân hàng, A4 dọc) */
+.gc { font-family: 'Times New Roman', Times, serif; font-size: 15px; line-height: 1.45; color: #000; }
+.gc-nation { text-align: center; font-weight: 700; font-size: 16px; }
+.gc-nation span { font-size: 15px; }
+.gc-nation .gc-dash { font-weight: 400; }
+.gc-dateline { display: flex; justify-content: center; position: relative; margin-top: 2px; }
+.gc-no { position: absolute; right: 0; top: 0; }
+.gc-no span { display: inline-block; border: 1px solid #000; padding: 0 24px; font-style: normal; }
+.gc-title { text-align: center; font-size: 26px; margin: 4px 0 0; letter-spacing: .5px; }
+.gc-sub { text-align: center; font-style: italic; margin-bottom: 6px; }
+.gc-info td { border: none; padding: 3px 8px 3px 0; vertical-align: top; }
+.gc-info td:first-child { white-space: nowrap; width: 190px; }
+.gc-lines { width: 100%; border-collapse: collapse; margin: 14px 0 10px; }
+.gc-lines th, .gc-lines td { border: 1px solid #000; padding: 6px; font-size: 14px; }
+.gc-lines th { background: #f0cdec; text-align: left; position: static; color: #000; }
+.gc-lines td.c, .gc-lines th:nth-child(1), .gc-lines th:nth-child(2), .gc-lines th:nth-child(5) { text-align: center; }
+.gc-lines tfoot td { background: #ffff00; font-weight: 700; }
+.gc-sign { display: flex; justify-content: space-between; margin-top: 4px; }
+.gc-sign > div { text-align: center; min-width: 280px; padding-bottom: 90px; }
+@media print { .gc-lines th { background: #f0cdec !important; } .gc-lines tfoot td { background: #ffff00 !important; } .gc { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
