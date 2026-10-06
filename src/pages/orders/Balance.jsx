@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { useCollection, useOpWarehouse, useOrders, useStock } from '../../lib/hooks';
+import { useCollection, useOpCompany, useOpWarehouse, useOrders, useStock } from '../../lib/hooks';
 import { leftKg, transitKg } from '../../lib/orders';
 import { exportSheets } from '../../lib/excel';
 import { vnDate } from '../../lib/trips';
 import { fmtNum, norm } from '../../lib/utils';
-import { WarehousePicker } from '../../components/TripBits';
+import { CompanyPicker, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox } from '../../components/ui';
 
 const t = (kg) => fmtNum((Number(kg) || 0) / 1000, 3);
@@ -14,8 +14,11 @@ const t = (kg) => fmtNum((Number(kg) || 0) / 1000, 3);
 export default function Balance() {
   const { inMyWarehouses } = useApp();
   const [wh, setWh] = useOpWarehouse();
-  const { rows: stock } = useStock(wh);
-  const { rows: orders, error } = useOrders('', true);
+  const [co, setCo] = useOpCompany();
+  const { rows: allStock } = useStock(wh);
+  const { rows: allOrders, error } = useOrders('', true);
+  const stock = useMemo(() => (co ? allStock.filter((r) => (r.company || '') === co) : allStock), [allStock, co]);
+  const orders = useMemo(() => (co ? allOrders.filter((o) => (o.company || '') === co) : allOrders), [allOrders, co]);
   const statuses = useCollection('goodsStatus').rows;
   const items = useCollection('items').rows;
   const [q, setQ] = useState('');
@@ -83,6 +86,7 @@ export default function Balance() {
       </p>
       <div className="filters">
         <WarehousePicker value={wh} onChange={setWh} />
+        <CompanyPicker value={co} onChange={setCo} />
         <input type="search" placeholder="Tìm mã hàng…" value={q} onChange={(e) => setQ(e.target.value)} />
         <label className="small"><input type="checkbox" checked={onlyShort} onChange={(e) => setOnlyShort(e.target.checked)} /> Chỉ mã hàng bị thiếu</label>
         <span className="small">{short ? <b style={{ color: 'var(--red)' }}>{short} mã hàng dự kiến thiếu</b> : 'Không mã hàng nào dự kiến thiếu'}</span>

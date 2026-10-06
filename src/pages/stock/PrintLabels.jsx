@@ -43,11 +43,18 @@ export default function PrintLabels() {
   const { settings } = useApp();
   const [m, setM] = useState(undefined);
   const [items, setItems] = useState(null);
-  const [company, setCompany] = useState(() => { try { return localStorage.getItem('label-company') || ''; } catch { return ''; } });
+  const [company, setCompany] = useState(''); // sửa tay tên công ty trên nhãn (nếu cần)
   const [pick, setPick] = useState(null); // dòng phiếu được chọn in
+  const [owner, setOwner] = useState(''); // tên công ty chủ hàng của phiếu
 
   useEffect(() => {
     getDoc(doc(db, 'movements', id)).then((s) => setM(s.exists() ? s.data() : null)).catch(() => setM(null));
+    getDoc(doc(db, 'movements', id)).then(async (s) => {
+      const c = s.exists() && (s.data().company || s.data().lines?.find((l) => l.company)?.company);
+      if (!c) return;
+      const x = await getDoc(doc(db, 'companies', c));
+      setOwner(x.exists() ? x.data().name || c : c);
+    }).catch(() => {});
     getDocs(collection(db, 'items')).then((s) => setItems(new Map(s.docs.map((d) => [d.data().code, d.data()])))).catch(() => setItems(new Map()));
   }, [id]);
 
@@ -66,13 +73,13 @@ export default function PrintLabels() {
     return out;
   }, [m, items]);
   const chosen = labels.filter((x) => !pick || pick.includes(x.line));
-  const setCo = (v) => { setCompany(v); try { localStorage.setItem('label-company', v); } catch { /* bỏ qua */ } };
 
   if (m === undefined || !items) return <div className="center">Đang tải…</div>;
   if (!m) return <div className="center">Không tìm thấy phiếu {id}.</div>;
   if (m.type !== 'in') return <div className="center">Chỉ in nhãn pallet cho phiếu nhập kho.</div>;
   const printedAt = fmtTime(new Date().toISOString());
-  const co = company || settings.companyName;
+  // Ưu tiên: tên gõ tay > công ty chủ hàng của phiếu > tên công ty trong Cài đặt
+  const co = company || owner || settings.companyName;
 
   return (
     <div className="label-screen">
@@ -80,7 +87,7 @@ export default function PrintLabels() {
       <div className="no-print toolbar label-toolbar">
         <Link className="btn" to="/kho/phieu">← Phiếu kho</Link>
         <b>Nhãn nhập kho phiếu {m.id}: {chosen.length} nhãn (10,2 × 15 cm)</b>
-        <label className="small">Công ty trên nhãn <input value={company} placeholder={settings.companyName} onChange={(e) => setCo(e.target.value)} /></label>
+        <label className="small">Công ty trên nhãn <input value={company} placeholder={owner || settings.companyName} onChange={(e) => setCompany(e.target.value)} /></label>
         <button className="btn primary" disabled={!chosen.length} onClick={() => window.print()}>🖨️ In nhãn</button>
         <div className="small" style={{ width: '100%' }}>
           Số nhãn = Số lượng nhập ÷ SL 1 pallet chẵn (làm tròn lên). Chọn dòng cần in:{' '}

@@ -13,12 +13,15 @@ export default function PrintMovement() {
   const [m, setM] = useState(undefined);
   const [trip, setTrip] = useState(null);
   const [wh, setWh] = useState(null);
+  const [co, setCo] = useState(null);
 
   useEffect(() => {
     getDoc(doc(db, 'movements', id)).then(async (s) => {
       const d = s.exists() ? s.data() : null;
       setM(d);
       if (d?.tripId) getDoc(doc(db, 'trips', d.tripId)).then((t) => t.exists() && setTrip(t.data())).catch(() => {});
+      const c = d?.company || d?.lines?.find((l) => l.company)?.company;
+      if (c) getDoc(doc(db, 'companies', c)).then((x) => setCo(x.exists() ? x.data() : { code: c, name: c })).catch(() => setCo({ code: c, name: c }));
       if (d?.warehouse) getDoc(doc(db, 'warehouses', d.warehouse)).then((w) => w.exists() && setWh(w.data())).catch(() => {});
     }).catch(() => setM(null));
   }, [id]);
@@ -39,12 +42,13 @@ export default function PrintMovement() {
         {m.type === 'in' && m.status !== 'cancelled' && <Link className="btn" to={`/kho/phieu/${m.id}/nhan`}>🏷️ In nhãn pallet</Link>}
       </div>
       <div className="print-head">
-        <div><b>{settings.companyName}</b>{settings.companyAddress ? <><br /><span className="small">{settings.companyAddress}</span></> : null}<br /><span className="small">{wh ? `${wh.name}${wh.address ? ' – ' + wh.address : ''}` : `Kho ${m.warehouse}`}</span></div>
+        <div><b>{co?.name || settings.companyName}</b>{(co ? co.address : settings.companyAddress) ? <><br /><span className="small">{co ? co.address : settings.companyAddress}</span></> : null}{co?.taxCode ? <><br /><span className="small">MST {co.taxCode}</span></> : null}<br /><span className="small">{wh ? `${wh.name}${wh.address ? ' – ' + wh.address : ''}` : `Kho ${m.warehouse}`}</span></div>
         <div style={{ textAlign: 'right' }}>Số: <b>{m.id}</b><br /><span className="small">Ngày {fmtDate(m.date)}</span></div>
       </div>
       <h2 className="print-title">PHIẾU {meta.label.toUpperCase()}</h2>
       {m.status === 'cancelled' && <div className="error-box">PHIẾU ĐÃ HỦY: {m.cancelReason}</div>}
       <table className="print-info"><tbody>
+        {co && <tr><td>Công ty chủ hàng</td><td>{co.code}{co.name && co.name !== co.code ? ` – ${co.name}` : ''}</td></tr>}
         {(m.partyCode || m.partyName) && <tr><td>{m.type === 'in' ? 'Nhà cung cấp' : 'Khách hàng'}</td><td>{m.partyCode} {m.partyName}</td></tr>}
         {m.shipCode && <tr><td>Giao đến</td><td>{m.shipCode}</td></tr>}
         {m.orderId && <tr><td>{m.type === 'in' ? 'Theo đơn mua' : 'Theo đơn bán'}</td><td>{m.orderId}{m.orderRef ? ` (số Ecount ${m.orderRef})` : ''}</td></tr>}

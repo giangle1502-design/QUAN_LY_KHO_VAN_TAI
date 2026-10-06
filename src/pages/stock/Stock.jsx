@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
-import { useCollection, useOpWarehouse, useStock } from '../../lib/hooks';
+import { useCollection, useOpCompany, useOpWarehouse, useStock } from '../../lib/hooks';
 import { MOVE_TYPES, ageDays } from '../../lib/stock';
 import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum, today } from '../../lib/utils';
-import { WarehousePicker } from '../../components/TripBits';
+import { CompanyPicker, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox } from '../../components/ui';
 import { canMove } from './MovementForm';
 
@@ -15,7 +15,9 @@ const AGE = [['0–30 ngày', 0, 30], ['31–60 ngày', 31, 60], ['61–90 ngày
 export default function Stock() {
   const { hasRole } = useApp();
   const [wh, setWh] = useOpWarehouse();
-  const { rows, loading, error } = useStock(wh);
+  const [co, setCo] = useOpCompany();
+  const { rows: all, loading, error } = useStock(wh);
+  const rows = useMemo(() => (co ? all.filter((r) => (r.company || '') === co) : all), [all, co]);
   const ORDER = ['KTC', 'HTC', 'DGC'];
   const rank = (c) => (ORDER.includes(c) ? ORDER.indexOf(c) : 99);
   const statuses = [...useCollection('goodsStatus').rows].sort((a, b) => rank(a.code) - rank(b.code) || a.code.localeCompare(b.code));
@@ -34,8 +36,8 @@ export default function Stock() {
   const byItem = useMemo(() => {
     const m = new Map();
     list.forEach((r) => {
-      const k = `${r.warehouse}__${r.item}`;
-      const x = m.get(k) || { warehouse: r.warehouse, item: r.item, itemName: r.itemName, bags: 0, pallets: 0, kg: 0, st: {} };
+      const k = `${r.warehouse}__${r.company || ''}__${r.item}`;
+      const x = m.get(k) || { warehouse: r.warehouse, company: r.company || '', item: r.item, itemName: r.itemName, bags: 0, pallets: 0, kg: 0, st: {} };
       x.bags += Number(r.bags) || 0; x.pallets += Number(r.pallets) || 0; x.kg += Number(r.kg) || 0;
       x.st[r.goodsStatus] = (x.st[r.goodsStatus] || 0) + (Number(r.kg) || 0);
       m.set(k, x);
@@ -48,12 +50,12 @@ export default function Stock() {
 
   const exportExcel = () => exportSheets(`Ton_kho_${today()}`, {
     'Chi tiết': list.map((r, i) => ({
-      STT: i + 1, Kho: r.warehouse, 'Vị trí': r.location, 'Mã hàng': r.item, 'Tên hàng': r.itemName, Lot: r.lot,
+      STT: i + 1, Kho: r.warehouse, 'Công ty': r.company || '', 'Vị trí': r.location, 'Mã hàng': r.item, 'Tên hàng': r.itemName, Lot: r.lot,
       NSX: r.mfgDate, HSD: r.expDate, 'Tình trạng': r.goodsStatus, 'Bên nhận thế chấp': r.pledgee,
       'Số bao': r.bags, Pallet: r.pallets, Kg: r.kg, 'Ngày nhập': r.inDate, 'Tuổi tồn (ngày)': ageDays(r.inDate),
     })),
     'Theo mã hàng': byItem.map((x, i) => ({
-      STT: i + 1, Kho: x.warehouse, 'Mã hàng': x.item, 'Tên hàng': x.itemName, 'Số bao': x.bags, Pallet: x.pallets, Kg: x.kg,
+      STT: i + 1, Kho: x.warehouse, 'Công ty': x.company, 'Mã hàng': x.item, 'Tên hàng': x.itemName, 'Số bao': x.bags, Pallet: x.pallets, Kg: x.kg,
       ...Object.fromEntries(statusCodes.map((c) => [`Kg ${c}`, x.st[c] || 0])),
     })),
     'Tuổi tồn': AGE.map(([l, a, b]) => ({ 'Tuổi tồn': l, Kg: sum(list.filter((r) => { const d = ageDays(r.inDate); return d >= a && d <= b; }), 'kg') })),
@@ -83,6 +85,7 @@ export default function Stock() {
       </div>
       <div className="toolbar">
         <WarehousePicker value={wh} onChange={setWh} />
+        <CompanyPicker value={co} onChange={setCo} />
         <input type="search" placeholder="Tìm mã hàng, tên, lot, vị trí…" value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="seg">
           <button type="button" className={view === 'detail' ? 'on' : ''} onClick={() => setView('detail')}>Theo vị trí, lô</button>
@@ -93,12 +96,12 @@ export default function Stock() {
       <div className="table-wrap">
         {loading ? <Empty text="Đang tải…" /> : !list.length ? <Empty text="Chưa có tồn kho." /> : view === 'detail' ? (
           <table>
-            <thead><tr><th className="stt">STT</th><th>Kho</th><th>Vị trí</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th><th>HSD</th><th>Tình trạng</th>
+            <thead><tr><th className="stt">STT</th><th>Kho</th><th>Công ty</th><th>Vị trí</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th><th>HSD</th><th>Tình trạng</th>
               <th className="num">Số bao</th><th className="num">Pallet</th><th className="num">Kg</th><th>Ngày nhập</th><th className="num">Tuổi tồn</th></tr></thead>
             <tbody>
               {list.map((r, i) => (
                 <tr key={r._id}>
-                  <td className="stt">{i + 1}</td><td>{r.warehouse}</td><td className="nowrap">{r.location}</td><td className="nowrap">{r.item}</td><td>{r.itemName}</td>
+                  <td className="stt">{i + 1}</td><td>{r.warehouse}</td><td>{r.company}</td><td className="nowrap">{r.location}</td><td className="nowrap">{r.item}</td><td>{r.itemName}</td>
                   <td className="nowrap">{r.lot}</td><td className="nowrap">{fmtDate(r.expDate)}</td>
                   <td><span className={'badge ' + (r.goodsStatus === 'HTC' ? 'red' : r.goodsStatus === 'DGC' ? 'green' : '')}>{r.goodsStatus}{r.pledgee ? ` · ${r.pledgee}` : ''}</span></td>
                   <td className="num">{fmtNum(r.bags)}</td><td className="num">{fmtNum(r.pallets, 2)}</td><td className="num">{fmtNum(r.kg)}</td>
@@ -106,16 +109,16 @@ export default function Stock() {
                 </tr>
               ))}
             </tbody>
-            <tfoot><tr><td colSpan={8}>Cộng</td><td className="num">{fmtNum(sum(list, 'bags'))}</td><td className="num">{fmtNum(sum(list, 'pallets'), 2)}</td><td className="num">{fmtNum(sum(list, 'kg'))}</td><td colSpan={2} /></tr></tfoot>
+            <tfoot><tr><td colSpan={9}>Cộng</td><td className="num">{fmtNum(sum(list, 'bags'))}</td><td className="num">{fmtNum(sum(list, 'pallets'), 2)}</td><td className="num">{fmtNum(sum(list, 'kg'))}</td><td colSpan={2} /></tr></tfoot>
           </table>
         ) : (
           <table>
-            <thead><tr><th className="stt">STT</th><th>Kho</th><th>Mã hàng</th><th>Tên hàng</th><th className="num">Số bao</th><th className="num">Pallet</th><th className="num">Kg</th>
+            <thead><tr><th className="stt">STT</th><th>Kho</th><th>Công ty</th><th>Mã hàng</th><th>Tên hàng</th><th className="num">Số bao</th><th className="num">Pallet</th><th className="num">Kg</th>
               {statusCodes.map((c) => <th key={c} className="num">Kg {c}</th>)}</tr></thead>
             <tbody>
               {byItem.map((x, i) => (
-                <tr key={x.warehouse + x.item}>
-                  <td className="stt">{i + 1}</td><td>{x.warehouse}</td><td>{x.item}</td><td>{x.itemName}</td>
+                <tr key={x.warehouse + x.company + x.item}>
+                  <td className="stt">{i + 1}</td><td>{x.warehouse}</td><td>{x.company}</td><td>{x.item}</td><td>{x.itemName}</td>
                   <td className="num">{fmtNum(x.bags)}</td><td className="num">{fmtNum(x.pallets, 2)}</td><td className="num">{fmtNum(x.kg)}</td>
                   {statusCodes.map((c) => <td key={c} className="num">{fmtNum(x.st[c] || 0)}</td>)}
                 </tr>

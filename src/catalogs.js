@@ -40,6 +40,29 @@ export const roleLabel = (r) => ROLES.find((x) => x[0] === r)?.[1] || r || '';
 const num = (v) => (v === '' || v == null ? null : Number(v));
 
 export const CATALOGS = [
+  // ---------------- Công ty ----------------
+  // Công ty sở hữu hàng trong kho: công ty trong nhóm (VAP, DAM, PLA) và công ty khách gửi hàng
+  {
+    key: 'companies', group: 'Công ty', icon: '🏛️', title: 'Công ty (chủ hàng)', short: 'Công ty', idField: 'code', upperId: true,
+    fields: [
+      { key: 'code', label: 'Mã công ty', type: 'text', required: true, help: 'VD: VAP, DAM, PLA' },
+      { key: 'name', label: 'Tên công ty', type: 'text', required: true },
+      { key: 'kind', label: 'Loại', type: 'select', options: ['Công ty trong nhóm', 'Công ty khách'], default: 'Công ty trong nhóm',
+        help: 'Công ty khách: khách gửi hàng / thuê kho' },
+      { key: 'taxCode', label: 'Mã số thuế', type: 'text' },
+      { key: 'address', label: 'Địa chỉ', type: 'textarea' },
+      { key: 'contact', label: 'Người liên hệ', type: 'text' },
+      { key: 'phone', label: 'Điện thoại', type: 'text' },
+      { key: 'email', label: 'Email', type: 'email' },
+      { key: 'note', label: 'Ghi chú', type: 'textarea' },
+      { key: 'active', label: 'Đang hoạt động', type: 'checkbox', default: true },
+    ],
+    seed: [
+      { code: 'VAP', name: 'VAP', kind: 'Công ty trong nhóm', active: true },
+      { code: 'DAM', name: 'DAM', kind: 'Công ty trong nhóm', active: true },
+      { code: 'PLA', name: 'PLA', kind: 'Công ty trong nhóm', active: true },
+    ],
+  },
   // ---------------- Khách hàng ----------------
   {
     key: 'soldto', group: 'Khách hàng', icon: '🏢', title: 'Soldto (khách hàng xuất hóa đơn)',

@@ -9,6 +9,7 @@ import { ErrorBox } from '../../components/ui';
 
 // Cột file Excel tồn đầu kỳ: [khóa, tiêu đề, các tên cột chấp nhận]
 const COLS = [
+  ['company', 'Công ty', ['cong ty', 'chu hang', 'cong ty chu hang', 'company']],
   ['location', 'Vị trí', ['vi tri', 'location', 'bin']],
   ['item', 'Mã hàng', ['ma hang', 'ma mat hang', 'item']],
   ['lot', 'Lot', ['lot', 'batch', 'batch/lot', 'so lo']],
@@ -43,6 +44,7 @@ export default function OpeningImport() {
   const locMap = useMemo(() => new Map(locations.filter((l) => l.warehouse === wh?.code).map((l) => [l.code, l])), [locations, wh]);
   const stSet = useMemo(() => new Set(statuses.map((s) => s.code)), [statuses]);
   const plSet = useMemo(() => new Set(pledgees.map((p) => p.code)), [pledgees]);
+  const coSet = new Set(useCollection('companies').rows.map((c) => c.code));
 
   const read = async (file) => {
     setErr(''); setMsg('');
@@ -56,7 +58,7 @@ export default function OpeningImport() {
         if (c.every((x) => String(x ?? '').trim() === '')) return;
         const g = (k) => (col[k] >= 0 ? c[col[k]] : '');
         const r = {
-          line: i + 2, location: String(g('location')).trim(), item: String(g('item')).trim(), lot: String(g('lot')).trim(),
+          line: i + 2, company: String(g('company')).trim().toUpperCase(), location: String(g('location')).trim(), item: String(g('item')).trim(), lot: String(g('lot')).trim(),
           mfgDate: toYmd(g('mfgDate')), expDate: toYmd(g('expDate')), goodsStatus: String(g('goodsStatus')).trim().toUpperCase() || 'KTC',
           pledgee: String(g('pledgee')).trim(), bags: toNumber(g('bags')) || 0, pallets: toNumber(g('pallets')), kg: toNumber(g('kg')),
           inDate: toYmd(g('inDate')),
@@ -75,6 +77,8 @@ export default function OpeningImport() {
     const it = itemMap.get(r.item);
     const loc = locMap.get(r.location);
     const errs = [];
+    if (!r.company) errs.push('thiếu công ty');
+    else if (!coSet.has(r.company)) errs.push(`công ty ${r.company} chưa có trong danh mục`);
     if (!it) errs.push('mã hàng chưa có trong danh mục');
     if (!loc) errs.push(`vị trí chưa có trong kho ${wh?.code || ''}`);
     else if (loc.locked) errs.push('vị trí đang khóa');
@@ -86,7 +90,7 @@ export default function OpeningImport() {
       pallets: r.pallets ?? (suggestPallets(it, r.bags) || 0),
       kg: r.kg ?? (kgOf(it, r.bags) || 0),
     };
-  }), [rows, itemMap, locMap, stSet, plSet, wh]);
+  }), [rows, itemMap, locMap, stSet, plSet, wh, coSet.size]); // eslint-disable-line react-hooks/exhaustive-deps
   const bad = checked.filter((r) => r.errs.length);
 
   const post = async () => {
@@ -100,7 +104,7 @@ export default function OpeningImport() {
           reason: 'Tồn đầu kỳ', note: `Nhập tồn đầu kỳ từ Excel (dòng ${part[0].line}–${part[part.length - 1].line})`,
           lines: part.map((r) => ({
             item: r.item, itemName: r.itemName, lot: r.lot, mfgDate: r.mfgDate, expDate: r.expDate, inDate: r.inDate || date,
-            location: r.location, goodsStatus: r.goodsStatus, pledgee: r.goodsStatus === 'HTC' ? r.pledgee : '',
+            location: r.location, goodsStatus: r.goodsStatus, pledgee: r.goodsStatus === 'HTC' ? r.pledgee : '', company: r.company,
             bags: r.bags, pallets: r.pallets, kg: r.kg,
           })),
         }, { email, name }));
@@ -145,12 +149,12 @@ export default function OpeningImport() {
           </div>
           <div className="table-wrap">
             <table>
-              <thead><tr><th className="stt">Dòng</th><th>Vị trí</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th><th>Tình trạng</th>
+              <thead><tr><th className="stt">Dòng</th><th>Công ty</th><th>Vị trí</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th><th>Tình trạng</th>
                 <th className="num">Số bao</th><th className="num">Pallet</th><th className="num">Kg</th><th>Ngày nhập</th><th>Lỗi</th></tr></thead>
               <tbody>
                 {checked.map((r) => (
                   <tr key={r.line} style={r.errs.length ? { background: 'var(--red-soft)' } : undefined}>
-                    <td className="stt">{r.line}</td><td>{r.location}</td><td>{r.item}</td><td>{r.itemName}</td><td>{r.lot}</td>
+                    <td className="stt">{r.line}</td><td>{r.company}</td><td>{r.location}</td><td>{r.item}</td><td>{r.itemName}</td><td>{r.lot}</td>
                     <td>{r.goodsStatus}{r.pledgee ? ` · ${r.pledgee}` : ''}</td>
                     <td className="num">{fmtNum(r.bags)}</td><td className="num">{fmtNum(r.pallets, 2)}</td><td className="num">{fmtNum(r.kg)}</td>
                     <td>{fmtDate(r.inDate || date)}</td><td className="small" style={{ color: 'var(--red)' }}>{r.errs.join('; ')}</td>

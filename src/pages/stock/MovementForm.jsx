@@ -3,7 +3,8 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
-import { useCollection, useMyWarehouses, useOpWarehouse, useOrders, useStock, useTrips } from '../../lib/hooks';
+import { useCollection, useMyWarehouses, useOpCompany, useOpWarehouse, useOrders, useStock, useTrips } from '../../lib/hooks';
+import { CompanyPicker } from '../../components/TripBits';
 import { OPEN_STATUSES, ORDER_FOR_MOVE, ORDER_TYPES, matchOrderLine, openKg, orderWarehouse } from '../../lib/orders';
 import { MOVE_TYPES, ageDays, kgOf, postMovement, suggestPallets } from '../../lib/stock';
 import { ST, vnDate } from '../../lib/trips';
@@ -54,7 +55,8 @@ function Form({ type }) {
   const orders = useMemo(() => allOrders.filter((o) => orderTypes.includes(o.type)
     && o.lines.some((l) => openKg(o, l, type) > 0)
     && (OPEN_STATUSES.includes(o.status) || (o.type === 'STO' && type === 'in' && o.status === 'closed'))), [allOrders, type]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [head, setHead] = useState({ date: vnDate(), tripId: params.get('trip') || '', orderId: params.get('order') || '', partyCode: '', partyName: '', shipCode: '', reason: '', note: '' });
+  const [opCo, setOpCo] = useOpCompany();
+  const [head, setHead] = useState({ company: opCo, date: vnDate(), tripId: params.get('trip') || '', orderId: params.get('order') || '', partyCode: '', partyName: '', shipCode: '', reason: '', note: '' });
   const [lines, setLines] = useState(() => [type === 'in' ? newLine() : stockLine()]);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -87,7 +89,7 @@ function Form({ type }) {
     const party = o.type !== 'STO' ? { partyCode: o.partyCode, partyName: o.partyName, shipCode: o.shipCode || '' }
       : type === 'out' ? { partyCode: o.toWarehouse, partyName: `Chuyển đến kho ${o.toWarehouse}`, shipCode: '' }
         : { partyCode: o.fromWarehouse, partyName: `Chuyển từ kho ${o.fromWarehouse}`, shipCode: '' };
-    setHead((h) => ({ ...h, orderId: id, ...party }));
+    setHead((h) => ({ ...h, orderId: id, ...party, ...(o.company ? { company: o.company } : {}) }));
     const ow = orderWarehouse(o, type);
     if (ow && ow !== opWh) setOpWh(ow);
     const empty = lines.every((l) => (type === 'in' ? !l.item : !l.stockId));
@@ -113,9 +115,9 @@ function Form({ type }) {
       if (mv.status === 'cancelled') continue;
       const sign = mv.type === 'out' ? 1 : mv.type === 'in' ? -1 : 0;
       for (const l of mv.lines) {
-        const key = [l.item, l.lot, l.goodsStatus, l.pledgee || '', l.mfgDate || '', l.expDate || ''].join('|');
+        const key = [l.company || '', l.item, l.lot, l.goodsStatus, l.pledgee || '', l.mfgDate || '', l.expDate || ''].join('|');
         const cur = m.get(key) || { ...newLine(), item: l.item, lot: l.lot || '', mfgDate: l.mfgDate || '', expDate: l.expDate || '',
-          goodsStatus: l.goodsStatus, pledgee: l.pledgee || '', orderLine: l.orderLine, bags: 0, pallets: 0, kg: 0 };
+          goodsStatus: l.goodsStatus, pledgee: l.pledgee || '', company: l.company || '', orderLine: l.orderLine, bags: 0, pallets: 0, kg: 0 };
         cur.bags = r3(cur.bags + sign * Math.abs(num(l.bags)));
         cur.pallets = r3(cur.pallets + sign * Math.abs(num(l.pallets)));
         cur.kg = r3(cur.kg + sign * Math.abs(num(l.kg)));
@@ -129,10 +131,12 @@ function Form({ type }) {
 
   // Xuất kho theo SO/STO: chọn sẵn tồn theo FIFO cho đủ phần còn lại của từng mặt hàng
   useEffect(() => {
-    if (!autoFill || !order || order.id !== autoFill || stockLoading) return;
+    if (!autoFill || !order || order.id !== autoFill) return;
+    if (!whCode) { setFillNote(`Chọn kho xuất để chọn sẵn tồn theo FIFO cho ${order.id}.`); return; }
+    if (stockLoading) return;
     const ow = orderWarehouse(order, 'out');
     if (ow && ow !== whCode) return;
-    const fifo = [...stock].filter((r) => statusMap.get(r.goodsStatus)?.allowOutbound !== false)
+    const fifo = [...stock].filter((r) => statusMap.get(r.goodsStatus)?.allowOutbound !== false && (!order.company || (r.company || '') === order.company))
       .sort((a, b) => String(a.inDate).localeCompare(String(b.inDate)) || String(a.location).localeCompare(String(b.location)));
     const next = [];
     const short = [];
@@ -171,9 +175,10 @@ function Form({ type }) {
   const stockRows = useMemo(() => {
     const f = filter.trim().toLowerCase();
     return stock
-      .filter((r) => !f || [r.item, r.itemName, r.lot, r.location].join(' ').toLowerCase().includes(f))
+      .filter((r) => !head.company || (r.company || '') === head.company)
+      .filter((r) => !f || [r.item, r.itemName, r.lot, r.location, r.company].join(' ').toLowerCase().includes(f))
       .sort((a, b) => String(a.item).localeCompare(String(b.item)) || String(a.inDate).localeCompare(String(b.inDate)) || String(a.location).localeCompare(String(b.location)));
-  }, [stock, filter]);
+  }, [stock, filter, head.company]);
   const stockById = useMemo(() => new Map(stock.map((r) => [r._id, r])), [stock]);
   const blocked = (r) => type === 'out' && statusMap.get(r.goodsStatus)?.allowOutbound === false;
 
@@ -183,6 +188,7 @@ function Form({ type }) {
     e.preventDefault();
     setErr('');
     if (!wh) return setErr('Chọn kho.');
+    if (type === 'in' && !head.company) return setErr('Chọn công ty chủ hàng.');
     if (type === 'adjust' && !head.reason) return setErr('Chọn lý do điều chỉnh.');
     const out = [];
     for (const [i, l] of lines.entries()) {
@@ -193,7 +199,7 @@ function Form({ type }) {
         if (!num(l.bags) && !num(l.pallets)) return setErr(no + 'nhập số bao hoặc pallet.');
         if (l.goodsStatus === 'HTC' && !l.pledgee) return setErr(no + 'hàng HTC cần chọn bên nhận thế chấp.');
         out.push({ ...(l.orderLine != null ? { orderLine: l.orderLine } : {}), item: l.item, itemName: itemMap.get(l.item).name, lot: l.lot.trim(), mfgDate: l.mfgDate, expDate: l.expDate,
-          location: l.location, goodsStatus: l.goodsStatus, pledgee: l.goodsStatus === 'HTC' ? l.pledgee : '',
+          location: l.location, goodsStatus: l.goodsStatus, pledgee: l.goodsStatus === 'HTC' ? l.pledgee : '', company: l.company || head.company,
           bags: num(l.bags), pallets: num(l.pallets), kg: num(l.kg) });
         continue;
       }
@@ -208,7 +214,7 @@ function Form({ type }) {
       out.push({
         ...(l.orderLine != null ? { orderLine: l.orderLine } : {}),
         item: r.item, itemName: r.itemName, lot: r.lot, mfgDate: r.mfgDate, expDate: r.expDate, inDate: r.inDate,
-        location: r.location, goodsStatus: r.goodsStatus, pledgee: r.pledgee || '',
+        location: r.location, goodsStatus: r.goodsStatus, pledgee: r.pledgee || '', company: r.company || '',
         bags: sign * num(l.bags), pallets: sign * num(l.pallets), kg: sign * num(l.kg),
         ...(type === 'move' ? { toLocation: l.toLocation } : {}),
         ...(type === 'status' ? { toStatus: l.toStatus, toPledgee: l.toStatus === 'HTC' ? l.toPledgee : '' } : {}),
@@ -228,7 +234,7 @@ function Form({ type }) {
     setBusy(true);
     try {
       const id = await postMovement({
-        type, warehouse: wh.code, date: head.date, tripId: head.tripId || '', orderId: head.orderId || '', orderRef: order?.refNo || '',
+        type, warehouse: wh.code, company: head.company || '', date: head.date, tripId: head.tripId || '', orderId: head.orderId || '', orderRef: order?.refNo || '',
         partyCode: head.partyCode.trim(), partyName: head.partyName.trim(), shipCode: head.shipCode,
         reason: head.reason, note: head.note.trim(), lines: out,
       }, { email, name });
@@ -256,6 +262,10 @@ function Form({ type }) {
               <option value="">-- Chọn kho --</option>
               {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
             </select>
+          </Field>
+          <Field label="Công ty chủ hàng" required={type === 'in'} help={type === 'in' ? 'Hàng nhập thuộc công ty nào' : 'Chỉ hiện tồn của công ty này'}>
+            <CompanyPicker value={head.company} allowAll={false} required={type === 'in'}
+              onChange={(v) => { setOpCo(v); setHead((h) => ({ ...h, company: v })); if (type !== 'in') setLines([stockLine()]); }} />
           </Field>
           <Field label="Ngày chứng từ" required><input type="date" value={head.date} onChange={(e) => setH('date', e.target.value)} /></Field>
           {(type === 'in' || type === 'out') && (
@@ -436,7 +446,7 @@ function StockLine({ type, l, set, rows, byId, blocked, locations, statuses, ple
           <option value="">-- Chọn hàng trong kho --</option>
           {rows.map((x) => (
             <option key={x._id} value={x._id} disabled={blocked(x)}>
-              {x.item} · lot {x.lot || '-'} · {x.location} · {x.goodsStatus}{x.pledgee ? `(${x.pledgee})` : ''} · {fmtNum(x.bags)} bao / {fmtNum(x.pallets, 2)} pl · nhập {fmtDate(x.inDate)} ({ageDays(x.inDate)} ngày){blocked(x) ? ' · KHÓA XUẤT' : ''}
+              {x.company ? `[${x.company}] ` : ''}{x.item} · lot {x.lot || '-'} · {x.location} · {x.goodsStatus}{x.pledgee ? `(${x.pledgee})` : ''} · {fmtNum(x.bags)} bao / {fmtNum(x.pallets, 2)} pl · nhập {fmtDate(x.inDate)} ({ageDays(x.inDate)} ngày){blocked(x) ? ' · KHÓA XUẤT' : ''}
             </option>
           ))}
         </select>

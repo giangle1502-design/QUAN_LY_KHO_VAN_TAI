@@ -13,6 +13,7 @@
 
 | Nhóm | Danh mục | Mã bản ghi (khóa) | Ghi chú |
 |---|---|---|---|
+| Công ty | Công ty | Mã công ty | Công ty chủ hàng: VAP, DAM, PLA (trong nhóm) và công ty khách gửi hàng. Tên đầy đủ, MST, địa chỉ in lên phiếu |
 | Khách hàng | Soldto | Mã khách hàng | Nên trùng mã Ecount |
 | | Shipto | Mã giao hàng | Chọn Mã KH từ Soldto → tự điền Tên KH, MST |
 | Hàng hóa | Mã hàng | Mã hàng | Tự tính Số bao/pallet, Trọng lượng pallet = bao/lớp × lớp/pallet × kg/bao |
@@ -51,6 +52,17 @@ Xe đến kho → Chờ vào cửa → Đang xuất/nhập → Chờ ra cổng �
 - **Kho không có bảo vệ**: xe vào thẳng Chờ vào cửa và bỏ bước Chờ ra cổng.
 - **Xe nhập hàng**: hoàn thành khi ra cổng, không có bước giao hàng.
 - Mỗi người chỉ thấy và thao tác chuyến xe thuộc kho được giao. Firestore rules chỉ cho mỗi vai trò làm đúng bước của mình.
+
+## Công ty chủ hàng
+
+Mỗi lô hàng trong kho thuộc 1 công ty (VAP, DAM, PLA hoặc công ty khách gửi hàng). Thêm/sửa công ty ở *Danh mục → Công ty*.
+
+- **Phiếu nhập** bắt buộc chọn công ty chủ hàng; cùng mã hàng, cùng lot nhưng khác công ty là 2 dòng tồn riêng.
+- **Phiếu xuất / chuyển vị trí / đổi tình trạng**: chọn công ty thì chỉ hiện tồn của công ty đó. Xuất theo SO/STO tự lấy công ty của đơn và chỉ chọn FIFO trong tồn của công ty đó.
+- **SO / PO / STO** bắt buộc ghi công ty (công ty bán / mua / chủ hàng); file Excel nhập đơn có cột *Công ty*. File tồn đầu kỳ cũng có cột *Công ty*.
+- Lọc theo công ty ở Tồn kho, Phiếu kho, Đơn hàng, Cân đối và mọi Báo cáo (lựa chọn được nhớ giữa các màn hình). Excel có cột Công ty.
+- Phiếu in A4 lấy tên, địa chỉ, MST của công ty chủ hàng; nhãn pallet ghi tên công ty chủ hàng (sửa tay được).
+- Tồn cũ chưa có công ty hiện ở mục *Tất cả công ty*.
 
 ## Kho hàng
 
@@ -102,7 +114,7 @@ Mọi lần hàng ra khỏi kho đều đi qua **phiếu xuất kho**, mọi l�
 
 ## Báo cáo
 
-Mục **Báo cáo** trên menu (mọi vai trò xem được, lọc theo kho và tìm mã hàng; mỗi báo cáo có nút Excel và In khổ ngang). Đơn vị tấn.
+Mục **Báo cáo** trên menu (mọi vai trò xem được, lọc theo kho, công ty và tìm mã hàng; mỗi báo cáo có nút Excel và In khổ ngang). Đơn vị tấn.
 
 1. **Tồn kho tổng theo kho**: mỗi kho: tồn, KTC/HTC/DGC, số bao, pallet, số mã hàng, vị trí đang dùng, sức chứa, % lấp đầy; bảng mã hàng × kho.
 2. **Tồn kho theo vị trí**: mọi vị trí kể cả trống: sức chứa, đang chứa, còn trống, % lưu trữ, Empty bin/Khóa, mã hàng, lot, tình trạng, tồn, ngày nhập sớm nhất; lọc đang chứa / trống / ≥ 85% / khóa.

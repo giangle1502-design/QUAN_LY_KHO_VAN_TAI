@@ -3,12 +3,12 @@ import { Link } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
-import { useOpWarehouse } from '../../lib/hooks';
+import { useOpCompany, useOpWarehouse } from '../../lib/hooks';
 import { MOVE_TYPES, cancelMovement } from '../../lib/stock';
 import { fmtTime, vnDate } from '../../lib/trips';
 import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum } from '../../lib/utils';
-import { WarehousePicker } from '../../components/TripBits';
+import { CompanyPicker, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox, Modal } from '../../components/ui';
 
 const addDays = (ymd, n) => { const d = new Date(ymd + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
@@ -19,6 +19,7 @@ export default function Movements() {
   const [wh, setWh] = useOpWarehouse();
   const [range, setRange] = useState({ from: addDays(vnDate(), -30), to: vnDate() });
   const [type, setType] = useState('');
+  const [co, setCo] = useOpCompany();
   const [q, setQ] = useState('');
   const [rows, setRows] = useState([]);
   const [error, setError] = useState('');
@@ -32,16 +33,16 @@ export default function Movements() {
   const list = useMemo(() => {
     const f = q.trim().toLowerCase();
     return rows
-      .filter((m) => inMyWarehouses(m.warehouse) && (!wh || m.warehouse === wh) && (!type || m.type === type))
+      .filter((m) => inMyWarehouses(m.warehouse) && (!wh || m.warehouse === wh) && (!type || m.type === type) && (!co || m.company === co || (m.lines || []).some((l) => l.company === co)))
       .filter((m) => !f || [m.id, m.tripId, m.orderId, m.orderRef, m.partyCode, m.partyName, ...(m.lines || []).flatMap((l) => [l.item, l.lot, l.location])].join(' ').toLowerCase().includes(f))
       .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-  }, [rows, inMyWarehouses, wh, type, q]);
+  }, [rows, inMyWarehouses, wh, type, q, co]);
   const current = open && rows.find((m) => m.id === open);
 
   const exportExcel = () => {
     const out = [];
     list.forEach((m) => m.lines.forEach((l) => out.push({
-      'Số phiếu': m.id, Loại: MOVE_TYPES[m.type]?.label, 'Ngày': m.date, Kho: m.warehouse, 'Chuyến xe': m.tripId, 'Đơn SO/PO': m.orderId || '', 'Số Ecount': m.orderRef || '',
+      'Số phiếu': m.id, Loại: MOVE_TYPES[m.type]?.label, 'Ngày': m.date, Kho: m.warehouse, 'Công ty': m.company || '', 'Chuyến xe': m.tripId, 'Đơn SO/PO': m.orderId || '', 'Số Ecount': m.orderRef || '',
       'Mã KH/NCC': m.partyCode, 'Tên KH/NCC': m.partyName, 'Mã hàng': l.item, 'Tên hàng': l.itemName, Lot: l.lot,
       'Vị trí': l.location, 'Đến vị trí': l.toLocation || '', 'Tình trạng': l.goodsStatus, 'Tình trạng mới': l.toStatus || '',
       'Số bao': l.bags, Pallet: l.pallets, Kg: l.kg, 'Lý do': m.reason, 'Trạng thái': m.status === 'cancelled' ? 'Đã hủy' : '',
@@ -58,6 +59,7 @@ export default function Movements() {
         <span>→</span>
         <input type="date" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} />
         <WarehousePicker value={wh} onChange={setWh} />
+        <CompanyPicker value={co} onChange={setCo} />
         <select value={type} onChange={(e) => setType(e.target.value)}>
           <option value="">Tất cả loại phiếu</option>
           {Object.entries(MOVE_TYPES).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
@@ -68,13 +70,13 @@ export default function Movements() {
       <div className="table-wrap">
         {!list.length ? <Empty /> : (
           <table>
-            <thead><tr><th>Số phiếu</th><th>Loại</th><th>Ngày</th><th>Kho</th><th>Chuyến xe</th><th>Đơn</th><th>Khách / NCC</th><th>Mặt hàng</th>
+            <thead><tr><th>Số phiếu</th><th>Loại</th><th>Ngày</th><th>Kho</th><th>Công ty</th><th>Chuyến xe</th><th>Đơn</th><th>Khách / NCC</th><th>Mặt hàng</th>
               <th className="num">Số bao</th><th className="num">Kg</th><th>Người lập</th><th></th></tr></thead>
             <tbody>
               {list.map((m) => (
                 <tr key={m.id} onClick={() => setOpen(m.id)} style={{ cursor: 'pointer', opacity: m.status === 'cancelled' ? 0.5 : 1 }}>
                   <td className="mono nowrap">{m.id}</td><td className="nowrap">{MOVE_TYPES[m.type]?.icon} {MOVE_TYPES[m.type]?.label}</td>
-                  <td className="nowrap">{fmtDate(m.date)}</td><td>{m.warehouse}</td><td className="mono">{m.tripId}</td><td className="mono">{m.orderId}</td>
+                  <td className="nowrap">{fmtDate(m.date)}</td><td>{m.warehouse}</td><td>{m.company || [...new Set((m.lines || []).map((l) => l.company).filter(Boolean))].join(', ')}</td><td className="mono">{m.tripId}</td><td className="mono">{m.orderId}</td>
                   <td>{m.partyName || m.partyCode}</td><td>{[...new Set(m.lines.map((l) => l.item))].join(', ')}</td>
                   <td className="num">{fmtNum(tot(m, 'bags'))}</td><td className="num">{fmtNum(tot(m, 'kg'))}</td>
                   <td className="small">{m.createdByName || m.createdBy}</td>

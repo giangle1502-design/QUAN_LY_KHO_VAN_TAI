@@ -23,7 +23,8 @@ const clean = (s) => String(s ?? '').trim().replace(/\//g, '_');
 
 export function stockId(k) {
   const st = k.goodsStatus === 'HTC' && k.pledgee ? `HTC-${k.pledgee}` : k.goodsStatus;
-  return [k.warehouse, k.location, k.item, k.lot || '-', st].map(clean).join('__');
+  // Công ty chủ hàng là 1 phần của dòng tồn (cùng mã, lot, vị trí nhưng khác công ty = 2 dòng)
+  return [k.warehouse, k.location, k.item, k.lot || '-', st, ...(k.company ? [k.company] : [])].map(clean).join('__');
 }
 export const locationId = (wh, loc) => `${clean(wh)}__${clean(loc)}`;
 
@@ -33,7 +34,7 @@ export function effectsOf(m, sign = 1) {
   const base = (l, o = {}) => ({
     warehouse: m.warehouse, location: l.location, item: l.item, itemName: l.itemName || '',
     lot: l.lot || '', mfgDate: l.mfgDate || '', expDate: l.expDate || '', inDate: l.inDate || m.date,
-    goodsStatus: l.goodsStatus || 'KTC', pledgee: l.goodsStatus === 'HTC' ? l.pledgee || '' : '', ...o,
+    goodsStatus: l.goodsStatus || 'KTC', pledgee: l.goodsStatus === 'HTC' ? l.pledgee || '' : '', company: l.company ?? m.company ?? '', ...o,
   });
   const q = (l, s) => ({ dBags: s * n(l.bags), dPallets: s * n(l.pallets), dKg: s * n(l.kg) });
   for (const l of m.lines || []) {
@@ -146,7 +147,7 @@ async function applyEffects(tx, mv, effects, user) {
     const common = { ...e.next, lastMovement: mv.id, updatedAt: at, updatedBy: user.email };
     if (e.exists) tx.update(doc(db, 'stock', id), common);
     else tx.set(doc(db, 'stock', id), {
-      warehouse: e.warehouse, location: e.location, item: e.item, itemName: e.itemName, lot: e.lot,
+      warehouse: e.warehouse, company: e.company || '', location: e.location, item: e.item, itemName: e.itemName, lot: e.lot,
       mfgDate: e.mfgDate, expDate: e.expDate, inDate: e.inDate, goodsStatus: e.goodsStatus, pledgee: e.pledgee, ...common,
     });
   }

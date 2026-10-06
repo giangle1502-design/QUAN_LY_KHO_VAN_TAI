@@ -36,6 +36,19 @@ export function useOpWarehouse() {
   return [wh, set];
 }
 
+// Công ty chủ hàng đang xem (nhớ trên trình duyệt). '' = tất cả công ty
+const CO_KEY = 'op-company';
+export function useOpCompany() {
+  const [co, setCo] = useState(() => { try { return localStorage.getItem(CO_KEY) || ''; } catch { return ''; } });
+  const set = (v) => { setCo(v); try { localStorage.setItem(CO_KEY, v); } catch { /* bỏ qua */ } };
+  return [co, set];
+}
+export function useCompanies() {
+  const { rows } = useCollection('companies');
+  return useMemo(() => rows.filter((c) => c.active !== false).sort((a, b) =>
+    String(a.kind).localeCompare(String(b.kind)) || a.code.localeCompare(b.code)), [rows]);
+}
+
 // Chuyến xe theo trạng thái (realtime), lọc theo kho được giao và kho đang chọn
 export function useTrips(statuses, wh) {
   const [state, setState] = useState({ rows: [], loading: true, error: '' });
@@ -58,22 +71,24 @@ export function useTrips(statuses, wh) {
 
 // Tồn kho của 1 kho (hoặc mọi kho được giao khi wh rỗng), bỏ dòng đã hết hàng
 export function useStock(wh) {
-  const [state, setState] = useState({ rows: [], loading: true, error: '' });
+  const [state, setState] = useState({ rows: [], loading: true, error: '', for: undefined });
   const { inMyWarehouses } = useApp();
   useEffect(() => {
-    setState({ rows: [], loading: true, error: '' });
+    setState({ rows: [], loading: true, error: '', for: wh });
     const q = wh ? query(collection(db, 'stock'), where('warehouse', '==', wh)) : collection(db, 'stock');
     return onSnapshot(
       q,
-      (snap) => setState({ rows: snap.docs.map((d) => ({ _id: d.id, ...d.data() })), loading: false, error: '' }),
-      (e) => setState({ rows: [], loading: false, error: e.message })
+      (snap) => setState({ rows: snap.docs.map((d) => ({ _id: d.id, ...d.data() })), loading: false, error: '', for: wh }),
+      (e) => setState({ rows: [], loading: false, error: e.message, for: wh })
     );
   }, [wh]);
+  // Lần render ngay sau khi đổi kho vẫn còn dữ liệu kho cũ: coi như đang tải
+  const stale = state.for !== wh;
   const rows = useMemo(
-    () => state.rows.filter((r) => inMyWarehouses(r.warehouse) && (Number(r.bags) > 0 || Number(r.pallets) > 0)),
-    [state.rows, inMyWarehouses]
+    () => (stale ? [] : state.rows.filter((r) => inMyWarehouses(r.warehouse) && (Number(r.bags) > 0 || Number(r.pallets) > 0))),
+    [state.rows, inMyWarehouses, stale]
   );
-  return { ...state, rows };
+  return { error: state.error, loading: state.loading || stale, rows };
 }
 
 // Đơn bán / đơn mua (realtime). type: 'SO' | 'PO' | '' (cả hai); onlyOpen: chỉ đơn chưa xong

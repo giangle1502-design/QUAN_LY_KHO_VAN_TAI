@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react';
 import { NavLink, useParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
-import { useCollection, useOpWarehouse, useOrders, useStock } from '../../lib/hooks';
+import { useCollection, useOpCompany, useOpWarehouse, useOrders, useStock } from '../../lib/hooks';
 import { OPEN_STATUSES, ORDER_STATUS, leftKg, transitKg } from '../../lib/orders';
 import { ageDays } from '../../lib/stock';
 import { vnDate } from '../../lib/trips';
 import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum, norm } from '../../lib/utils';
-import { WarehousePicker } from '../../components/TripBits';
+import { CompanyPicker, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox } from '../../components/ui';
 
 // ============================================================================
@@ -69,8 +69,9 @@ export default function Reports() {
   const { report } = useParams();
   const cur = REPORTS.find((r) => r[0] === report) || REPORTS[0];
   const [wh, setWh] = useOpWarehouse();
+  const [co, setCo] = useOpCompany();
   const [q, setQ] = useState('');
-  const props = { wh, q: norm(q) };
+  const props = { wh, co, q: norm(q) };
   const Body = { 'ton-theo-kho': ByWarehouse, 'ton-theo-vi-tri': ByLocation, 'ton-theo-trang-thai': ByStatus,
     'ton-cho-sale': ForSales, 'don-chua-giao': OpenSO, 'po-chua-nhap': OpenPO }[cur[0]];
   return (
@@ -84,9 +85,10 @@ export default function Reports() {
       </div>
       <div className="filters no-print">
         <WarehousePicker value={wh} onChange={setWh} />
+        <CompanyPicker value={co} onChange={setCo} />
         <input type="search" placeholder="Tìm mã hàng, tên hàng, khách, NCC…" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
-      <p className="print-only small">Kho: {wh || 'Tất cả kho được giao'}{q ? ` · Lọc: ${q}` : ''} · In lúc {new Date().toLocaleString('vi-VN')}</p>
+      <p className="print-only small">Kho: {wh || 'Tất cả kho được giao'} · Công ty: {co || 'Tất cả'}{q ? ` · Lọc: ${q}` : ''} · In lúc {new Date().toLocaleString('vi-VN')}</p>
       <Body key={cur[0]} {...props} />
     </div>
   );
@@ -102,9 +104,10 @@ function Actions({ onExcel }) {
 }
 
 // Dữ liệu dùng chung
-function useBase(wh) {
+function useBase(wh, co) {
   const { inMyWarehouses } = useApp();
-  const { rows: stock, error } = useStock(wh);
+  const { rows: all, error } = useStock(wh);
+  const stock = useMemo(() => (co ? all.filter((r) => (r.company || '') === co) : all), [all, co]);
   const items = useCollection('items').rows;
   const statuses = useCollection('goodsStatus').rows;
   const warehouses = useCollection('warehouses').rows.filter((w) => w.active !== false && inMyWarehouses(w.code) && (!wh || w.code === wh))
@@ -118,8 +121,8 @@ const matchItem = (q, ...xs) => !q || norm(xs.join(' ')).includes(q);
 
 // ---------------------------------------------------------------------------
 // 1. Tồn kho tổng theo từng kho
-function ByWarehouse({ wh, q }) {
-  const { stock, error, statusCodes, warehouses } = useBase(wh);
+function ByWarehouse({ wh, co, q }) {
+  const { stock, error, statusCodes, warehouses } = useBase(wh, co);
   const locations = useCollection('locations').rows;
   const list = stock.filter((r) => matchItem(q, r.item, r.itemName));
 
@@ -175,8 +178,8 @@ function ByWarehouse({ wh, q }) {
 
 // ---------------------------------------------------------------------------
 // 2. Tồn kho theo vị trí (kể cả vị trí trống)
-function ByLocation({ wh, q }) {
-  const { stock, error, inMyWarehouses } = useBase(wh);
+function ByLocation({ wh, co, q }) {
+  const { stock, error, inMyWarehouses } = useBase(wh, co);
   const locations = useCollection('locations').rows;
   const [mode, setMode] = useState('');
   const rows = useMemo(() => {
@@ -235,8 +238,8 @@ function ByLocation({ wh, q }) {
 
 // ---------------------------------------------------------------------------
 // 3. Tồn kho theo trạng thái (KTC, HTC, DGC) và theo bên nhận thế chấp
-function ByStatus({ wh, q }) {
-  const { stock, error, statusCodes, statuses } = useBase(wh);
+function ByStatus({ wh, co, q }) {
+  const { stock, error, statusCodes, statuses } = useBase(wh, co);
   const pledgees = useCollection('pledgees').rows;
   const list = stock.filter((r) => matchItem(q, r.item, r.itemName, r.pledgee));
   const total = list.reduce((s, r) => s + n(r.kg), 0);
@@ -301,17 +304,18 @@ function ByStatus({ wh, q }) {
 
 // ---------------------------------------------------------------------------
 // Đơn đang mở thuộc kho đang xem (đơn chưa ghi kho tính cho mọi kho)
-function useOpenOrders(wh) {
+function useOpenOrders(wh, co) {
   const { inMyWarehouses } = useApp();
-  const { rows, error } = useOrders('', true);
+  const { rows: all, error } = useOrders('', true);
+  const rows = useMemo(() => (co ? all.filter((o) => (o.company || '') === co) : all), [all, co]);
   const inScope = (code) => (code ? inMyWarehouses(code) && (!wh || code === wh) : true);
   return { orders: rows, error, inScope };
 }
 
 // 4. Tồn kho cho Sale: tồn, sắp về, chưa giao, có thể bán
-function ForSales({ wh, q }) {
-  const { stock, error, locked, itemMap } = useBase(wh);
-  const { orders, inScope } = useOpenOrders(wh);
+function ForSales({ wh, co, q }) {
+  const { stock, error, locked, itemMap } = useBase(wh, co);
+  const { orders, inScope } = useOpenOrders(wh, co);
   const today = vnDate();
   const rows = useMemo(() => {
     const m = new Map();
@@ -377,12 +381,12 @@ function ForSales({ wh, q }) {
 
 // ---------------------------------------------------------------------------
 // 5 & 6. Đơn bán chưa giao / đơn mua chưa nhập kho (theo từng dòng mặt hàng)
-function useOrderLines(type, wh, q, onlyLate) {
-  const { orders, error, inScope } = useOpenOrders(wh);
+function useOrderLines(type, wh, co, q, onlyLate) {
+  const { orders, error, inScope } = useOpenOrders(wh, co);
   const today = vnDate();
   const rows = orders.filter((o) => o.type === type && OPEN_STATUSES.includes(o.status) && inScope(o.warehouse))
     .flatMap((o) => o.lines.filter((l) => leftKg(l) > 0).map((l) => ({
-      _k: `${o.id}-${l.no}`, id: o.id, refNo: o.refNo || '', date: o.date, partyCode: o.partyCode, partyName: o.partyName, shipCode: o.shipCode || '',
+      _k: `${o.id}-${l.no}`, id: o.id, refNo: o.refNo || '', date: o.date, partyCode: o.partyCode, partyName: o.partyName, company: o.company || '', shipCode: o.shipCode || '',
       warehouse: o.warehouse || '', item: l.item, itemName: l.itemName, qty: n(l.qtyKg), done: n(l.doneKg), left: leftKg(l),
       due: o.dueDate || '', late: o.dueDate && o.dueDate < today ? ageDays(o.dueDate) : 0, status: o.status,
     })))
@@ -393,10 +397,10 @@ function useOrderLines(type, wh, q, onlyLate) {
 }
 const lateStyle = (r) => (r.late > 0 ? { color: 'var(--red)', fontWeight: 600 } : undefined);
 
-function OpenSO({ wh, q }) {
+function OpenSO({ wh, co, q }) {
   const [onlyLate, setOnlyLate] = useState(false);
-  const { rows, error } = useOrderLines('SO', wh, q, onlyLate);
-  const { stock, locked } = useBase(wh);
+  const { rows, error } = useOrderLines('SO', wh, co, q, onlyLate);
+  const { stock, locked } = useBase(wh, co);
   const usable = useMemo(() => {
     const m = new Map();
     for (const r of stock) if (!locked.has(r.goodsStatus)) m.set(r.item, n(m.get(r.item)) + n(r.kg));
@@ -404,7 +408,7 @@ function OpenSO({ wh, q }) {
   }, [stock, locked]);
   const list = rows.map((r) => ({ ...r, avail: n(usable.get(r.item)) }));
   const cols = [
-    { key: 'id', label: 'Số SO', nowrap: true }, { key: 'refNo', label: 'Số Ecount' }, { key: 'date', label: 'Ngày đơn', render: (r) => fmtDate(r.date), nowrap: true },
+    { key: 'id', label: 'Số SO', nowrap: true }, { key: 'refNo', label: 'Số Ecount' }, { key: 'company', label: 'Công ty' }, { key: 'date', label: 'Ngày đơn', render: (r) => fmtDate(r.date), nowrap: true },
     { key: 'partyCode', label: 'Mã KH' }, { key: 'partyName', label: 'Khách hàng' }, { key: 'shipCode', label: 'Giao đến' }, { key: 'warehouse', label: 'Kho' },
     { key: 'item', label: 'Mã hàng', nowrap: true }, { key: 'itemName', label: 'Tên hàng' },
     { key: 'qty', label: 'Đặt', ton: true, sum: true }, { key: 'done', label: 'Đã giao', ton: true, sum: true },
@@ -441,11 +445,11 @@ function OpenSO({ wh, q }) {
   );
 }
 
-function OpenPO({ wh, q }) {
+function OpenPO({ wh, co, q }) {
   const [onlyLate, setOnlyLate] = useState(false);
-  const { rows, error } = useOrderLines('PO', wh, q, onlyLate);
+  const { rows, error } = useOrderLines('PO', wh, co, q, onlyLate);
   const cols = [
-    { key: 'id', label: 'Số PO', nowrap: true }, { key: 'refNo', label: 'Số Ecount' }, { key: 'date', label: 'Ngày đơn', render: (r) => fmtDate(r.date), nowrap: true },
+    { key: 'id', label: 'Số PO', nowrap: true }, { key: 'refNo', label: 'Số Ecount' }, { key: 'company', label: 'Công ty' }, { key: 'date', label: 'Ngày đơn', render: (r) => fmtDate(r.date), nowrap: true },
     { key: 'partyCode', label: 'Mã NCC' }, { key: 'partyName', label: 'Nhà cung cấp' }, { key: 'warehouse', label: 'Nhập về kho' },
     { key: 'item', label: 'Mã hàng', nowrap: true }, { key: 'itemName', label: 'Tên hàng' },
     { key: 'qty', label: 'Đặt', ton: true, sum: true }, { key: 'done', label: 'Đã nhận', ton: true, sum: true },

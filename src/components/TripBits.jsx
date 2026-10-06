@@ -1,5 +1,5 @@
 import { STATUS_META, fmtTime, purposeLabel, stagesOf } from '../lib/trips';
-import { useMyWarehouses } from '../lib/hooks';
+import { useCompanies, useMyWarehouses } from '../lib/hooks';
 import { fmtNum } from '../lib/utils';
 
 export function StatusBadge({ status }) {
@@ -24,6 +24,17 @@ export function WarehousePicker({ value, onChange, allowAll = true }) {
     <select value={value} onChange={(e) => onChange(e.target.value)}>
       {allowAll && <option value="">Tất cả kho</option>}
       {list.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}{w.hasGuard === false ? ' (không bảo vệ)' : ''}</option>)}
+    </select>
+  );
+}
+
+// Chọn công ty chủ hàng
+export function CompanyPicker({ value, onChange, allowAll = true, required }) {
+  const list = useCompanies();
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)}>
+      {allowAll ? <option value="">Tất cả công ty</option> : <option value="">{required ? '-- Chọn công ty --' : '-- Không ghi công ty --'}</option>}
+      {list.map((c) => <option key={c.code} value={c.code}>{c.code}{c.name && c.name !== c.code ? ` – ${c.name}` : ''}{c.kind === 'Công ty khách' ? ' (khách)' : ''}</option>)}
     </select>
   );
 }

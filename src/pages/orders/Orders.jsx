@@ -3,7 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
-import { useCollection, useMyWarehouses, useOrders } from '../../lib/hooks';
+import { useCollection, useMyWarehouses, useOpCompany, useOrders } from '../../lib/hooks';
+import { CompanyPicker } from '../../components/TripBits';
 import { ORDER_STATUS, ORDER_TYPES, OPEN_STATUSES, createOrder, leftKg, orderTotals, saveOrder, setOrderState, transitKg } from '../../lib/orders';
 import { MOVE_TYPES } from '../../lib/stock';
 import { STATUS_META, fmtTime, vnDate } from '../../lib/trips';
@@ -72,6 +73,7 @@ function OrderList({ type }) {
   const sto = type === 'STO';
   const { rows, error } = useOrders(type);
   const [status, setStatus] = useState('opening');
+  const [co, setCo] = useOpCompany();
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(null);
   const [edit, setEdit] = useState(null); // null | 'new' | order
@@ -82,10 +84,11 @@ function OrderList({ type }) {
     const f = norm(q);
     return rows
       .filter((o) => (sto ? inMyWarehouses(o.fromWarehouse) || inMyWarehouses(o.toWarehouse) : !o.warehouse || inMyWarehouses(o.warehouse)))
+      .filter((o) => !co || o.company === co)
       .filter((o) => (status === 'opening' ? OPEN_STATUSES.includes(o.status) : !status || o.status === status))
       .filter((o) => !f || norm([o.id, o.refNo, o.partyCode, o.partyName, o.fromWarehouse, o.toWarehouse, o.shipCode, ...(o.lines || []).flatMap((l) => [l.item, l.itemName])].join(' ')).includes(f))
       .sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')) || String(b.createdAt).localeCompare(String(a.createdAt)));
-  }, [rows, status, q, inMyWarehouses, sto]);
+  }, [rows, status, q, inMyWarehouses, sto, co]);
   const sum = list.reduce((s, o) => { const x = orderTotals(o); return { qty: s.qty + x.qty, done: s.done + x.done, transit: s.transit + x.transit, left: s.left + (OPEN_STATUSES.includes(o.status) ? x.left : 0) }; }, { qty: 0, done: 0, left: 0, transit: 0 });
   const late = list.filter((o) => OPEN_STATUSES.includes(o.status) && o.dueDate && o.dueDate < today);
   const current = open && rows.find((o) => o.id === open);
@@ -93,7 +96,7 @@ function OrderList({ type }) {
   const exportExcel = () => {
     const out = [];
     list.forEach((o) => o.lines.forEach((l) => out.push({
-      'Số đơn': o.id, 'Số đơn Ecount': o.refNo, 'Ngày đơn': o.date,
+      'Số đơn': o.id, 'Công ty': o.company || '', 'Số đơn Ecount': o.refNo, 'Ngày đơn': o.date,
       ...(sto ? { 'Kho đi': o.fromWarehouse, 'Kho đến': o.toWarehouse } : { [`Mã ${meta.partyLabel}`]: o.partyCode, [`Tên ${meta.partyLabel}`]: o.partyName }),
       ...(type === 'SO' ? { 'Mã giao hàng': o.shipCode } : {}), Kho: o.warehouse, [meta.due]: o.dueDate,
       'Mã hàng': l.item, 'Tên hàng': l.itemName, 'Đặt (tấn)': l.qtyKg / 1000, [`${meta.done} (tấn)`]: (l.doneKg || 0) / 1000,
@@ -114,6 +117,7 @@ function OrderList({ type }) {
         <div className="stat red"><div className="stat-label">{type === 'SO' ? 'Quá hạn giao' : type === 'PO' ? 'Quá ngày hàng về' : 'Quá ngày chuyển'}</div><div className="stat-value">{late.length} đơn</div></div>
       </div>
       <div className="filters">
+        <CompanyPicker value={co} onChange={setCo} />
         <select value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="opening">Đang mở (chưa xong)</option>
           <option value="">Tất cả trạng thái</option>
@@ -131,7 +135,7 @@ function OrderList({ type }) {
       <div className="table-wrap">
         {!list.length ? <Empty /> : (
           <table>
-            <thead><tr><th>Số đơn</th><th>Số Ecount</th><th>Ngày</th><th>{meta.partyLabel}</th><th>Mặt hàng</th>
+            <thead><tr><th>Số đơn</th><th>Công ty</th><th>Số Ecount</th><th>Ngày</th><th>{meta.partyLabel}</th><th>Mặt hàng</th>
               <th className="num">Đặt (tấn)</th><th className="num">{meta.done}</th>{sto && <th className="num">{meta.transit}</th>}<th className="num">{meta.left}</th><th>Tiến độ</th><th>{meta.due}</th><th>Trạng thái</th><th></th></tr></thead>
             <tbody>
               {list.map((o) => {
@@ -139,7 +143,7 @@ function OrderList({ type }) {
                 const isLate = OPEN_STATUSES.includes(o.status) && o.dueDate && o.dueDate < today;
                 return (
                   <tr key={o.id} onClick={() => setOpen(o.id)} style={{ cursor: 'pointer', opacity: ['closed', 'cancelled'].includes(o.status) ? 0.6 : 1 }}>
-                    <td className="mono nowrap">{o.id}</td><td className="mono">{o.refNo}</td><td className="nowrap">{fmtDate(o.date)}</td>
+                    <td className="mono nowrap">{o.id}</td><td><b>{o.company}</b></td><td className="mono">{o.refNo}</td><td className="nowrap">{fmtDate(o.date)}</td>
                     <td className="nowrap">{partyText(o)}{o.shipCode ? <small className="small"> · {o.shipCode}</small> : null}</td>
                     <td>{[...new Set(o.lines.map((l) => l.item))].join(', ')}</td>
                     <td className="num">{t(x.qty)}</td><td className="num">{t(x.done)}</td>{sto && <td className="num">{t(x.transit)}</td>}
@@ -174,10 +178,11 @@ function OrderForm({ type, order, onClose }) {
   const shipto = useCollection('shipto').rows;
   const items = useCollection('items').rows;
   const itemMap = useMemo(() => new Map(items.map((i) => [i.code, i])), [items]);
+  const [defaultCo] = useOpCompany();
   const [h, setH] = useState(() => order
-    ? { refNo: order.refNo || '', date: order.date || '', partyCode: order.partyCode || '', partyName: order.partyName || '', shipCode: order.shipCode || '',
+    ? { company: order.company || '', refNo: order.refNo || '', date: order.date || '', partyCode: order.partyCode || '', partyName: order.partyName || '', shipCode: order.shipCode || '',
       warehouse: order.warehouse || '', fromWarehouse: order.fromWarehouse || '', toWarehouse: order.toWarehouse || '', dueDate: order.dueDate || '', tolerancePct: order.tolerancePct ?? '', note: order.note || '' }
-    : { refNo: '', date: vnDate(), partyCode: '', partyName: '', shipCode: '', warehouse: '', fromWarehouse: '', toWarehouse: '', dueDate: '', tolerancePct: '', note: '' });
+    : { company: defaultCo, refNo: '', date: vnDate(), partyCode: '', partyName: '', shipCode: '', warehouse: '', fromWarehouse: '', toWarehouse: '', dueDate: '', tolerancePct: '', note: '' });
   const [lines, setLines] = useState(() => order
     ? order.lines.map((l) => ({ no: l.no, item: l.item, itemName: l.itemName, qtyT: l.qtyKg / 1000, doneKg: l.doneKg || 0, note: l.note || '' }))
     : [emptyLine()]);
@@ -192,6 +197,7 @@ function OrderForm({ type, order, onClose }) {
     if (sto && (!h.fromWarehouse || !h.toWarehouse)) return setErr('Chọn kho đi và kho đến.');
     if (sto && h.fromWarehouse === h.toWarehouse) return setErr('Kho đến phải khác kho đi.');
     if (!sto && !h.partyCode.trim() && !h.partyName.trim()) return setErr(`Chọn ${meta.partyLabel.toLowerCase()}.`);
+    if (!h.company) return setErr('Chọn công ty của đơn.');
     if (!h.date) return setErr('Nhập ngày đơn.');
     const out = [];
     for (const [i, l] of lines.entries()) {
@@ -223,6 +229,9 @@ function OrderForm({ type, order, onClose }) {
     <Modal title={order ? `Sửa ${order.id}` : `Lập ${meta.label.toLowerCase()}`} onClose={() => onClose()} wide>
       <form onSubmit={submit}>
         <div className="form-grid">
+          <Field label={type === 'SO' ? 'Công ty bán' : type === 'PO' ? 'Công ty mua' : 'Công ty chủ hàng'} required>
+            <CompanyPicker value={h.company} allowAll={false} required onChange={(v) => set('company', v)} />
+          </Field>
           {sto && (
             <>
               <Field label="Kho đi (xuất)" required>
@@ -390,6 +399,7 @@ function OrderDetail({ o, onClose, onEdit }) {
 // ---------------------------------------------------------------------------
 // Nhập đơn từ Excel (xuất từ Ecount): mỗi dòng = 1 mặt hàng, gộp theo Số đơn Ecount
 const HEAD = {
+  company: ['cong ty', 'ma cong ty', 'cong ty ban', 'cong ty mua'],
   refNo: ['so don ecount', 'so don', 'so chung tu', 'so hop dong'],
   date: ['ngay don', 'ngay', 'ngay chung tu'],
   partyCode: ['ma kh/ncc', 'ma khach hang', 'ma nha cung cap', 'ma doi tac'],
@@ -403,7 +413,7 @@ const HEAD = {
   tolerancePct: ['dung sai (%)', 'dung sai'],
   note: ['ghi chu'],
 };
-const TEMPLATE = ['Số đơn Ecount', 'Ngày đơn', 'Mã KH/NCC', 'Tên KH/NCC', 'Mã giao hàng', 'Kho', 'Hạn giao/ETA', 'Mã hàng', 'Số lượng (tấn)', 'Dung sai (%)', 'Ghi chú'];
+const TEMPLATE = ['Công ty', 'Số đơn Ecount', 'Ngày đơn', 'Mã KH/NCC', 'Tên KH/NCC', 'Mã giao hàng', 'Kho', 'Hạn giao/ETA', 'Mã hàng', 'Số lượng (tấn)', 'Dung sai (%)', 'Ghi chú'];
 
 function ImportOrders({ type, existing, onDone }) {
   const { email, name } = useApp();
@@ -435,7 +445,7 @@ function ImportOrders({ type, existing, onDone }) {
         if (!groups.has(refNo)) {
           const pc = String(v(r, 'partyCode') ?? '').trim();
           groups.set(refNo, {
-            type, refNo, date: toYmd(v(r, 'date')) || vnDate(), partyCode: pc, partyName: String(v(r, 'partyName') || partyMap.get(pc)?.name || '').trim(),
+            type, company: String(v(r, 'company') ?? '').trim().toUpperCase(), refNo, date: toYmd(v(r, 'date')) || vnDate(), partyCode: pc, partyName: String(v(r, 'partyName') || partyMap.get(pc)?.name || '').trim(),
             shipCode: type === 'SO' ? String(v(r, 'shipCode') ?? '').trim() : '', warehouse: String(v(r, 'warehouse') ?? '').trim(),
             dueDate: toYmd(v(r, 'dueDate')), tolerancePct: toNumber(v(r, 'tolerancePct')) || 0, note: String(v(r, 'note') ?? '').trim(), lines: [],
           });
@@ -448,6 +458,7 @@ function ImportOrders({ type, existing, onDone }) {
       for (const g of groups.values()) {
         if (have.has(g.refNo)) { skipped++; continue; }
         if (!g.partyCode && !g.partyName) { errs.push(`Đơn ${g.refNo}: thiếu mã/tên đối tác.`); continue; }
+        if (!g.company) { errs.push(`Đơn ${g.refNo}: thiếu công ty.`); continue; }
         await createOrder(g, { email, name });
         made++;
       }

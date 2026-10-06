@@ -135,10 +135,10 @@ service cloud.firestore {
     // Danh mục thủ kho được sửa trong kho của mình (không sửa tồn kho hiện tại)
     match /{coll}/{id} {
       allow read: if isStaff() && coll in [
-        'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses',
+        'companies', 'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses',
         'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'threepl', 'codeRules'];
       allow write: if isAdmin() && coll in [
-        'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses',
+        'companies', 'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses',
         'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'threepl', 'codeRules'];
       allow create: if coll in ['locations', 'docks'] && hasRole('thu_kho')
         && inMyWarehouse(request.resource.data.warehouse)
