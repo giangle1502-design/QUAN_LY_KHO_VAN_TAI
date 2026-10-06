@@ -1,0 +1,101 @@
+import { useEffect, useMemo, useRef } from 'react';
+import { useApp } from '../context/AppContext';
+import { useCollection } from '../lib/hooks';
+import { catalogByKey, refLabel, refValue } from '../catalogs';
+import { fmtDate, fmtNum } from '../lib/utils';
+
+// Ô nhập cho 1 trường theo kiểu dữ liệu
+export default function FieldInput({ field: f, value, onChange, disabled, onPickRef }) {
+  if (f.type === 'ref') return <RefInput field={f} value={value} onChange={onChange} disabled={disabled} onPick={onPickRef} />;
+  if (f.type === 'multiref') return <MultiRefInput field={f} value={value} onChange={onChange} disabled={disabled} />;
+  if (f.type === 'select')
+    return (
+      <select value={value ?? ''} onChange={(e) => onChange(e.target.value)} disabled={disabled}>
+        <option value="">-- Chọn --</option>
+        {(f.options || []).map((o) => <option key={o} value={o}>{f.labels?.[o] || o}</option>)}
+      </select>
+    );
+  if (f.type === 'checkbox') return <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} disabled={disabled} />;
+  if (f.type === 'textarea') return <textarea rows={2} value={value ?? ''} onChange={(e) => onChange(e.target.value)} disabled={disabled} />;
+  return (
+    <input
+      type={f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : f.type === 'email' ? 'email' : 'text'}
+      step="any"
+      value={value ?? ''}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={disabled}
+    />
+  );
+}
+
+// Danh sách bản ghi của danh mục được tham chiếu (lọc theo kho được giao nếu là danh sách kho)
+function useRefRows(refKey) {
+  const { rows } = useCollection(refKey);
+  const { inMyWarehouses } = useApp();
+  return useMemo(() => {
+    const list = refKey === 'warehouses' ? rows.filter((r) => inMyWarehouses(r.code)) : rows;
+    return list.map((r) => ({ value: refValue(refKey, r), label: refLabel(r), row: r })).sort((a, b) => String(a.value).localeCompare(String(b.value)));
+  }, [rows, refKey, inMyWarehouses]);
+}
+
+function RefInput({ field: f, value, onChange, disabled, onPick }) {
+  const opts = useRefRows(f.ref);
+  const listId = `dl-${f.key}`;
+  const known = !value || opts.some((o) => o.value === value);
+  // Gõ mã trước khi danh mục tải xong: tự điền khi dữ liệu về
+  const pending = useRef('');
+  useEffect(() => {
+    if (!pending.current) return;
+    const hit = opts.find((o) => o.value === pending.current);
+    if (hit) { pending.current = ''; onPick?.(f, hit.row); }
+  }, [opts, f, onPick]);
+  return (
+    <>
+      <input
+        list={listId}
+        value={value ?? ''}
+        disabled={disabled}
+        placeholder={`Gõ hoặc chọn ${catalogByKey(f.ref)?.short || ''}`}
+        onChange={(e) => {
+          const v = e.target.value;
+          onChange(v);
+          const hit = opts.find((o) => o.value === v);
+          if (hit && onPick) onPick(f, hit.row);
+          pending.current = hit ? '' : v;
+        }}
+      />
+      <datalist id={listId}>
+        {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </datalist>
+      {!known && <small className="req">Không có trong danh mục {catalogByKey(f.ref)?.short}</small>}
+    </>
+  );
+}
+
+function MultiRefInput({ field: f, value, onChange, disabled }) {
+  const opts = useRefRows(f.ref);
+  const sel = Array.isArray(value) ? value : [];
+  const toggle = (v) => onChange(sel.includes(v) ? sel.filter((x) => x !== v) : [...sel, v]);
+  if (!opts.length) return <div className="readonly-val">Chưa có dữ liệu {catalogByKey(f.ref)?.short}</div>;
+  return (
+    <div className="tags">
+      {opts.map((o) => (
+        <label key={o.value} className={'chip' + (sel.includes(o.value) ? ' on' : '')} title={o.label}>
+          <input type="checkbox" hidden checked={sel.includes(o.value)} onChange={() => !disabled && toggle(o.value)} />
+          {o.value}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+// Giá trị hiển thị trong bảng / Excel
+export function displayValue(f, v, forExcel) {
+  if (v === null || v === undefined || v === '') return '';
+  if (f.type === 'checkbox') return v ? (forExcel ? 'x' : '✓') : '';
+  if (f.type === 'multiref') return (v || []).join(', ');
+  if (f.type === 'select') return f.labels?.[v] || v;
+  if (f.type === 'number') return forExcel ? v : fmtNum(v, 2);
+  if (f.type === 'date') return forExcel ? v : fmtDate(v);
+  return v;
+}

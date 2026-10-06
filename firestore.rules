@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ==== Email quản trị gốc (sửa cho khớp VITE_SUPER_ADMINS) ====
+    function superAdmins() { return ['giangle1502@gmail.com']; }
+
+    function signedIn() {
+      return request.auth != null && request.auth.token.email != null
+        && request.auth.token.email_verified == true;
+    }
+    function me() { return request.auth.token.email.lower(); }
+    function userPath() { return /databases/$(database)/documents/users/$(me()); }
+    function profile() { return get(userPath()).data; }
+    function isSuper() { return signedIn() && me() in superAdmins(); }
+    function isActive() { return signedIn() && exists(userPath()) && profile().active != false; }
+    function isStaff() { return isSuper() || isActive(); }
+    function isAdmin() { return isSuper() || (isActive() && profile().role == 'admin'); }
+    function hasRole(r) { return isActive() && profile().role == r; }
+    // Kho được giao: danh sách rỗng hoặc không khai báo = tất cả kho
+    function inMyWarehouse(wh) {
+      return !('warehouses' in profile()) || profile().warehouses.size() == 0 || wh in profile().warehouses;
+    }
+
+    // Phân quyền: ai cũng đọc được hồ sơ của mình; quản trị đọc/sửa tất cả
+    match /users/{email} {
+      allow read: if signedIn() && (email == me() || isStaff());
+      allow write: if isAdmin();
+    }
+
+    // Cấu hình hạng mục và cài đặt chung
+    match /settings/{id} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
+    // Danh mục thủ kho được sửa trong kho của mình (không sửa tồn kho hiện tại)
+    match /{coll}/{id} {
+      allow read: if isStaff() && coll in [
+        'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses',
+        'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'threepl', 'codeRules'];
+      allow write: if isAdmin() && coll in [
+        'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses',
+        'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'threepl', 'codeRules'];
+      allow create: if coll in ['locations', 'docks'] && hasRole('thu_kho')
+        && inMyWarehouse(request.resource.data.warehouse)
+        && (coll != 'locations' || request.resource.data.currentPallets in [0, null]);
+      allow update: if coll in ['locations', 'docks'] && hasRole('thu_kho')
+        && inMyWarehouse(resource.data.warehouse)
+        && request.resource.data.warehouse == resource.data.warehouse
+        && (coll != 'locations' || request.resource.data.currentPallets == resource.data.currentPallets);
+    }
+  }
+}
