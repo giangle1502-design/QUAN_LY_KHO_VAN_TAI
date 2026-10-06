@@ -43,14 +43,14 @@ export function toYmd(v) {
   return '';
 }
 
-// Ô Excel → số (hỗ trợ 1.234,5 và 1,234.5)
+// Ô Excel → số. Quy ước chính 1,234.5 ("," hàng nghìn, "." thập phân); vẫn đọc được 1.234,5
 export function toNumber(v) {
   if (typeof v === 'number') return v;
   let s = String(v ?? '').trim();
   if (!s) return null;
   s = s.replace(/[^\d.,-]/g, '');
-  if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) s = s.replace(/\./g, '').replace(',', '.');
-  else if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) s = s.replace(/,/g, '');
+  if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) s = s.replace(/,/g, '');
+  else if (/^-?\d{1,3}(\.\d{3})+,\d+$/.test(s)) s = s.replace(/\./g, '').replace(',', '.');
   else s = s.replace(',', '.');
   const n = Number(s);
   return Number.isFinite(n) ? n : null;

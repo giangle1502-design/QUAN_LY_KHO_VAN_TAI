@@ -83,9 +83,11 @@ Mọi thay đổi tồn đi qua 1 phiếu, ghi trong cùng 1 giao dịch: phiế
 
 ## Đề nghị giải chấp
 
+Quy ước số trong toàn hệ thống: dấu "," ngăn cách hàng nghìn, dấu "." thập phân (1,250.500). Số lượng lưu theo kg, lên form/báo cáo đổi ra tấn.
+
 Menu *Kho → Đề nghị giải chấp* (kế toán, quản trị):
 
-1. **+ Lập đề nghị giải chấp**: chọn công ty, ngân hàng nhận thế chấp, kho → hiện hàng HTC của công ty đó tại ngân hàng đó. Tích dòng cần giải chấp, sửa số tấn (giải chấp một phần được), Số CT (mặc định số lot) và Vị trí hàng hóa in trên đề nghị (mặc định tên kho). Hàng đã nằm trong đề nghị khác đang chờ duyệt không chọn lại được.
+1. **+ Lập đề nghị giải chấp**: chọn công ty, ngân hàng nhận thế chấp, kho → hiện hàng HTC của công ty đó tại ngân hàng đó. Tích dòng cần giải chấp, sửa số tấn (giải chấp một phần được), nhập **Số bộ chứng từ (BCT)** do nhân viên tự đặt (in ở cột SỐ CT, áp cho mọi dòng, sửa riêng từng dòng được) và Vị trí hàng hóa in trên đề nghị (mặc định tên kho). Hàng đã nằm trong đề nghị khác đang chờ duyệt không chọn lại được.
 2. Số đề nghị tự cấp: **HSGC + yymmdd + số thứ tự trong ngày** (vd. HSGC26070210).
 3. **🖨 In**: đúng mẫu "ĐỀ NGHỊ GIẢI CHẤP" gửi ngân hàng (A4). Thông tin lấy từ danh mục: *Công ty* (tên, số ĐKKD + nơi cấp, người đại diện, chức vụ, địa chỉ, điện thoại, fax, email, nơi lập) và *Bên nhận thế chấp* (tên đầy đủ, tên gọi tắt).
 4. Ngân hàng duyệt → **✅ Giải chấp**: hệ thống lập phiếu đổi tình trạng (TC) HTC → DGC cho đúng các dòng trong đề nghị. Nếu hàng đã bị xuất/chuyển sau khi lập đề nghị thì báo lỗi, không giải chấp.

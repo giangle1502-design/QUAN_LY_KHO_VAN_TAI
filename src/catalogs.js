@@ -68,7 +68,7 @@ export const CATALOGS = [
         bizRegInfo: 'do Sở Kế Hoạch và Đầu Tư tỉnh Bình Dương cấp, đăng ký lần đầu ngày 04/09/2013, đăng ký thay đổi lần thứ 4: ngày 16 tháng 02 năm 2022, và các lần đăng ký thay đổi, bổ sung (nếu có)',
         address: 'Số 34 Đường D17A, Khu TĐC Mỹ Phước I mở rộng, Phường Thới Hòa, Thành phố Hồ Chí Minh, Việt Nam',
         representative: 'LÊ THỊ THU HÀ', repTitle: 'Giám đốc', place: 'HCM' },
-      { code: 'DAM', name: 'DAM', kind: 'Công ty trong nhóm', active: true, repTitle: 'Giám đốc', place: 'HCM' },
+      { code: 'DAM', name: 'CÔNG TY CỔ PHẦN HÓA CHẤT DIAMOND', kind: 'Công ty trong nhóm', active: true, repTitle: 'Giám đốc', place: 'HCM' },
       { code: 'PLA', name: 'CÔNG TY TNHH PLASTIC VIỆT NAM', kind: 'Công ty trong nhóm', active: true, taxCode: '0316285785',
         bizRegInfo: 'do Sở Kế hoạch và Đầu tư thành phố Hồ Chí Minh cấp, đăng ký lần đầu ngày 28/05/2020, đăng ký thay đổi lần thứ 1 ngày 17/11/2022, và các lần đăng ký thay đổi, bổ sung (nếu có)',
         address: 'Số A7 Khu dân cư ấp Mới 1, đường Liên xã Tân Xuân - Trung Chánh, Xã Hóc Môn, Thành phố Hồ Chí Minh, Việt Nam',

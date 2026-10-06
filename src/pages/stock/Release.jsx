@@ -24,9 +24,9 @@ export const RELEASE_STATUS = {
 };
 const num = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? 0 : Number(v));
 const r3 = (x) => Math.round(x * 1000) / 1000;
-// Màn hình: tấn theo kiểu Việt Nam (10,5). Bản in: giống mẫu Excel của ngân hàng (25.000 = 25 tấn)
-const ton3 = (kg) => fmtNum(num(kg) / 1000, 3);
-const tonPrint = (kg) => (num(kg) / 1000).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).replace(/,/g, ' ');
+// Lưu kg, lên form đổi ra tấn, luôn 3 số lẻ: 25 tấn → 25.000; 1250.5 tấn → 1,250.500
+const ton3 = (kg) => fmtNum(num(kg) / 1000, 3, 3);
+const tonPrint = ton3;
 const totKg = (r) => (r.lines || []).reduce((s, l) => s + num(l.kg), 0);
 
 async function createRelease(data, user) {
@@ -112,7 +112,7 @@ export default function Release() {
   const exportExcel = () => exportSheets(`De_nghi_giai_chap_${today()}`, {
     'Đề nghị giải chấp': list.flatMap((r) => r.lines.map((l, i) => ({
       'Số đề nghị': r.id, Ngày: r.date, 'Công ty': r.company, 'Ngân hàng': r.pledgee, Kho: r.warehouse, 'Trạng thái': RELEASE_STATUS[r.status]?.label,
-      STT: i + 1, 'Số CT': l.docNo, 'Mã hàng': l.item, 'Tên hàng': l.itemName, Lot: l.lot, 'Vị trí': l.location, 'Vị trí hàng hóa': l.place,
+      STT: i + 1, 'Số CT (BCT)': l.docNo, 'Mã hàng': l.item, 'Tên hàng': l.itemName, Lot: l.lot, 'Vị trí': l.location, 'Vị trí hàng hóa': l.place,
       'Số lượng (tấn)': num(l.kg) / 1000, 'Phiếu giải chấp': r.movementId || '',
     }))),
   });
@@ -174,7 +174,7 @@ function ReleaseForm({ onClose }) {
   const { email, name } = useApp();
   const myWh = useMyWarehouses();
   const [opCo] = useOpCompany();
-  const [h, setH] = useState({ date: today(), company: opCo || '', pledgee: '', warehouse: myWh.length === 1 ? myWh[0].code : '', note: '' });
+  const [h, setH] = useState({ date: today(), company: opCo || '', pledgee: '', warehouse: myWh.length === 1 ? myWh[0].code : '', bct: '', note: '' });
   const { rows: stock, loading } = useStock(h.warehouse || '__none__');
   const pledgees = useCollection('pledgees').rows;
   const companies = useCollection('companies').rows;
@@ -194,8 +194,10 @@ function ReleaseForm({ onClose }) {
     .map((r) => ({ ...r, held: pending.get(r._id) || 0, free: r3(num(r.kg) - (pending.get(r._id) || 0)) }))
     .filter((r) => r.free > 0.001)
     .sort((a, b) => String(a.item).localeCompare(b.item) || String(a.inDate).localeCompare(b.inDate)), [stock, h.pledgee, h.company, pending]);
-  const set = (k, v) => { setH((x) => ({ ...x, [k]: v })); if (k !== 'date' && k !== 'note') setPick({}); };
-  const cur = (r) => pick[r._id] || { on: false, ton: r3(r.free / 1000), docNo: r.lot || '', place: whName };
+  const set = (k, v) => { setH((x) => ({ ...x, [k]: v })); if (!['date', 'note', 'bct'].includes(k)) setPick({}); };
+  // Đổi số bộ chứng từ chung → áp cho mọi dòng đang chọn
+  const setBct = (v) => { set('bct', v); setPick((x) => Object.fromEntries(Object.entries(x).map(([k, p]) => [k, { ...p, docNo: v }]))); };
+  const cur = (r) => pick[r._id] || { on: false, ton: r3(r.free / 1000), docNo: h.bct || '', place: whName };
   const setP = (r, p) => setPick((x) => ({ ...x, [r._id]: { ...cur(r), ...p } }));
   const chosen = htc.filter((r) => cur(r).on);
   const total = chosen.reduce((s, r) => s + num(cur(r).ton), 0);
@@ -208,6 +210,7 @@ function ReleaseForm({ onClose }) {
     for (const r of chosen) {
       const p = cur(r);
       const kg = r3(num(p.ton) * 1000);
+      if (!String(p.docNo || '').trim()) return setErr(`${r.item} lot ${r.lot || '-'}: nhập số bộ chứng từ (BCT).`);
       if (kg <= 0 || kg > r.free + 0.001) return setErr(`${r.item} lot ${r.lot || '-'}: số lượng phải từ 0 đến ${ton3(r.free)} tấn${r.held ? ' (phần còn lại đang nằm trong đề nghị khác chờ duyệt)' : ''}.`);
       lines.push({ stockId: r._id, item: r.item, itemName: r.itemName || '', lot: r.lot || '', location: r.location, docNo: String(p.docNo || '').trim(),
         place: String(p.place || '').trim(), unit: 'TẤN', kg });
@@ -242,6 +245,9 @@ function ReleaseForm({ onClose }) {
             </select>
           </Field>
           <Field label="Ngày đề nghị" required><input type="date" value={h.date} onChange={(e) => set('date', e.target.value)} /></Field>
+          <Field label="Số bộ chứng từ (BCT)" required help="Nhân viên tự đặt. In ở cột SỐ CT; áp cho mọi dòng, sửa riêng từng dòng được">
+            <input value={h.bct} onChange={(e) => setBct(e.target.value)} />
+          </Field>
         </div>
         <h4 style={{ margin: '12px 0 6px' }}>Hàng đang thế chấp (HTC){h.pledgee ? ` tại ${h.pledgee}` : ''}</h4>
         <div className="table-wrap">
@@ -249,7 +255,7 @@ function ReleaseForm({ onClose }) {
             : loading ? <Empty text="Đang tải…" /> : !htc.length ? <Empty text="Không có hàng HTC của công ty này tại ngân hàng này trong kho." /> : (
               <table>
                 <thead><tr><th></th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th><th>Vị trí</th><th className="num">Tồn HTC (tấn)</th><th className="num">Đang đề nghị</th>
-                  <th className="num">Giải chấp (tấn)</th><th>Số CT</th><th>Vị trí hàng hóa (in)</th></tr></thead>
+                  <th className="num">Giải chấp (tấn)</th><th>Số CT (BCT)</th><th>Vị trí hàng hóa (in)</th></tr></thead>
                 <tbody>
                   {htc.map((r) => {
                     const p = cur(r);
@@ -267,7 +273,7 @@ function ReleaseForm({ onClose }) {
               </table>
             )}
         </div>
-        <p className="small">Đã chọn {chosen.length} dòng · <b>{fmtNum(total, 3)} tấn</b>. Số CT mặc định là số lot, vị trí hàng hóa mặc định là tên kho; sửa được trước khi lưu.</p>
+        <p className="small">Đã chọn {chosen.length} dòng · <b>{fmtNum(total, 3, 3)} tấn</b>. Vị trí hàng hóa mặc định là tên kho, sửa được trước khi lưu.</p>
         {err && <div className="error-box">{err}</div>}
         <div className="form-actions"><button className="btn primary" disabled={busy}>{busy ? 'Đang lưu…' : 'Lập đề nghị'}</button></div>
       </form>

@@ -6,9 +6,10 @@ export function norm(s) {
     .toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-export function fmtNum(n, digits = 0) {
+// Quy ước số của công ty: dấu "," ngăn cách hàng nghìn, dấu "." thập phân (1,234.5)
+export function fmtNum(n, digits = 0, minDigits = 0) {
   if (n === null || n === undefined || n === '' || Number.isNaN(Number(n))) return '';
-  return Number(n).toLocaleString('vi-VN', { maximumFractionDigits: digits });
+  return Number(n).toLocaleString('en-US', { maximumFractionDigits: digits, minimumFractionDigits: Math.min(minDigits, digits) });
 }
 
 export function fmtDate(ymd) {
