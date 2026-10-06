@@ -33,7 +33,7 @@ export default function Movements() {
     const f = q.trim().toLowerCase();
     return rows
       .filter((m) => inMyWarehouses(m.warehouse) && (!wh || m.warehouse === wh) && (!type || m.type === type))
-      .filter((m) => !f || [m.id, m.tripId, m.partyCode, m.partyName, ...(m.lines || []).flatMap((l) => [l.item, l.lot, l.location])].join(' ').toLowerCase().includes(f))
+      .filter((m) => !f || [m.id, m.tripId, m.orderId, m.orderRef, m.partyCode, m.partyName, ...(m.lines || []).flatMap((l) => [l.item, l.lot, l.location])].join(' ').toLowerCase().includes(f))
       .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   }, [rows, inMyWarehouses, wh, type, q]);
   const current = open && rows.find((m) => m.id === open);
@@ -41,7 +41,7 @@ export default function Movements() {
   const exportExcel = () => {
     const out = [];
     list.forEach((m) => m.lines.forEach((l) => out.push({
-      'Số phiếu': m.id, Loại: MOVE_TYPES[m.type]?.label, 'Ngày': m.date, Kho: m.warehouse, 'Chuyến xe': m.tripId,
+      'Số phiếu': m.id, Loại: MOVE_TYPES[m.type]?.label, 'Ngày': m.date, Kho: m.warehouse, 'Chuyến xe': m.tripId, 'Đơn SO/PO': m.orderId || '', 'Số Ecount': m.orderRef || '',
       'Mã KH/NCC': m.partyCode, 'Tên KH/NCC': m.partyName, 'Mã hàng': l.item, 'Tên hàng': l.itemName, Lot: l.lot,
       'Vị trí': l.location, 'Đến vị trí': l.toLocation || '', 'Tình trạng': l.goodsStatus, 'Tình trạng mới': l.toStatus || '',
       'Số bao': l.bags, Pallet: l.pallets, Kg: l.kg, 'Lý do': m.reason, 'Trạng thái': m.status === 'cancelled' ? 'Đã hủy' : '',
@@ -68,13 +68,13 @@ export default function Movements() {
       <div className="table-wrap">
         {!list.length ? <Empty /> : (
           <table>
-            <thead><tr><th>Số phiếu</th><th>Loại</th><th>Ngày</th><th>Kho</th><th>Chuyến xe</th><th>Khách / NCC</th><th>Mặt hàng</th>
+            <thead><tr><th>Số phiếu</th><th>Loại</th><th>Ngày</th><th>Kho</th><th>Chuyến xe</th><th>Đơn</th><th>Khách / NCC</th><th>Mặt hàng</th>
               <th className="num">Số bao</th><th className="num">Kg</th><th>Người lập</th><th></th></tr></thead>
             <tbody>
               {list.map((m) => (
                 <tr key={m.id} onClick={() => setOpen(m.id)} style={{ cursor: 'pointer', opacity: m.status === 'cancelled' ? 0.5 : 1 }}>
                   <td className="mono nowrap">{m.id}</td><td className="nowrap">{MOVE_TYPES[m.type]?.icon} {MOVE_TYPES[m.type]?.label}</td>
-                  <td className="nowrap">{fmtDate(m.date)}</td><td>{m.warehouse}</td><td className="mono">{m.tripId}</td>
+                  <td className="nowrap">{fmtDate(m.date)}</td><td>{m.warehouse}</td><td className="mono">{m.tripId}</td><td className="mono">{m.orderId}</td>
                   <td>{m.partyName || m.partyCode}</td><td>{[...new Set(m.lines.map((l) => l.item))].join(', ')}</td>
                   <td className="num">{fmtNum(tot(m, 'bags'))}</td><td className="num">{fmtNum(tot(m, 'kg'))}</td>
                   <td className="small">{m.createdByName || m.createdBy}</td>
@@ -103,7 +103,7 @@ function Detail({ m, onClose }) {
   return (
     <Modal title={`${MOVE_TYPES[m.type]?.label} ${m.id}`} onClose={onClose} wide>
       <p>
-        Ngày {fmtDate(m.date)} · Kho {m.warehouse}{m.tripId ? ` · Chuyến ${m.tripId}` : ''}
+        Ngày {fmtDate(m.date)} · Kho {m.warehouse}{m.tripId ? ` · Chuyến ${m.tripId}` : ''}{m.orderId ? ` · Đơn ${m.orderId}${m.orderRef ? ` (${m.orderRef})` : ''}` : ''}
         {m.partyCode || m.partyName ? ` · ${m.partyCode} ${m.partyName}` : ''}{m.shipCode ? ` · giao ${m.shipCode}` : ''}
         {m.reason ? ` · Lý do: ${m.reason}` : ''}
       </p>

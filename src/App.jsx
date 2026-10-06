@@ -16,6 +16,7 @@ import MovementForm from './pages/stock/MovementForm';
 import OpeningImport from './pages/stock/OpeningImport';
 import PrintMovement from './pages/stock/PrintMovement';
 import Dashboard from './pages/Dashboard';
+import Orders from './pages/orders/Orders';
 
 export default function App() {
   const { user, allowed, isAdmin, hasRole, loading, logout, email } = useApp();
@@ -44,6 +45,7 @@ export default function App() {
         {hasRole('thu_kho') && <Route path="xe/thu-kho" element={<Dock />} />}
         {isAdmin && <Route path="xe/giao-hang" element={<Delivery />} />}
         <Route path="xe/tong-quan" element={<Overview />} />
+        <Route path="don-hang" element={<Orders />} />
         <Route path="kho/ton" element={<Stock />} />
         <Route path="kho/phieu" element={<Movements />} />
         {hasRole('thu_kho') && <Route path="kho/ton-dau-ky" element={<OpeningImport />} />}

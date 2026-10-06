@@ -1,6 +1,7 @@
 import { doc, runTransaction } from 'firebase/firestore';
 import { db } from '../firebase';
 import { catalogByKey } from '../catalogs';
+import { applyOrder } from './orders';
 
 // ============================================================================
 // Tồn kho: mỗi dòng tồn = 1 document `stock/{kho__vị trí__mã hàng__lot__tình trạng}`
@@ -64,7 +65,12 @@ export async function postMovement(m, user) {
     const at = new Date().toISOString();
     const mv = { ...m, id, status: 'posted', createdAt: at, createdBy: user.email, createdByName: user.name,
       history: [{ at, by: user.email, byName: user.name, action: 'Lập phiếu' }] };
+    const orderRef = m.orderId ? doc(db, 'orders', m.orderId) : null;
+    const orderSnap = orderRef ? await tx.get(orderRef) : null;
+    if (orderRef && !orderSnap.exists()) throw new Error(`Không tìm thấy đơn ${m.orderId}.`);
+    const orderUpd = orderRef ? applyOrder({ ...orderSnap.data(), id: m.orderId }, mv, 1) : null;
     await applyEffects(tx, mv, effectsOf(mv, 1), user);
+    if (orderRef) tx.update(orderRef, { ...orderUpd, lastMovement: id, updatedAt: at, updatedBy: user.email });
     if (ruleSnap.exists()) tx.update(ruleRef, { next: num + 1 });
     else tx.set(ruleRef, { ...seed, next: num + 1 });
     tx.set(doc(db, 'movements', id), mv);
@@ -78,8 +84,12 @@ export async function cancelMovement(m, reason, user) {
     const ref = doc(db, 'movements', m.id);
     const cur = await tx.get(ref);
     if (!cur.exists() || cur.data().status === 'cancelled') throw new Error('Phiếu đã bị hủy.');
+    const orderRef = m.orderId ? doc(db, 'orders', m.orderId) : null;
+    const orderSnap = orderRef ? await tx.get(orderRef) : null;
+    const orderUpd = orderSnap?.exists() ? applyOrder({ ...orderSnap.data(), id: m.orderId }, m, -1) : null;
     await applyEffects(tx, { ...m, id: m.id }, effectsOf(m, -1), user);
     const at = new Date().toISOString();
+    if (orderUpd) tx.update(orderRef, { ...orderUpd, lastMovement: m.id, updatedAt: at, updatedBy: user.email });
     tx.update(ref, { status: 'cancelled', cancelReason: reason, cancelledAt: at, cancelledBy: user.email,
       history: [...(m.history || []), { at, by: user.email, byName: user.name, action: `Hủy phiếu: ${reason}` }] });
   });

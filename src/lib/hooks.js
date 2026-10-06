@@ -74,3 +74,21 @@ export function useStock(wh) {
   );
   return { ...state, rows };
 }
+
+// Đơn bán / đơn mua (realtime). type: 'SO' | 'PO' | '' (cả hai); onlyOpen: chỉ đơn chưa xong
+export function useOrders(type, onlyOpen = false) {
+  const [state, setState] = useState({ rows: [], loading: true, error: '' });
+  useEffect(() => {
+    // Lọc 1 trường trên server (không cần tạo chỉ mục kép), lọc trạng thái trên trình duyệt
+    const q = type ? query(collection(db, 'orders'), where('type', '==', type)) : collection(db, 'orders');
+    return onSnapshot(
+      q,
+      (snap) => setState({
+        rows: snap.docs.map((d) => ({ ...d.data(), id: d.id })).filter((o) => !onlyOpen || ['open', 'partial'].includes(o.status)),
+        loading: false, error: '',
+      }),
+      (e) => setState({ rows: [], loading: false, error: e.message })
+    );
+  }, [type, onlyOpen]);
+  return state;
+}

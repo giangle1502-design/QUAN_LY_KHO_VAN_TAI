@@ -4,6 +4,7 @@
 - Bước 2: **Luồng xe vận tải** như app QLVT, chọn xe, tài xế, khách từ danh mục.
 - Bước 3: **Nhập kho, xuất kho, tồn kho** theo vị trí, lô và tình trạng thế chấp.
 - Bước 4: **Sẵn sàng chạy thật**: nhập tồn đầu kỳ từ Excel, in phiếu, trang Tổng quan.
+- Bước 5: **Đơn bán (SO) và đơn mua (PO)**: theo dõi đặt, đã giao/nhận, còn lại; phiếu nhập/xuất và chuyến xe gắn vào đơn.
 
 **Công nghệ:** React + Vite · Firebase (Auth + Firestore, realtime) · Vercel. Giống app Sale_control: đăng nhập thật, mỗi danh mục là một collection riêng, phân quyền kiểm tra cả trên máy chủ (Firestore rules).
 
@@ -63,6 +64,21 @@ Mọi thay đổi tồn đi qua 1 phiếu, ghi trong cùng 1 giao dịch: phiế
 - **Phiếu kho**: lọc theo ngày, kho, loại; Excel từng dòng; quản trị **hủy phiếu** (đảo lại tồn, giữ lịch sử).
 - Firestore rules: thủ kho/kế toán chỉ sửa được tồn và pallet vị trí khi kèm 1 phiếu mới do chính họ lập trong cùng giao dịch, đúng kho được giao.
 
+## Đơn hàng (SO / PO)
+
+Đơn là kế hoạch, phiếu kho là thực hiện. Ví dụ: SO 100 tấn, xuất 20 tấn → đơn hiện *Đã giao 20, Còn phải giao 80*. PO 100 tấn, về 20 tấn → *Đã nhận 20, Còn chưa về 80*.
+
+- **Lập đơn** (Kinh doanh, Kế toán, Quản trị): số Ecount, ngày, khách hàng/Shipto (SO) hoặc nhà cung cấp (PO), kho (bỏ trống = kho nào cũng được), hạn giao / ngày hàng về, dung sai %, các mặt hàng nhập theo **tấn** (lưu kg). Số đơn tự cấp SO000001, PO000001 theo Quy tắc mã.
+- **Nhập Excel** từ Ecount: mỗi dòng 1 mặt hàng, gộp theo Số đơn Ecount; đơn trùng số Ecount bị bỏ qua.
+- **Phiếu nhập** chọn PO: tự điền khách và các mặt hàng còn chưa về; thủ kho chọn vị trí, sửa số thực nhận. **Phiếu xuất** chọn SO: dòng tồn tự gắn vào dòng đơn cùng mã hàng. Ô "Còn lại sau phiếu" hiện ngay khi nhập số.
+- Ghi phiếu cộng "đã giao/nhận" của đơn **trong cùng giao dịch**; vượt số đặt + dung sai thì bị chặn; quản trị hủy phiếu thì đơn được trừ lại.
+- Trạng thái đơn tự tính: Chưa thực hiện → Đang thực hiện → Hoàn tất. **Đóng đơn** (có lý do) khi không giao/nhận tiếp phần còn lại; **Hủy đơn** chỉ khi chưa giao/nhận gì; mở lại được.
+- Sửa đơn: không được đặt ít hơn phần đã làm, không xóa/đổi mã hàng của dòng đã giao/nhận.
+- **Đăng ký xe** chọn SO/PO cho từng khách, khối lượng mặc định = phần còn lại của đơn; chọn chuyến xe trên phiếu nhập/xuất sẽ tự chọn đơn.
+- **Cân đối theo mã hàng**: tồn được xuất (không tính HTC), SO còn phải giao, PO còn chưa về, *Thiếu/dư ngay* = tồn − SO, *Dự kiến* = tồn + PO − SO; mã hàng thiếu tô đỏ.
+- Trang Tổng quan có số tấn SO còn phải giao, PO còn chưa về và số đơn quá hạn.
+- Firestore rules: thủ kho chỉ cập nhật "đã giao/nhận" của đơn khi kèm 1 phiếu mới do chính họ lập gắn đúng đơn đó.
+
 ## Chạy thật
 
 - **Tổng quan** (trang đầu): số xe theo từng bước, xe đang trong kho kèm thời gian chờ, tồn theo KTC/HTC/DGC, vị trí ≥ 85%, hàng hết hạn trong 30 ngày, phiếu kho hôm nay.
@@ -76,7 +92,8 @@ Mọi thay đổi tồn đi qua 1 phiếu, ghi trong cùng 1 giao dịch: phiế
 | Quản trị | Toàn quyền, sửa mọi danh mục, phân quyền, quản lý hạng mục |
 | Thủ kho | Thêm/sửa Vị trí lưu trữ và Cửa xuất/nhập; đăng ký xe, gán cửa, xác nhận xuất/nhập xong; lập phiếu nhập, xuất, chuyển vị trí, điều chỉnh ở kho được giao |
 | Bảo vệ | Xem danh mục; đăng ký xe, cho vào/ra cổng ở kho được giao |
-| Kế toán | Xem mọi thứ; lập phiếu đổi tình trạng thế chấp |
+| Kế toán | Xem mọi thứ; lập phiếu đổi tình trạng thế chấp; lập, sửa, đóng đơn SO/PO |
+| Kinh doanh / Mua hàng | Lập, sửa, đóng đơn SO/PO, nhập đơn từ Excel; xem tồn kho, chuyến xe, cân đối |
 | Chỉ xem | Xem danh mục, chuyến xe, tồn kho |
 
 "Kho được thao tác" để trống = tất cả kho. Người không phải quản trị chỉ thấy vị trí và cửa của kho được giao.

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
-import { useCollection, useMyWarehouses, useOpWarehouse, useStock, useTrips } from '../../lib/hooks';
+import { useCollection, useMyWarehouses, useOpWarehouse, useOrders, useStock, useTrips } from '../../lib/hooks';
+import { ORDER_TYPES, leftKg, matchOrderLine } from '../../lib/orders';
 import { MOVE_TYPES, ageDays, kgOf, postMovement, suggestPallets } from '../../lib/stock';
 import { ST, vnDate } from '../../lib/trips';
 import { fmtDate, fmtNum } from '../../lib/utils';
@@ -45,7 +46,9 @@ function Form({ type }) {
   const itemMap = useMemo(() => new Map(items.map((i) => [i.code, i])), [items]);
   const statusMap = useMemo(() => new Map(statuses.map((s) => [s.code, s])), [statuses]);
 
-  const [head, setHead] = useState({ date: vnDate(), tripId: params.get('trip') || '', partyCode: '', partyName: '', shipCode: '', reason: '', note: '' });
+  const orderType = type === 'in' ? 'PO' : type === 'out' ? 'SO' : '__none__';
+  const { rows: orders } = useOrders(orderType, true);
+  const [head, setHead] = useState({ date: vnDate(), tripId: params.get('trip') || '', orderId: params.get('order') || '', partyCode: '', partyName: '', shipCode: '', reason: '', note: '' });
   const [lines, setLines] = useState(() => [type === 'in' ? newLine() : stockLine()]);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -58,9 +61,34 @@ function Form({ type }) {
     const t = trips.find((x) => x.id === head.tripId);
     if (!t) return;
     if (t.warehouse !== opWh) setOpWh(t.warehouse);
-    const l = t.lines?.[0];
-    if (l && !head.partyCode) setHead((h) => ({ ...h, partyCode: l.partyCode, partyName: l.partyName, shipCode: l.shipCode || '' }));
-  }, [head.tripId, trips]); // eslint-disable-line react-hooks/exhaustive-deps
+    const l = t.lines?.find((x) => x.orderId) || t.lines?.[0];
+    if (l && l.orderId && !head.orderId) pickOrder(l.orderId);
+    else if (l && !head.partyCode) setHead((h) => ({ ...h, partyCode: l.partyCode, partyName: l.partyName, shipCode: l.shipCode || '' }));
+  }, [head.tripId, trips, orders.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Đơn SO/PO đang mở phù hợp kho và khách / nhà cung cấp
+  const order = orders.find((o) => o.id === head.orderId);
+  const orderOpts = orders.filter((o) => (!o.warehouse || o.warehouse === whCode) && (!head.partyCode || o.partyCode === head.partyCode || o.id === head.orderId))
+    .sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')));
+  const pickOrder = (id) => {
+    const o = orders.find((x) => x.id === id);
+    if (!o) return setHead((h) => ({ ...h, orderId: id }));
+    setHead((h) => ({ ...h, orderId: id, partyCode: o.partyCode, partyName: o.partyName, shipCode: o.shipCode || h.shipCode }));
+    if (o.warehouse && o.warehouse !== opWh) setOpWh(o.warehouse);
+    // Phiếu nhập: điền sẵn các mặt hàng còn chưa về của PO (thủ kho chọn vị trí, sửa số thực nhận)
+    if (type === 'in') {
+      setLines((ls) => {
+        if (ls.some((l) => l.item)) return ls;
+        const next = o.lines.filter((l) => leftKg(l) > 0).map((l) => {
+          const it = itemMap.get(l.item);
+          const kg = leftKg(l);
+          const bags = num(it?.bagWeight) ? Math.round(kg / num(it.bagWeight)) : '';
+          return { ...newLine(), item: l.item, orderLine: l.no, bags, pallets: suggestPallets(it, bags), kg };
+        });
+        return next.length ? next : ls;
+      });
+    }
+  };
 
   const setH = (k, v) => setHead((h) => ({ ...h, [k]: v }));
   const setLine = (i, patch) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
@@ -90,7 +118,7 @@ function Form({ type }) {
         if (!l.location) return setErr(no + 'chọn vị trí.');
         if (!num(l.bags) && !num(l.pallets)) return setErr(no + 'nhập số bao hoặc pallet.');
         if (l.goodsStatus === 'HTC' && !l.pledgee) return setErr(no + 'hàng HTC cần chọn bên nhận thế chấp.');
-        out.push({ item: l.item, itemName: itemMap.get(l.item).name, lot: l.lot.trim(), mfgDate: l.mfgDate, expDate: l.expDate,
+        out.push({ ...(l.orderLine != null ? { orderLine: l.orderLine } : {}), item: l.item, itemName: itemMap.get(l.item).name, lot: l.lot.trim(), mfgDate: l.mfgDate, expDate: l.expDate,
           location: l.location, goodsStatus: l.goodsStatus, pledgee: l.goodsStatus === 'HTC' ? l.pledgee : '',
           bags: num(l.bags), pallets: num(l.pallets), kg: num(l.kg) });
         continue;
@@ -104,6 +132,7 @@ function Form({ type }) {
       if (type === 'status' && (!l.toStatus || l.toStatus === r.goodsStatus)) return setErr(no + 'chọn tình trạng mới.');
       if (type === 'status' && l.toStatus === 'HTC' && !l.toPledgee) return setErr(no + 'chọn bên nhận thế chấp.');
       out.push({
+        ...(l.orderLine != null ? { orderLine: l.orderLine } : {}),
         item: r.item, itemName: r.itemName, lot: r.lot, mfgDate: r.mfgDate, expDate: r.expDate, inDate: r.inDate,
         location: r.location, goodsStatus: r.goodsStatus, pledgee: r.pledgee || '',
         bags: sign * num(l.bags), pallets: sign * num(l.pallets), kg: sign * num(l.kg),
@@ -111,16 +140,27 @@ function Form({ type }) {
         ...(type === 'status' ? { toStatus: l.toStatus, toPledgee: l.toStatus === 'HTC' ? l.toPledgee : '' } : {}),
       });
     }
+    // Gắn từng dòng phiếu vào dòng đơn SO/PO cùng mã hàng
+    if (head.orderId) {
+      if (!order) return setErr(`Đơn ${head.orderId} không còn mở.`);
+      const used = {};
+      for (const [i, l] of out.entries()) {
+        const keep = order.lines.find((x) => x.no === l.orderLine && x.item === l.item);
+        l.orderLine = keep ? keep.no : matchOrderLine(order, l.item, used);
+        if (l.orderLine == null) return setErr(`Dòng ${i + 1}: mã hàng ${l.item} không có trong đơn ${order.id}.`);
+        used[l.orderLine] = (used[l.orderLine] || 0) + Math.abs(num(l.kg));
+      }
+    }
     setBusy(true);
     try {
       const id = await postMovement({
-        type, warehouse: wh.code, date: head.date, tripId: head.tripId || '',
+        type, warehouse: wh.code, date: head.date, tripId: head.tripId || '', orderId: head.orderId || '', orderRef: order?.refNo || '',
         partyCode: head.partyCode.trim(), partyName: head.partyName.trim(), shipCode: head.shipCode,
         reason: head.reason, note: head.note.trim(), lines: out,
       }, { email, name });
       setDone(id);
       setLines([type === 'in' ? newLine() : stockLine()]);
-      setHead((h) => ({ ...h, tripId: '', partyCode: '', partyName: '', shipCode: '', note: '' }));
+      setHead((h) => ({ ...h, tripId: '', orderId: '', partyCode: '', partyName: '', shipCode: '', note: '' }));
     } catch (e2) {
       setErr(e2.code === 'permission-denied' ? 'Bạn không có quyền lập phiếu cho kho này.' : e2.message);
     }
@@ -153,8 +193,17 @@ function Form({ type }) {
               </Field>
               <Field label={type === 'in' ? 'Nhà cung cấp' : 'Khách hàng'}>
                 <input list="dl-mv-party" value={head.partyCode} placeholder="Mã"
-                  onChange={(e) => { const p = parties.find((x) => x.code === e.target.value); setHead((h) => ({ ...h, partyCode: e.target.value, partyName: p ? p.name : h.partyName, shipCode: '' })); }} />
+                  onChange={(e) => { const p = parties.find((x) => x.code === e.target.value); setHead((h) => ({ ...h, partyCode: e.target.value, partyName: p ? p.name : h.partyName, shipCode: '', orderId: '' })); }} />
                 <input value={head.partyName} placeholder="Tên" style={{ marginTop: 4 }} onChange={(e) => setH('partyName', e.target.value)} />
+              </Field>
+              <Field label={ORDER_TYPES[orderType].label} help={orderOpts.length ? 'Phiếu sẽ tự trừ phần còn lại của đơn' : 'Không có đơn đang mở phù hợp'}>
+                <select value={head.orderId} onChange={(e) => pickOrder(e.target.value)}>
+                  <option value="">-- Không theo đơn --</option>
+                  {orderOpts.map((o) => {
+                    const left = o.lines.reduce((s2, l) => s2 + leftKg(l), 0);
+                    return <option key={o.id} value={o.id}>{o.id}{o.refNo ? ` (${o.refNo})` : ''} · {o.partyName || o.partyCode} · còn {fmtNum(left / 1000, 3)} tấn</option>;
+                  })}
+                </select>
               </Field>
               {type === 'out' && (
                 <Field label="Giao đến (Shipto)">
@@ -178,6 +227,7 @@ function Form({ type }) {
         </div>
       </div>
 
+      {order && <OrderBox order={order} lines={lines} type={type} stockById={stockById} />}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="section-head">Hàng hóa ({lines.length})</div>
         {type !== 'in' && (
@@ -201,6 +251,39 @@ function Form({ type }) {
       <datalist id="dl-mv-party">{parties.map((p) => <option key={p.code} value={p.code}>{p.name}</option>)}</datalist>
       <datalist id="dl-mv-item">{items.filter((x) => x.active !== false).map((x) => <option key={x.code} value={x.code}>{x.name}</option>)}</datalist>
     </form>
+  );
+}
+
+// Đơn đang chọn: đặt / đã giao-nhận / còn lại, và còn lại sau phiếu này
+function OrderBox({ order, lines, type, stockById }) {
+  const meta = ORDER_TYPES[order.type];
+  const thisKg = {};
+  for (const l of lines) {
+    const item = type === 'in' ? l.item : stockById.get(l.stockId)?.item;
+    if (item) thisKg[item] = (thisKg[item] || 0) + Math.abs(num(l.kg));
+  }
+  const t = (kg) => fmtNum(kg / 1000, 3);
+  return (
+    <div className="card" style={{ marginBottom: 12 }}>
+      <div className="section-head">{meta.label} {order.id}{order.refNo ? ` · Ecount ${order.refNo}` : ''}{order.dueDate ? ` · ${meta.due} ${fmtDate(order.dueDate)}` : ''}</div>
+      <table>
+        <thead><tr><th>Mã hàng</th><th>Tên hàng</th><th className="num">Đặt (tấn)</th><th className="num">{meta.done}</th><th className="num">{meta.left}</th><th className="num">Phiếu này</th><th className="num">Còn lại sau phiếu</th></tr></thead>
+        <tbody>
+          {order.lines.map((l) => {
+            const same = order.lines.filter((x) => x.item === l.item);
+            const share = same[0] === l ? thisKg[l.item] || 0 : 0;
+            const after = leftKg(l) - share;
+            return (
+              <tr key={l.no}><td>{l.item}</td><td>{l.itemName}</td><td className="num">{t(l.qtyKg)}</td><td className="num">{t(num(l.doneKg))}</td>
+                <td className="num">{t(leftKg(l))}</td><td className="num">{share ? t(share) : ''}</td>
+                <td className="num" style={after < 0 ? { color: 'var(--red)', fontWeight: 600 } : { fontWeight: 600 }}>{t(after)}{after < 0 ? ' (vượt đơn)' : ''}</td></tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {lines.some((l) => { const it = type === 'in' ? l.item : stockById.get(l.stockId)?.item; return it && !order.lines.some((x) => x.item === it); }) &&
+        <div className="error-box">Có mặt hàng không nằm trong đơn {order.id}.</div>}
+    </div>
   );
 }
 

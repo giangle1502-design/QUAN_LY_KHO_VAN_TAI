@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
-import { useCollection, useOpWarehouse, useStock, useTrips } from '../lib/hooks';
+import { useCollection, useOpWarehouse, useOrders, useStock, useTrips } from '../lib/hooks';
+import { orderTotals } from '../lib/orders';
 import { ACTIVE, ST, STATUS_META, fmtDuration, minutesBetween, nowISO, vnDate } from '../lib/trips';
 import { MOVE_TYPES } from '../lib/stock';
 import { fmtDate, fmtNum } from '../lib/utils';
@@ -33,6 +34,12 @@ export default function Dashboard() {
   const full = locations.filter((l) => Number(l.usedPct) >= 85).sort((a, b) => b.usedPct - a.usedPct);
   const empty = locations.filter((l) => l.emptyBin !== false && !l.locked).length;
   const expiring = useMemo(() => stock.filter((r) => r.expDate && r.expDate <= addDays(today, 30)).sort((a, b) => a.expDate.localeCompare(b.expDate)), [stock, today]);
+  const { rows: openOrders } = useOrders('', true);
+  const ordersHere = openOrders.filter((o) => !o.warehouse || (inMyWarehouses(o.warehouse) && (!wh || o.warehouse === wh)));
+  const orderSum = (ty) => {
+    const list = ordersHere.filter((o) => o.type === ty);
+    return { count: list.length, left: list.reduce((s, o) => s + orderTotals(o).left, 0), late: list.filter((o) => o.dueDate && o.dueDate < today).length };
+  };
   const byStatus = ['KTC', 'HTC', 'DGC'].map((c) => [c, sumKg(stock.filter((r) => r.goodsStatus === c))]);
 
   return (
@@ -40,6 +47,23 @@ export default function Dashboard() {
       <div className="page-head">
         <h1>Tổng quan</h1>
         <div className="actions"><span className="small">Xin chào {name}</span><WarehousePicker value={wh} onChange={setWh} /></div>
+      </div>
+
+      <div className="section-head">Đơn hàng đang mở</div>
+      <div className="stats">
+        {[['SO', 'Đơn bán (SO): còn phải giao'], ['PO', 'Đơn mua (PO): còn chưa về']].map(([ty, label]) => {
+          const x = orderSum(ty);
+          return (
+            <Link key={ty} to={`/don-hang?tab=${ty}`} className={'stat ' + (x.late ? 'red' : 'amber')} style={{ textDecoration: 'none', color: 'inherit' }}>
+              <div className="stat-label">{label}</div>
+              <div className="stat-value">{fmtNum(x.left / 1000, 2)} tấn</div>
+              <div className="stat-sub">{x.count} đơn{x.late ? ` · ${x.late} đơn quá hạn` : ''}</div>
+            </Link>
+          );
+        })}
+        <Link to="/don-hang?tab=can-doi" className="stat" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <div className="stat-label">Cân đối theo mã hàng</div><div className="stat-value">Xem →</div><div className="stat-sub">Tồn + PO − SO</div>
+        </Link>
       </div>
 
       <div className="section-head">Xe đang hoạt động</div>

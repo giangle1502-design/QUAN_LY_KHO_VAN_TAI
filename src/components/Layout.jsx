@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { CATALOGS, GROUPS, roleLabel } from '../catalogs';
 
 export default function Layout() {
   const { name, email, role, isAdmin, hasRole, logout, settings } = useApp();
   const [open, setOpen] = useState(false);
+  const loc = useLocation();
+  const orderTab = (k) => ({ isActive }) => (isActive && (new URLSearchParams(loc.search).get('tab') || 'SO') === k ? 'active' : '');
   const close = () => setOpen(false);
   return (
     <div className="shell">
@@ -13,6 +15,10 @@ export default function Layout() {
         <div className="brand">{settings.companyName}<small>Kho & vận tải</small></div>
         <nav>
           <NavLink to="/" end onClick={close}><span className="ico">📈</span>Tổng quan</NavLink>
+          <div className="nav-group">Đơn hàng</div>
+          <NavLink to="/don-hang?tab=SO" className={orderTab('SO')} onClick={close}><span className="ico">🧾</span>Đơn bán (SO)</NavLink>
+          <NavLink to="/don-hang?tab=PO" className={orderTab('PO')} onClick={close}><span className="ico">🛒</span>Đơn mua (PO)</NavLink>
+          <NavLink to="/don-hang?tab=can-doi" className={orderTab('can-doi')} onClick={close}><span className="ico">⚖️</span>Cân đối theo mã hàng</NavLink>
           <div className="nav-group">Vận hành xe</div>
           {hasRole('bao_ve', 'thu_kho') && <NavLink to="/xe/dang-ky" onClick={close}><span className="ico">🚚</span>Đăng ký xe</NavLink>}
           {hasRole('bao_ve') && <NavLink to="/xe/bao-ve" onClick={close}><span className="ico">🛡️</span>Bảo vệ cổng</NavLink>}

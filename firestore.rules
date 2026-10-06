@@ -62,9 +62,9 @@ service cloud.firestore {
     }
 
     // Cấp số chứng từ: nhân viên vận hành chỉ được tăng "Số tiếp theo"
-    function opStaff() { return hasRole('bao_ve') || hasRole('thu_kho') || hasRole('ke_toan'); }
+    function opStaff() { return hasRole('bao_ve') || hasRole('thu_kho') || hasRole('ke_toan') || hasRole('kinh_doanh'); }
     match /codeRules/{code} {
-      allow create: if opStaff() && code in ['GRP', 'SP', 'PN', 'PX', 'CV', 'TC', 'DC']
+      allow create: if opStaff() && code in ['GRP', 'SP', 'PN', 'PX', 'CV', 'TC', 'DC', 'SO', 'PO']
         && request.resource.data.next > 1;
       allow update: if opStaff()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['next'])
@@ -101,6 +101,30 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['currentPallets', 'usedPct', 'emptyBin', 'lastMovement', 'updatedAt', 'updatedBy'])
         && freshMovement(request.resource.data.lastMovement, resource.data.warehouse);
+    }
+
+    // ==== Đơn bán (SO) / đơn mua (PO) ====
+    // Kinh doanh, kế toán lập/sửa/đóng đơn. Thủ kho chỉ cập nhật "đã giao/nhận" khi ghi phiếu kho mới gắn đơn đó
+    function orderMgr() { return hasRole('kinh_doanh') || hasRole('ke_toan'); }
+    function movementForOrder(mid, oid) {
+      return !exists(mvPath(mid)) && existsAfter(mvPath(mid))
+        && getAfter(mvPath(mid)).data.createdBy == me()
+        && getAfter(mvPath(mid)).data.orderId == oid;
+    }
+    match /orders/{id} {
+      allow read: if isStaff();
+      allow create: if (isAdmin() || orderMgr())
+        && request.resource.data.id == id && request.resource.data.createdBy == me()
+        && request.resource.data.status == 'open' && request.resource.data.type in ['SO', 'PO'];
+      allow update: if isAdmin()
+        || (orderMgr() && request.resource.data.type == resource.data.type
+          && request.resource.data.id == resource.data.id && request.resource.data.createdBy == resource.data.createdBy)
+        || (hasRole('thu_kho')
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['lines', 'status', 'lastMovement', 'updatedAt', 'updatedBy'])
+          && request.resource.data.status in ['open', 'partial', 'done']
+          && movementForOrder(request.resource.data.lastMovement, id));
+      allow delete: if isAdmin();
     }
 
     // Danh mục thủ kho được sửa trong kho của mình (không sửa tồn kho hiện tại)

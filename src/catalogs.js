@@ -23,7 +23,8 @@ export const ROLES = [
   ['admin', 'Quản trị', 'Toàn quyền, sửa mọi danh mục, phân quyền'],
   ['thu_kho', 'Thủ kho', 'Nhập, xuất, chuyển vị trí, điều chỉnh tồn; sửa vị trí lưu trữ và cửa xuất/nhập của kho được giao'],
   ['bao_ve', 'Bảo vệ', 'Xem danh mục (xác nhận xe vào/ra cổng ở bước sau)'],
-  ['ke_toan', 'Kế toán', 'Xem danh mục và tồn kho; đổi tình trạng thế chấp (KTC, HTC, DGC)'],
+  ['kinh_doanh', 'Kinh doanh / Mua hàng', 'Lập và theo dõi đơn bán (SO), đơn mua (PO); xem tồn kho và chuyến xe'],
+  ['ke_toan', 'Kế toán', 'Xem mọi thứ; lập SO/PO; đổi tình trạng thế chấp (KTC, HTC, DGC)'],
   ['xem', 'Chỉ xem', 'Chỉ xem danh mục'],
 ];
 export const roleLabel = (r) => ROLES.find((x) => x[0] === r)?.[1] || r || '';
@@ -238,6 +239,8 @@ export const CATALOGS = [
         computed: (r) => `${r.prefix || ''}${String(num(r.next) || 1).padStart(num(r.digits) || 5, '0')}` },
     ],
     seed: [
+      { code: 'SO', name: 'Đơn bán', prefix: 'SO', digits: 6, next: 1 },
+      { code: 'PO', name: 'Đơn mua', prefix: 'PO', digits: 6, next: 1 },
       { code: 'PN', name: 'Phiếu nhập kho', prefix: 'PN', digits: 6, next: 1 },
       { code: 'PX', name: 'Phiếu xuất kho', prefix: 'PX', digits: 6, next: 1 },
       { code: 'CV', name: 'Phiếu chuyển vị trí', prefix: 'CV', digits: 6, next: 1 },

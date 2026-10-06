@@ -46,6 +46,7 @@ export default function PrintMovement() {
       <table className="print-info"><tbody>
         {(m.partyCode || m.partyName) && <tr><td>{m.type === 'in' ? 'Nhà cung cấp' : 'Khách hàng'}</td><td>{m.partyCode} {m.partyName}</td></tr>}
         {m.shipCode && <tr><td>Giao đến</td><td>{m.shipCode}</td></tr>}
+        {m.orderId && <tr><td>{m.type === 'in' ? 'Theo đơn mua' : 'Theo đơn bán'}</td><td>{m.orderId}{m.orderRef ? ` (số Ecount ${m.orderRef})` : ''}</td></tr>}
         {trip && <tr><td>Xe</td><td>{trip.plate} · {trip.driverName} · CCCD {trip.idCard}{trip.carrierName ? ` · ${trip.carrierName}` : ''} · chuyến {m.tripId}{trip.dock ? ` · cửa ${trip.dock}` : ''}</td></tr>}
         {m.reason && <tr><td>Lý do</td><td>{m.reason}</td></tr>}
         {m.note && <tr><td>Ghi chú</td><td>{m.note}</td></tr>}

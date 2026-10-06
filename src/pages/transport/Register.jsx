@@ -2,11 +2,13 @@ import { useMemo, useState } from 'react';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
-import { useCollection, useMyWarehouses, useOpWarehouse } from '../../lib/hooks';
+import { useCollection, useMyWarehouses, useOpWarehouse, useOrders } from '../../lib/hooks';
+import { leftKg } from '../../lib/orders';
+import { fmtNum } from '../../lib/utils';
 import { PURPOSES, firstStatus, nowISO, reserveCodes, vnDate, STATUS_META } from '../../lib/trips';
 import { ErrorBox, Field } from '../../components/ui';
 
-const emptyLine = () => ({ partyCode: '', partyName: '', shipCode: '', address: '', payload: '' });
+const emptyLine = () => ({ partyCode: '', partyName: '', shipCode: '', address: '', payload: '', orderId: '' });
 const emptyForm = () => ({ purpose: 'export', plate: '', carrier: '', carrierName: '', vehicleType: '', idCard: '', driverName: '', driverPhone: '', note: '' });
 
 // Đăng ký xe tại cổng: chọn xe, tài xế, khách từ danh mục (vẫn gõ tay được nếu chưa có)
@@ -28,6 +30,15 @@ export default function Register() {
   const [done, setDone] = useState(null);
 
   const parties = form.purpose === 'import' ? suppliers : soldto.filter((c) => c.active !== false);
+  const { rows: orders } = useOrders(form.purpose === 'import' ? 'PO' : 'SO', true);
+  const orderLeft = (o) => o.lines.reduce((s, l) => s + leftKg(l), 0) / 1000;
+  const ordersOf = (code) => orders.filter((o) => o.partyCode === code && (!o.warehouse || o.warehouse === wh?.code));
+  // Chọn đơn SO/PO: khối lượng mặc định = phần còn lại của đơn
+  const pickOrder = (i, id) => {
+    const o = orders.find((x) => x.id === id);
+    const s = o?.shipCode && shipto.find((x) => x.shipCode === o.shipCode);
+    setLine(i, { orderId: id, ...(o ? { payload: Math.round(orderLeft(o) * 1000) / 1000 } : {}), ...(s ? { shipCode: s.shipCode, address: s.address } : {}) });
+  };
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const setLine = (i, patch) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
 
@@ -50,7 +61,7 @@ export default function Register() {
     const ships = shipto.filter((s) => s.customerCode === v);
     setLine(i, {
       partyCode: v,
-      partyName: p ? p.name : lines[i].partyName,
+      partyName: p ? p.name : lines[i].partyName, orderId: '',
       ...(ships.length === 1 ? { shipCode: ships[0].shipCode, address: ships[0].address } : { shipCode: '', address: '' }),
     });
   };
@@ -85,8 +96,9 @@ export default function Register() {
         lines: lines.map((l, i) => ({
           id: sids[i], partyCode: l.partyCode.trim(), partyName: l.partyName.trim(),
           shipCode: l.shipCode, address: l.address, payload: l.payload === '' ? null : Number(l.payload),
-          delivered: false, deliveredTime: null,
+          orderId: l.orderId || '', delivered: false, deliveredTime: null,
         })),
+        orderIds: [...new Set(lines.map((l) => l.orderId).filter(Boolean))],
         status,
         arrivalTime: at, arrivalDate: vnDate(at),
         // Kho không có bảo vệ: coi như đã xác nhận vào cổng ngay khi đăng ký
@@ -179,6 +191,12 @@ export default function Register() {
                 {l.address && <small className="small">{l.address}</small>}
               </Field>
             ) : <div />}
+            <Field label={form.purpose === 'import' ? 'Đơn mua (PO)' : 'Đơn bán (SO)'}>
+              <select value={l.orderId} onChange={(e) => pickOrder(i, e.target.value)}>
+                <option value="">-- Không theo đơn --</option>
+                {ordersOf(l.partyCode).map((o) => <option key={o.id} value={o.id}>{o.id}{o.refNo ? ` (${o.refNo})` : ''} · còn {fmtNum(orderLeft(o), 3)} tấn</option>)}
+              </select>
+            </Field>
             <Field label="Khối lượng (tấn)">
               <input type="number" step="any" value={l.payload} onChange={(e) => setLine(i, { payload: e.target.value })} />
             </Field>
