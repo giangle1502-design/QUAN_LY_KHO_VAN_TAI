@@ -12,6 +12,7 @@ export default function Layout() {
       <aside className={'side' + (open ? ' open' : '')}>
         <div className="brand">{settings.companyName}<small>Kho & vận tải</small></div>
         <nav>
+          <NavLink to="/" end onClick={close}><span className="ico">📈</span>Tổng quan</NavLink>
           <div className="nav-group">Vận hành xe</div>
           {hasRole('bao_ve', 'thu_kho') && <NavLink to="/xe/dang-ky" onClick={close}><span className="ico">🚚</span>Đăng ký xe</NavLink>}
           {hasRole('bao_ve') && <NavLink to="/xe/bao-ve" onClick={close}><span className="ico">🛡️</span>Bảo vệ cổng</NavLink>}
@@ -26,8 +27,9 @@ export default function Layout() {
           {hasRole('ke_toan') && <NavLink to="/kho/status" onClick={close}><span className="ico">🔒</span>Đổi tình trạng thế chấp</NavLink>}
           {hasRole('thu_kho') && <NavLink to="/kho/adjust" onClick={close}><span className="ico">⚖️</span>Điều chỉnh tồn</NavLink>}
           <NavLink to="/kho/phieu" onClick={close}><span className="ico">🧾</span>Phiếu kho</NavLink>
+          {hasRole('thu_kho') && <NavLink to="/kho/ton-dau-ky" onClick={close}><span className="ico">📋</span>Nhập tồn đầu kỳ</NavLink>}
           <div className="nav-group">Danh mục</div>
-          <NavLink to="/" end onClick={close}><span className="ico">🏠</span>Tổng quan danh mục</NavLink>
+          <NavLink to="/dm" onClick={close}><span className="ico">🏠</span>Tổng quan danh mục</NavLink>
           {GROUPS.map((g) => {
             const list = CATALOGS.filter((c) => c.group === g && (isAdmin || !c.adminOnly));
             if (!list.length) return null;

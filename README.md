@@ -3,6 +3,7 @@
 - Bước 1: **Thiết lập danh mục** dùng chung cho kho và vận tải.
 - Bước 2: **Luồng xe vận tải** như app QLVT, chọn xe, tài xế, khách từ danh mục.
 - Bước 3: **Nhập kho, xuất kho, tồn kho** theo vị trí, lô và tình trạng thế chấp.
+- Bước 4: **Sẵn sàng chạy thật**: nhập tồn đầu kỳ từ Excel, in phiếu, trang Tổng quan.
 
 **Công nghệ:** React + Vite · Firebase (Auth + Firestore, realtime) · Vercel. Giống app Sale_control: đăng nhập thật, mỗi danh mục là một collection riêng, phân quyền kiểm tra cả trên máy chủ (Firestore rules).
 
@@ -61,6 +62,12 @@ Mọi thay đổi tồn đi qua 1 phiếu, ghi trong cùng 1 giao dịch: phiế
 - **Tồn kho**: xem theo vị trí và lô, hoặc theo mã hàng; tổng tấn theo KTC/HTC/DGC; tuổi tồn; Excel 3 sheet (chi tiết, theo mã hàng, tuổi tồn).
 - **Phiếu kho**: lọc theo ngày, kho, loại; Excel từng dòng; quản trị **hủy phiếu** (đảo lại tồn, giữ lịch sử).
 - Firestore rules: thủ kho/kế toán chỉ sửa được tồn và pallet vị trí khi kèm 1 phiếu mới do chính họ lập trong cùng giao dịch, đúng kho được giao.
+
+## Chạy thật
+
+- **Tổng quan** (trang đầu): số xe theo từng bước, xe đang trong kho kèm thời gian chờ, tồn theo KTC/HTC/DGC, vị trí ≥ 85%, hàng hết hạn trong 30 ngày, phiếu kho hôm nay.
+- **Nhập tồn đầu kỳ** (thủ kho): tải File mẫu, điền vị trí, mã hàng, lot, NSX, HSD, tình trạng, bên nhận thế chấp, số bao, ngày nhập (pallet và kg tự tính nếu để trống). Hệ thống kiểm tra từng dòng (mã hàng, vị trí, vị trí khóa, HTC thiếu bên nhận thế chấp) và chỉ cho ghi khi file sạch lỗi; ghi thành phiếu nhập lý do "Tồn đầu kỳ", mỗi phiếu tối đa 150 dòng, hủy được nếu sai.
+- **In phiếu**: mọi phiếu kho có bản in A4 (In → Lưu PDF) với thông tin xe, khách, chữ ký. Tên và địa chỉ công ty nhập ở Tổng quan danh mục.
 
 ## Vai trò
 

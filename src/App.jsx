@@ -13,6 +13,9 @@ import Overview from './pages/transport/Overview';
 import Stock from './pages/stock/Stock';
 import Movements from './pages/stock/Movements';
 import MovementForm from './pages/stock/MovementForm';
+import OpeningImport from './pages/stock/OpeningImport';
+import PrintMovement from './pages/stock/PrintMovement';
+import Dashboard from './pages/Dashboard';
 
 export default function App() {
   const { user, allowed, isAdmin, hasRole, loading, logout, email } = useApp();
@@ -31,8 +34,10 @@ export default function App() {
     );
   return (
     <Routes>
+      <Route path="kho/phieu/:id/in" element={<PrintMovement />} />
       <Route element={<Layout />}>
-        <Route index element={<Home />} />
+        <Route index element={<Dashboard />} />
+        <Route path="dm" element={<Home />} />
         <Route path="dm/:key" element={<CatalogPage />} />
         {hasRole('bao_ve', 'thu_kho') && <Route path="xe/dang-ky" element={<Register />} />}
         {hasRole('bao_ve') && <Route path="xe/bao-ve" element={<Guard />} />}
@@ -41,6 +46,7 @@ export default function App() {
         <Route path="xe/tong-quan" element={<Overview />} />
         <Route path="kho/ton" element={<Stock />} />
         <Route path="kho/phieu" element={<Movements />} />
+        {hasRole('thu_kho') && <Route path="kho/ton-dau-ky" element={<OpeningImport />} />}
         <Route path="kho/:type" element={<MovementForm />} />
         {isAdmin && <Route path="hang-muc" element={<FieldManager />} />}
         <Route path="*" element={<Navigate to="/" />} />

@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, getCountFromServer } from 'firebase/firestore';
+import { collection, doc, getCountFromServer, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
 import { CATALOGS, GROUPS, ROLES, roleLabel } from '../catalogs';
 
 export default function Home() {
-  const { name, role, isAdmin } = useApp();
+  const { name, role, isAdmin, settings } = useApp();
+  const [co, setCo] = useState(null);
+  const [saved, setSaved] = useState('');
   const [counts, setCounts] = useState({});
   const cats = CATALOGS.filter((c) => isAdmin || !c.adminOnly);
 
@@ -45,6 +47,16 @@ export default function Home() {
       })}
       {isAdmin && (
         <>
+          <div className="section-title">Thông tin công ty (hiện trên phiếu in)</div>
+          <div className="card inline-add" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+            <input placeholder="Tên công ty" value={co?.companyName ?? settings.companyName ?? ''} onChange={(e) => setCo({ ...(co || settings), companyName: e.target.value })} />
+            <input placeholder="Địa chỉ" value={co?.companyAddress ?? settings.companyAddress ?? ''} onChange={(e) => setCo({ ...(co || settings), companyAddress: e.target.value })} />
+            <button className="btn primary" disabled={!co} onClick={async () => {
+              await setDoc(doc(db, 'settings', 'general'), { companyName: co.companyName || '', companyAddress: co.companyAddress || '' }, { merge: true });
+              setCo(null); setSaved('Đã lưu.');
+            }}>Lưu</button>
+            {saved && <span className="small">{saved}</span>}
+          </div>
           <div className="section-title">Vai trò</div>
           <div className="table-wrap">
             <table>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
@@ -107,6 +108,7 @@ function Detail({ m, onClose }) {
         {m.reason ? ` · Lý do: ${m.reason}` : ''}
       </p>
       {m.note && <p className="small">Ghi chú: {m.note}</p>}
+      <p><Link className="btn sm" to={`/kho/phieu/${m.id}/in`} target="_blank">🖨 In phiếu</Link></p>
       {m.status === 'cancelled' && <div className="error-box">Đã hủy: {m.cancelReason}</div>}
       <div className="table-wrap" style={{ marginBottom: 12 }}>
         <table>
