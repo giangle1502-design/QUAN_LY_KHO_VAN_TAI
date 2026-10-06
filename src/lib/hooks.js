@@ -61,6 +61,7 @@ export function useStock(wh) {
   const [state, setState] = useState({ rows: [], loading: true, error: '' });
   const { inMyWarehouses } = useApp();
   useEffect(() => {
+    setState({ rows: [], loading: true, error: '' });
     const q = wh ? query(collection(db, 'stock'), where('warehouse', '==', wh)) : collection(db, 'stock');
     return onSnapshot(
       q,

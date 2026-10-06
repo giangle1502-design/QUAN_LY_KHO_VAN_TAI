@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useOpWarehouse, useOrders, useStock } from '../../lib/hooks';
-import { leftKg } from '../../lib/orders';
+import { leftKg, transitKg } from '../../lib/orders';
 import { exportSheets } from '../../lib/excel';
 import { vnDate } from '../../lib/trips';
 import { fmtNum, norm } from '../../lib/utils';
@@ -26,7 +26,7 @@ export default function Balance() {
     const names = new Map(items.map((i) => [i.code, i.name]));
     const m = new Map();
     const get = (code, nm) => {
-      if (!m.has(code)) m.set(code, { item: code, name: nm || names.get(code) || '', usable: 0, locked: 0, so: 0, po: 0, soOrders: new Set(), poOrders: new Set() });
+      if (!m.has(code)) m.set(code, { item: code, name: nm || names.get(code) || '', usable: 0, locked: 0, so: 0, po: 0, transit: 0, soOrders: new Set(), poOrders: new Set() });
       return m.get(code);
     };
     for (const r of stock) {
@@ -36,6 +36,20 @@ export default function Balance() {
     }
     // Đơn chưa gắn kho được tính vào mọi kho
     for (const o of orders) {
+      // STO: kho đi coi như phải giao, kho đến coi như sắp về; xem tất cả kho thì chỉ còn hàng đang đi đường
+      if (o.type === 'STO') {
+        const from = !wh ? inMyWarehouses(o.fromWarehouse) : o.fromWarehouse === wh;
+        const to = !wh ? inMyWarehouses(o.toWarehouse) : o.toWarehouse === wh;
+        for (const l of o.lines) {
+          const x = get(l.item, l.itemName);
+          const left = leftKg(l);
+          const tr = transitKg(l);
+          if (from && !to) { x.so += left; if (left > 0) x.soOrders.add(o.id); }
+          if (to && !from) { x.po += left + tr; if (left + tr > 0) x.poOrders.add(o.id); }
+          if (from && to) { x.transit += tr; if (tr > 0) x.poOrders.add(o.id); }
+        }
+        continue;
+      }
       if (o.warehouse && (!inMyWarehouses(o.warehouse) || (wh && o.warehouse !== wh))) continue;
       for (const l of o.lines) {
         const left = leftKg(l);
@@ -44,7 +58,7 @@ export default function Balance() {
         if (o.type === 'SO') { x.so += left; x.soOrders.add(o.id); } else { x.po += left; x.poOrders.add(o.id); }
       }
     }
-    return [...m.values()].map((x) => ({ ...x, now: x.usable - x.so, plan: x.usable + x.po - x.so }))
+    return [...m.values()].map((x) => ({ ...x, now: x.usable - x.so, plan: x.usable + x.transit + x.po - x.so }))
       .sort((a, b) => a.plan - b.plan || a.item.localeCompare(b.item));
   }, [stock, orders, statuses, items, inMyWarehouses, wh]);
 
@@ -55,7 +69,7 @@ export default function Balance() {
   const exportExcel = () => exportSheets(`Can_doi_ma_hang_${vnDate()}`, {
     'Cân đối': list.map((r) => ({
       'Mã hàng': r.item, 'Tên hàng': r.name, 'Tồn được xuất (tấn)': r.usable / 1000, 'Tồn bị khóa xuất - HTC (tấn)': r.locked / 1000,
-      'SO còn phải giao (tấn)': r.so / 1000, 'PO còn chưa về (tấn)': r.po / 1000, 'Thiếu/dư ngay (tấn)': r.now / 1000, 'Dự kiến sau khi PO về (tấn)': r.plan / 1000,
+      'SO còn phải giao (tấn)': r.so / 1000, 'PO còn chưa về (tấn)': r.po / 1000, 'Đang đi đường - STO (tấn)': r.transit / 1000, 'Thiếu/dư ngay (tấn)': r.now / 1000, 'Dự kiến sau khi PO về (tấn)': r.plan / 1000,
       'Đơn bán': [...r.soOrders].join(', '), 'Đơn mua': [...r.poOrders].join(', '),
     })),
   });
@@ -65,6 +79,7 @@ export default function Balance() {
       <p className="hint">
         <b>Thiếu/dư ngay</b> = tồn được xuất − SO còn phải giao. <b>Dự kiến</b> = tồn được xuất + PO còn chưa về − SO còn phải giao.
         Hàng thế chấp (HTC) không tính vào tồn được xuất. Đơn chưa ghi kho được tính cho mọi kho.
+        Lệnh chuyển kho (STO): xem 1 kho thì kho đi tính như SO, kho đến tính như PO; xem tất cả kho thì hàng đang đi đường cộng vào Dự kiến.
       </p>
       <div className="filters">
         <WarehousePicker value={wh} onChange={setWh} />
@@ -78,13 +93,14 @@ export default function Balance() {
         {!list.length ? <Empty /> : (
           <table>
             <thead><tr><th>Mã hàng</th><th>Tên hàng</th><th className="num">Tồn được xuất</th><th className="num">Tồn HTC (khóa)</th>
-              <th className="num">SO còn phải giao</th><th className="num">PO còn chưa về</th><th className="num">Thiếu/dư ngay</th><th className="num">Dự kiến</th></tr></thead>
+              <th className="num">SO còn phải giao</th><th className="num">PO còn chưa về</th><th className="num">Đang đi đường (STO)</th><th className="num">Thiếu/dư ngay</th><th className="num">Dự kiến</th></tr></thead>
             <tbody>
               {list.map((r) => (
                 <tr key={r.item}>
                   <td>{r.item}</td><td>{r.name}</td><td className="num">{t(r.usable)}</td><td className="num small">{r.locked ? t(r.locked) : ''}</td>
                   <td className="num" title={[...r.soOrders].join(', ')}>{r.so ? t(r.so) : ''}</td>
                   <td className="num" title={[...r.poOrders].join(', ')}>{r.po ? t(r.po) : ''}</td>
+                  <td className="num">{r.transit ? t(r.transit) : ''}</td>
                   <td className="num" style={r.now < 0 ? { color: 'var(--amber)', fontWeight: 600 } : undefined}>{t(r.now)}</td>
                   <td className="num" style={r.plan < 0 ? { color: 'var(--red)', fontWeight: 700 } : { fontWeight: 600 }}>{t(r.plan)}{r.plan < 0 ? ' ⚠' : ''}</td>
                 </tr>

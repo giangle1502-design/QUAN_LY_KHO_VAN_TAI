@@ -5,6 +5,7 @@
 - Bước 3: **Nhập kho, xuất kho, tồn kho** theo vị trí, lô và tình trạng thế chấp.
 - Bước 4: **Sẵn sàng chạy thật**: nhập tồn đầu kỳ từ Excel, in phiếu, trang Tổng quan.
 - Bước 5: **Đơn bán (SO) và đơn mua (PO)**: theo dõi đặt, đã giao/nhận, còn lại; phiếu nhập/xuất và chuyến xe gắn vào đơn.
+- Bước 6: **Lệnh chuyển kho (STO)** và **lập phiếu nhập/xuất ngay từ đơn**.
 
 **Công nghệ:** React + Vite · Firebase (Auth + Firestore, realtime) · Vercel. Giống app Sale_control: đăng nhập thật, mỗi danh mục là một collection riêng, phân quyền kiểm tra cả trên máy chủ (Firestore rules).
 
@@ -78,6 +79,22 @@ Mọi thay đổi tồn đi qua 1 phiếu, ghi trong cùng 1 giao dịch: phiế
 - **Cân đối theo mã hàng**: tồn được xuất (không tính HTC), SO còn phải giao, PO còn chưa về, *Thiếu/dư ngay* = tồn − SO, *Dự kiến* = tồn + PO − SO; mã hàng thiếu tô đỏ.
 - Trang Tổng quan có số tấn SO còn phải giao, PO còn chưa về và số đơn quá hạn.
 - Firestore rules: thủ kho chỉ cập nhật "đã giao/nhận" của đơn khi kèm 1 phiếu mới do chính họ lập gắn đúng đơn đó.
+
+### Lập phiếu từ đơn và lệnh chuyển kho (STO)
+
+Mọi lần hàng ra khỏi kho đều đi qua **phiếu xuất kho**, mọi lần hàng vào kho đều đi qua **phiếu nhập kho**; đơn chỉ quyết định phiếu trừ vào đâu:
+
+| Đơn | Kho đi | Kho đến |
+|---|---|---|
+| SO (bán) | Phiếu xuất kho → trừ "Còn phải giao" | – |
+| PO (mua) | – | Phiếu nhập kho → trừ "Còn chưa về" |
+| STO (chuyển kho) | Phiếu xuất kho → "Đã xuất", hàng thành **Đang đi đường** | Phiếu nhập kho → "Đã nhận", trừ "Đang đi đường" |
+
+- Trên danh sách và chi tiết đơn, thủ kho có nút **📤 Lập phiếu xuất kho** (SO, STO) và **📥 Lập phiếu nhập kho** (PO, STO).
+- Phiếu xuất theo SO/STO tự chọn sẵn tồn theo FIFO cho đủ phần còn lại (bỏ qua hàng HTC), báo mã hàng nào thiếu tồn.
+- Phiếu nhập theo STO tự điền đúng lot, NSX, HSD, tình trạng thế chấp của hàng đang đi đường; thủ kho kho đến chỉ chọn vị trí và sửa số thực nhận. Không nhận được nhiều hơn số đã xuất.
+- STO hoàn tất khi kho đến nhận đủ. Đóng STO thì không xuất thêm nhưng kho đến vẫn nhận nốt hàng đang đi đường. Hủy phiếu xuất của STO bị chặn nếu kho đến đã nhận (hủy phiếu nhập trước).
+- STO do kinh doanh, kế toán hoặc thủ kho kho đi lập. Đăng ký xe chọn được STO; Cân đối theo mã hàng tính STO (kho đi như SO, kho đến như PO, xem tất cả kho thì cộng hàng đang đi đường).
 
 ## Chạy thật
 

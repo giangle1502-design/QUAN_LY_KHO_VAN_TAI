@@ -40,6 +40,8 @@ export default function Dashboard() {
     const list = ordersHere.filter((o) => o.type === ty);
     return { count: list.length, left: list.reduce((s, o) => s + orderTotals(o).left, 0), late: list.filter((o) => o.dueDate && o.dueDate < today).length };
   };
+  const stoHere = openOrders.filter((o) => o.type === 'STO' && [o.fromWarehouse, o.toWarehouse].some((w) => inMyWarehouses(w) && (!wh || w === wh)));
+  const stoTransit = stoHere.reduce((s, o) => s + orderTotals(o).transit, 0);
   const byStatus = ['KTC', 'HTC', 'DGC'].map((c) => [c, sumKg(stock.filter((r) => r.goodsStatus === c))]);
 
   return (
@@ -61,6 +63,9 @@ export default function Dashboard() {
             </Link>
           );
         })}
+        <Link to="/don-hang?tab=STO" className="stat" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <div className="stat-label">Chuyển kho (STO): đang đi đường</div><div className="stat-value">{fmtNum(stoTransit / 1000, 2)} tấn</div><div className="stat-sub">{stoHere.length} lệnh đang mở</div>
+        </Link>
         <Link to="/don-hang?tab=can-doi" className="stat" style={{ textDecoration: 'none', color: 'inherit' }}>
           <div className="stat-label">Cân đối theo mã hàng</div><div className="stat-value">Xem →</div><div className="stat-sub">Tồn + PO − SO</div>
         </Link>

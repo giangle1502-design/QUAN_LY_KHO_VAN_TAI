@@ -23,7 +23,7 @@ export const ROLES = [
   ['admin', 'Quản trị', 'Toàn quyền, sửa mọi danh mục, phân quyền'],
   ['thu_kho', 'Thủ kho', 'Nhập, xuất, chuyển vị trí, điều chỉnh tồn; sửa vị trí lưu trữ và cửa xuất/nhập của kho được giao'],
   ['bao_ve', 'Bảo vệ', 'Xem danh mục (xác nhận xe vào/ra cổng ở bước sau)'],
-  ['kinh_doanh', 'Kinh doanh / Mua hàng', 'Lập và theo dõi đơn bán (SO), đơn mua (PO); xem tồn kho và chuyến xe'],
+  ['kinh_doanh', 'Kinh doanh / Mua hàng', 'Lập và theo dõi đơn bán (SO), đơn mua (PO), lệnh chuyển kho (STO); xem tồn kho và chuyến xe'],
   ['ke_toan', 'Kế toán', 'Xem mọi thứ; lập SO/PO; đổi tình trạng thế chấp (KTC, HTC, DGC)'],
   ['xem', 'Chỉ xem', 'Chỉ xem danh mục'],
 ];
@@ -241,6 +241,7 @@ export const CATALOGS = [
     seed: [
       { code: 'SO', name: 'Đơn bán', prefix: 'SO', digits: 6, next: 1 },
       { code: 'PO', name: 'Đơn mua', prefix: 'PO', digits: 6, next: 1 },
+      { code: 'STO', name: 'Lệnh chuyển kho', prefix: 'STO', digits: 6, next: 1 },
       { code: 'PN', name: 'Phiếu nhập kho', prefix: 'PN', digits: 6, next: 1 },
       { code: 'PX', name: 'Phiếu xuất kho', prefix: 'PX', digits: 6, next: 1 },
       { code: 'CV', name: 'Phiếu chuyển vị trí', prefix: 'CV', digits: 6, next: 1 },

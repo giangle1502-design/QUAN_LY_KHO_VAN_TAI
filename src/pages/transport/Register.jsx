@@ -3,7 +3,7 @@ import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useMyWarehouses, useOpWarehouse, useOrders } from '../../lib/hooks';
-import { leftKg } from '../../lib/orders';
+import { OPEN_STATUSES, ORDER_FOR_MOVE, openKg, orderWarehouse } from '../../lib/orders';
 import { fmtNum } from '../../lib/utils';
 import { PURPOSES, firstStatus, nowISO, reserveCodes, vnDate, STATUS_META } from '../../lib/trips';
 import { ErrorBox, Field } from '../../components/ui';
@@ -30,14 +30,23 @@ export default function Register() {
   const [done, setDone] = useState(null);
 
   const parties = form.purpose === 'import' ? suppliers : soldto.filter((c) => c.active !== false);
-  const { rows: orders } = useOrders(form.purpose === 'import' ? 'PO' : 'SO', true);
-  const orderLeft = (o) => o.lines.reduce((s, l) => s + leftKg(l), 0) / 1000;
-  const ordersOf = (code) => orders.filter((o) => o.partyCode === code && (!o.warehouse || o.warehouse === wh?.code));
+  // SO/PO của khách / nhà cung cấp, và lệnh chuyển kho (STO) đi từ / về kho này
+  const moveType = form.purpose === 'import' ? 'in' : 'out';
+  const { rows: allOrders } = useOrders('', false);
+  const orders = allOrders.filter((o) => ORDER_FOR_MOVE[moveType].includes(o.type)
+    && (OPEN_STATUSES.includes(o.status) || (o.type === 'STO' && moveType === 'in' && o.status === 'closed')));
+  const orderLeft = (o) => o.lines.reduce((s, l) => s + openKg(o, l, moveType), 0) / 1000;
+  const ordersOf = (code) => orders.filter((o) => orderLeft(o) > 0 && (o.type === 'STO'
+    ? orderWarehouse(o, moveType) === wh?.code
+    : o.partyCode === code && (!o.warehouse || o.warehouse === wh?.code)));
   // Chọn đơn SO/PO: khối lượng mặc định = phần còn lại của đơn
   const pickOrder = (i, id) => {
     const o = orders.find((x) => x.id === id);
     const s = o?.shipCode && shipto.find((x) => x.shipCode === o.shipCode);
-    setLine(i, { orderId: id, ...(o ? { payload: Math.round(orderLeft(o) * 1000) / 1000 } : {}), ...(s ? { shipCode: s.shipCode, address: s.address } : {}) });
+    const sto = o?.type === 'STO' ? (moveType === 'out'
+      ? { partyCode: o.toWarehouse, partyName: `Chuyển đến kho ${o.toWarehouse}`, shipCode: '', address: '' }
+      : { partyCode: o.fromWarehouse, partyName: `Chuyển từ kho ${o.fromWarehouse}` }) : {};
+    setLine(i, { orderId: id, ...(o ? { payload: Math.round(orderLeft(o) * 1000) / 1000 } : {}), ...(s ? { shipCode: s.shipCode, address: s.address } : {}), ...sto });
   };
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const setLine = (i, patch) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
@@ -191,10 +200,10 @@ export default function Register() {
                 {l.address && <small className="small">{l.address}</small>}
               </Field>
             ) : <div />}
-            <Field label={form.purpose === 'import' ? 'Đơn mua (PO)' : 'Đơn bán (SO)'}>
+            <Field label={form.purpose === 'import' ? 'Đơn mua (PO) / chuyển kho (STO)' : 'Đơn bán (SO) / chuyển kho (STO)'}>
               <select value={l.orderId} onChange={(e) => pickOrder(i, e.target.value)}>
                 <option value="">-- Không theo đơn --</option>
-                {ordersOf(l.partyCode).map((o) => <option key={o.id} value={o.id}>{o.id}{o.refNo ? ` (${o.refNo})` : ''} · còn {fmtNum(orderLeft(o), 3)} tấn</option>)}
+                {ordersOf(l.partyCode).map((o) => <option key={o.id} value={o.id}>{o.id}{o.refNo ? ` (${o.refNo})` : ''}{o.type === 'STO' ? ` · ${o.fromWarehouse} → ${o.toWarehouse}` : ''} · {o.type === 'STO' && moveType === 'in' ? 'đang đi đường' : 'còn'} {fmtNum(orderLeft(o), 3)} tấn</option>)}
               </select>
             </Field>
             <Field label="Khối lượng (tấn)">

@@ -18,6 +18,7 @@ export default function Layout() {
           <div className="nav-group">Đơn hàng</div>
           <NavLink to="/don-hang?tab=SO" className={orderTab('SO')} onClick={close}><span className="ico">🧾</span>Đơn bán (SO)</NavLink>
           <NavLink to="/don-hang?tab=PO" className={orderTab('PO')} onClick={close}><span className="ico">🛒</span>Đơn mua (PO)</NavLink>
+          <NavLink to="/don-hang?tab=STO" className={orderTab('STO')} onClick={close}><span className="ico">🔁</span>Chuyển kho (STO)</NavLink>
           <NavLink to="/don-hang?tab=can-doi" className={orderTab('can-doi')} onClick={close}><span className="ico">⚖️</span>Cân đối theo mã hàng</NavLink>
           <div className="nav-group">Vận hành xe</div>
           {hasRole('bao_ve', 'thu_kho') && <NavLink to="/xe/dang-ky" onClick={close}><span className="ico">🚚</span>Đăng ký xe</NavLink>}
