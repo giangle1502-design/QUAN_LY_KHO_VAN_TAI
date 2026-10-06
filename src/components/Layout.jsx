@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { CATALOGS, GROUPS, roleLabel } from '../catalogs';
+import { REPORTS } from '../pages/reports/Reports';
 
 export default function Layout() {
   const { name, email, role, isAdmin, hasRole, logout, settings } = useApp();
@@ -35,6 +36,8 @@ export default function Layout() {
           {hasRole('thu_kho') && <NavLink to="/kho/adjust" onClick={close}><span className="ico">⚖️</span>Điều chỉnh tồn</NavLink>}
           <NavLink to="/kho/phieu" onClick={close}><span className="ico">🧾</span>Phiếu kho</NavLink>
           {hasRole('thu_kho') && <NavLink to="/kho/ton-dau-ky" onClick={close}><span className="ico">📋</span>Nhập tồn đầu kỳ</NavLink>}
+          <div className="nav-group">Báo cáo</div>
+          {REPORTS.map(([k, ic, l]) => <NavLink key={k} to={`/bao-cao/${k}`} onClick={close}><span className="ico">{ic}</span>{l}</NavLink>)}
           <div className="nav-group">Danh mục</div>
           <NavLink to="/dm" onClick={close}><span className="ico">🏠</span>Tổng quan danh mục</NavLink>
           {GROUPS.map((g) => {

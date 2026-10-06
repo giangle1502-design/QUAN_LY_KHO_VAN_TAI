@@ -96,6 +96,17 @@ Mọi lần hàng ra khỏi kho đều đi qua **phiếu xuất kho**, mọi l�
 - STO hoàn tất khi kho đến nhận đủ. Đóng STO thì không xuất thêm nhưng kho đến vẫn nhận nốt hàng đang đi đường. Hủy phiếu xuất của STO bị chặn nếu kho đến đã nhận (hủy phiếu nhập trước).
 - STO do kinh doanh, kế toán hoặc thủ kho kho đi lập. Đăng ký xe chọn được STO; Cân đối theo mã hàng tính STO (kho đi như SO, kho đến như PO, xem tất cả kho thì cộng hàng đang đi đường).
 
+## Báo cáo
+
+Mục **Báo cáo** trên menu (mọi vai trò xem được, lọc theo kho và tìm mã hàng; mỗi báo cáo có nút Excel và In khổ ngang). Đơn vị tấn.
+
+1. **Tồn kho tổng theo kho**: mỗi kho: tồn, KTC/HTC/DGC, số bao, pallet, số mã hàng, vị trí đang dùng, sức chứa, % lấp đầy; bảng mã hàng × kho.
+2. **Tồn kho theo vị trí**: mọi vị trí kể cả trống: sức chứa, đang chứa, còn trống, % lưu trữ, Empty bin/Khóa, mã hàng, lot, tình trạng, tồn, ngày nhập sớm nhất; lọc đang chứa / trống / ≥ 85% / khóa.
+3. **Tồn kho theo trạng thái**: tổng KTC/HTC/DGC và % trên tổng tồn; theo mã hàng; hàng HTC theo bên nhận thế chấp (số hợp đồng, lot).
+4. **Tồn kho cho Sale**: tồn kho, trong đó HTC, tồn được bán, hàng chưa giao (SO), **có thể bán ngay**, hàng sắp về (PO, ETA gần nhất), **có thể bán gồm hàng sắp về**; số âm tô đỏ. Khi lọc 1 kho có tính STO chuyển đi/chuyển về.
+5. **Đơn hàng chưa giao**: theo khách hàng (còn phải giao, quá hạn) và chi tiết từng dòng SO, kèm tồn được xuất của mã hàng và số ngày trễ.
+6. **Đơn mua chưa nhập kho**: theo nhà cung cấp × mã hàng và chi tiết từng dòng PO, kèm ETA và số ngày trễ.
+
 ## Chạy thật
 
 - **Tổng quan** (trang đầu): số xe theo từng bước, xe đang trong kho kèm thời gian chờ, tồn theo KTC/HTC/DGC, vị trí ≥ 85%, hàng hết hạn trong 30 ngày, phiếu kho hôm nay.
