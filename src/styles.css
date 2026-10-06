@@ -272,3 +272,7 @@ a.btn { text-decoration: none; display: inline-block; }
   .report-page th { position: static; }
   .report-page td, .report-page th { font-size: 10.5px; padding: 3px 5px; }
 }
+
+.suffix-input { display: flex; align-items: center; gap: 6px; }
+.suffix-input input { flex: 1; min-width: 0; }
+.suffix-input b { color: var(--muted); font-weight: 600; }

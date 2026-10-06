@@ -10,14 +10,22 @@
 // ============================================================================
 
 export const FIELD_TYPES = [
-  ['text', 'Chữ (1 dòng)'],
-  ['textarea', 'Đoạn văn'],
+  ['text', 'Văn bản (1 dòng)'],
+  ['textarea', 'Đoạn văn (nhiều dòng)'],
   ['number', 'Số'],
+  ['currency', 'Tiền tệ (VNĐ)'],
+  ['percent', 'Phần trăm (%)'],
   ['date', 'Ngày'],
+  ['datetime', 'Ngày giờ'],
   ['checkbox', 'Có / Không'],
   ['select', 'Danh sách chọn'],
+  ['ref', 'Chọn từ danh mục'],
   ['email', 'Email'],
+  ['phone', 'Số điện thoại'],
+  ['url', 'Đường link'],
 ];
+// Kiểu lưu dạng số (căn phải, cộng được, Excel ra số)
+export const NUMERIC_TYPES = ['number', 'currency', 'percent'];
 
 export const ROLES = [
   ['admin', 'Quản trị', 'Toàn quyền, sửa mọi danh mục, phân quyền'],

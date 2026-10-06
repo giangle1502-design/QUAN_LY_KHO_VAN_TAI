@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
@@ -7,18 +8,20 @@ import { keyFieldsOf } from '../lib/fields';
 import { norm } from '../lib/utils';
 import { ErrorBox } from '../components/ui';
 
-const typeLabel = (t) => FIELD_TYPES.find((x) => x[0] === t)?.[1] || { ref: 'Chọn từ danh mục', multiref: 'Chọn nhiều từ danh mục' }[t] || t;
+const typeLabel = (t) => FIELD_TYPES.find((x) => x[0] === t)?.[1] || { multiref: 'Chọn nhiều từ danh mục' }[t] || t;
+const REF_TARGETS = CATALOGS.filter((c) => !['codeRules', 'users'].includes(c.key));
 
-// Quản lý hạng mục: đổi tên, sắp xếp, ẩn, bắt buộc, danh sách chọn và thêm trường mới cho mọi danh mục
+// Quản lý trường (hạng mục): đổi tên, sắp xếp, ẩn, bắt buộc, danh sách chọn và thêm trường mới cho mọi danh mục
 export default function FieldManager() {
   const { fieldsOf, isAdmin } = useApp();
-  const [catKey, setCatKey] = useState(CATALOGS[0].key);
+  const [params] = useSearchParams();
+  const [catKey, setCatKey] = useState(() => (catalogByKey(params.get('dm')) ? params.get('dm') : CATALOGS[0].key));
   const cat = catalogByKey(catKey);
   const [list, setList] = useState([]);
   const [dirty, setDirty] = useState(false);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
-  const [nf, setNf] = useState({ label: '', type: 'text' });
+  const [nf, setNf] = useState({ label: '', type: 'text', ref: '' });
 
   useEffect(() => {
     setList(fieldsOf(catKey).map((f) => ({ ...f, optionsText: (f.options || []).join(', ') })));
@@ -40,21 +43,24 @@ export default function FieldManager() {
   const add = () => {
     const label = nf.label.trim();
     if (!label) return;
+    if (nf.type === 'ref' && !nf.ref) return setErr('Chọn danh mục để lấy dữ liệu cho trường này.');
     if (list.some((f) => norm(f.label) === norm(label))) return setErr('Đã có trường cùng tên.');
     const slug = norm(label).replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30) || 'truong';
     const key = `c_${slug}_${Date.now().toString(36).slice(-4)}`;
-    setList((l) => [...l, { key, label, type: nf.type, custom: true, required: false, hidden: false, optionsText: '' }]);
-    setNf({ label: '', type: 'text' }); setDirty(true); setErr('');
+    setList((l) => [...l, { key, label, type: nf.type, ...(nf.type === 'ref' ? { ref: nf.ref } : {}), custom: true, required: false, hidden: false, optionsText: '' }]);
+    setNf({ label: '', type: 'text', ref: '' }); setDirty(true); setErr('');
   };
 
   const save = async () => {
     setErr(''); setMsg('');
     const bad = list.find((f) => !String(f.label || '').trim());
     if (bad) return setErr('Tên trường không được để trống.');
+    const noRef = list.find((f) => f.custom && f.type === 'ref' && !f.ref);
+    if (noRef) return setErr(`Trường "${noRef.label}": chọn danh mục để lấy dữ liệu.`);
     const out = list.map((f) => {
       const o = { key: f.key, label: f.label.trim(), required: !!f.required, hidden: !!f.hidden };
       if (f.type === 'select' && !f.labels) o.options = f.optionsText.split(',').map((s) => s.trim()).filter(Boolean);
-      if (f.custom) Object.assign(o, { custom: true, type: f.type });
+      if (f.custom) Object.assign(o, { custom: true, type: f.type, ...(f.type === 'ref' ? { ref: f.ref } : {}) });
       return o;
     });
     try {
@@ -70,7 +76,7 @@ export default function FieldManager() {
   return (
     <div>
       <div className="page-head">
-        <h1>🧩 Quản lý hạng mục</h1>
+        <h1>🧩 Quản lý trường (hạng mục)</h1>
         <div className="actions">
           <select value={catKey} onChange={(e) => (!dirty || window.confirm('Bỏ các thay đổi chưa lưu?')) && setCatKey(e.target.value)}>
             {GROUPS.map((g) => (
@@ -83,7 +89,8 @@ export default function FieldManager() {
         </div>
       </div>
       <p className="hint">
-        Đổi tên, sắp xếp, ẩn hoặc bắt buộc nhập cho từng trường; thêm trường mới (chữ, số, ngày, danh sách chọn, có/không).
+        Chọn danh mục ở góc phải. Đổi tên, sắp xếp, ẩn hoặc bắt buộc nhập cho từng trường; thêm trường mới với kiểu dữ liệu:
+        {' '}{FIELD_TYPES.map((x) => x[1]).join(', ')}.
         Trường khóa ({keys.map((k) => cat.fields.find((f) => f.key === k)?.label).join(' + ')}) luôn bắt buộc. Trường có sẵn không xóa được, chỉ ẩn.
       </p>
       <ErrorBox error={err} />
@@ -106,9 +113,17 @@ export default function FieldManager() {
                   </td>
                   <td>
                     {f.custom ? (
-                      <select value={f.type} onChange={(e) => upd(i, { type: e.target.value })}>
-                        {FIELD_TYPES.map(([t, l]) => <option key={t} value={t}>{l}</option>)}
-                      </select>
+                      <>
+                        <select value={f.type} onChange={(e) => upd(i, { type: e.target.value })}>
+                          {FIELD_TYPES.map(([t, l]) => <option key={t} value={t}>{l}</option>)}
+                        </select>
+                        {f.type === 'ref' && (
+                          <select value={f.ref || ''} onChange={(e) => upd(i, { ref: e.target.value })} style={{ marginTop: 4 }}>
+                            <option value="">-- Lấy từ danh mục --</option>
+                            {REF_TARGETS.map((c) => <option key={c.key} value={c.key}>{c.title}</option>)}
+                          </select>
+                        )}
+                      </>
                     ) : <span className="small">{typeLabel(f.type)}{f.ref ? `: ${catalogByKey(f.ref)?.short}` : ''}</span>}
                   </td>
                   <td>
@@ -135,6 +150,12 @@ export default function FieldManager() {
         <select value={nf.type} onChange={(e) => setNf({ ...nf, type: e.target.value })}>
           {FIELD_TYPES.map(([t, l]) => <option key={t} value={t}>{l}</option>)}
         </select>
+        {nf.type === 'ref' && (
+          <select value={nf.ref} onChange={(e) => setNf({ ...nf, ref: e.target.value })}>
+            <option value="">-- Lấy từ danh mục --</option>
+            {REF_TARGETS.map((c) => <option key={c.key} value={c.key}>{c.title}</option>)}
+          </select>
+        )}
         <button className="btn" onClick={add}>+ Thêm</button>
       </div>
     </div>

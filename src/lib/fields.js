@@ -63,7 +63,7 @@ export function docIdOf(cat, row) {
 
 // Chuẩn hóa giá trị trước khi lưu
 export function cleanValue(f, v) {
-  if (f.type === 'number') return v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v);
+  if (['number', 'currency', 'percent'].includes(f.type)) return v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v);
   if (f.type === 'checkbox') return !!v;
   if (f.type === 'multiref') return Array.isArray(v) ? v : String(v || '').split(/[,;]/).map((x) => x.trim()).filter(Boolean);
   if (f.type === 'email') return String(v ?? '').trim().toLowerCase();

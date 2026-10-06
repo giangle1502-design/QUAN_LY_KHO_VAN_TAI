@@ -17,9 +17,17 @@ export default function FieldInput({ field: f, value, onChange, disabled, onPick
     );
   if (f.type === 'checkbox') return <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} disabled={disabled} />;
   if (f.type === 'textarea') return <textarea rows={2} value={value ?? ''} onChange={(e) => onChange(e.target.value)} disabled={disabled} />;
+  if (f.type === 'currency') return <MoneyInput value={value} onChange={onChange} disabled={disabled} />;
+  if (f.type === 'percent')
+    return (
+      <span className="suffix-input">
+        <input type="number" step="any" value={value ?? ''} onChange={(e) => onChange(e.target.value)} disabled={disabled} /><b>%</b>
+      </span>
+    );
   return (
     <input
-      type={f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : f.type === 'email' ? 'email' : 'text'}
+      type={{ number: 'number', date: 'date', datetime: 'datetime-local', email: 'email', phone: 'tel', url: 'url' }[f.type] || 'text'}
+      placeholder={f.type === 'url' ? 'https://…' : undefined}
       step="any"
       value={value ?? ''}
       onChange={(e) => onChange(e.target.value)}
@@ -89,9 +97,23 @@ function MultiRefInput({ field: f, value, onChange, disabled }) {
   );
 }
 
+// Tiền: hiện dấu chấm phân cách hàng nghìn khi gõ, lưu số
+function MoneyInput({ value, onChange, disabled }) {
+  const shown = value === '' || value == null ? '' : fmtNum(value);
+  return (
+    <span className="suffix-input">
+      <input inputMode="numeric" value={shown} disabled={disabled}
+        onChange={(e) => { const d = e.target.value.replace(/[^\d-]/g, ''); onChange(d === '' || d === '-' ? '' : Number(d)); }} /><b>đ</b>
+    </span>
+  );
+}
+
 // Giá trị hiển thị trong bảng / Excel
 export function displayValue(f, v, forExcel) {
   if (v === null || v === undefined || v === '') return '';
+  if (f.type === 'currency') return forExcel ? Number(v) : `${fmtNum(v)} đ`;
+  if (f.type === 'percent') return forExcel ? Number(v) : `${fmtNum(v, 2)}%`;
+  if (f.type === 'datetime') return forExcel ? String(v).replace('T', ' ') : `${fmtDate(String(v).slice(0, 10))} ${String(v).slice(11, 16)}`;
   if (f.type === 'checkbox') return v ? (forExcel ? 'x' : '✓') : '';
   if (f.type === 'multiref') return (v || []).join(', ');
   if (f.type === 'select') return f.labels?.[v] || v;

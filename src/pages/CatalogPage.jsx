@@ -1,12 +1,12 @@
 import { useMemo, useRef, useState } from 'react';
-import { useParams, Navigate } from 'react-router-dom';
+import { Link, useParams, Navigate } from 'react-router-dom';
 import {
   collection, deleteDoc, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, where, writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
 import { useCollection } from '../lib/hooks';
-import { CATALOGS, catalogByKey } from '../catalogs';
+import { CATALOGS, catalogByKey, NUMERIC_TYPES } from '../catalogs';
 import { applyComputed, cleanValue, defaultsOf, docIdOf, keyFieldsOf } from '../lib/fields';
 import { exportSheets, exportTemplate, readFirstSheet, toNumber, toYmd } from '../lib/excel';
 import { norm, today } from '../lib/utils';
@@ -84,6 +84,7 @@ function Catalog({ cat }) {
         <div className="actions">
           {editable && <button className="btn primary" onClick={() => setEditing({})}>+ Thêm</button>}
           <button className="btn" onClick={exportExcel}>⬇ Excel</button>
+          {isAdmin && <Link className="btn" to={`/hang-muc?dm=${cat.key}`} title="Đổi tên, ẩn, thêm trường cho danh mục này">🧩 Quản lý trường</Link>}
           {editable && (
             <>
               <button className="btn" onClick={() => fileRef.current.click()}>⬆ Nhập Excel</button>
@@ -116,14 +117,14 @@ function Catalog({ cat }) {
             <thead>
               <tr>
                 <th className="stt">STT</th>
-                {shown.map((f) => <th key={f.key} className={f.type === 'number' ? 'num' : ''}>{f.label}</th>)}
+                {shown.map((f) => <th key={f.key} className={NUMERIC_TYPES.includes(f.type) ? 'num' : ''}>{f.label}</th>)}
               </tr>
             </thead>
             <tbody>
               {visible.map((r, i) => (
                 <tr key={r._id} onClick={() => setEditing(r)} style={{ cursor: 'pointer' }}>
                   <td className="stt">{i + 1}</td>
-                  {shown.map((f) => <td key={f.key} className={f.type === 'number' ? 'num' : f.type === 'textarea' ? '' : 'nowrap'}><Cell f={f} r={r} /></td>)}
+                  {shown.map((f) => <td key={f.key} className={NUMERIC_TYPES.includes(f.type) ? 'num' : f.type === 'textarea' ? '' : 'nowrap'}><Cell f={f} r={r} /></td>)}
                 </tr>
               ))}
             </tbody>
@@ -147,6 +148,7 @@ function Cell({ f, r }) {
     );
   }
   const text = displayValue(f, v);
+  if (f.type === 'url' && text) return <a href={/^https?:\/\//i.test(text) ? text : `https://${text}`} target="_blank" rel="noreferrer">{String(text).replace(/^https?:\/\//i, '').slice(0, 40)}</a>;
   if (f.type === 'textarea') return <span className="small" title={text}>{String(text).slice(0, 60)}{String(text).length > 60 ? '…' : ''}</span>;
   return text;
 }
@@ -300,7 +302,7 @@ async function importRows(cat, fields, file, app) {
     for (const f of inputFields) {
       if (colOf[f.key] === undefined) continue;
       const raw = cells[colOf[f.key]];
-      if (f.type === 'number') r[f.key] = toNumber(raw);
+      if (NUMERIC_TYPES.includes(f.type)) r[f.key] = toNumber(raw);
       else if (f.type === 'date') r[f.key] = toYmd(raw);
       else if (f.type === 'checkbox') r[f.key] = TRUE_WORDS.includes(norm(raw));
       else r[f.key] = cleanValue(f, raw instanceof Date ? toYmd(raw) : String(raw ?? ''));

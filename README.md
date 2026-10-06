@@ -30,7 +30,11 @@
 
 Mỗi danh mục có: STT, tìm kiếm, thêm/sửa, xuất Excel, **nhập Excel** (dòng trùng mã sẽ cập nhật), File mẫu. Không xóa được bản ghi đang được danh mục khác dùng.
 
-**Quản lý hạng mục** (chỉ quản trị): với mọi danh mục, đổi tên trường, sắp xếp, ẩn, bắt buộc, sửa danh sách chọn và **thêm trường mới** (chữ, đoạn văn, số, ngày, có/không, danh sách chọn, email). Trường mới tự hiện trong form, bảng và Excel.
+**Quản lý trường (hạng mục)** (chỉ quản trị): với mọi danh mục, đổi tên trường, sắp xếp, ẩn, bắt buộc, sửa danh sách chọn và **thêm trường mới** (chữ, đoạn văn, số, ngày, có/không, danh sách chọn, email). Trường mới tự hiện trong form, bảng và Excel.
+
+### Quản lý trường (hạng mục)
+
+Quản trị vào menu *Danh mục → Quản lý trường (hạng mục)* hoặc bấm **🧩 Quản lý trường** trên trang của từng danh mục. Mỗi danh mục: đổi tên, sắp xếp, ẩn, bắt buộc nhập, sửa danh sách chọn, thêm trường mới. Kiểu dữ liệu: Văn bản, Đoạn văn, Số, Tiền tệ (VNĐ, tự chấm hàng nghìn), Phần trăm, Ngày, Ngày giờ, Có/Không, Danh sách chọn, Chọn từ danh mục (vd. Nhà cung cấp), Email, Số điện thoại, Đường link. Trường mới tự có trong form, bảng, file mẫu, nhập và xuất Excel.
 
 ## Luồng xe vận tải
 
@@ -171,7 +175,7 @@ src/
 ├── catalogs.js            # Định nghĩa tất cả danh mục và trường có sẵn
 ├── context/AppContext.jsx # Đăng nhập, vai trò, kho được giao, cấu hình hạng mục
 ├── pages/CatalogPage.jsx  # Trang danh mục dùng chung (bảng, form, Excel)
-├── pages/FieldManager.jsx # Quản lý hạng mục
+├── pages/FieldManager.jsx # Quản lý trường (hạng mục)
 ├── pages/transport/       # Đăng ký xe, Bảo vệ, Thủ kho, Giao hàng, Tổng quan
 ├── pages/stock/           # Tồn kho, Phiếu kho, form lập phiếu
 ├── lib/stock.js           # Ghi phiếu và cập nhật tồn trong 1 giao dịch

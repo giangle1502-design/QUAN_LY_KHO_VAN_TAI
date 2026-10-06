@@ -40,6 +40,7 @@ export default function Layout() {
           {REPORTS.map(([k, ic, l]) => <NavLink key={k} to={`/bao-cao/${k}`} onClick={close}><span className="ico">{ic}</span>{l}</NavLink>)}
           <div className="nav-group">Danh mục</div>
           <NavLink to="/dm" onClick={close}><span className="ico">🏠</span>Tổng quan danh mục</NavLink>
+          {isAdmin && <NavLink to="/hang-muc" onClick={close}><span className="ico">🧩</span>Quản lý trường (hạng mục)</NavLink>}
           {GROUPS.map((g) => {
             const list = CATALOGS.filter((c) => c.group === g && (isAdmin || !c.adminOnly));
             if (!list.length) return null;
@@ -52,9 +53,6 @@ export default function Layout() {
               </div>
             );
           })}
-          {isAdmin && (
-            <NavLink to="/hang-muc" onClick={close}><span className="ico">🧩</span>Quản lý hạng mục</NavLink>
-          )}
         </nav>
         <div className="me">
           <div><b>{name}</b><small>{email}</small><small className="role">{roleLabel(role)}</small></div>
