@@ -286,7 +286,8 @@ function Form({ type }) {
         <Link className="btn" to="/kho/phieu">Danh sách phiếu</Link>
       </div>
       {done && <div className="ok-box" style={{ marginBottom: 10 }}>Đã lập phiếu <b className="mono">{done}</b>. Tồn kho đã cập nhật. <Link to={`/kho/phieu/${done}/in`} target="_blank">🖨 In phiếu</Link>
-        {type === 'in' && <> · <Link className="btn primary" to={`/kho/phieu/${done}/nhan`} target="_blank">🏷️ In nhãn pallet cho phiếu này</Link></>}</div>}
+        {type === 'in' && <> · <Link className="btn primary" to={`/kho/phieu/${done}/nhan`} target="_blank">🏷️ In nhãn pallet cho phiếu này</Link></>}
+        {type === 'out' && <> · <Link className="btn primary" to={`/kho/phieu/${done}/soan`} target="_blank">📋 In phiếu soạn hàng</Link></>}</div>}
       {type === 'in' && !done && <p className="hint">Lưu phiếu nhập xong sẽ hiện nút <b>🏷️ In nhãn pallet</b> (mỗi pallet 1 nhãn). In lại sau: <i>Phiếu kho</i> → nút 🏷️ In nhãn ở dòng phiếu.</p>}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="form-grid">

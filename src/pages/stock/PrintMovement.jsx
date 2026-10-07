@@ -7,7 +7,7 @@ import { MOVE_TYPES } from '../../lib/stock';
 import { fmtDate, fmtNum } from '../../lib/utils';
 
 // Bản in phiếu kho (In → Lưu PDF hoặc in giấy A4)
-export default function PrintMovement() {
+export default function PrintMovement({ pick = false }) {
   const { id } = useParams();
   const { settings } = useApp();
   const [m, setM] = useState(undefined);
@@ -30,7 +30,20 @@ export default function PrintMovement() {
   if (!m) return <div className="center">Không tìm thấy phiếu {id}.</div>;
   const meta = MOVE_TYPES[m.type];
   const tot = (k) => m.lines.reduce((s, l) => s + (Number(l[k]) || 0), 0);
-  const signs = m.type === 'out'
+  // Phiếu xuất (giao cho khách/tài xế) chỉ cần mã hàng + số lượng; chi tiết lot, vị trí, TTHH nằm ở phiếu soạn hàng
+  const summary = m.type === 'out' && !pick;
+  const groups = [];
+  if (summary) {
+    const g = new Map();
+    for (const l of m.lines) {
+      const x = g.get(l.item) || { item: l.item, itemName: l.itemName, kg: 0, bags: 0 };
+      x.kg += Number(l.kg) || 0; x.bags += Number(l.bags) || 0; g.set(l.item, x);
+    }
+    groups.push(...g.values());
+  }
+  const pickLines = pick ? [...m.lines].sort((a, b) => String(a.location).localeCompare(String(b.location)) || String(a.item).localeCompare(String(b.item))) : [];
+  const signs = pick ? ['Người soạn hàng', 'Thủ kho', 'Người kiểm tra']
+    : m.type === 'out'
     ? ['Người lập phiếu', 'Thủ kho', 'Tài xế / Người nhận', 'Bảo vệ']
     : m.type === 'in' ? ['Người lập phiếu', 'Thủ kho', 'Người giao hàng', 'Bảo vệ'] : ['Người lập phiếu', 'Thủ kho', 'Kế toán', 'Người duyệt'];
 
@@ -40,12 +53,14 @@ export default function PrintMovement() {
         <Link className="btn" to="/kho/phieu">← Phiếu kho</Link>
         <button className="btn primary" onClick={() => window.print()}>🖨 In / Lưu PDF</button>
         {m.type === 'in' && m.status !== 'cancelled' && <Link className="btn" to={`/kho/phieu/${m.id}/nhan`}>🏷️ In nhãn pallet</Link>}
+        {m.type === 'out' && (pick ? <Link className="btn" to={`/kho/phieu/${m.id}/in`}>📄 Phiếu xuất kho</Link> : <Link className="btn" to={`/kho/phieu/${m.id}/soan`}>📋 Phiếu soạn hàng</Link>)}
       </div>
       <div className="print-head">
         <div><b>{co?.name || settings.companyName}</b>{(co ? co.address : settings.companyAddress) ? <><br /><span className="small">{co ? co.address : settings.companyAddress}</span></> : null}{co?.taxCode ? <><br /><span className="small">MST {co.taxCode}</span></> : null}<br /><span className="small">{wh ? `${wh.name}${wh.address ? ' – ' + wh.address : ''}` : `Kho ${m.warehouse}`}</span></div>
         <div style={{ textAlign: 'right' }}>Số: <b>{m.id}</b><br /><span className="small">Ngày {fmtDate(m.date)}</span></div>
       </div>
-      <h2 className="print-title">PHIẾU {meta.label.toUpperCase()}</h2>
+      <h2 className="print-title">{pick ? 'PHIẾU SOẠN HÀNG' : `PHIẾU ${meta.label.toUpperCase()}`}</h2>
+      {pick && <p className="small" style={{ textAlign: 'center', marginTop: -6 }}>Theo phiếu xuất kho {m.id} · sắp theo vị trí để đi lấy hàng</p>}
       {m.status === 'cancelled' && <div className="error-box">PHIẾU ĐÃ HỦY: {m.cancelReason}</div>}
       <table className="print-info"><tbody>
         {co && <tr><td>Công ty chủ hàng</td><td>{co.code}{co.name && co.name !== co.code ? ` – ${co.name}` : ''}</td></tr>}
@@ -59,6 +74,22 @@ export default function PrintMovement() {
         {m.reason && <tr><td>Lý do</td><td>{m.reason}</td></tr>}
         {m.note && <tr><td>Ghi chú</td><td>{m.note}</td></tr>}
       </tbody></table>
+      {summary ? (
+      <table className="print-lines">
+        <thead><tr><th>STT</th><th>Mã hàng</th><th>Tên hàng</th><th className="num">Số lượng (tấn)</th><th className="num">Số bao</th></tr></thead>
+        <tbody>{groups.map((g, i) => <tr key={g.item}><td>{i + 1}</td><td>{g.item}</td><td>{g.itemName}</td><td className="num">{fmtNum(g.kg / 1000, 3, 3)}</td><td className="num">{fmtNum(g.bags)}</td></tr>)}</tbody>
+        <tfoot><tr><td colSpan={3}>Cộng</td><td className="num">{fmtNum(tot('kg') / 1000, 3, 3)}</td><td className="num">{fmtNum(tot('bags'))}</td></tr></tfoot>
+      </table>
+      ) : pick ? (
+      <table className="print-lines">
+        <thead><tr><th>STT</th><th>Vị trí</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th><th>NSX</th><th>HSD</th><th>Tình trạng</th><th className="num">Số tấn</th><th className="num">Pallet</th><th className="num">Số bao</th><th>Đã soạn</th></tr></thead>
+        <tbody>{pickLines.map((l, i) => (
+          <tr key={i}><td>{i + 1}</td><td><b>{l.location}</b></td><td>{l.item}</td><td>{l.itemName}</td><td>{l.lot}</td><td>{fmtDate(l.mfgDate)}</td><td>{fmtDate(l.expDate)}</td>
+            <td>{l.goodsStatus}{l.pledgee ? ` (${l.pledgee})` : ''}</td><td className="num">{fmtNum(l.kg / 1000, 3, 3)}</td><td className="num">{fmtNum(l.pallets, 2)}</td><td className="num">{fmtNum(l.bags)}</td><td style={{ textAlign: 'center' }}>☐</td></tr>
+        ))}</tbody>
+        <tfoot><tr><td colSpan={8}>Cộng</td><td className="num">{fmtNum(tot('kg') / 1000, 3, 3)}</td><td className="num">{fmtNum(tot('pallets'), 2)}</td><td className="num">{fmtNum(tot('bags'))}</td><td></td></tr></tfoot>
+      </table>
+      ) : (
       <table className="print-lines">
         <thead><tr><th>STT</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th><th>Vị trí</th>{m.type === 'move' && <th>Đến vị trí</th>}
           <th>Tình trạng</th>{m.type === 'status' && <th>Tình trạng mới</th>}<th className="num">Số tấn</th><th className="num">Pallet</th><th className="num">Số bao</th></tr></thead>
@@ -71,6 +102,7 @@ export default function PrintMovement() {
         </tbody>
         <tfoot><tr><td colSpan={m.type === 'move' || m.type === 'status' ? 7 : 6}>Cộng</td><td className="num">{fmtNum(tot('kg') / 1000, 3, 3)}</td><td className="num">{fmtNum(tot('pallets'), 2)}</td><td className="num">{fmtNum(tot('bags'))}</td></tr></tfoot>
       </table>
+      )}
       <div className="print-signs">
         {signs.map((s) => <div key={s}><b>{s}</b><br /><span className="small">(Ký, ghi rõ họ tên)</span><div className="sign-space" />{s === 'Người lập phiếu' ? m.createdByName : ''}</div>)}
       </div>

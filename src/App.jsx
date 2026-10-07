@@ -39,6 +39,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="kho/phieu/:id/in" element={<PrintMovement />} />
+      <Route path="kho/phieu/:id/soan" element={<PrintMovement pick />} />
       <Route path="kho/phieu/:id/nhan" element={<PrintLabels />} />
       <Route path="kho/giai-chap/:id/in" element={<PrintRelease />} />
       <Route element={<Layout />}>
