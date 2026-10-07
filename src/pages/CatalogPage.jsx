@@ -27,6 +27,7 @@ function Catalog({ cat }) {
   const shown = fields.filter((f) => !f.hidden);
   const { rows, loading, error } = useCollection(cat.key);
   const [q, setQ] = useState('');
+  const [onlyMissing, setOnlyMissing] = useState(false);
   const [editing, setEditing] = useState(null); // {} = thêm mới
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
@@ -37,12 +38,17 @@ function Catalog({ cat }) {
     () => (cat.warehouseField && !isAdmin ? rows.filter((r) => inMyWarehouses(r[cat.warehouseField])) : rows),
     [rows, cat, isAdmin, inMyWarehouses]
   );
+  // Dòng còn thiếu trường bắt buộc (vd. nhập Excel chưa đủ, bổ sung sau)
+  const reqFields = fields.filter((f) => f.required && !f.computed && !f.system && !f.hidden);
+  const missingOf = (r) => reqFields.filter((f) => r[f.key] === '' || r[f.key] == null);
+  const missingCount = mine.filter((r) => missingOf(r).length).length;
   const visible = useMemo(() => {
     let list = mine;
+    if (onlyMissing) list = list.filter((r) => missingOf(r).length);
     const nq = norm(q);
     if (nq) list = list.filter((r) => shown.some((f) => norm(displayValue(f, r[f.key])).includes(nq)));
     return [...list].sort((a, b) => String(a._id).localeCompare(String(b._id), 'vi', { numeric: true }));
-  }, [mine, q, shown]);
+  }, [mine, q, shown, onlyMissing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const editable = canEdit(cat);
 
@@ -69,8 +75,12 @@ function Catalog({ cat }) {
     setErr(''); setMsg('');
     try {
       const res = await importRows(cat, fields, file, app);
-      setMsg(`Nhập Excel: ${res.added} dòng mới, ${res.updated} dòng cập nhật.` + (res.skipped.length ? ` Bỏ qua ${res.skipped.length} dòng.` : ''));
-      if (res.skipped.length) setErr(res.skipped.slice(0, 15).join('\n') + (res.skipped.length > 15 ? `\n… và ${res.skipped.length - 15} dòng khác` : ''));
+      setMsg(`Nhập Excel: ${res.added} dòng mới, ${res.updated} dòng cập nhật.`
+        + (res.incomplete.length ? ` ${res.incomplete.length} dòng còn thiếu thông tin, đã nhập và đánh dấu ⚠ để bổ sung sau.` : '')
+        + (res.skipped.length ? ` Bỏ qua ${res.skipped.length} dòng.` : ''));
+      const notes = [...res.skipped, ...res.incomplete];
+      if (notes.length) setErr(notes.slice(0, 15).join('\n') + (notes.length > 15 ? `\n… và ${notes.length - 15} dòng khác` : ''));
+      if (res.incomplete.length) setOnlyMissing(true);
     } catch (e) {
       setErr(e.message);
     }
@@ -102,6 +112,11 @@ function Catalog({ cat }) {
       <div className="toolbar">
         <input type="search" placeholder="Tìm kiếm…" value={q} onChange={(e) => setQ(e.target.value)} />
         <span className="small">{visible.length} / {mine.length} dòng</span>
+        {(missingCount > 0 || onlyMissing) && (
+          <label className="small" style={{ color: 'var(--amber)' }}>
+            <input type="checkbox" checked={onlyMissing} onChange={(e) => setOnlyMissing(e.target.checked)} /> Chỉ dòng còn thiếu thông tin ({missingCount})
+          </label>
+        )}
       </div>
       <ErrorBox error={error} />
       {msg && <div className="ok-box" style={{ marginBottom: 10 }}>{msg}</div>}
@@ -123,7 +138,9 @@ function Catalog({ cat }) {
             <tbody>
               {visible.map((r, i) => (
                 <tr key={r._id} onClick={() => setEditing(r)} style={{ cursor: 'pointer' }}>
-                  <td className="stt">{i + 1}</td>
+                  <td className="stt" title={missingOf(r).length ? 'Còn thiếu: ' + missingOf(r).map((f) => f.label).join(', ') : undefined}>
+                    {i + 1}{missingOf(r).length ? <span style={{ color: 'var(--amber)' }}> ⚠</span> : null}
+                  </td>
                   {shown.map((f) => <td key={f.key} className={NUMERIC_TYPES.includes(f.type) ? 'num' : f.type === 'textarea' ? '' : 'nowrap'}><Cell f={f} r={r} /></td>)}
                 </tr>
               ))}
@@ -181,7 +198,10 @@ function EditForm({ cat, fields, row, existing, onClose, onSaved }) {
     e.preventDefault();
     setErr('');
     const missing = fields.filter((f) => f.required && !f.computed && !f.system && (form[f.key] === '' || form[f.key] == null));
-    if (missing.length) return setErr('Vui lòng nhập: ' + missing.map((f) => f.label).join(', '));
+    // Thiếu mã/khóa thì không lưu được; thiếu trường khác vẫn cho lưu và đánh dấu ⚠ để bổ sung sau
+    const missKey = missing.filter((f) => keys.includes(f.key));
+    if (missKey.length) return setErr('Vui lòng nhập: ' + missKey.map((f) => f.label).join(', '));
+    if (missing.length && !window.confirm(`Còn thiếu: ${missing.map((f) => f.label).join(', ')}.\nVẫn lưu và bổ sung sau?`)) return;
     if (!canEdit(cat, form)) return setErr('Bạn không có quyền lưu bản ghi cho kho này.');
     const out = {};
     fields.forEach((f) => {
@@ -293,7 +313,9 @@ async function importRows(cat, fields, file, app) {
   const snap = await getDocs(collection(db, cat.key));
   const current = snap.docs.map((d) => ({ _id: d.id, ...d.data() }));
   const existingIds = new Set(current.map((r) => r._id));
+  const existingMap = new Map(current.map((r) => [r._id, r]));
   const skipped = [];
+  const incomplete = [];
   const writes = [];
   sheet.slice(1).forEach((cells, idx) => {
     const line = idx + 2;
@@ -307,23 +329,30 @@ async function importRows(cat, fields, file, app) {
       else if (f.type === 'checkbox') r[f.key] = TRUE_WORDS.includes(norm(raw));
       else r[f.key] = cleanValue(f, raw instanceof Date ? toYmd(raw) : String(raw ?? ''));
     }
-    const missing = inputFields.filter((f) => f.required && colOf[f.key] !== undefined && (r[f.key] === '' || r[f.key] == null));
-    if (missing.length) return skipped.push(`Dòng ${line}: thiếu ${missing.map((f) => f.label).join(', ')}`);
+    // Thiếu thông tin hoặc mã tham chiếu chưa có: vẫn nhập, ghi chú lại để bổ sung sau (chỉ bỏ qua khi thiếu mã/khóa)
+    const notes = [];
     for (const f of inputFields.filter((x) => x.type === 'ref' && r[x.key])) {
       const ref = refData[f.ref]?.get(r[f.key]);
-      if (!ref) return skipped.push(`Dòng ${line}: ${f.label} "${r[f.key]}" không có trong danh mục`);
+      if (!ref) { notes.push(`${f.label} "${r[f.key]}" chưa có trong danh mục`); continue; }
       if (f.fill) Object.entries(f.fill).forEach(([to, from]) => { if (!r[to]) r[to] = ref[from] ?? ''; });
     }
     if (cat.warehouseField && !app.canEdit(cat, r)) return skipped.push(`Dòng ${line}: không có quyền với kho ${r[cat.warehouseField]}`);
-    const id = docIdOf(cat, r);
-    if (!id) return skipped.push(`Dòng ${line}: thiếu mã`);
-    writes.push({ id, r, isNew: !existingIds.has(id) });
+    const keyMissing = keyFieldsOf(cat).filter((k) => r[k] === '' || r[k] == null);
+    const id = keyMissing.length ? '' : docIdOf(cat, r);
+    if (!id) return skipped.push(`Dòng ${line}: thiếu ${keyMissing.map((k) => fields.find((f) => f.key === k)?.label).join(', ') || 'mã'} (bắt buộc để nhận diện dòng)`);
+    const isNew = !existingIds.has(id);
+    // Cập nhật dòng đã có: ô trống trong file không xóa dữ liệu cũ
+    if (!isNew) Object.keys(r).forEach((k) => { if (r[k] === '' || r[k] == null) delete r[k]; });
+    const after = { ...(isNew ? {} : existingMap.get(id)), ...r };
+    const missing = inputFields.filter((f) => f.required && !f.hidden && (after[f.key] === '' || after[f.key] == null));
+    if (missing.length) notes.unshift(`thiếu ${missing.map((f) => f.label).join(', ')}`);
+    if (notes.length) incomplete.push(`Dòng ${line}: ${notes.join('; ')}`);
+    writes.push({ id, r, isNew });
   });
 
   // Bản ghi trùng mã trong cùng file: dòng sau ghi đè dòng trước
   const byId = new Map(writes.map((w) => [w.id, w]));
   const list = [...byId.values()];
-  const existingMap = new Map(current.map((r) => [r._id, r]));
   for (let i = 0; i < list.length; i += 400) {
     const batch = writeBatch(db);
     list.slice(i, i + 400).forEach(({ id, r, isNew }) => {
@@ -338,5 +367,5 @@ async function importRows(cat, fields, file, app) {
     });
     await batch.commit();
   }
-  return { added: list.filter((w) => w.isNew).length, updated: list.filter((w) => !w.isNew).length, skipped };
+  return { added: list.filter((w) => w.isNew).length, updated: list.filter((w) => !w.isNew).length, skipped, incomplete };
 }
