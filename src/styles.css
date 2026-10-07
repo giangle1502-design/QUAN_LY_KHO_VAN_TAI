@@ -298,3 +298,12 @@ a.btn { text-decoration: none; display: inline-block; }
 .gc-sign > div { text-align: center; min-width: 280px; padding-bottom: 90px; }
 @media print { .gc-lines th { background: #f0cdec !important; } .gc-lines tfoot td { background: #ffff00 !important; } .gc { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 .transport-box { grid-column: 1 / -1; border: 1px dashed var(--border); border-radius: 8px; padding: 8px 10px; background: var(--bg); }
+
+/* Bảng chọn hàng từ tồn kho */
+table.picker th, table.picker td { white-space: nowrap; font-size: 13px; }
+table.picker tr.locked td { color: #9aa3ae; background: #f6f7f9; }
+table.picker tr.picked td { background: #e8f1fd; }
+.stock-pick { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #f8fafc; font-size: 14px; }
+.stock-pick > span { display: flex; flex-direction: column; }
+.stock-pick > span.grow { flex: 1; min-width: 160px; }
+.stock-pick small { color: var(--muted); font-size: 11px; }

@@ -9,7 +9,7 @@ import { OPEN_STATUSES, ORDER_FOR_MOVE, ORDER_TYPES, matchOrderLine, openKg, ord
 import { MOVE_TYPES, ageDays, kgOf, postMovement, suggestPallets } from '../../lib/stock';
 import { ST, vnDate } from '../../lib/trips';
 import { fmtDate, fmtNum } from '../../lib/utils';
-import { ErrorBox, Field } from '../../components/ui';
+import { ErrorBox, Field, Modal } from '../../components/ui';
 
 // Thông tin vận tải gắn trên phiếu xuất (SO và STO). Phiếu nhập không cần.
 const EMPTY_TRANSPORT = { plate: '', carrier: '', carrierName: '', idCard: '', driverName: '', driverPhone: '' };
@@ -68,6 +68,7 @@ function Form({ type }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState('');
   const [filter, setFilter] = useState('');
+  const [picking, setPicking] = useState(false);
 
   const tripOpts = trips.filter((t) => (type === 'in' ? t.purpose === 'import' : t.purpose === 'export'));
   // Chọn chuyến xe → tự điền kho, khách / nhà cung cấp
@@ -372,7 +373,21 @@ function Form({ type }) {
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="section-head">Hàng hóa ({lines.length})</div>
         {type !== 'in' && (
-          <input type="search" placeholder="Lọc tồn theo mã hàng, lot, vị trí…" value={filter} onChange={(e) => setFilter(e.target.value)} style={{ width: '100%', marginBottom: 8 }} />
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="btn primary" disabled={!whCode} onClick={() => setPicking(true)}>📋 Xem tồn kho & chọn hàng</button>
+            <input type="search" placeholder="Lọc tồn theo mã hàng, lot, vị trí…" value={filter} onChange={(e) => setFilter(e.target.value)} style={{ flex: 1, minWidth: 220 }} />
+          </div>
+        )}
+        {picking && (
+          <StockPicker rows={stockRows} blocked={blocked} whName={wh ? `${wh.code} – ${wh.name}` : whCode} filter={filter} setFilter={setFilter}
+            chosen={new Set(lines.map((l) => l.stockId).filter(Boolean))}
+            onClose={() => setPicking(false)}
+            onPick={(picked) => {
+              const all = type === 'move' || type === 'status' || type === 'out';
+              const add = picked.map((x) => ({ ...stockLine(), stockId: x._id, bags: all ? x.bags : '', pallets: all ? x.pallets : '', kg: all ? x.kg : '' }));
+              setLines((ls) => [...ls.filter((l) => l.stockId), ...add].slice(0, 30));
+              setPicking(false);
+            }} />
         )}
         {lines.map((l, i) => (
           <div key={i} className="mv-line">
@@ -502,6 +517,47 @@ function InLine({ l, set, itemMap, locations, statuses, pledgees }) {
   );
 }
 
+const STATUS_COLS = ['HTC', 'KTC', 'DGC'];
+// Bảng tồn kho dạng cột để tick chọn nhiều dòng; dòng bị khóa xuất (HTC khi xuất bán) không chọn được
+function StockPicker({ rows, blocked, whName, filter, setFilter, chosen, onClose, onPick }) {
+  const [sel, setSel] = useState(() => new Set());
+  const others = [...new Set(rows.map((r) => r.goodsStatus))].filter((c) => !STATUS_COLS.includes(c));
+  const cols = [...STATUS_COLS, ...others];
+  const toggle = (id) => setSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const sumBy = (c) => rows.filter((r) => r.goodsStatus === c).reduce((a, r) => a + num(r.kg), 0);
+  return (
+    <Modal title={`Tồn kho ${whName} – tick chọn hàng`} onClose={onClose} wide>
+      <input type="search" placeholder="Lọc theo mã hàng, tên, lot, vị trí…" value={filter} onChange={(e) => setFilter(e.target.value)} style={{ width: '100%', marginBottom: 8 }} autoFocus />
+      <div className="table-wrap" style={{ maxHeight: '60vh', overflow: 'auto' }}>
+        <table className="picker">
+          <thead><tr><th></th><th>Công ty</th><th>Kho</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th><th>Vị trí</th><th>Ngày nhập</th>
+            {cols.map((c) => <th key={c} className="num">{c} (tấn)</th>)}<th className="num">Pallet</th><th className="num">Số bao</th></tr></thead>
+          <tbody>
+            {rows.map((r) => {
+              const lock = blocked(r); const had = chosen.has(r._id);
+              return (
+                <tr key={r._id} className={lock ? 'locked' : sel.has(r._id) ? 'picked' : ''} onClick={() => !lock && !had && toggle(r._id)} style={{ cursor: lock || had ? 'not-allowed' : 'pointer' }}>
+                  <td>{lock ? '🔒' : <input type="checkbox" checked={had || sel.has(r._id)} disabled={had} onChange={() => toggle(r._id)} onClick={(e) => e.stopPropagation()} />}</td>
+                  <td>{r.company || ''}</td><td>{r.warehouse}</td><td>{r.item}</td><td>{r.itemName}</td><td>{r.lot || '-'}</td><td>{r.location}</td>
+                  <td>{fmtDate(r.inDate)} <small className="small">({ageDays(r.inDate)} ngày)</small></td>
+                  {cols.map((c) => <td key={c} className="num">{r.goodsStatus === c ? <b>{fmtNum(num(r.kg) / 1000, 3, 3)}</b> : ''}{r.goodsStatus === c && r.pledgee ? <small className="small"> {r.pledgee}</small> : ''}</td>)}
+                  <td className="num">{fmtNum(r.pallets, 2)}</td><td className="num">{fmtNum(r.bags)}</td>
+                </tr>
+              );
+            })}
+            {!rows.length && <tr><td colSpan={10 + cols.length} className="small">Không có hàng tồn phù hợp.</td></tr>}
+          </tbody>
+          <tfoot><tr><td colSpan={8}>Cộng</td>{cols.map((c) => <td key={c} className="num">{fmtNum(sumBy(c) / 1000, 3, 3)}</td>)}<td colSpan={2}></td></tr></tfoot>
+        </table>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, gap: 8, flexWrap: 'wrap' }}>
+        <small className="small">🔒 = hàng bị khóa xuất (HTC khi xuất bán). Có thể chọn nhiều dòng, kể cả KTC và DGC trong cùng một phiếu.</small>
+        <button type="button" className="btn primary" disabled={!sel.size} onClick={() => onPick(rows.filter((r) => sel.has(r._id)))}>Thêm {sel.size} dòng vào phiếu</button>
+      </div>
+    </Modal>
+  );
+}
+
 function StockLine({ type, l, set, rows, byId, blocked, locations, statuses, pledgees }) {
   const r = byId.get(l.stockId);
   // Số lượng xuất/chuyển → pallet, kg chia theo tỷ lệ tồn
@@ -529,6 +585,18 @@ function StockLine({ type, l, set, rows, byId, blocked, locations, statuses, ple
   };
   return (
     <div className="mv-grid">
+      {r ? (
+        <div className="field full">
+          <span>Hàng chọn từ tồn kho</span>
+          <div className="stock-pick">
+            <span><small>Công ty</small>{r.company || '-'}</span><span><small>Kho</small>{r.warehouse}</span><span><small>Mã hàng</small>{r.item}</span>
+            <span className="grow"><small>Tên hàng</small>{r.itemName}</span><span><small>Lot</small>{r.lot || '-'}</span><span><small>Vị trí</small>{r.location}</span>
+            <span><small>Tình trạng</small>{r.goodsStatus}{r.pledgee ? ` (${r.pledgee})` : ''}{blocked(r) ? ' 🔒' : ''}</span>
+            <span><small>Còn</small>{fmtNum(num(r.kg) / 1000, 3, 3)} tấn · {fmtNum(r.pallets, 2)} pl · {fmtNum(r.bags)} bao</span>
+            <button type="button" className="btn sm ghost" onClick={() => set({ stockId: '', bags: '', pallets: '', kg: '', tonsTxt: undefined })}>Đổi</button>
+          </div>
+        </div>
+      ) : (
       <Field label="Dòng tồn (FIFO)" required full>
         <select value={l.stockId} onChange={(e) => pick(e.target.value)}>
           <option value="">-- Chọn hàng trong kho --</option>
@@ -538,8 +606,9 @@ function StockLine({ type, l, set, rows, byId, blocked, locations, statuses, ple
             </option>
           ))}
         </select>
-        {r && <small className="small">{r.itemName} · còn {fmtNum(r.kg / 1000, 3, 3)} tấn, {fmtNum(r.pallets, 2)} pallet, {fmtNum(r.bags)} bao</small>}
+        <small className="small">Hoặc bấm 📋 Xem tồn kho & chọn hàng để xem dạng bảng.</small>
       </Field>
+      )}
       {type === 'adjust' && (
         <Field label="Tăng / giảm">
           <select value={l.sign} onChange={(e) => set({ sign: e.target.value })}><option value="+">Tăng (+)</option><option value="-">Giảm (−)</option></select>
