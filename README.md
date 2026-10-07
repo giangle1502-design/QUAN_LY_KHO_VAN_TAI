@@ -70,8 +70,8 @@ Mọi thay đổi tồn đi qua 1 phiếu, ghi trong cùng 1 giao dịch: phiế
 
 | Phiếu | Ai lập | Ghi chú |
 |---|---|---|
-| Nhập kho (PN) | Thủ kho | Gắn chuyến xe nhập đang ở cửa (tự điền nhà cung cấp). Mỗi dòng: mã hàng, lot, NSX, HSD, vị trí, tình trạng (HTC phải chọn bên nhận thế chấp), số bao → tự gợi ý pallet và kg theo quy cách mã hàng. Vị trí đang khóa không chọn được |
-| Xuất kho (PX) | Thủ kho | Gắn chuyến xe lấy hàng (tự điền khách, Shipto). Chọn dòng tồn theo FIFO (nhập trước hiện trước). **Hàng HTC bị khóa xuất**; không xuất quá tồn |
+| Nhập kho (PN) | Thủ kho | Không cần thông tin vận tải. Mỗi dòng: mã hàng, lot, NSX, HSD, vị trí, tình trạng (HTC phải chọn bên nhận thế chấp), số bao → tự gợi ý pallet và kg theo quy cách mã hàng. Vị trí đang khóa không chọn được |
+| Xuất kho (PX) | Thủ kho | **Bắt buộc thông tin vận tải**: đơn vị vận tải, số xe, tài xế (CCCD, tên, ĐT); chọn chuyến xe đang ở cửa hoặc gõ biển số/CCCD để tự điền từ danh mục. Chọn dòng tồn theo FIFO. Xuất theo SO/xuất lẻ chỉ được hàng KTC, DGC (**HTC bị khóa**); xuất theo **STO chuyển kho được mọi tình trạng**, kể cả HTC (giữ nguyên bên nhận thế chấp khi nhập ở kho đến). Không xuất quá tồn |
 | Chuyển vị trí (CV) | Thủ kho | Giữ nguyên lot, ngày nhập, tình trạng |
 | Đổi tình trạng thế chấp (TC) | Kế toán | KTC → HTC (chọn bên nhận thế chấp), HTC → DGC… |
 | Điều chỉnh tồn (DC) | Thủ kho | Tăng/giảm, bắt buộc chọn lý do |

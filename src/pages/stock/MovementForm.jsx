@@ -11,6 +11,9 @@ import { ST, vnDate } from '../../lib/trips';
 import { fmtDate, fmtNum } from '../../lib/utils';
 import { ErrorBox, Field } from '../../components/ui';
 
+// Thông tin vận tải gắn trên phiếu xuất (SO và STO). Phiếu nhập không cần.
+const EMPTY_TRANSPORT = { plate: '', carrier: '', carrierName: '', idCard: '', driverName: '', driverPhone: '' };
+
 const num = (v) => (v === '' || v == null ? 0 : Number(v));
 const r3 = (x) => Math.round(x * 1000) / 1000;
 const newLine = () => ({ item: '', lot: '', mfgDate: '', expDate: '', location: '', goodsStatus: 'KTC', pledgee: '', bags: '', pallets: '', kg: '' });
@@ -56,7 +59,10 @@ function Form({ type }) {
     && o.lines.some((l) => openKg(o, l, type) > 0)
     && (OPEN_STATUSES.includes(o.status) || (o.type === 'STO' && type === 'in' && o.status === 'closed'))), [allOrders, type]); // eslint-disable-line react-hooks/exhaustive-deps
   const [opCo, setOpCo] = useOpCompany();
-  const [head, setHead] = useState({ company: opCo, date: vnDate(), tripId: params.get('trip') || '', orderId: params.get('order') || '', partyCode: '', partyName: '', shipCode: '', reason: '', note: '' });
+  const [head, setHead] = useState({ company: opCo, date: vnDate(), tripId: params.get('trip') || '', orderId: params.get('order') || '', partyCode: '', partyName: '', shipCode: '', reason: '', note: '', ...EMPTY_TRANSPORT });
+  const vehicles = useCollection('vehicles').rows;
+  const carriers = useCollection('carriers').rows;
+  const drivers = useCollection('drivers').rows;
   const [lines, setLines] = useState(() => [type === 'in' ? newLine() : stockLine()]);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -69,6 +75,8 @@ function Form({ type }) {
     const t = trips.find((x) => x.id === head.tripId);
     if (!t) return;
     if (t.warehouse !== opWh) setOpWh(t.warehouse);
+    // Xe xuất hàng: lấy luôn đơn vị vận tải, số xe, tài xế từ chuyến xe đã đăng ký ở cổng
+    if (type === 'out') setHead((h) => ({ ...h, plate: t.plate || '', carrier: t.carrier || '', carrierName: t.carrierName || '', idCard: t.idCard || '', driverName: t.driverName || '', driverPhone: t.driverPhone || '' }));
     const l = t.lines?.find((x) => x.orderId) || t.lines?.[0];
     if (l && l.orderId && !head.orderId) pickOrder(l.orderId);
     else if (l && !head.partyCode) setHead((h) => ({ ...h, partyCode: l.partyCode, partyName: l.partyName, shipCode: l.shipCode || '' }));
@@ -136,7 +144,7 @@ function Form({ type }) {
     if (stockLoading) return;
     const ow = orderWarehouse(order, 'out');
     if (ow && ow !== whCode) return;
-    const fifo = [...stock].filter((r) => statusMap.get(r.goodsStatus)?.allowOutbound !== false && (!order.company || (r.company || '') === order.company))
+    const fifo = [...stock].filter((r) => (order.type === 'STO' || statusMap.get(r.goodsStatus)?.allowOutbound !== false) && (!order.company || (r.company || '') === order.company))
       .sort((a, b) => String(a.inDate).localeCompare(String(b.inDate)) || String(a.location).localeCompare(String(b.location)));
     const next = [];
     const short = [];
@@ -180,7 +188,16 @@ function Form({ type }) {
       .sort((a, b) => String(a.item).localeCompare(String(b.item)) || String(a.inDate).localeCompare(String(b.inDate)) || String(a.location).localeCompare(String(b.location)));
   }, [stock, filter, head.company]);
   const stockById = useMemo(() => new Map(stock.map((r) => [r._id, r])), [stock]);
-  const blocked = (r) => type === 'out' && statusMap.get(r.goodsStatus)?.allowOutbound === false;
+  // Xuất theo SO / xuất lẻ: chỉ KTC, DGC (tình trạng cho phép xuất). Xuất theo STO (chuyển kho): mọi tình trạng, kể cả HTC
+  const isSTO = order?.type === 'STO';
+  const blocked = (r) => type === 'out' && !isSTO && statusMap.get(r.goodsStatus)?.allowOutbound === false;
+  const pickPlate = (v) => {
+    const veh = vehicles.find((x) => x.plate === v.trim().toUpperCase());
+    const car = veh && carriers.find((c) => c.code === veh.carrier);
+    setHead((h) => ({ ...h, plate: v.toUpperCase(), ...(veh ? { carrier: veh.carrier || h.carrier, carrierName: car?.name || h.carrierName } : {}) }));
+  };
+  const pickCarrier = (v) => { const c = carriers.find((x) => x.code === v); setHead((h) => ({ ...h, carrier: v, carrierName: c ? c.name : h.carrierName })); };
+  const pickDriver = (v) => { const d = drivers.find((x) => x.idCard === v); setHead((h) => ({ ...h, idCard: v, ...(d ? { driverName: d.name || '', driverPhone: d.phone || '' } : {}) })); };
 
   const parties = type === 'in' ? suppliers : soldto;
 
@@ -190,6 +207,10 @@ function Form({ type }) {
     if (!wh) return setErr('Chọn kho.');
     if (type === 'in' && !head.company) return setErr('Chọn công ty chủ hàng.');
     if (type === 'adjust' && !head.reason) return setErr('Chọn lý do điều chỉnh.');
+    if (type === 'out') {
+      const miss = [!head.carrier.trim() && !head.carrierName.trim() && 'đơn vị vận tải', !head.plate.trim() && 'số xe', !head.driverName.trim() && 'tên tài xế'].filter(Boolean);
+      if (miss.length) return setErr(`Phiếu xuất cần thông tin vận tải: nhập ${miss.join(', ')}.`);
+    }
     const out = [];
     for (const [i, l] of lines.entries()) {
       const no = `Dòng ${i + 1}: `;
@@ -237,10 +258,11 @@ function Form({ type }) {
         type, warehouse: wh.code, company: head.company || '', date: head.date, tripId: head.tripId || '', orderId: head.orderId || '', orderRef: order?.refNo || '',
         partyCode: head.partyCode.trim(), partyName: head.partyName.trim(), shipCode: head.shipCode,
         reason: head.reason, note: head.note.trim(), lines: out,
+        ...(type === 'out' ? Object.fromEntries(Object.keys(EMPTY_TRANSPORT).map((k) => [k, String(head[k] || '').trim()])) : {}),
       }, { email, name });
       setDone(id);
       setLines([type === 'in' ? newLine() : stockLine()]);
-      setHead((h) => ({ ...h, tripId: '', orderId: '', partyCode: '', partyName: '', shipCode: '', note: '' }));
+      setHead((h) => ({ ...h, tripId: '', orderId: '', partyCode: '', partyName: '', shipCode: '', note: '', ...EMPTY_TRANSPORT }));
     } catch (e2) {
       setErr(e2.code === 'permission-denied' ? 'Bạn không có quyền lập phiếu cho kho này.' : e2.message);
     }
@@ -270,12 +292,6 @@ function Form({ type }) {
           <Field label="Ngày chứng từ" required><input type="date" value={head.date} onChange={(e) => setH('date', e.target.value)} /></Field>
           {(type === 'in' || type === 'out') && (
             <>
-              <Field label="Chuyến xe đang xuất/nhập">
-                <select value={head.tripId} onChange={(e) => setH('tripId', e.target.value)}>
-                  <option value="">-- Không gắn chuyến --</option>
-                  {tripOpts.map((t) => <option key={t.id} value={t.id}>{t.id} · {t.plate} · cửa {t.dock}</option>)}
-                </select>
-              </Field>
               <Field label={type === 'in' ? 'Nhà cung cấp' : 'Khách hàng'}>
                 <input list="dl-mv-party" value={head.partyCode} placeholder="Mã"
                   onChange={(e) => { const p = parties.find((x) => x.code === e.target.value); setHead((h) => ({ ...h, partyCode: e.target.value, partyName: p ? p.name : h.partyName, shipCode: '', orderId: '' })); }} />
@@ -301,6 +317,32 @@ function Form({ type }) {
                 </Field>
               )}
             </>
+          )}
+          {type === 'out' && (
+            <div className="full transport-box">
+              <div className="section-head">🚚 Thông tin vận tải (bắt buộc với phiếu xuất bán và STO chuyển kho)</div>
+              <div className="form-grid">
+                <Field label="Chuyến xe đang ở cửa" help="Chọn để tự điền xe, tài xế đã đăng ký ở cổng">
+                  <select value={head.tripId} onChange={(e) => setH('tripId', e.target.value)}>
+                    <option value="">-- Không gắn chuyến --</option>
+                    {tripOpts.map((t) => <option key={t.id} value={t.id}>{t.id} · {t.plate} · cửa {t.dock}</option>)}
+                  </select>
+                </Field>
+                <Field label="Số xe" required><input list="dl-mv-plate" value={head.plate} onChange={(e) => pickPlate(e.target.value)} placeholder="VD: 51C-12345" /></Field>
+                <Field label="Đơn vị vận tải" required>
+                  <input list="dl-mv-carrier" value={head.carrier} placeholder="Mã" onChange={(e) => pickCarrier(e.target.value)} />
+                  <input value={head.carrierName} placeholder="Tên đơn vị" style={{ marginTop: 4 }} onChange={(e) => setH('carrierName', e.target.value)} />
+                </Field>
+                <Field label="Tài xế" required>
+                  <input list="dl-mv-driver" value={head.idCard} placeholder="Số CCCD" onChange={(e) => pickDriver(e.target.value)} />
+                  <input value={head.driverName} placeholder="Họ tên" style={{ marginTop: 4 }} onChange={(e) => setH('driverName', e.target.value)} />
+                  <input value={head.driverPhone} placeholder="Điện thoại" style={{ marginTop: 4 }} onChange={(e) => setH('driverPhone', e.target.value)} />
+                </Field>
+              </div>
+              <datalist id="dl-mv-plate">{vehicles.map((v) => <option key={v.plate} value={v.plate}>{v.carrier}</option>)}</datalist>
+              <datalist id="dl-mv-carrier">{carriers.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</datalist>
+              <datalist id="dl-mv-driver">{drivers.map((d) => <option key={d.idCard} value={d.idCard}>{d.name}</option>)}</datalist>
+            </div>
           )}
           {(type === 'adjust' || type === 'in' || type === 'out') && (
             <Field label="Lý do" required={type === 'adjust'}>

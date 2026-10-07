@@ -297,3 +297,4 @@ a.btn { text-decoration: none; display: inline-block; }
 .gc-sign { display: flex; justify-content: space-between; margin-top: 4px; }
 .gc-sign > div { text-align: center; min-width: 280px; padding-bottom: 90px; }
 @media print { .gc-lines th { background: #f0cdec !important; } .gc-lines tfoot td { background: #ffff00 !important; } .gc { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+.transport-box { grid-column: 1 / -1; border: 1px dashed var(--border); border-radius: 8px; padding: 8px 10px; background: var(--bg); }

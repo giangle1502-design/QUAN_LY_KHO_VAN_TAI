@@ -69,6 +69,7 @@ export async function postMovement(m, user) {
     const orderRef = m.orderId ? doc(db, 'orders', m.orderId) : null;
     const orderSnap = orderRef ? await tx.get(orderRef) : null;
     if (orderRef && !orderSnap.exists()) throw new Error(`Không tìm thấy đơn ${m.orderId}.`);
+    if (orderSnap) mv.orderType = orderSnap.data().type;
     const orderUpd = orderRef ? applyOrder({ ...orderSnap.data(), id: m.orderId }, mv, 1) : null;
     await applyEffects(tx, mv, effectsOf(mv, 1), user);
     if (orderRef) tx.update(orderRef, { ...orderUpd, lastMovement: id, updatedAt: at, updatedBy: user.email });
@@ -108,7 +109,8 @@ async function applyEffects(tx, mv, effects, user) {
     byStock.set(id, cur);
   }
   const locIds = [...new Set(effects.map((e) => locationId(e.warehouse, e.location)))];
-  const statusCodes = [...new Set(effects.filter((e) => e.ship).map((e) => e.goodsStatus))];
+  // Xuất bán (SO / xuất lẻ) chỉ được hàng tình trạng cho phép xuất (KTC, DGC); STO chuyển kho được mọi tình trạng (kể cả HTC)
+  const statusCodes = mv.orderType === 'STO' ? [] : [...new Set(effects.filter((e) => e.ship).map((e) => e.goodsStatus))];
 
   // Đọc trước (giao dịch Firestore: đọc hết rồi mới ghi)
   const stockSnaps = new Map();
