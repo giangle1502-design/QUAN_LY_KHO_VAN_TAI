@@ -27,5 +27,5 @@ if (configured && env.VITE_USE_EMULATOR === '1') {
 }
 
 // Email quản trị gốc (phải khớp superAdmins() trong firestore.rules)
-export const SUPER_ADMINS = (env.VITE_SUPER_ADMINS || 'giangle1502@gmail.com')
+export const SUPER_ADMINS = (env.VITE_SUPER_ADMINS || 'giangle1502@gmail.com,gianglevan.vap@gmail.com')
   .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);

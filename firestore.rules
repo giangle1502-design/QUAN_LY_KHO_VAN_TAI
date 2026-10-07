@@ -3,7 +3,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ==== Email quản trị gốc (sửa cho khớp VITE_SUPER_ADMINS) ====
-    function superAdmins() { return ['giangle1502@gmail.com']; }
+    function superAdmins() { return ['giangle1502@gmail.com', 'gianglevan.vap@gmail.com']; }
 
     function signedIn() {
       return request.auth != null && request.auth.token.email != null
