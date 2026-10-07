@@ -226,7 +226,7 @@ function Form({ type }) {
       if (type === 'in') {
         if (!l.item || !itemMap.has(l.item)) return setErr(no + 'chọn mã hàng có trong danh mục.');
         if (!l.location) return setErr(no + 'chọn vị trí.');
-        if (!num(l.bags) && !num(l.pallets)) return setErr(no + 'nhập số bao hoặc pallet.');
+        if (!num(l.kg) && !num(l.bags) && !num(l.pallets)) return setErr(no + 'nhập số tấn, pallet hoặc số bao.');
         if (l.goodsStatus === 'HTC' && !l.pledgee) return setErr(no + 'hàng HTC cần chọn bên nhận thế chấp.');
         out.push({ ...(l.orderLine != null ? { orderLine: l.orderLine } : {}), item: l.item, itemName: itemMap.get(l.item).name, lot: l.lot.trim(), mfgDate: l.mfgDate, expDate: l.expDate,
           location: l.location, goodsStatus: l.goodsStatus, pledgee: l.goodsStatus === 'HTC' ? l.pledgee : '', company: l.company || head.company,
@@ -237,7 +237,7 @@ function Form({ type }) {
       if (!r) return setErr(no + 'chọn dòng tồn.');
       if (blocked(r)) return setErr(no + `hàng ${r.goodsStatus} bị khóa xuất kho.`);
       const sign = type === 'adjust' && l.sign === '-' ? -1 : 1;
-      if (!num(l.bags) && !num(l.pallets)) return setErr(no + 'nhập số lượng.');
+      if (!num(l.kg) && !num(l.bags) && !num(l.pallets)) return setErr(no + 'nhập số lượng.');
       if (type === 'move' && (!l.toLocation || l.toLocation === r.location)) return setErr(no + 'chọn vị trí mới khác vị trí cũ.');
       if (type === 'status' && (!l.toStatus || l.toStatus === r.goodsStatus)) return setErr(no + 'chọn tình trạng mới.');
       if (type === 'status' && l.toStatus === 'HTC' && !l.toPledgee) return setErr(no + 'chọn bên nhận thế chấp.');
@@ -445,13 +445,38 @@ function LocationSelect({ value, onChange, locations, exclude }) {
   );
 }
 
+const tonsOf = (kg) => (kg === '' || kg == null ? '' : parseFloat((num(kg) / 1000).toFixed(6)));
+// Thứ tự nhập: Số tấn → Pallet → Số bao; sửa ô nào thì hai ô kia tự tính lại. Hệ thống vẫn lưu kg.
+function QtyFields({ l, onTons, onPallets, onBags }) {
+  return (
+    <>
+      <Field label="Số tấn">
+        <input type="number" step="any" value={l.tonsTxt ?? tonsOf(l.kg)} onChange={(e) => onTons(e.target.value)} />
+        {num(l.kg) > 0 && <small className="small">= {fmtNum(num(l.kg))} kg</small>}
+      </Field>
+      <Field label="Pallet"><input type="number" step="any" value={l.pallets} onChange={(e) => onPallets(e.target.value)} /></Field>
+      <Field label="Số bao"><input type="number" step="any" value={l.bags} onChange={(e) => onBags(e.target.value)} /></Field>
+    </>
+  );
+}
+
 function InLine({ l, set, itemMap, locations, statuses, pledgees }) {
   const it = itemMap.get(l.item);
-  const setBags = (v) => set({ bags: v, pallets: suggestPallets(it, v), kg: kgOf(it, v) });
+  const setBags = (v) => set({ bags: v, pallets: suggestPallets(it, v), kg: kgOf(it, v), tonsTxt: undefined });
+  const setTons = (v) => {
+    const kg = v === '' ? '' : r3(num(v) * 1000);
+    const bags = kg !== '' && num(it?.bagWeight) ? r3(kg / num(it.bagWeight)) : '';
+    set({ tonsTxt: v, kg, bags: bags === '' ? l.bags : bags, pallets: bags === '' ? l.pallets : suggestPallets(it, bags) });
+  };
+  const setPallets = (v) => {
+    const per = num(it?.bagsPerLayer) * num(it?.layersPerPallet);
+    const bags = per && v !== '' ? r3(num(v) * per) : '';
+    set({ pallets: v, ...(bags === '' ? {} : { bags, kg: kgOf(it, bags) === '' ? l.kg : kgOf(it, bags), tonsTxt: undefined }) });
+  };
   return (
     <div className="mv-grid">
       <Field label="Mã hàng" required>
-        <input list="dl-mv-item" value={l.item} onChange={(e) => { const x = itemMap.get(e.target.value); set({ item: e.target.value, ...(x && l.bags ? { pallets: suggestPallets(x, l.bags), kg: kgOf(x, l.bags) } : {}) }); }} />
+        <input list="dl-mv-item" value={l.item} onChange={(e) => { const x = itemMap.get(e.target.value); set({ item: e.target.value, ...(x && l.bags ? { pallets: suggestPallets(x, l.bags), kg: kgOf(x, l.bags), tonsTxt: undefined } : {}) }); }} />
         {it && <small className="small">{it.name}</small>}
       </Field>
       <Field label="Lot"><input value={l.lot} onChange={(e) => set({ lot: e.target.value })} /></Field>
@@ -472,9 +497,7 @@ function InLine({ l, set, itemMap, locations, statuses, pledgees }) {
           </select>
         </Field>
       )}
-      <Field label="Số bao"><input type="number" step="any" value={l.bags} onChange={(e) => setBags(e.target.value)} /></Field>
-      <Field label="Pallet"><input type="number" step="any" value={l.pallets} onChange={(e) => set({ pallets: e.target.value })} /></Field>
-      <Field label="Kg"><input type="number" step="any" value={l.kg} onChange={(e) => set({ kg: e.target.value })} /></Field>
+      <QtyFields l={l} onTons={setTons} onPallets={setPallets} onBags={setBags} />
     </div>
   );
 }
@@ -483,15 +506,26 @@ function StockLine({ type, l, set, rows, byId, blocked, locations, statuses, ple
   const r = byId.get(l.stockId);
   // Số lượng xuất/chuyển → pallet, kg chia theo tỷ lệ tồn
   const setBags = (v) => {
-    if (!r || !num(r.bags)) return set({ bags: v });
+    if (!r || !num(r.bags)) return set({ bags: v, tonsTxt: undefined });
     const k = num(v) / num(r.bags);
-    set({ bags: v, pallets: r3(num(r.pallets) * k), kg: r3(num(r.kg) * k) });
+    set({ bags: v, pallets: r3(num(r.pallets) * k), kg: r3(num(r.kg) * k), tonsTxt: undefined });
+  };
+  const setTons = (v) => {
+    const kg = v === '' ? '' : r3(num(v) * 1000);
+    if (!r || !num(r.kg) || kg === '') return set({ tonsTxt: v, kg });
+    const k = kg / num(r.kg);
+    set({ tonsTxt: v, kg, bags: r3(num(r.bags) * k), pallets: r3(num(r.pallets) * k) });
+  };
+  const setPallets = (v) => {
+    if (!r || !num(r.pallets) || v === '') return set({ pallets: v });
+    const k = num(v) / num(r.pallets);
+    set({ pallets: v, bags: r3(num(r.bags) * k), kg: r3(num(r.kg) * k), tonsTxt: undefined });
   };
   const pick = (id) => {
     const x = byId.get(id);
     if (!x) return set({ stockId: id });
     const all = type === 'move' || type === 'status';
-    set({ stockId: id, bags: all ? x.bags : '', pallets: all ? x.pallets : '', kg: all ? x.kg : '' });
+    set({ stockId: id, bags: all ? x.bags : '', pallets: all ? x.pallets : '', kg: all ? x.kg : '', tonsTxt: undefined });
   };
   return (
     <div className="mv-grid">
@@ -504,7 +538,7 @@ function StockLine({ type, l, set, rows, byId, blocked, locations, statuses, ple
             </option>
           ))}
         </select>
-        {r && <small className="small">{r.itemName} · còn {fmtNum(r.bags)} bao, {fmtNum(r.pallets, 2)} pallet, {fmtNum(r.kg)} kg</small>}
+        {r && <small className="small">{r.itemName} · còn {fmtNum(r.kg / 1000, 3, 3)} tấn, {fmtNum(r.pallets, 2)} pallet, {fmtNum(r.bags)} bao</small>}
       </Field>
       {type === 'adjust' && (
         <Field label="Tăng / giảm">
@@ -530,9 +564,7 @@ function StockLine({ type, l, set, rows, byId, blocked, locations, statuses, ple
           )}
         </>
       )}
-      <Field label="Số bao"><input type="number" step="any" value={l.bags} onChange={(e) => setBags(e.target.value)} /></Field>
-      <Field label="Pallet"><input type="number" step="any" value={l.pallets} onChange={(e) => set({ pallets: e.target.value })} /></Field>
-      <Field label="Kg"><input type="number" step="any" value={l.kg} onChange={(e) => set({ kg: e.target.value })} /></Field>
+      <QtyFields l={l} onTons={setTons} onPallets={setPallets} onBags={setBags} />
     </div>
   );
 }

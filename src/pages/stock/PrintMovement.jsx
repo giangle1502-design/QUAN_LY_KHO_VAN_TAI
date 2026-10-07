@@ -54,22 +54,22 @@ export default function PrintMovement() {
         {(m.carrier || m.carrierName) && <tr><td>Đơn vị vận tải</td><td>{m.carrierName || m.carrier}</td></tr>}
         {m.plate && <tr><td>Số xe</td><td>{m.plate}</td></tr>}
         {m.driverName && <tr><td>Tài xế</td><td>{m.driverName}{m.idCard ? ` · CCCD ${m.idCard}` : ''}{m.driverPhone ? ` · ĐT ${m.driverPhone}` : ''}</td></tr>}
-        {m.orderId && <tr><td>{m.type === 'in' ? 'Theo đơn mua' : 'Theo đơn bán'}</td><td>{m.orderId}{m.orderRef ? ` (số Ecount ${m.orderRef})` : ''}</td></tr>}
+        {m.orderId && <tr><td>{m.orderType === 'STO' || String(m.orderId).startsWith('STO') ? 'Theo lệnh chuyển kho' : m.type === 'in' ? 'Theo đơn mua' : 'Theo đơn bán'}</td><td>{m.orderId}{m.orderRef ? ` (số Ecount ${m.orderRef})` : ''}</td></tr>}
         {trip && <tr><td>Xe</td><td>{trip.plate} · {trip.driverName} · CCCD {trip.idCard}{trip.carrierName ? ` · ${trip.carrierName}` : ''} · chuyến {m.tripId}{trip.dock ? ` · cửa ${trip.dock}` : ''}</td></tr>}
         {m.reason && <tr><td>Lý do</td><td>{m.reason}</td></tr>}
         {m.note && <tr><td>Ghi chú</td><td>{m.note}</td></tr>}
       </tbody></table>
       <table className="print-lines">
         <thead><tr><th>STT</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th><th>Vị trí</th>{m.type === 'move' && <th>Đến vị trí</th>}
-          <th>Tình trạng</th>{m.type === 'status' && <th>Tình trạng mới</th>}<th className="num">Số bao</th><th className="num">Pallet</th><th className="num">Kg</th></tr></thead>
+          <th>Tình trạng</th>{m.type === 'status' && <th>Tình trạng mới</th>}<th className="num">Số tấn</th><th className="num">Pallet</th><th className="num">Số bao</th></tr></thead>
         <tbody>
           {m.lines.map((l, i) => (
             <tr key={i}><td>{i + 1}</td><td>{l.item}</td><td>{l.itemName}</td><td>{l.lot}</td><td>{l.location}</td>{m.type === 'move' && <td>{l.toLocation}</td>}
               <td>{l.goodsStatus}</td>{m.type === 'status' && <td>{l.toStatus}{l.toPledgee ? ` (${l.toPledgee})` : ''}</td>}
-              <td className="num">{fmtNum(l.bags)}</td><td className="num">{fmtNum(l.pallets, 2)}</td><td className="num">{fmtNum(l.kg)}</td></tr>
+              <td className="num">{fmtNum(l.kg / 1000, 3, 3)}</td><td className="num">{fmtNum(l.pallets, 2)}</td><td className="num">{fmtNum(l.bags)}</td></tr>
           ))}
         </tbody>
-        <tfoot><tr><td colSpan={m.type === 'move' || m.type === 'status' ? 7 : 6}>Cộng</td><td className="num">{fmtNum(tot('bags'))}</td><td className="num">{fmtNum(tot('pallets'), 2)}</td><td className="num">{fmtNum(tot('kg'))}</td></tr></tfoot>
+        <tfoot><tr><td colSpan={m.type === 'move' || m.type === 'status' ? 7 : 6}>Cộng</td><td className="num">{fmtNum(tot('kg') / 1000, 3, 3)}</td><td className="num">{fmtNum(tot('pallets'), 2)}</td><td className="num">{fmtNum(tot('bags'))}</td></tr></tfoot>
       </table>
       <div className="print-signs">
         {signs.map((s) => <div key={s}><b>{s}</b><br /><span className="small">(Ký, ghi rõ họ tên)</span><div className="sign-space" />{s === 'Người lập phiếu' ? m.createdByName : ''}</div>)}
