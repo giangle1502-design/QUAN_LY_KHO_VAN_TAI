@@ -100,10 +100,11 @@ function Form({ type }) {
     setHead((h) => ({ ...h, orderId: id, ...party, ...(o.company ? { company: o.company } : {}) }));
     const ow = orderWarehouse(o, type);
     if (ow && ow !== opWh) setOpWh(ow);
+    // Nhập theo STO: luôn lấy hàng từ phiếu xuất ở kho đi (mã, lot, NSX, HSD, TTHH, số lượng), không phải nhập lại
+    if (type === 'in' && o.type === 'STO') { fillFromTransfer(o); return; }
     const empty = lines.every((l) => (type === 'in' ? !l.item : !l.stockId));
     if (!empty) return;
     if (type === 'out') { setAutoFill(id); return; }
-    if (o.type === 'STO') { fillFromTransfer(o); return; }
     // Phiếu nhập theo PO: điền sẵn các mặt hàng còn chưa về (thủ kho chọn vị trí, sửa số thực nhận)
     const next = o.lines.filter((l) => openKg(o, l, 'in') > 0).map((l) => {
       const it = itemMap.get(l.item);
@@ -116,7 +117,13 @@ function Form({ type }) {
 
   // Nhập kho theo STO: lấy đúng lot, NSX, HSD, tình trạng thế chấp từ các phiếu xuất ở kho đi, trừ phần đã nhận
   const fillFromTransfer = async (o) => {
-    const snap = await getDocs(query(collection(db, 'movements'), where('orderId', '==', o.id)));
+    let snap;
+    try {
+      snap = await getDocs(query(collection(db, 'movements'), where('orderId', '==', o.id)));
+    } catch (e) {
+      setFillNote(`Không đọc được phiếu xuất của ${o.id}: ${e.message}`);
+      return;
+    }
     const m = new Map();
     for (const d of snap.docs) {
       const mv = d.data();
@@ -134,7 +141,9 @@ function Form({ type }) {
     }
     const next = [...m.values()].filter((l) => l.kg > 0.001 || l.bags > 0.001);
     if (next.length) setLines(next);
-    setFillNote(next.length ? `Đã điền ${next.length} dòng hàng đang đi đường theo ${o.id} (giữ nguyên lot, tình trạng). Chọn vị trí nhận và sửa số thực nhận nếu thiếu.` : '');
+    setFillNote(next.length
+      ? `Đã điền sẵn ${next.length} dòng hàng đang đi đường theo ${o.id} từ phiếu xuất ở kho ${o.fromWarehouse} (mã hàng, lot, NSX, HSD, TTHH, số lượng). Chỉ cần chọn vị trí nhận và sửa số thực nhận nếu thiếu.`
+      : `Không còn hàng đang đi đường theo ${o.id} (chưa có phiếu xuất ở kho ${o.fromWarehouse} hoặc đã nhận đủ).`);
   };
 
   // Xuất kho theo SO/STO: chọn sẵn tồn theo FIFO cho đủ phần còn lại của từng mặt hàng
@@ -276,7 +285,8 @@ function Form({ type }) {
         <Link className="btn" to="/kho/phieu">Danh sách phiếu</Link>
       </div>
       {done && <div className="ok-box" style={{ marginBottom: 10 }}>Đã lập phiếu <b className="mono">{done}</b>. Tồn kho đã cập nhật. <Link to={`/kho/phieu/${done}/in`} target="_blank">🖨 In phiếu</Link>
-        {type === 'in' && <> · <Link className="btn primary sm" to={`/kho/phieu/${done}/nhan`} target="_blank">🏷️ In nhãn pallet</Link></>}</div>}
+        {type === 'in' && <> · <Link className="btn primary" to={`/kho/phieu/${done}/nhan`} target="_blank">🏷️ In nhãn pallet cho phiếu này</Link></>}</div>}
+      {type === 'in' && !done && <p className="hint">Lưu phiếu nhập xong sẽ hiện nút <b>🏷️ In nhãn pallet</b> (mỗi pallet 1 nhãn). In lại sau: <i>Phiếu kho</i> → nút 🏷️ In nhãn ở dòng phiếu.</p>}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="form-grid">
           <Field label="Kho" required>
@@ -356,7 +366,8 @@ function Form({ type }) {
         </div>
       </div>
 
-      {order && <OrderBox order={order} lines={lines} type={type} stockById={stockById} />}
+      {order && <OrderBox order={order} lines={lines} type={type} stockById={stockById}
+        onRefill={type === 'in' && order.type === 'STO' ? () => fillFromTransfer(order) : null} />}
       {fillNote && <div className="hint" style={{ marginBottom: 10 }}>{fillNote}</div>}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="section-head">Hàng hóa ({lines.length})</div>
@@ -385,7 +396,7 @@ function Form({ type }) {
 }
 
 // Đơn đang chọn: đặt / đã giao-nhận / còn lại, và còn lại sau phiếu này
-function OrderBox({ order, lines, type, stockById }) {
+function OrderBox({ order, lines, type, stockById, onRefill }) {
   const meta = ORDER_TYPES[order.type];
   const receiving = order.type === 'STO' && type === 'in';
   const doneOf = (l) => num(receiving ? l.receivedKg : l.doneKg);
@@ -397,7 +408,8 @@ function OrderBox({ order, lines, type, stockById }) {
   const t = (kg) => fmtNum(kg / 1000, 3);
   return (
     <div className="card" style={{ marginBottom: 12 }}>
-      <div className="section-head">{meta.label} {order.id}{order.refNo ? ` · Ecount ${order.refNo}` : ''}{order.dueDate ? ` · ${meta.due} ${fmtDate(order.dueDate)}` : ''}</div>
+      <div className="section-head">{meta.label} {order.id}{order.refNo ? ` · Ecount ${order.refNo}` : ''}{order.dueDate ? ` · ${meta.due} ${fmtDate(order.dueDate)}` : ''}
+        {onRefill && <button type="button" className="btn sm" style={{ marginLeft: 10 }} onClick={onRefill}>↻ Điền lại hàng từ phiếu xuất</button>}</div>
       <table>
         <thead><tr><th>Mã hàng</th><th>Tên hàng</th><th className="num">Đặt (tấn)</th>{receiving && <th className="num">Đã xuất ở kho {order.fromWarehouse}</th>}
           <th className="num">{receiving ? meta.received : meta.done}</th><th className="num">{receiving ? meta.transit : meta.left}</th><th className="num">Phiếu này</th><th className="num">Còn lại sau phiếu</th></tr></thead>

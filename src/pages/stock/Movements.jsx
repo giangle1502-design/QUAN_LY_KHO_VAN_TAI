@@ -80,7 +80,8 @@ export default function Movements() {
                   <td>{m.partyName || m.partyCode}</td><td>{[...new Set(m.lines.map((l) => l.item))].join(', ')}</td>
                   <td className="num">{fmtNum(tot(m, 'bags'))}</td><td className="num">{fmtNum(tot(m, 'kg'))}</td>
                   <td className="small">{m.createdByName || m.createdBy}</td>
-                  <td>{m.status === 'cancelled' && <span className="badge red">Đã hủy</span>}</td>
+                  <td className="nowrap" onClick={(e) => e.stopPropagation()}>{m.status === 'cancelled' ? <span className="badge red">Đã hủy</span>
+                    : m.type === 'in' ? <Link className="btn sm" to={`/kho/phieu/${m.id}/nhan`} target="_blank">🏷️ In nhãn</Link> : null}</td>
                 </tr>
               ))}
             </tbody>

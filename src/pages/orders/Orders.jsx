@@ -362,7 +362,8 @@ function OrderDetail({ o, onClose, onEdit }) {
               <td className="mono"><Link to={`/kho/phieu/${m.id}/in`} target="_blank">{m.id}</Link></td><td>{MOVE_TYPES[m.type]?.icon} {MOVE_TYPES[m.type]?.label}</td><td>{fmtDate(m.date)}</td><td>Kho {m.warehouse}</td>
               <td className="mono">{m.tripId}</td>
               <td className="num">{t(m.lines.reduce((s, l) => s + Math.abs(Number(l.kg) || 0), 0))} tấn</td>
-              <td>{m.status === 'cancelled' ? <span className="badge red">Đã hủy</span> : ''}</td>
+              <td>{m.status === 'cancelled' ? <span className="badge red">Đã hủy</span>
+                : m.type === 'in' ? <Link className="btn sm" to={`/kho/phieu/${m.id}/nhan`} target="_blank">🏷️ In nhãn</Link> : ''}</td>
             </tr>
           ))}
         </tbody></table>
