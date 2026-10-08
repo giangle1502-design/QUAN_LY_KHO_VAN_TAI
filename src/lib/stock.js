@@ -194,7 +194,7 @@ async function applyEffects(tx, mv, effects, user) {
   // Kiểm tra
   for (const [c, s] of statusSnaps) {
     if (s.exists() && s.data().allowOutbound === false)
-      throw new Error(`Hàng tình trạng ${c} (${s.data().name}) bị khóa xuất kho. Đổi sang tình trạng được xuất (vd. DGC) trước.`);
+      throw new Error(`Hàng tình trạng ${c} (${s.data().name}) bị khóa xuất kho. Lập đề nghị giải chấp (Kho → Đề nghị giải chấp → tab Hàng thiếu) để chuyển sang DGC trước.`);
   }
   const locDelta = new Map();
   for (const [id, e] of byStock) {

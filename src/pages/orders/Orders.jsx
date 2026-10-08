@@ -36,8 +36,8 @@ function ShortBanner({ co }) {
   const ids = [...new Set(rows.flatMap((r) => r.orders))];
   return (
     <div className="error-box" style={{ marginBottom: 10 }}>
-      ⚠ Tồn KTC + DGC không đủ cho đơn bán: thiếu <b>{t(kg)} tấn</b> ở {rows.length} mã hàng ({rows.slice(0, 4).map((r) => `${r.item}${r.warehouse ? ' @' + r.warehouse : ''} ${t(r.short)}`).join('; ')}{rows.length > 4 ? '; …' : ''}).
-      {need > 0.001 ? <> Còn cần giải chấp {t(need)} tấn.</> : <> Đã có đề nghị giải chấp chờ ngân hàng duyệt đủ phần thiếu.</>}{' '}
+      ⚠ Tồn KTC + DGC không đủ cho đơn bán (đơn vẫn lập được; lập đề nghị giải chấp là hàng chuyển DGC ngay để xuất): thiếu <b>{t(kg)} tấn</b> ở {rows.length} mã hàng ({rows.slice(0, 4).map((r) => `${r.item}${r.warehouse ? ' @' + r.warehouse : ''} ${t(r.short)}`).join('; ')}{rows.length > 4 ? '; …' : ''}).
+      {need > 0.001 ? <> Còn cần giải chấp {t(need)} tấn.</> : <> Đã có đề nghị giải chấp đủ phần thiếu, chưa đổi DGC.</>}{' '}
       <span className="small">Đơn: {ids.slice(0, 6).join(', ')}{ids.length > 6 ? '…' : ''}.</span>{' '}
       <Link to="/kho/giai-chap?tab=thieu"><b>Xem tổng hợp hàng thiếu →</b></Link>
     </div>

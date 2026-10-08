@@ -13,13 +13,13 @@ import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
 
 // ============================================================================
 // Đề nghị giải chấp: kế toán chọn hàng HTC (1 công ty, 1 ngân hàng, 1 kho), in đề nghị
-// gửi ngân hàng theo mẫu. Ngân hàng duyệt → bấm "Giải chấp": hệ thống lập phiếu đổi
+// gửi ngân hàng theo mẫu (PDF, ký số). Lưu đề nghị là đổi ngay: hệ thống lập phiếu đổi
 // tình trạng (TC) HTC → DGC cho đúng các dòng tồn trong đề nghị.
 // Số đề nghị: HSGC + yymmdd + số thứ tự trong ngày (vd. HSGC26070210).
 // ============================================================================
 
 export const RELEASE_STATUS = {
-  sent: { label: 'Chờ ngân hàng duyệt', cls: 'amber' },
+  sent: { label: 'Chưa đổi DGC', cls: 'amber' },
   released: { label: 'Đã giải chấp', cls: 'green' },
   cancelled: { label: 'Đã hủy', cls: '' },
 };
@@ -50,13 +50,42 @@ async function createRelease(data, user) {
   });
 }
 
+// Đổi tình trạng HTC → DGC cho đúng các dòng tồn trong đề nghị (phiếu TC), đánh dấu đề nghị đã giải chấp
+async function postRelease(r, { email, name }) {
+  const lines = [];
+  for (const [i, l] of r.lines.entries()) {
+    const s = await getDoc(doc(db, 'stock', l.stockId));
+    const x = s.exists() ? s.data() : null;
+    if (!x || x.goodsStatus !== 'HTC' || num(x.kg) < num(l.kg) - 0.001) {
+      throw new Error(`Dòng ${i + 1} (${l.item} lot ${l.lot || '-'}, ${l.location}): tồn HTC hiện chỉ còn ${fmtNum(x?.kg || 0)} kg, không đủ ${fmtNum(l.kg)} kg. Hàng đã bị xuất/chuyển sau khi lập đề nghị; hủy đề nghị và lập lại.`);
+    }
+    const k = num(x.kg) ? Math.min(1, num(l.kg) / num(x.kg)) : 1;
+    lines.push({
+      item: x.item, itemName: x.itemName || '', lot: x.lot || '', mfgDate: x.mfgDate || '', expDate: x.expDate || '', inDate: x.inDate || '',
+      location: x.location, goodsStatus: 'HTC', pledgee: x.pledgee || '', company: x.company || '',
+      bags: k === 1 ? num(x.bags) : Math.round(num(x.bags) * k), pallets: k === 1 ? num(x.pallets) : r3(num(x.pallets) * k), kg: num(l.kg),
+      toStatus: 'DGC', toPledgee: '',
+    });
+  }
+  const mid = await postMovement({
+    type: 'status', warehouse: r.warehouse, company: r.company, date: today(), tripId: '', orderId: '', orderRef: '',
+    partyCode: r.pledgee, partyName: r.pledgeeName, shipCode: '', reason: '', note: `Giải chấp theo đề nghị ${r.id}`, releaseId: r.id, lines,
+  }, { email, name });
+  const at = new Date().toISOString();
+  await updateDoc(doc(db, 'releaseRequests', r.id), {
+    status: 'released', movementId: mid, releasedAt: at, releasedBy: email,
+    history: [...(r.history || []), { at, by: email, byName: name, action: `Đổi HTC → DGC, phiếu ${mid}` }],
+  });
+  return mid;
+}
+
 // Danh sách đề nghị giải chấp
 export default function Release() {
   const { hasRole, inMyWarehouses, email, name } = useApp();
   const [co, setCo] = useOpCompany();
   const [rows, setRows] = useState([]);
   const [error, setError] = useState('');
-  const [st, setSt] = useState('sent');
+  const [st, setSt] = useState('');
   const [form, setForm] = useState(false); // false | true | { preset }
   const [msg, setMsg] = useState('');
   const [sp, setSp] = useSearchParams();
@@ -70,34 +99,11 @@ export default function Release() {
     .sort((a, b) => String(b.id).localeCompare(String(a.id)));
 
   const release = async (r) => {
-    if (!window.confirm(`Ngân hàng đã duyệt ${r.id}? Hệ thống sẽ lập phiếu đổi tình trạng HTC → DGC cho ${ton3(totKg(r))} tấn.`)) return;
+    if (!window.confirm(`Đổi ${ton3(totKg(r))} tấn trong ${r.id} từ HTC sang DGC?`)) return;
     setBusy(r.id); setMsg('');
     try {
-      const lines = [];
-      for (const [i, l] of r.lines.entries()) {
-        const s = await getDoc(doc(db, 'stock', l.stockId));
-        const x = s.exists() ? s.data() : null;
-        if (!x || x.goodsStatus !== 'HTC' || num(x.kg) < num(l.kg) - 0.001) {
-          throw new Error(`Dòng ${i + 1} (${l.item} lot ${l.lot || '-'}, ${l.location}): tồn HTC hiện chỉ còn ${fmtNum(x?.kg || 0)} kg, không đủ ${fmtNum(l.kg)} kg. Hàng đã bị xuất/chuyển sau khi lập đề nghị; hủy đề nghị và lập lại.`);
-        }
-        const k = num(x.kg) ? Math.min(1, num(l.kg) / num(x.kg)) : 1;
-        lines.push({
-          item: x.item, itemName: x.itemName || '', lot: x.lot || '', mfgDate: x.mfgDate || '', expDate: x.expDate || '', inDate: x.inDate || '',
-          location: x.location, goodsStatus: 'HTC', pledgee: x.pledgee || '', company: x.company || '',
-          bags: k === 1 ? num(x.bags) : Math.round(num(x.bags) * k), pallets: k === 1 ? num(x.pallets) : r3(num(x.pallets) * k), kg: num(l.kg),
-          toStatus: 'DGC', toPledgee: '',
-        });
-      }
-      const mid = await postMovement({
-        type: 'status', warehouse: r.warehouse, company: r.company, date: today(), tripId: '', orderId: '', orderRef: '',
-        partyCode: r.pledgee, partyName: r.pledgeeName, shipCode: '', reason: '', note: `Giải chấp theo đề nghị ${r.id}`, releaseId: r.id, lines,
-      }, { email, name });
-      const at = new Date().toISOString();
-      await updateDoc(doc(db, 'releaseRequests', r.id), {
-        status: 'released', movementId: mid, releasedAt: at, releasedBy: email,
-        history: [...(r.history || []), { at, by: email, byName: name, action: `Giải chấp, phiếu ${mid}` }],
-      });
-      setMsg(`Đã giải chấp ${r.id}: phiếu ${mid} chuyển ${ton3(totKg(r))} tấn sang DGC.`);
+      const mid = await postRelease(r, { email, name });
+      setMsg(`Đã đổi ${r.id}: phiếu ${mid} chuyển ${ton3(totKg(r))} tấn sang DGC.`);
     } catch (e) {
       setMsg('Lỗi: ' + (e.code === 'permission-denied' ? 'Bạn không có quyền giải chấp hàng ở kho này.' : e.message));
     }
@@ -136,8 +142,8 @@ export default function Release() {
       {msg && <div className={msg.startsWith('Lỗi') ? 'error-box' : 'ok-box'}>{msg}</div>}
       {tab === 'thieu' ? <Shortfall co={co} setCo={setCo} canEdit={canEdit} onPlan={(preset) => setForm({ preset })} /> : <>
       <p className="hint">
-        Lập đề nghị từ hàng đang thế chấp (HTC) → in gửi ngân hàng. Khi ngân hàng duyệt, bấm <b>Giải chấp</b>:
-        hệ thống lập phiếu đổi tình trạng HTC → DGC cho đúng các dòng hàng trong đề nghị.
+        Lập đề nghị từ hàng đang thế chấp (HTC): khi lưu, hệ thống <b>đổi ngay</b> các dòng hàng trong đề nghị sang <b>DGC</b> (phiếu TC),
+        xuất kho được luôn. Bấm <b>🖨 In</b> → Lưu PDF, chèn chữ ký số và gửi ngân hàng.
       </p>
       <div className="toolbar">
         <CompanyPicker value={co} onChange={setCo} />
@@ -162,7 +168,7 @@ export default function Release() {
                   <td className="nowrap">
                     <Link className="btn sm" to={`/kho/giai-chap/${r.id}/in`}>🖨 In</Link>{' '}
                     {canEdit && r.status === 'sent' && <>
-                      <button className="btn sm primary" disabled={!!busy} onClick={() => release(r)}>{busy === r.id ? 'Đang ghi…' : '✅ Giải chấp'}</button>{' '}
+                      <button className="btn sm primary" disabled={!!busy} onClick={() => release(r)}>{busy === r.id ? 'Đang ghi…' : '✅ Đổi DGC'}</button>{' '}
                       <button className="btn sm" onClick={() => cancel(r)}>Hủy</button>
                     </>}
                   </td>
@@ -173,7 +179,7 @@ export default function Release() {
         )}
       </div>
       </>}
-      {form && <ReleaseForm preset={form.preset} onClose={(id) => { setForm(false); if (id) { setSp({}); setSt('sent'); setMsg(`Đã lập đề nghị ${id}. Bấm 🖨 In để in gửi ngân hàng.`); } }} />}
+      {form && <ReleaseForm preset={form.preset} onClose={(id, m) => { setForm(false); if (id) { setSp({}); setSt(''); setMsg(m || `Đã lập đề nghị ${id}.`); } }} />}
     </div>
   );
 }
@@ -214,7 +220,7 @@ function Shortfall({ co, setCo, canEdit, onPlan }) {
     <div>
       <p className="hint">
         Đơn bán chỉ xuất được hàng <b>KTC</b> và <b>DGC</b>. Khi SO còn phải giao nhiều hơn tồn KTC + DGC (cùng công ty, cùng kho, cùng mã hàng),
-        phần <b>thiếu</b> được tổng hợp ở đây. <b>Còn cần giải chấp</b> = thiếu − phần đang nằm trong đề nghị chờ ngân hàng duyệt.
+        phần <b>thiếu</b> được tổng hợp ở đây. <b>Còn cần giải chấp</b> = thiếu − phần nằm trong đề nghị chưa đổi DGC. Lập đề nghị là hàng chuyển DGC ngay, dòng thiếu tự mất.
         Bấm <b>Lập đề nghị</b> ở phần gợi ý để tích sẵn hàng HTC (nhập trước giải chấp trước) đủ bù phần thiếu.
       </p>
       <div className="toolbar">
@@ -306,7 +312,7 @@ function ReleaseForm({ onClose, preset }) {
       const p = cur(r);
       const kg = r3(num(p.ton) * 1000);
       if (!String(p.docNo || '').trim()) return setErr(`${r.item} lot ${r.lot || '-'}: nhập số bộ chứng từ (BCT).`);
-      if (kg <= 0 || kg > r.free + 0.001) return setErr(`${r.item} lot ${r.lot || '-'}: số lượng phải từ 0 đến ${ton3(r.free)} tấn${r.held ? ' (phần còn lại đang nằm trong đề nghị khác chờ duyệt)' : ''}.`);
+      if (kg <= 0 || kg > r.free + 0.001) return setErr(`${r.item} lot ${r.lot || '-'}: số lượng phải từ 0 đến ${ton3(r.free)} tấn${r.held ? ' (phần còn lại đang nằm trong đề nghị khác chưa đổi DGC)' : ''}.`);
       lines.push({ stockId: r._id, item: r.item, itemName: r.itemName || '', lot: r.lot || '', location: r.location, docNo: String(p.docNo || '').trim(),
         place: String(p.place || '').trim(), unit: 'TẤN', kg });
     }
@@ -314,8 +320,15 @@ function ReleaseForm({ onClose, preset }) {
     const c = companies.find((x) => x.code === h.company);
     setBusy(true);
     try {
-      const id = await createRelease({ ...h, pledgeeName: pl?.name || h.pledgee, companyName: c?.name || h.company, lines }, { email, name });
-      onClose(id);
+      const data = { ...h, pledgeeName: pl?.name || h.pledgee, companyName: c?.name || h.company, lines };
+      const id = await createRelease(data, { email, name });
+      // Lưu đề nghị là đổi ngay HTC → DGC; đề nghị chỉ còn để in PDF, ký số, gửi ngân hàng
+      try {
+        const mid = await postRelease({ ...data, id, history: [{ at: new Date().toISOString(), by: email, byName: name, action: 'Lập đề nghị' }] }, { email, name });
+        onClose(id, `Đã lập đề nghị ${id} và đổi ${fmtNum(total, 3, 3)} tấn sang DGC (phiếu ${mid}). Bấm 🖨 In → Lưu PDF để ký số gửi ngân hàng.`);
+      } catch (e3) {
+        onClose(id, `Lỗi: đã lập đề nghị ${id} nhưng chưa đổi được sang DGC (${e3.message}). Bấm ✅ Đổi DGC ở dòng đề nghị để thử lại.`);
+      }
     } catch (e2) {
       setErr(e2.code === 'permission-denied' ? 'Bạn không có quyền lập đề nghị giải chấp cho kho này.' : e2.message);
       setBusy(false);
