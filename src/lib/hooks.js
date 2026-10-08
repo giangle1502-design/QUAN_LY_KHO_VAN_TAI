@@ -18,6 +18,20 @@ export function useCollection(name) {
   return state;
 }
 
+// Nghe nhiều danh mục cùng lúc (danh sách tên thay đổi theo cấu hình trường) → { tên: rows }
+export function useCollections(names) {
+  const key = [...new Set(names.filter(Boolean))].sort().join(',');
+  const [data, setData] = useState({});
+  useEffect(() => {
+    if (!key) return undefined;
+    const offs = key.split(',').map((n) => onSnapshot(collection(db, n),
+      (snap) => setData((d) => ({ ...d, [n]: snap.docs.map((x) => ({ _id: x.id, ...x.data() })) })),
+      () => setData((d) => ({ ...d, [n]: [] }))));
+    return () => offs.forEach((off) => off());
+  }, [key]);
+  return data;
+}
+
 // Kho đang thao tác (nhớ trên trình duyệt). '' = tất cả kho được giao
 
 export function useMyWarehouses() {

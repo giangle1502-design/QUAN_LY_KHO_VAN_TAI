@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { useCollection, useMyWarehouses, useOpCompany } from '../../lib/hooks';
+import { useCollection, useCollections, useMyWarehouses, useOpCompany } from '../../lib/hooks';
+import { refValue } from '../../catalogs';
 import { CompanyPicker } from '../../components/TripBits';
 import FieldInput from '../../components/FieldInput';
 import { AddFieldButton, ColumnPicker, QuickAdd } from '../../components/FormTools';
 import { ErrorBox, Field, Modal } from '../../components/ui';
 import { createOrder, saveOrder, summarizeLines } from '../../lib/orders';
-import { cleanValue, linkPatch } from '../../lib/fields';
+import { cleanValue, defaultsOf, fillEmptyLinks, linkPatch } from '../../lib/fields';
 import { usePref } from '../../lib/prefs';
 import { vnDate } from '../../lib/trips';
 import { fmtNum } from '../../lib/utils';
@@ -16,17 +17,11 @@ import { fmtNum } from '../../lib/utils';
 //  - Dòng hàng: ngày giao, kho xuất, mã hàng, số lượng, mã giao, TTHH… riêng từng dòng → 1 mã hàng giao nhiều điểm / nhiều kho
 const CFG = {
   SO: { head: 'soHead', line: 'soLine', party: 'soldto', partyLabel: 'khách hàng', title: 'đơn bán (SO)', done: 'Đã giao',
-    headVias: [{ key: 'partyCode', label: 'Khách hàng', ref: 'soldto' }, { key: 'company', label: 'Công ty xuất', ref: 'companies' }],
-    lineVias: [{ key: 'item', label: 'Mã hàng', ref: 'items' }, { key: 'shipCode', label: 'Mã giao', ref: 'shipto' }, { key: 'warehouse', label: 'Kho xuất', ref: 'warehouses' }],
     hint: 'Mỗi dòng có ngày giao, kho xuất, mã giao, TTHH riêng: cùng 1 mã hàng giao nhiều điểm hoặc xuất nhiều kho thì thêm nhiều dòng (⧉ để nhân bản).' },
   PO: { head: 'poHead', line: 'poLine', party: 'suppliers', partyLabel: 'nhà cung cấp', title: 'đơn mua (PO)', done: 'Đã nhận',
-    headVias: [{ key: 'partyCode', label: 'Nhà cung cấp', ref: 'suppliers' }, { key: 'company', label: 'Công ty mua', ref: 'companies' }],
-    lineVias: [{ key: 'item', label: 'Mã hàng', ref: 'items' }, { key: 'warehouse', label: 'Kho nhập', ref: 'warehouses' }],
     hint: 'Mỗi dòng có ngày hàng về, kho nhập, TTHH riêng: cùng 1 mã hàng về nhiều đợt hoặc nhập nhiều kho thì thêm nhiều dòng (⧉ để nhân bản).' },
   // Lệnh chuyển kho: kho xuất, kho nhập theo từng dòng → 1 lệnh chuyển nhiều tuyến (K1→K2, K1→K3…)
   STO: { head: 'stoHead', line: 'stoLine', party: null, title: 'lệnh chuyển kho (STO)', done: 'Đã xuất', received: 'Đã nhận',
-    headVias: [{ key: 'company', label: 'Công ty chủ hàng', ref: 'companies' }],
-    lineVias: [{ key: 'item', label: 'Mã hàng', ref: 'items' }, { key: 'fromWarehouse', label: 'Kho xuất', ref: 'warehouses' }, { key: 'toWarehouse', label: 'Kho nhập', ref: 'warehouses' }],
     hint: 'Mỗi dòng có kho xuất, kho nhập, ngày chuyển, TTHH riêng: chuyển cùng 1 mã hàng đi nhiều kho thì thêm nhiều dòng (⧉ để nhân bản).' },
 };
 const BUILTIN_HEAD = ['date', 'company', 'partyCode', 'tolerancePct', 'note'];
@@ -36,11 +31,15 @@ const n = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? 0 : Number(
 export default function SOForm({ type = 'SO', order, onClose }) {
   const cfg = CFG[type];
   const sto = type === 'STO';
-  const HEAD_VIAS = cfg.headVias;
-  const LINE_VIAS = cfg.lineVias;
   const { email, name, fieldsOf, hasRole } = useApp();
   const headFields = fieldsOf(cfg.head).filter((f) => !f.hidden);
   const lineFields = fieldsOf(cfg.line).filter((f) => !f.hidden);
+  // Liên kết được với mọi trường chọn danh mục trên form (có sẵn hoặc tự thêm); dòng hàng còn liên kết được với phần chung (h:…)
+  const HEAD_VIAS = headFields.filter((f) => f.type === 'ref' && f.ref).map((f) => ({ key: f.key, label: f.label, ref: f.ref }));
+  const LINE_VIAS = [...lineFields.filter((f) => f.type === 'ref' && f.ref).map((f) => ({ key: f.key, label: f.label, ref: f.ref })),
+    ...HEAD_VIAS.map((v) => ({ ...v, key: `h:${v.key}`, label: `${v.label} (phần chung)` }))];
+  // Danh mục của các trường chọn tự thêm (vd. Đơn vị vận tải) để tự điền trường liên kết
+  const extraRows = useCollections([...HEAD_VIAS, ...LINE_VIAS].map((v) => v.ref));
   const parties = useCollection(cfg.party).rows; // STO: không có khách hàng / nhà cung cấp
   const companies = useCollection('companies').rows;
   const items = useCollection('items').rows;
@@ -55,14 +54,27 @@ export default function SOForm({ type = 'SO', order, onClose }) {
     item: (v) => itemMap.get(v), shipCode: (v) => shipto.find((s) => s.shipCode === v), warehouse: (v) => warehouses.find((w) => w.code === v),
     fromWarehouse: (v) => warehouses.find((w) => w.code === v), toWarehouse: (v) => warehouses.find((w) => w.code === v),
   };
+  // Bản ghi đang chọn ở trường k (có sẵn hoặc tự thêm)
+  const recAt = (fields, k, v) => {
+    if (!v) return null;
+    if (recOf[k]) return recOf[k](v) || null;
+    const f = fields.find((x) => x.key === k);
+    return f?.ref ? (extraRows[f.ref] || []).find((r) => refValue(f.ref, r) === v) || null : null;
+  };
+  const isVia = (fields, k) => fields.some((f) => f.link?.via === k);
   const [defaultCo] = useOpCompany();
-  const [h, setH] = useState(() => (order ? { ...order, tolerancePct: order.tolerancePct || '' }
-    : { company: defaultCo, date: vnDate(), partyCode: '', partyName: '', tolerancePct: '', note: '' }));
+  // Đơn mới: lấy giá trị mặc định đã thiết lập ở Quản lý trường
+  const [h, setH] = useState(() => {
+    if (order) return { ...order, tolerancePct: order.tolerancePct || '' };
+    const d = defaultsOf(headFields);
+    return { partyCode: '', partyName: '', tolerancePct: '', note: '', ...d, company: d.company || defaultCo, date: d.date || vnDate() };
+  });
+  const blankLine = () => ({ dueDate: '', warehouse: '', fromWarehouse: '', toWarehouse: '', item: '', itemName: '', qtyT: '', shipCode: '', goodsStatus: '', note: '', ...defaultsOf(lineFields) });
   // Đơn cũ (kho / mã giao / hạn giao ở đầu đơn): chép xuống từng dòng
   const [lines, setLines] = useState(() => (order
     ? order.lines.map((l) => ({ ...l, qtyT: n(l.qtyKg) / 1000, warehouse: l.warehouse || order.warehouse || '', shipCode: l.shipCode || order.shipCode || '', dueDate: l.dueDate || order.dueDate || '', goodsStatus: l.goodsStatus || '', note: l.note || '',
       ...(sto ? { fromWarehouse: l.fromWarehouse || order.fromWarehouse || '', toWarehouse: l.toWarehouse || order.toWarehouse || '' } : {}) }))
-    : [{ dueDate: '', warehouse: '', fromWarehouse: '', toWarehouse: '', item: '', itemName: '', qtyT: '', shipCode: '', goodsStatus: '', note: '' }]));
+    : [blankLine()]));
   const [hiddenCols, setHiddenCols] = usePref(`${type}LineHiddenCols`, []);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -78,22 +90,48 @@ export default function SOForm({ type = 'SO', order, onClose }) {
       // Đổi khách hàng: mã giao của khách cũ không còn đúng
       setLines((ls) => ls.map((l) => (l.shipCode && !shipto.some((s) => s.shipCode === l.shipCode && s.customerCode === v) ? { ...l, shipCode: '' } : l)));
     }
-    if (recOf[k]) Object.assign(p, linkPatch(headFields, k, rec || recOf[k](v)));
+    const r = rec || recAt(headFields, k, v);
+    if (isVia(headFields, k)) Object.assign(p, linkPatch(headFields, k, r));
+    // Trường dòng hàng liên kết với phần chung: cập nhật mọi dòng
+    if (isVia(lineFields, `h:${k}`)) setLines((ls) => ls.map((l) => ({ ...l, ...linkPatch(lineFields, `h:${k}`, r) })));
     return { ...x, ...p };
   });
   const setLine = (i, k, v, rec) => setLines((ls) => ls.map((l, j) => {
     if (j !== i) return l;
     const p = { [k]: v };
-    const r = rec || recOf[k]?.(v);
+    const r = rec || recAt(lineFields, k, v);
     if (k === 'item') p.itemName = r?.name || '';
-    if (recOf[k]) Object.assign(p, linkPatch(lineFields, k, r));
+    if (isVia(lineFields, k)) Object.assign(p, linkPatch(lineFields, k, r));
     return { ...l, ...p };
   }));
   // Dòng mới lấy sẵn ngày giao, kho, mã giao, TTHH của dòng trên cho nhanh
   const addLine = () => setLines((ls) => {
     const last = ls[ls.length - 1] || {};
-    return [...ls, { dueDate: last.dueDate || '', warehouse: last.warehouse || '', fromWarehouse: last.fromWarehouse || '', toWarehouse: last.toWarehouse || '', item: '', itemName: '', qtyT: '', shipCode: last.shipCode || '', goodsStatus: last.goodsStatus || '', note: '' }];
+    const b = blankLine();
+    const carry = Object.fromEntries(['dueDate', 'warehouse', 'fromWarehouse', 'toWarehouse', 'shipCode', 'goodsStatus'].map((k) => [k, last[k] || b[k]]));
+    const nl = { ...b, ...carry };
+    return [...ls, { ...nl, ...fillEmptyLinks(lineFields, nl, (via) => (via.startsWith('h:') ? recAt(headFields, via.slice(2), h[via.slice(2)]) : recAt(lineFields, via, nl[via]))) }];
   });
+  // Giá trị mặc định là mã danh mục (vd. khách hàng, kho): khi danh mục tải xong thì điền các trường liên kết còn trống
+  const loadedKey = [parties.length, companies.length, items.length, shipto.length, warehouses.length, ...Object.values(extraRows).map((r) => r.length)].join(',');
+  useEffect(() => {
+    if (order) return;
+    const headRec = (via) => recAt(headFields, via, h[via]);
+    const hp = fillEmptyLinks(headFields, h, headRec);
+    if (h.partyCode && !h.partyName && recOf.partyCode(h.partyCode)) hp.partyName = recOf.partyCode(h.partyCode).name;
+    if (Object.keys(hp).length) setH((x) => ({ ...x, ...hp }));
+    setLines((ls) => {
+      let changed = false;
+      const out = ls.map((l) => {
+        const p = fillEmptyLinks(lineFields, l, (via) => (via.startsWith('h:') ? headRec(via.slice(2)) : recAt(lineFields, via, l[via])));
+        if (l.item && !l.itemName && itemMap.get(l.item)) p.itemName = itemMap.get(l.item).name;
+        if (!Object.keys(p).length) return l;
+        changed = true;
+        return { ...l, ...p };
+      });
+      return changed ? out : ls;
+    });
+  }, [loadedKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const copyLine = (i) => setLines((ls) => {
     const { no, doneKg, receivedKg, qtyKg, ...rest } = ls[i]; // eslint-disable-line no-unused-vars
     return [...ls.slice(0, i + 1), { ...rest }, ...ls.slice(i + 1)];
@@ -139,7 +177,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
     const data = {
       ...headCustom, type, company: h.company, date: h.date,
       ...(sto ? { partyCode: sum.toWarehouses.join(', '), partyName: `Chuyển đến kho ${sum.toWarehouses.map(whName).join(', ')}` }
-        : { partyCode: h.partyCode.trim(), partyName: String(h.partyName || '').trim() }),
+        : { partyCode: h.partyCode.trim(), partyName: String(h.partyName || recOf.partyCode(h.partyCode.trim())?.name || '').trim() }),
       refNo: order?.refNo || '', tolerancePct: h.tolerancePct === '' ? 0 : Number(h.tolerancePct), note: String(h.note || '').trim(),
       lines: out, ...sum,
     };

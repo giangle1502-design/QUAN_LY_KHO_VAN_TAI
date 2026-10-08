@@ -22,7 +22,9 @@ export function mergeFields(catKey, stored = []) {
         label: s.label || base.label,
         required: keys.includes(base.key) || base.required ? true : !!s.required,
         hidden: keys.includes(base.key) ? false : !!s.hidden,
-        options: base.type === 'select' && s.options?.length ? s.options : base.options,
+        options: CHOICE_TYPES.includes(base.type) && !base.labels && !base.computed && !base.system && s.options?.length ? s.options : base.options,
+        // default '' = admin bỏ giá trị mặc định có sẵn trong code
+        ...('default' in s ? (s.default === '' ? { default: undefined } : { default: s.default }) : {}),
         builtin: true,
       });
       seen.add(s.key);
@@ -41,9 +43,20 @@ export function applyComputed(fields, row) {
   return r;
 }
 
+// Mặc định ngày: 'today' = hôm nay, 'today+3' = 3 ngày sau
+export function resolveDefault(v) {
+  const m = typeof v === 'string' && v.match(/^today([+-]\d+)?$/);
+  if (!m) return v;
+  const d = new Date(Date.now() + 7 * 3600e3 + Number(m[1] || 0) * 864e5); // giờ Việt Nam
+  return d.toISOString().slice(0, 10);
+}
+export const DATE_DEFAULTS = [['today', 'Hôm nay'], ['today+1', 'Ngày mai'], ['today+2', 'Sau 2 ngày'], ['today+3', 'Sau 3 ngày'], ['today+7', 'Sau 7 ngày'], ['today+30', 'Sau 30 ngày']];
+export const canDefault = (f) => f.type !== 'multiref' && !f.computed && !f.system;
+export const canChoose = (f) => CHOICE_TYPES.includes(f.type) && !f.labels && !f.computed && !f.system;
+
 export function defaultsOf(fields) {
   const r = {};
-  for (const f of fields) if (f.default !== undefined) r[f.key] = f.default;
+  for (const f of fields) if (f.default !== undefined && f.default !== '') r[f.key] = resolveDefault(f.default);
   return r;
 }
 
@@ -72,10 +85,18 @@ export function cleanValue(f, v) {
 }
 
 // Danh sách trường đã gộp → dạng lưu ở settings/fields (giữ trường tự thêm, liên kết, danh sách chọn)
+// Kiểu được phép có danh sách giá trị chọn sẵn (vd. VAT 5%, 8%, 10%)
+export const CHOICE_TYPES = ['select', 'number', 'percent', 'currency', 'text'];
+// Chuỗi "5, 8, 10" → danh sách; kiểu số giữ dạng số
+export function parseChoices(text, type) {
+  const list = String(text || '').split(',').map((s) => s.trim().replace(/%$/, '').trim()).filter(Boolean);
+  return ['number', 'percent', 'currency'].includes(type) ? list.map(Number).filter((x) => Number.isFinite(x)) : list;
+}
 export function toStored(list) {
   return list.map((f) => {
     const o = { key: f.key, label: String(f.label || '').trim(), required: !!f.required, hidden: !!f.hidden };
-    if (f.type === 'select' && !f.labels && f.options?.length) o.options = f.options;
+    if (f.options?.length && canChoose(f)) o.options = f.options;
+    if (f.default !== undefined && f.default !== '') o.default = f.default;
     if (f.custom) Object.assign(o, { custom: true, type: f.type, ...(f.ref ? { ref: f.ref } : {}), ...(f.link ? { link: f.link } : {}) });
     return o;
   });
@@ -85,5 +106,15 @@ export function toStored(list) {
 export function linkPatch(fields, via, rec) {
   const p = {};
   for (const f of fields) if (f.link?.via === via) p[f.key] = rec ? rec[f.link.field] ?? '' : '';
+  return p;
+}
+// Chỉ điền các trường liên kết đang trống (dùng khi giá trị mặc định / dữ liệu danh mục vừa tải xong)
+export function fillEmptyLinks(fields, row, recFor) {
+  const p = {};
+  for (const f of fields) {
+    if (!f.link || (row[f.key] !== undefined && row[f.key] !== '' && row[f.key] !== null)) continue;
+    const rec = recFor(f.link.via);
+    if (rec && rec[f.link.field] !== undefined && rec[f.link.field] !== '') p[f.key] = rec[f.link.field];
+  }
   return p;
 }

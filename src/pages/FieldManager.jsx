@@ -4,7 +4,7 @@ import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
 import { CATALOGS, FIELD_TYPES, FORM_DEFS, GROUPS, catalogByKey } from '../catalogs';
-import { keyFieldsOf } from '../lib/fields';
+import { DATE_DEFAULTS, canChoose, canDefault, keyFieldsOf, parseChoices } from '../lib/fields';
 import { norm } from '../lib/utils';
 import { ErrorBox } from '../components/ui';
 
@@ -24,16 +24,17 @@ export default function FieldManager() {
   const [nf, setNf] = useState({ label: '', type: 'text', ref: '' });
 
   useEffect(() => {
-    setList(fieldsOf(catKey).map((f) => ({ ...f, optionsText: (f.options || []).join(', ') })));
+    setList(fieldsOf(catKey).map((f) => ({ ...f, optionsText: (f.options || []).join(', '), defText: f.default === undefined ? '' : f.default === true ? 'true' : String(f.default) })));
     setDirty(false); setMsg(''); setErr('');
   }, [catKey, fieldsOf]);
 
   const keys = keyFieldsOf(cat);
   // Mô tả trường liên kết: "Tự lấy theo Khách hàng → Điều khoản thanh toán"
   const linkText = (lk) => {
-    const viaF = cat.fields.find((x) => x.key === lk.via);
+    const head = lk.via.startsWith('h:');
+    const viaF = head ? fieldsOf(catKey.replace(/Line$/, 'Head')).find((x) => x.key === lk.via.slice(2)) : list.find((x) => x.key === lk.via);
     const target = viaF?.ref && catalogByKey(viaF.ref) ? fieldsOf(viaF.ref).find((x) => x.key === lk.field) : null;
-    return `Tự lấy theo ${viaF?.label || lk.via} → ${target?.label || lk.field}`;
+    return `Tự lấy theo ${head ? '(phần chung) ' : ''}${viaF?.label || lk.via} → ${target?.label || lk.field}`;
   };
   const upd = (i, patch) => { setList((l) => l.map((f, j) => (j === i ? { ...f, ...patch } : f))); setDirty(true); };
   const move = (i, d) => {
@@ -53,7 +54,7 @@ export default function FieldManager() {
     if (list.some((f) => norm(f.label) === norm(label))) return setErr('Đã có trường cùng tên.');
     const slug = norm(label).replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30) || 'truong';
     const key = `c_${slug}_${Date.now().toString(36).slice(-4)}`;
-    setList((l) => [...l, { key, label, type: nf.type, ...(nf.type === 'ref' ? { ref: nf.ref } : {}), custom: true, required: false, hidden: false, optionsText: '' }]);
+    setList((l) => [...l, { key, label, type: nf.type, ...(nf.type === 'ref' ? { ref: nf.ref } : {}), custom: true, required: false, hidden: false, optionsText: '', defText: '' }]);
     setNf({ label: '', type: 'text', ref: '' }); setDirty(true); setErr('');
   };
 
@@ -65,7 +66,15 @@ export default function FieldManager() {
     if (noRef) return setErr(`Trường "${noRef.label}": chọn danh mục để lấy dữ liệu.`);
     const out = list.map((f) => {
       const o = { key: f.key, label: f.label.trim(), required: !!f.required, hidden: !!f.hidden };
-      if (f.type === 'select' && !f.labels) o.options = f.optionsText.split(',').map((s) => s.trim()).filter(Boolean);
+      if (canChoose(f)) { const c = parseChoices(f.optionsText, f.type); if (c.length) o.options = c; }
+      // Giá trị mặc định khi tạo mới ('' = bỏ mặc định có sẵn trong code)
+      const d = String(f.defText ?? '').trim().replace(/%$/, '');
+      const baseDef = cat.fields.find((x) => x.key === f.key)?.default;
+      if (canDefault(f)) {
+        if (f.type === 'checkbox') { if (d === 'true' || baseDef !== undefined) o.default = d === 'true'; }
+        else if (d !== '') o.default = ['number', 'percent', 'currency'].includes(f.type) ? Number(d) : d;
+        else if (baseDef !== undefined && baseDef !== '') o.default = '';
+      }
       if (f.custom) Object.assign(o, { custom: true, type: f.type, ...(f.type === 'ref' ? { ref: f.ref } : {}), ...(f.link ? { link: f.link } : {}) });
       return o;
     });
@@ -98,14 +107,14 @@ export default function FieldManager() {
       <p className="hint">
         Chọn danh mục ở góc phải. Đổi tên, sắp xếp, ẩn hoặc bắt buộc nhập cho từng trường; thêm trường mới với kiểu dữ liệu:
         {' '}{FIELD_TYPES.map((x) => x[1]).join(', ')}.
-        Trường khóa ({keys.map((k) => cat.fields.find((f) => f.key === k)?.label).join(' + ')}) luôn bắt buộc. Trường có sẵn không xóa được, chỉ ẩn.
+        Trường khóa ({keys.map((k) => cat.fields.find((f) => f.key === k)?.label).join(' + ')}) luôn bắt buộc. Trường có sẵn không xóa được, chỉ ẩn. Cột Mặc định: giá trị tự điền khi tạo mới (vd. VAT 8%, ngày = Hôm nay), người nhập vẫn sửa được.
       </p>
       <ErrorBox error={err} />
       {msg && <div className="ok-box" style={{ marginBottom: 10 }}>{msg}</div>}
       <div className="table-wrap">
         <table>
           <thead>
-            <tr><th className="stt">STT</th><th>Tên trường</th><th>Kiểu dữ liệu</th><th>Danh sách chọn (cách nhau dấu phẩy)</th><th>Bắt buộc</th><th>Ẩn</th><th></th></tr>
+            <tr><th className="stt">STT</th><th>Tên trường</th><th>Kiểu dữ liệu</th><th>Danh sách chọn (cách nhau dấu phẩy)</th><th>Mặc định</th><th>Bắt buộc</th><th>Ẩn</th><th></th></tr>
           </thead>
           <tbody>
             {list.map((f, i) => {
@@ -135,9 +144,21 @@ export default function FieldManager() {
                     {f.link && <div className="link-hint">↳ {linkText(f.link)}</div>}
                   </td>
                   <td>
-                    {f.type === 'select' && !f.labels
-                      ? <input type="text" value={f.optionsText} onChange={(e) => upd(i, { optionsText: e.target.value })} placeholder="VD: Bao, Kg, Tấn" />
+                    {canChoose(f)
+                      ? <input type="text" value={f.optionsText} onChange={(e) => upd(i, { optionsText: e.target.value })} placeholder={f.type === 'percent' ? 'VD: 0, 5, 8, 10' : 'VD: Bao, Kg, Tấn'} />
                       : <span className="small">—</span>}
+                  </td>
+                  <td>
+                    {!canDefault(f) ? <span className="small">—</span>
+                      : f.type === 'checkbox' ? <input type="checkbox" checked={f.defText === 'true'} onChange={(e) => upd(i, { defText: e.target.checked ? 'true' : '' })} />
+                      : parseChoices(f.optionsText, f.type).length ? (
+                        <select value={f.defText} onChange={(e) => upd(i, { defText: e.target.value })}><option value="">--</option>
+                          {parseChoices(f.optionsText, f.type).map((o) => <option key={o} value={o}>{f.type === 'percent' ? `${o}%` : o}</option>)}</select>
+                      ) : ['date', 'datetime'].includes(f.type) ? (
+                        <select value={f.defText} onChange={(e) => upd(i, { defText: e.target.value })}><option value="">--</option>
+                          {DATE_DEFAULTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+                      ) : <input type="text" value={f.defText} onChange={(e) => upd(i, { defText: e.target.value })} style={{ width: 110 }}
+                        placeholder={f.type === 'ref' ? `Mã ${catalogByKey(f.ref)?.short || ''}` : f.type === 'percent' ? 'VD: 8' : ''} />}
                   </td>
                   <td><input type="checkbox" checked={!!f.required} disabled={isKey || auto || (f.builtin && cat.fields.find((x) => x.key === f.key)?.required)} onChange={(e) => upd(i, { required: e.target.checked })} /></td>
                   <td><input type="checkbox" checked={!!f.hidden} disabled={isKey} onChange={(e) => upd(i, { hidden: e.target.checked })} /></td>

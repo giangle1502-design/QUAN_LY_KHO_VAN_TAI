@@ -210,8 +210,8 @@ firestore.rules            # Phân quyền trên máy chủ
 ```
 
 ## Đơn bán (SO) / đơn mua (PO) / chuyển kho (STO) 2 phần
-- **Phần chung**: Ngày tạo đơn, Công ty xuất, Khách hàng, Dung sai, Ghi chú + trường tự thêm (nút "+ Thêm trường", quản trị). Trường có thể **liên kết** với Khách hàng / Công ty: chọn khách hàng thì tự lấy giá trị (vd. Điều khoản thanh toán lưu ở danh mục Khách hàng).
-- **Dòng hàng**: Ngày giao, Kho xuất, Mã hàng, Số lượng (tấn), Mã giao, TTHH (KTC/DGC, trống = cả hai) + trường tự thêm (liên kết được với Mã hàng / Mã giao / Kho). 1 mã hàng giao nhiều điểm hoặc nhiều kho = nhiều dòng (⧉ nhân bản dòng).
+- **Phần chung**: Ngày tạo đơn, Công ty xuất, Khách hàng, Dung sai, Ghi chú + trường tự thêm (nút "+ Thêm trường", quản trị). Trường có thể **liên kết** với mọi ô chọn danh mục trên form (Khách hàng, Công ty, ô chọn tự thêm…) hoặc **danh mục khác** (＋ Danh mục khác…: form có thêm ô chọn danh mục đó, vd. Đơn vị vận tải → Loại): chọn bản ghi thì tự lấy giá trị (vd. Điều khoản thanh toán lưu ở danh mục Khách hàng).
+- **Dòng hàng**: Ngày giao, Kho xuất, Mã hàng, Số lượng (tấn), Mã giao, TTHH (KTC/DGC, trống = cả hai) + trường tự thêm (liên kết được với Mã hàng / Mã giao / Kho / ô chọn tự thêm trên dòng, hoặc với ô chọn ở phần chung, vd. tên khách hàng trên từng dòng). 1 mã hàng giao nhiều điểm hoặc nhiều kho = nhiều dòng (⧉ nhân bản dòng).
 - Nút **+** cạnh Khách hàng, Mã hàng, Mã giao, Công ty: thêm ngay vào danh mục không rời form (kinh doanh, kế toán được thêm khách hàng / mã giao / mã hàng: cần publish lại firestore.rules).
 - **⚙ Cột hiển thị**: mỗi người tự chọn cột ở danh sách đơn và bảng dòng hàng.
 - Phiếu xuất theo SO chỉ lấy dòng của kho đang xuất, đúng TTHH; mã giao trên phiếu theo dòng đơn.
@@ -258,6 +258,11 @@ Phiếu nhập kho chọn **Nguồn nhập** ở đầu phiếu:
 - **Đơn nhiều mã hàng:** bảng chia xe dạng ma trận (dòng = chuyến, cột = mã hàng / dòng đơn). Hai cách gợi ý: *Xếp lần lượt từng mã* (ít ghép mã trên 1 xe) hoặc *Chia đều các mã cho mọi xe*; sửa tay từng ô, app kiểm tổng cột = số cần chia và tổng chuyến ≤ tải trọng.
 6. **GHA / 3PL:** đơn vị vận tải tích *Được dùng 3PL (GHA)*. Chỉ điều phối của đơn vị đó và quản trị gốc thấy danh mục 3PL và 3PL của chuyến (lưu riêng ở `tripPrivate`); admin khách không đọc được.
 - Cần **publish lại firestore.rules**.
+
+## Danh sách chọn sẵn và giá trị mặc định
+- Trường kiểu Số / Phần trăm / Tiền / Chữ có thể có **danh sách giá trị chọn sẵn**, vd. VAT kiểu Phần trăm, danh sách `5, 8, 10` → ô nhập thành ô chọn 5% / 8% / 10%.
+- **Giá trị mặc định** cho mọi trường (có sẵn hoặc tự thêm, trừ trường hệ thống tự tính): tự điền khi tạo mới, người nhập vẫn sửa được. Ngày: Hôm nay, Ngày mai, Sau 2/3/7/30 ngày. Ô chọn danh mục: nhập mã (vd. kho K1), trường liên kết tự điền theo.
+- Thiết lập ở "+ Thêm trường" (trường mới) hoặc cột **Mặc định** trong Quản lý trường (mọi trường). Để trống = bỏ mặc định. Không cần sửa firestore.rules.
 
 ## Sửa lỗi
 - Đề nghị giải chấp (và các thao tác theo kho) bị chặn quyền với tài khoản quản trị gốc chưa có hồ sơ trong *Phân quyền*: rules nay cho quản trị thao tác mọi kho.
