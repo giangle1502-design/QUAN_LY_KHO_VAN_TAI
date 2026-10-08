@@ -47,15 +47,17 @@ export function AppProvider({ children }) {
     return !cat.warehouseField || !row || inMyWarehouses(row[cat.warehouseField]);
   }, [isAdmin, role, inMyWarehouses]);
 
+  // Thiết lập biểu mẫu (thêm / sửa trường): quản trị hoặc người được cấp quyền
+  const canDesign = isAdmin || userDoc?.formDesigner === true;
   const hasRole = useCallback((...roles) => isAdmin || roles.includes(role), [isAdmin, role]);
 
   const value = useMemo(() => ({
-    user, email, role, isAdmin, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole,
+    user, email, role, isAdmin, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole,
     name: userDoc?.name || user?.displayName || email,
     fieldConfig, fieldsOf, settings,
     loading: user === undefined || (!!user && userDoc === undefined && !isSuper),
     logout: () => signOut(auth),
-  }), [user, email, role, isAdmin, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, userDoc, fieldConfig, fieldsOf, settings, isSuper]);
+  }), [user, email, role, isAdmin, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, userDoc, fieldConfig, fieldsOf, settings, isSuper]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

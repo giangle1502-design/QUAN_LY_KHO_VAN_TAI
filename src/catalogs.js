@@ -308,6 +308,7 @@ export const CATALOGS = [
       { key: 'name', label: 'Họ tên', type: 'text', required: true },
       { key: 'role', label: 'Vai trò', type: 'select', options: ROLES.map((r) => r[0]), labels: Object.fromEntries(ROLES.map((r) => [r[0], r[1]])), required: true, default: 'xem' },
       { key: 'warehouses', label: 'Kho được thao tác', type: 'multiref', ref: 'warehouses', help: 'Để trống = tất cả kho' },
+      { key: 'formDesigner', label: 'Được thiết lập biểu mẫu', type: 'checkbox', default: false, help: 'Tự thêm / sửa / ẩn trường của danh mục và biểu mẫu đơn hàng (Quản lý trường, nút + Thêm trường)' },
       { key: 'active', label: 'Đang hoạt động', type: 'checkbox', default: true },
     ],
   },

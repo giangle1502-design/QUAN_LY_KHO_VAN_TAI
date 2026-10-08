@@ -22,7 +22,7 @@ export default function CatalogPage() {
 
 function Catalog({ cat }) {
   const app = useApp();
-  const { isAdmin, canEdit, inMyWarehouses, fieldsOf, email } = app;
+  const { isAdmin, canDesign, canEdit, inMyWarehouses, fieldsOf, email } = app;
   const fields = fieldsOf(cat.key);
   const shown = fields.filter((f) => !f.hidden);
   const { rows, loading, error } = useCollection(cat.key);
@@ -94,7 +94,7 @@ function Catalog({ cat }) {
         <div className="actions">
           {editable && <button className="btn primary" onClick={() => setEditing({})}>+ Thêm</button>}
           <button className="btn" onClick={exportExcel}>⬇ Excel</button>
-          {isAdmin && <Link className="btn" to={`/hang-muc?dm=${cat.key}`} title="Đổi tên, ẩn, thêm trường cho danh mục này">🧩 Quản lý trường</Link>}
+          {canDesign && <Link className="btn" to={`/hang-muc?dm=${cat.key}`} title="Đổi tên, ẩn, thêm trường cho danh mục này">🧩 Quản lý trường</Link>}
           {editable && (
             <>
               <button className="btn" onClick={() => fileRef.current.click()}>⬆ Nhập Excel</button>

@@ -26,7 +26,7 @@ export default function Dashboard() {
 
   useEffect(() => onSnapshot(query(collection(db, 'movements'), where('date', '==', today)),
     (s) => setMoves(s.docs.map((d) => d.data())), () => setMoves([])), [today]);
-  const todayMoves = moves.filter((m) => m.status !== 'cancelled' && inMyWarehouses(m.warehouse) && (!wh || m.warehouse === wh));
+  const todayMoves = moves.filter((m) => m.status === 'posted' && inMyWarehouses(m.warehouse) && (!wh || m.warehouse === wh));
 
   const now = nowISO();
   const inYard = trips.filter((t) => [ST.WAITING_GATE, ST.PROCESSING].includes(t.status))

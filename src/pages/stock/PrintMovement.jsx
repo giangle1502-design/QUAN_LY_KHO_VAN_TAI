@@ -30,6 +30,7 @@ export default function PrintMovement({ pick = false }) {
   if (!m) return <div className="center">Không tìm thấy phiếu {id}.</div>;
   const meta = MOVE_TYPES[m.type];
   const tot = (k) => m.lines.reduce((s, l) => s + (Number(l[k]) || 0), 0);
+  const pend = m.status === 'pending';
   // Phiếu xuất (giao cho khách/tài xế) chỉ cần mã hàng + số lượng; chi tiết lot, vị trí, TTHH nằm ở phiếu soạn hàng
   const summary = m.type === 'out' && !pick;
   const groups = [];
@@ -52,7 +53,7 @@ export default function PrintMovement({ pick = false }) {
       <div className="no-print toolbar">
         <Link className="btn" to="/kho/phieu">← Phiếu kho</Link>
         <button className="btn primary" onClick={() => window.print()}>🖨 In / Lưu PDF</button>
-        {m.type === 'in' && m.status !== 'cancelled' && <Link className="btn" to={`/kho/phieu/${m.id}/nhan`}>🏷️ In nhãn pallet</Link>}
+        {m.type === 'in' && m.status === 'posted' && <Link className="btn" to={`/kho/phieu/${m.id}/nhan`}>🏷️ In nhãn pallet</Link>}
         {m.type === 'out' && (pick ? <Link className="btn" to={`/kho/phieu/${m.id}/in`}>📄 Phiếu xuất kho</Link> : <Link className="btn" to={`/kho/phieu/${m.id}/soan`}>📋 Phiếu soạn hàng</Link>)}
       </div>
       <div className="print-head">
@@ -62,6 +63,7 @@ export default function PrintMovement({ pick = false }) {
       <h2 className="print-title">{pick ? 'PHIẾU SOẠN HÀNG' : `PHIẾU ${meta.label.toUpperCase()}`}</h2>
       {pick && <p className="small" style={{ textAlign: 'center', marginTop: -6 }}>Theo phiếu xuất kho {m.id} · sắp theo vị trí để đi lấy hàng</p>}
       {m.status === 'cancelled' && <div className="error-box">PHIẾU ĐÃ HỦY: {m.cancelReason}</div>}
+      {m.status === 'pending' && <p className="small" style={{ textAlign: 'center' }}>Phiếu chờ nhận hàng: thủ kho ghi số thực nhận, vị trí vào cột trống và xác nhận trên hệ thống.</p>}
       <table className="print-info"><tbody>
         {co && <tr><td>Công ty chủ hàng</td><td>{co.code}{co.name && co.name !== co.code ? ` – ${co.name}` : ''}</td></tr>}
         {(m.partyCode || m.partyName) && <tr><td>{m.type === 'in' && m.source !== 'SO' && m.orderType !== 'SO' ? 'Nhà cung cấp' : m.type === 'in' ? 'Khách hàng trả hàng' : 'Khách hàng'}</td><td>{m.partyCode} {m.partyName}</td></tr>}
@@ -92,15 +94,15 @@ export default function PrintMovement({ pick = false }) {
       ) : (
       <table className="print-lines">
         <thead><tr><th>STT</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th><th>Vị trí</th>{m.type === 'move' && <th>Đến vị trí</th>}
-          <th>Tình trạng</th>{m.type === 'status' && <th>Tình trạng mới</th>}<th className="num">Số tấn</th><th className="num">Pallet</th><th className="num">Số bao</th></tr></thead>
+          <th>Tình trạng</th>{m.type === 'status' && <th>Tình trạng mới</th>}<th className="num">{pend ? 'Dự kiến (tấn)' : 'Số tấn'}</th><th className="num">Pallet</th><th className="num">Số bao</th>{pend && <><th>Thực nhận (tấn)</th><th>Vị trí thực</th></>}</tr></thead>
         <tbody>
           {m.lines.map((l, i) => (
             <tr key={i}><td>{i + 1}</td><td>{l.item}</td><td>{l.itemName}</td><td>{l.lot}</td><td>{l.location}</td>{m.type === 'move' && <td>{l.toLocation}</td>}
               <td>{l.goodsStatus}</td>{m.type === 'status' && <td>{l.toStatus}{l.toPledgee ? ` (${l.toPledgee})` : ''}</td>}
-              <td className="num">{fmtNum(l.kg / 1000, 3, 3)}</td><td className="num">{fmtNum(l.pallets, 2)}</td><td className="num">{fmtNum(l.bags)}</td></tr>
+              <td className="num">{fmtNum(l.kg / 1000, 3, 3)}</td><td className="num">{fmtNum(l.pallets, 2)}</td><td className="num">{fmtNum(l.bags)}</td>{pend && <><td style={{ minWidth: 90 }}></td><td style={{ minWidth: 70 }}></td></>}</tr>
           ))}
         </tbody>
-        <tfoot><tr><td colSpan={m.type === 'move' || m.type === 'status' ? 7 : 6}>Cộng</td><td className="num">{fmtNum(tot('kg') / 1000, 3, 3)}</td><td className="num">{fmtNum(tot('pallets'), 2)}</td><td className="num">{fmtNum(tot('bags'))}</td></tr></tfoot>
+        <tfoot><tr><td colSpan={m.type === 'move' || m.type === 'status' ? 7 : 6}>Cộng</td><td className="num">{fmtNum(tot('kg') / 1000, 3, 3)}</td><td className="num">{fmtNum(tot('pallets'), 2)}</td><td className="num">{fmtNum(tot('bags'))}</td>{pend && <><td></td><td></td></>}</tr></tfoot>
       </table>
       )}
       <div className="print-signs">

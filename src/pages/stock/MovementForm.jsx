@@ -6,7 +6,7 @@ import { useApp } from '../../context/AppContext';
 import { useCollection, useMyWarehouses, useOpCompany, useOpWarehouse, useOrders, useStock, useTrips } from '../../lib/hooks';
 import { CompanyPicker } from '../../components/TripBits';
 import { IN_SOURCES, OPEN_STATUSES, ORDER_FOR_MOVE, ORDER_TYPES, isReturn, lineFrom, lineShip, lineTo, lineWh, matchOrderLine, openKg, orderInWarehouse, orderWarehouse, stoRoute } from '../../lib/orders';
-import { MOVE_TYPES, ageDays, kgOf, postMovement, suggestPallets } from '../../lib/stock';
+import { MOVE_TYPES, ageDays, createPendingIn, kgOf, postMovement, suggestPallets } from '../../lib/stock';
 import { ST, vnDate } from '../../lib/trips';
 import { fmtDate, fmtNum } from '../../lib/utils';
 import { ErrorBox, Field, Modal } from '../../components/ui';
@@ -17,18 +17,21 @@ const EMPTY_TRANSPORT = { plate: '', carrier: '', carrierName: '', idCard: '', d
 
 const num = (v) => (v === '' || v == null ? 0 : Number(v));
 const r3 = (x) => Math.round(x * 1000) / 1000;
-const newLine = () => ({ item: '', lot: '', mfgDate: '', expDate: '', location: '', goodsStatus: 'KTC', pledgee: '', bags: '', pallets: '', kg: '' });
+export const newLine = () => ({ item: '', lot: '', mfgDate: '', expDate: '', location: '', goodsStatus: 'KTC', pledgee: '', bags: '', pallets: '', kg: '' });
 const stockLine = () => ({ stockId: '', bags: '', pallets: '', kg: '', toLocation: '', toStatus: '', toPledgee: '', sign: '+' });
 
 // Ai được lập loại phiếu nào
-export function canMove(hasRole, type) {
+// Phiếu nhập: quản trị lập và in phiếu, thủ kho nhận hàng ngoài hiện trường rồi xác nhận (trang Nhận hàng)
+export function canMove(hasRole, type, isAdmin) {
+  if (type === 'in') return !!isAdmin;
   return type === 'status' ? hasRole('ke_toan') : hasRole('thu_kho');
 }
 
 export default function MovementForm() {
   const { type } = useParams();
-  const { hasRole } = useApp();
-  if (!MOVE_TYPES[type] || !canMove(hasRole, type)) return <Navigate to="/kho/ton" />;
+  const { hasRole, isAdmin } = useApp();
+  if (type === 'in' && !isAdmin && hasRole('thu_kho')) return <Navigate to="/kho/nhan-hang" />;
+  if (!MOVE_TYPES[type] || !canMove(hasRole, type, isAdmin)) return <Navigate to="/kho/ton" />;
   return <Form key={type} type={type} />;
 }
 
@@ -151,7 +154,7 @@ function Form({ type }) {
     const m = new Map();
     for (const d of snap.docs) {
       const mv = d.data();
-      if (mv.status === 'cancelled') continue;
+      if (mv.status !== 'posted') continue;
       const sign = mv.type === 'out' ? 1 : mv.type === 'in' ? -1 : 0;
       for (const l of mv.lines) {
         if (!mine.has(l.orderLine)) continue;
@@ -268,7 +271,7 @@ function Form({ type }) {
       const no = `Dòng ${i + 1}: `;
       if (type === 'in') {
         if (!l.item || !itemMap.has(l.item)) return setErr(no + 'chọn mã hàng có trong danh mục.');
-        if (!l.location) return setErr(no + 'chọn vị trí.');
+        // Vị trí: thủ kho chọn khi nhận hàng (quản trị lập phiếu có thể để trống)
         if (!num(l.kg) && !num(l.bags) && !num(l.pallets)) return setErr(no + 'nhập số tấn, pallet hoặc số bao.');
         if (l.goodsStatus === 'HTC' && !l.pledgee) return setErr(no + 'hàng HTC cần chọn bên nhận thế chấp.');
         out.push({ ...(l.orderLine != null ? { orderLine: l.orderLine } : {}), item: l.item, itemName: itemMap.get(l.item).name, lot: l.lot.trim(), mfgDate: l.mfgDate, expDate: l.expDate,
@@ -307,15 +310,16 @@ function Form({ type }) {
     setBusy(true);
     try {
       const direct = type === 'in' && source === 'direct';
-      const res = await postMovement({
+      const mk = type === 'in' ? (m) => createPendingIn({ ...m, ...(direct ? { directPO: {
+        company: head.company, date: head.date, partyCode: head.partyCode.trim(), partyName: head.partyName.trim(), refNo: head.refNo.trim(),
+        tolerancePct: 0, note: head.note.trim() } } : {}) }, { email, name }) : (m) => postMovement(m, { email, name });
+      const res = await mk({
         type, warehouse: wh.code, company: head.company || '', date: head.date, tripId: head.tripId || '', orderId: direct ? '' : head.orderId || '', orderRef: order?.refNo || '',
         ...(type === 'in' ? { source } : {}),
         partyCode: head.partyCode.trim(), partyName: head.partyName.trim(), shipCode: head.shipCode,
         reason: head.reason, note: head.note.trim(), lines: out,
         ...(type === 'out' ? Object.fromEntries(Object.keys(EMPTY_TRANSPORT).map((k) => [k, String(head[k] || '').trim()])) : {}),
-      }, { email, name }, direct ? { newOrder: {
-        company: head.company, date: head.date, partyCode: head.partyCode.trim(), partyName: head.partyName.trim(), refNo: head.refNo.trim(),
-        tolerancePct: 0, note: head.note.trim() } } : {});
+      });
       setDone(typeof res === 'string' ? res : res.id);
       setDonePO(typeof res === 'string' ? '' : res.orderId);
       setLines([type === 'in' ? newLine() : stockLine()]);
@@ -332,10 +336,10 @@ function Form({ type }) {
         <h1>{meta.icon} {meta.label}</h1>
         <Link className="btn" to="/kho/phieu">Danh sách phiếu</Link>
       </div>
-      {done && <div className="ok-box" style={{ marginBottom: 10 }}>Đã lập phiếu <b className="mono">{done}</b>{donePO && <> và đơn mua <Link className="mono" to="/don-hang?tab=PO">{donePO}</Link> (nhập trực tiếp)</>}. Tồn kho đã cập nhật. <Link to={`/kho/phieu/${done}/in`} target="_blank">🖨 In phiếu</Link>
-        {type === 'in' && <> · <Link className="btn primary" to={`/kho/phieu/${done}/nhan`} target="_blank">🏷️ In nhãn pallet cho phiếu này</Link></>}
+      {done && <div className="ok-box" style={{ marginBottom: 10 }}>Đã lập phiếu <b className="mono">{done}</b>{donePO && <> và đơn mua <Link className="mono" to="/don-hang?tab=PO">{donePO}</Link> (nhập trực tiếp)</>}.{type === 'in' ? <> <b>Chờ thủ kho nhận hàng</b> và xác nhận số thực nhận, vị trí (tồn kho cập nhật khi thủ kho xác nhận{source === 'direct' ? ', đơn mua PO lập theo số thực nhận' : ''}).</> : ' Tồn kho đã cập nhật.'} <Link to={`/kho/phieu/${done}/in`} target="_blank">🖨 In phiếu</Link>
+
         {type === 'out' && <> · <Link className="btn primary" to={`/kho/phieu/${done}/soan`} target="_blank">📋 In phiếu soạn hàng</Link></>}</div>}
-      {type === 'in' && !done && <p className="hint">Lưu phiếu nhập xong sẽ hiện nút <b>🏷️ In nhãn pallet</b> (mỗi pallet 1 nhãn). In lại sau: <i>Phiếu kho</i> → nút 🏷️ In nhãn ở dòng phiếu.</p>}
+      {type === 'in' && !done && <p className="hint">Quản trị lập và in phiếu nhập. Thủ kho nhận hàng ngoài hiện trường, vào <b>Nhận hàng</b> nhập số thực nhận, lot, vị trí rồi xác nhận: lúc đó tồn kho mới cập nhật và in được nhãn pallet.</p>}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="form-grid">
           <Field label="Kho" required>
@@ -467,7 +471,7 @@ function Form({ type }) {
         {lines.map((l, i) => (
           <div key={i} className="mv-line">
             {type === 'in' ? (
-              <InLine l={l} set={(p) => setLine(i, p)} itemMap={itemMap} items={items} locations={locations} statuses={statuses} pledgees={pledgees} />
+              <InLine l={l} set={(p) => setLine(i, p)} itemMap={itemMap} items={items} locations={locations} statuses={statuses} pledgees={pledgees} locRequired={false} />
             ) : (
               <StockLine type={type} l={l} set={(p) => setLine(i, p)} rows={stockRows} byId={stockById} blocked={blocked}
                 locations={locations} statuses={statuses} pledgees={pledgees} />
@@ -560,7 +564,7 @@ function QtyFields({ l, onTons, onPallets, onBags }) {
   );
 }
 
-function InLine({ l, set, itemMap, locations, statuses, pledgees }) {
+export function InLine({ l, set, itemMap, locations, statuses, pledgees, locRequired = true }) {
   const it = itemMap.get(l.item);
   const setBags = (v) => set({ bags: v, pallets: suggestPallets(it, v), kg: kgOf(it, v), tonsTxt: undefined });
   const setTons = (v) => {
@@ -582,7 +586,7 @@ function InLine({ l, set, itemMap, locations, statuses, pledgees }) {
       <Field label="Lot"><input value={l.lot} onChange={(e) => set({ lot: e.target.value })} /></Field>
       <Field label="NSX"><input type="date" value={l.mfgDate} onChange={(e) => set({ mfgDate: e.target.value })} /></Field>
       <Field label="HSD"><input type="date" value={l.expDate} onChange={(e) => set({ expDate: e.target.value })} /></Field>
-      <Field label="Vị trí" required><LocationSelect value={l.location} onChange={(v) => set({ location: v })} locations={locations} /></Field>
+      <Field label="Vị trí" required={locRequired} help={locRequired ? '' : 'Thủ kho chọn khi nhận hàng'}><LocationSelect value={l.location} onChange={(v) => set({ location: v })} locations={locations} /></Field>
       <Field label="Tình trạng">
         <select value={l.goodsStatus} onChange={(e) => set({ goodsStatus: e.target.value })}>
           {statuses.map((s) => <option key={s.code} value={s.code}>{s.code} – {s.name}</option>)}

@@ -227,3 +227,14 @@ Phiếu nhập kho chọn **Nguồn nhập** ở đầu phiếu:
 - **Nhận hàng chuyển kho (STO)**: tự điền lot, TTHH, số lượng từ phiếu xuất ở kho đi (như cũ).
 - **Hàng trả về (SO)**: khách trả hàng theo đơn bán. Tự điền lot, TTHH, số lượng đã giao từ các phiếu xuất của SO; thủ kho sửa số thực trả, chọn vị trí. Không trả quá phần đã giao. Đơn bán ghi "Khách trả về" theo từng dòng; phần trả về **không làm tăng phần còn phải giao** (cần giao bù thì kinh doanh thêm dòng vào SO). Nhận ở kho nào cũng được. Nút **↩ Nhập hàng trả về** trên đơn bán đã giao.
 - Phiếu nhập luôn phải có nguồn (đơn / nhà cung cấp). Cần publish lại firestore.rules để thủ kho lập được PO khi nhập trực tiếp.
+
+## Phiếu nhập 2 bước: quản trị lập, thủ kho nhận hàng
+- **Quản trị** lập phiếu nhập (menu *Lập phiếu nhập kho*, đủ 4 nguồn nhập) và in phiếu. Phiếu ở trạng thái **Chờ nhận hàng**, chưa vào tồn; vị trí có thể để trống. Bản in có cột trống *Thực nhận (tấn)*, *Vị trí thực*.
+- **Thủ kho** nhận hàng ngoài hiện trường, vào *Nhận hàng (chờ nhập)* → mở phiếu → sửa số tấn/pallet/bao thực nhận, lot, NSX, HSD, chọn vị trí (thêm dòng nếu nhiều lot) → **Xác nhận đã nhận hàng**: tồn kho, đơn PO/STO/SO cập nhật; nhập trực tiếp thì PO được lập theo số thực nhận; in nhãn pallet sau bước này.
+- Quản trị hủy được phiếu đang chờ (không ảnh hưởng tồn).
+
+## Quyền thiết lập biểu mẫu
+- Danh mục *Phân quyền* có ô **Được thiết lập biểu mẫu**: người được tích sẽ thấy *Quản lý trường* và nút *+ Thêm trường* trên đơn hàng để tự thêm / đổi tên / ẩn / sắp xếp trường (cần publish lại firestore.rules).
+
+## Sửa lỗi
+- Đề nghị giải chấp (và các thao tác theo kho) bị chặn quyền với tài khoản quản trị gốc chưa có hồ sơ trong *Phân quyền*: rules nay cho quản trị thao tác mọi kho.

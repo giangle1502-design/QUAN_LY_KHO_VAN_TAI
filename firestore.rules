@@ -18,8 +18,9 @@ service cloud.firestore {
     function isAdmin() { return isSuper() || (isActive() && profile().role == 'admin'); }
     function hasRole(r) { return isActive() && profile().role == r; }
     // Kho được giao: danh sách rỗng hoặc không khai báo = tất cả kho
+    // Quản trị (kể cả quản trị gốc chưa có hồ sơ users) được thao tác mọi kho
     function inMyWarehouse(wh) {
-      return !('warehouses' in profile()) || profile().warehouses.size() == 0 || wh in profile().warehouses;
+      return isAdmin() || !('warehouses' in profile()) || profile().warehouses.size() == 0 || wh in profile().warehouses;
     }
 
     // Phân quyền: ai cũng đọc được hồ sơ của mình; quản trị đọc/sửa tất cả
@@ -32,6 +33,8 @@ service cloud.firestore {
     match /settings/{id} {
       allow read: if isStaff();
       allow write: if isAdmin();
+      // Người được cấp quyền "Thiết lập biểu mẫu" tự thêm / sửa trường
+      allow write: if id == 'fields' && isActive() && profile().formDesigner == true;
     }
 
     // ==== Chuyến xe ====
@@ -92,18 +95,29 @@ service cloud.firestore {
     // Tồn và pallet vị trí chỉ được đổi cùng lúc với 1 phiếu mới do chính người đó lập
     function mvPath(mid) { return /databases/$(database)/documents/movements/$(mid); }
     function freshMovement(mid, wh) {
-      return !exists(mvPath(mid)) && existsAfter(mvPath(mid))
+      return (!exists(mvPath(mid)) && existsAfter(mvPath(mid))
         && getAfter(mvPath(mid)).data.createdBy == me()
+        && getAfter(mvPath(mid)).data.warehouse == wh) || confirmingIn(mid, wh);
+    }
+    // Thủ kho xác nhận phiếu nhập đang chờ nhận hàng (quản trị lập trước) trong cùng giao dịch
+    function confirmingIn(mid, wh) {
+      return exists(mvPath(mid)) && get(mvPath(mid)).data.status == 'pending'
+        && getAfter(mvPath(mid)).data.status == 'posted' && getAfter(mvPath(mid)).data.confirmedBy == me()
         && getAfter(mvPath(mid)).data.warehouse == wh;
     }
     match /movements/{id} {
       allow read: if isStaff();
-      allow create: if request.resource.data.createdBy == me() && request.resource.data.status == 'posted'
+      allow create: if request.resource.data.createdBy == me()
+        && (request.resource.data.status == 'posted' || (request.resource.data.status == 'pending' && request.resource.data.type == 'in'))
         && request.resource.data.id == id
         && (isAdmin() || (inMyWarehouse(request.resource.data.warehouse)
           && ((hasRole('thu_kho') && request.resource.data.type in ['in', 'out', 'move', 'adjust'])
             || (hasRole('ke_toan') && request.resource.data.type == 'status'))));
-      allow update: if isAdmin();
+      allow update: if isAdmin()
+        || (hasRole('thu_kho') && resource.data.status == 'pending' && request.resource.data.status == 'posted'
+          && resource.data.type == 'in' && request.resource.data.type == 'in' && inMyWarehouse(resource.data.warehouse)
+          && request.resource.data.warehouse == resource.data.warehouse && request.resource.data.id == resource.data.id
+          && request.resource.data.createdBy == resource.data.createdBy && request.resource.data.confirmedBy == me());
     }
     match /stock/{id} {
       allow read: if isStaff();
@@ -124,13 +138,14 @@ service cloud.firestore {
     // Thủ kho chỉ cập nhật "đã giao/nhận" khi ghi phiếu kho mới gắn đơn đó
     function orderMgr() { return hasRole('kinh_doanh') || hasRole('ke_toan'); }
     function movementForOrder(mid, oid) {
-      return !exists(mvPath(mid)) && existsAfter(mvPath(mid))
-        && getAfter(mvPath(mid)).data.createdBy == me()
+      return ((!exists(mvPath(mid)) && existsAfter(mvPath(mid)) && getAfter(mvPath(mid)).data.createdBy == me())
+          || (exists(mvPath(mid)) && get(mvPath(mid)).data.status == 'pending'
+            && getAfter(mvPath(mid)).data.status == 'posted' && getAfter(mvPath(mid)).data.confirmedBy == me()))
         && getAfter(mvPath(mid)).data.orderId == oid;
     }
     // STO: kho xuất ghi theo từng dòng (fromWarehouses); lệnh cũ ghi ở đầu đơn (fromWarehouse)
     function allMine(list) {
-      return !('warehouses' in profile()) || profile().warehouses.size() == 0 || list.toSet().difference(profile().warehouses.toSet()).size() == 0;
+      return isAdmin() || !('warehouses' in profile()) || profile().warehouses.size() == 0 || list.toSet().difference(profile().warehouses.toSet()).size() == 0;
     }
     function stoFromMine(d) {
       return 'fromWarehouses' in d ? d.fromWarehouses.size() > 0 && allMine(d.fromWarehouses) : inMyWarehouse(d.fromWarehouse);

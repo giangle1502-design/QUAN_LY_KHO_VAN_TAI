@@ -13,7 +13,7 @@ const sum = (rows, k) => rows.reduce((s, r) => s + (Number(r[k]) || 0), 0);
 const AGE = [['0–30 ngày', 0, 30], ['31–60 ngày', 31, 60], ['61–90 ngày', 61, 90], ['Trên 90 ngày', 91, 1e9]];
 
 export default function Stock() {
-  const { hasRole } = useApp();
+  const { hasRole, isAdmin } = useApp();
   const [wh, setWh] = useOpWarehouse();
   const [co, setCo] = useOpCompany();
   const { rows: all, loading, error } = useStock(wh);
@@ -66,7 +66,8 @@ export default function Stock() {
       <div className="page-head">
         <h1>🏭 Tồn kho</h1>
         <div className="actions">
-          {Object.entries(MOVE_TYPES).filter(([k]) => canMove(hasRole, k)).map(([k, m]) => (
+          {hasRole('thu_kho') && <Link className="btn primary" to="/kho/nhan-hang">📥 Nhận hàng</Link>}
+          {Object.entries(MOVE_TYPES).filter(([k]) => canMove(hasRole, k, isAdmin)).map(([k, m]) => (
             <Link key={k} className={'btn' + (k === 'in' || k === 'out' ? ' primary' : '')} to={`/kho/${k}`}>{m.icon} {m.label}</Link>
           ))}
           <button className="btn" onClick={exportExcel}>⬇ Excel</button>

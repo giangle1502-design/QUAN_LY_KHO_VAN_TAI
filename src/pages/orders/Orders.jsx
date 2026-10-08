@@ -23,13 +23,13 @@ const pct = (o) => { const x = orderTotals(o); return x.qty ? Math.min(100, (x.d
 export const canManageOrders = (hasRole, type) => (type === 'STO' ? hasRole('kinh_doanh', 'ke_toan', 'thu_kho') : hasRole('kinh_doanh', 'ke_toan'));
 const partyText = (o) => (o.type === 'STO' ? stoRoute(o) : o.partyName || o.partyCode);
 
-// Nút lập phiếu kho theo đơn: SO/STO → phiếu xuất kho, PO/STO → phiếu nhập kho
+// Nút lập phiếu kho theo đơn: SO/STO → phiếu xuất kho (thủ kho), PO/STO/SO trả về → phiếu nhập kho (quản trị lập, thủ kho nhận hàng)
 export function MoveButtons({ o, sm }) {
-  const { hasRole, inMyWarehouses } = useApp();
+  const { hasRole, isAdmin, inMyWarehouses } = useApp();
   if (!hasRole('thu_kho') || o.status === 'cancelled') return null;
   const x = orderTotals(o);
-  // SO đã giao: thủ kho nhận hàng khách trả về (phiếu nhập kho theo SO)
-  const ret = o.type === 'SO' && (o.lines || []).some((l) => returnableKg(l) > 0);
+  // SO đã giao: hàng khách trả về (phiếu nhập kho theo SO)
+  const ret = isAdmin && o.type === 'SO' && (o.lines || []).some((l) => returnableKg(l) > 0);
   if (!OPEN_STATUSES.concat(o.type === 'STO' ? ['closed'] : []).includes(o.status))
     return ret ? <Link className={'btn' + (sm ? ' sm' : '')} onClick={(e) => e.stopPropagation()} to={`/kho/in?order=${o.id}`}>↩ Nhập hàng trả về</Link> : null;
   const cls = 'btn' + (sm ? ' sm' : ' primary');
@@ -40,7 +40,7 @@ export function MoveButtons({ o, sm }) {
     <>
       {['SO', 'STO'].includes(o.type) && OPEN_STATUSES.includes(o.status) && x.left > 0 && mine('out', leftKg) &&
         <Link className={cls} onClick={stop} to={`/kho/out?order=${o.id}`}>📤 Lập phiếu xuất kho</Link>}
-      {(o.type === 'PO' ? OPEN_STATUSES.includes(o.status) && x.left > 0 && mine('in', leftKg) : o.type === 'STO' && x.transit > 0 && mine('in', transitKg)) &&
+      {isAdmin && (o.type === 'PO' ? OPEN_STATUSES.includes(o.status) && x.left > 0 && mine('in', leftKg) : o.type === 'STO' && x.transit > 0 && mine('in', transitKg)) &&
         <Link className={cls} onClick={stop} to={`/kho/in?order=${o.id}`}>📥 Lập phiếu nhập kho</Link>}
       {ret && !sm && <Link className="btn" onClick={stop} to={`/kho/in?order=${o.id}`}>↩ Nhập hàng trả về</Link>}
     </>

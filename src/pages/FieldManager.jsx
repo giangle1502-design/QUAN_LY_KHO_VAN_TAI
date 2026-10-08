@@ -13,7 +13,7 @@ const REF_TARGETS = CATALOGS.filter((c) => !['codeRules', 'users'].includes(c.ke
 
 // Quản lý trường (hạng mục): đổi tên, sắp xếp, ẩn, bắt buộc, danh sách chọn và thêm trường mới cho mọi danh mục
 export default function FieldManager() {
-  const { fieldsOf, isAdmin } = useApp();
+  const { fieldsOf, canDesign } = useApp();
   const [params] = useSearchParams();
   const [catKey, setCatKey] = useState(() => (catalogByKey(params.get('dm')) ? params.get('dm') : CATALOGS[0].key));
   const cat = catalogByKey(catKey);
@@ -77,7 +77,7 @@ export default function FieldManager() {
     }
   };
 
-  if (!isAdmin) return <p>Chỉ quản trị được sửa hạng mục.</p>;
+  if (!canDesign) return <p>Chỉ quản trị hoặc người được cấp quyền "Thiết lập biểu mẫu" được sửa trường.</p>;
 
   return (
     <div>

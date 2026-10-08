@@ -57,12 +57,12 @@ export function ColumnPicker({ cols, hidden, setHidden }) {
 
 // Thêm trường mới ngay trên form (quản trị). vias: các trường chọn danh mục để liên kết, vd. [{ key: 'partyCode', label: 'Khách hàng', ref: 'soldto' }]
 export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường' }) {
-  const { isAdmin, fieldsOf } = useApp();
+  const { canDesign, fieldsOf } = useApp();
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({ label: '', type: 'text', ref: '', options: '', via: '', field: '', required: false });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  if (!isAdmin) return null;
+  if (!canDesign) return null;
   const via = vias.find((v) => v.key === f.via);
   const targetFields = via ? fieldsOf(via.ref).filter((x) => !x.hidden) : [];
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));

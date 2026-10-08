@@ -15,6 +15,7 @@ import Movements from './pages/stock/Movements';
 import MovementForm from './pages/stock/MovementForm';
 import OpeningImport from './pages/stock/OpeningImport';
 import PrintMovement from './pages/stock/PrintMovement';
+import Receive from './pages/stock/Receive';
 import PrintLabels from './pages/stock/PrintLabels';
 import Release, { PrintRelease } from './pages/stock/Release';
 import Dashboard from './pages/Dashboard';
@@ -22,7 +23,7 @@ import Orders from './pages/orders/Orders';
 import Reports from './pages/reports/Reports';
 
 export default function App() {
-  const { user, allowed, isAdmin, hasRole, loading, logout, email } = useApp();
+  const { user, allowed, isAdmin, canDesign, hasRole, loading, logout, email } = useApp();
   if (loading) return <div className="center">Đang tải…</div>;
   if (!user) return <Login />;
   if (!user.emailVerified) return <VerifyEmail user={user} logout={logout} />;
@@ -58,8 +59,10 @@ export default function App() {
         <Route path="kho/phieu" element={<Movements />} />
         <Route path="kho/giai-chap" element={<Release />} />
         {hasRole('thu_kho') && <Route path="kho/ton-dau-ky" element={<OpeningImport />} />}
+        <Route path="kho/nhan-hang" element={<Receive />} />
+        <Route path="kho/nhan-hang/:id" element={<Receive />} />
         <Route path="kho/:type" element={<MovementForm />} />
-        {isAdmin && <Route path="hang-muc" element={<FieldManager />} />}
+        {canDesign && <Route path="hang-muc" element={<FieldManager />} />}
         <Route path="*" element={<Navigate to="/" />} />
       </Route>
     </Routes>

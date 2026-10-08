@@ -45,7 +45,7 @@ export default function Movements() {
       'Số phiếu': m.id, Loại: MOVE_TYPES[m.type]?.label, 'Ngày': m.date, Kho: m.warehouse, 'Công ty': m.company || '', 'Chuyến xe': m.tripId, 'Số xe': m.plate || '', 'Đơn vị vận tải': m.carrierName || m.carrier || '', 'Tài xế': m.driverName || '', 'CCCD tài xế': m.idCard || '', 'ĐT tài xế': m.driverPhone || '', 'Đơn SO/PO': m.orderId || '', 'Số Ecount': m.orderRef || '',
       'Mã KH/NCC': m.partyCode, 'Tên KH/NCC': m.partyName, 'Mã hàng': l.item, 'Tên hàng': l.itemName, Lot: l.lot,
       'Vị trí': l.location, 'Đến vị trí': l.toLocation || '', 'Tình trạng': l.goodsStatus, 'Tình trạng mới': l.toStatus || '',
-      'Số bao': l.bags, Pallet: l.pallets, Kg: l.kg, 'Lý do': m.reason, 'Trạng thái': m.status === 'cancelled' ? 'Đã hủy' : '',
+      'Số bao': l.bags, Pallet: l.pallets, Kg: l.kg, 'Lý do': m.reason, 'Trạng thái': m.status === 'cancelled' ? 'Đã hủy' : m.status === 'pending' ? 'Chờ nhận hàng' : '',
       'Người lập': m.createdByName || m.createdBy,
     })));
     exportSheets(`Phieu_kho_${range.from}_${range.to}`, { 'Phiếu kho': out.length ? out : [{ 'Số phiếu': '' }] });
@@ -81,6 +81,7 @@ export default function Movements() {
                   <td className="num">{fmtNum(tot(m, 'bags'))}</td><td className="num">{fmtNum(tot(m, 'kg'))}</td>
                   <td className="small">{m.createdByName || m.createdBy}</td>
                   <td className="nowrap" onClick={(e) => e.stopPropagation()}>{m.status === 'cancelled' ? <span className="badge red">Đã hủy</span>
+                    : m.status === 'pending' ? <Link className="badge amber" to={`/kho/nhan-hang/${m.id}`}>Chờ nhận hàng</Link>
                     : m.type === 'in' ? <Link className="btn sm" to={`/kho/phieu/${m.id}/nhan`} target="_blank">🏷️ In nhãn</Link>
                     : m.type === 'out' ? <Link className="btn sm" to={`/kho/phieu/${m.id}/soan`} target="_blank">📋 Soạn hàng</Link> : null}</td>
                 </tr>
@@ -113,7 +114,8 @@ function Detail({ m, onClose }) {
       </p>
       {m.note && <p className="small">Ghi chú: {m.note}</p>}
       <p><Link className="btn sm" to={`/kho/phieu/${m.id}/in`} target="_blank">🖨 In phiếu</Link>
-        {m.type === 'in' && m.status !== 'cancelled' && <> <Link className="btn sm" to={`/kho/phieu/${m.id}/nhan`} target="_blank">🏷️ In nhãn pallet</Link></>}
+        {m.status === 'pending' && <> <Link className="btn sm primary" to={`/kho/nhan-hang/${m.id}`}>📥 Thủ kho nhận hàng</Link></>}
+        {m.type === 'in' && m.status === 'posted' && <> <Link className="btn sm" to={`/kho/phieu/${m.id}/nhan`} target="_blank">🏷️ In nhãn pallet</Link></>}
         {m.type === 'out' && <> <Link className="btn sm" to={`/kho/phieu/${m.id}/soan`} target="_blank">📋 Phiếu soạn hàng</Link></>}</p>
       {m.status === 'cancelled' && <div className="error-box">Đã hủy: {m.cancelReason}</div>}
       <div className="table-wrap" style={{ marginBottom: 12 }}>
@@ -135,7 +137,7 @@ function Detail({ m, onClose }) {
       {isAdmin && m.status !== 'cancelled' && (
         <div className="form-actions">
           <input placeholder="Lý do hủy phiếu" value={reason} onChange={(e) => setReason(e.target.value)} />
-          <button className="btn danger" disabled={!reason.trim() || busy} onClick={cancel}>Hủy phiếu (đảo tồn kho)</button>
+          <button className="btn danger" disabled={!reason.trim() || busy} onClick={cancel}>{m.status === 'pending' ? 'Hủy phiếu' : 'Hủy phiếu (đảo tồn kho)'}</button>
         </div>
       )}
     </Modal>

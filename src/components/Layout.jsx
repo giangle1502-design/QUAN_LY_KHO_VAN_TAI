@@ -5,7 +5,7 @@ import { CATALOGS, GROUPS, roleLabel } from '../catalogs';
 import { REPORTS } from '../pages/reports/Reports';
 
 export default function Layout() {
-  const { name, email, role, isAdmin, hasRole, logout, settings } = useApp();
+  const { name, email, role, isAdmin, canDesign, hasRole, logout, settings } = useApp();
   const [open, setOpen] = useState(false);
   const loc = useLocation();
   const orderTab = (k) => ({ isActive }) => (isActive && (new URLSearchParams(loc.search).get('tab') || 'SO') === k ? 'active' : '');
@@ -29,7 +29,8 @@ export default function Layout() {
           <NavLink to="/xe/tong-quan" onClick={close}><span className="ico">📊</span>Tổng quan chuyến xe</NavLink>
           <div className="nav-group">Kho hàng</div>
           <NavLink to="/kho/ton" onClick={close}><span className="ico">🏭</span>Tồn kho</NavLink>
-          {hasRole('thu_kho') && <NavLink to="/kho/in" onClick={close}><span className="ico">📥</span>Nhập kho</NavLink>}
+          {isAdmin && <NavLink to="/kho/in" onClick={close}><span className="ico">📝</span>Lập phiếu nhập kho</NavLink>}
+          {hasRole('thu_kho') && <NavLink to="/kho/nhan-hang" onClick={close}><span className="ico">📥</span>Nhận hàng (chờ nhập)</NavLink>}
           {hasRole('thu_kho') && <NavLink to="/kho/out" onClick={close}><span className="ico">📤</span>Xuất kho</NavLink>}
           {hasRole('thu_kho') && <NavLink to="/kho/move" onClick={close}><span className="ico">🔀</span>Chuyển vị trí</NavLink>}
           {hasRole('ke_toan') && <NavLink to="/kho/status" onClick={close}><span className="ico">🔒</span>Đổi tình trạng thế chấp</NavLink>}
@@ -41,7 +42,7 @@ export default function Layout() {
           {REPORTS.map(([k, ic, l]) => <NavLink key={k} to={`/bao-cao/${k}`} onClick={close}><span className="ico">{ic}</span>{l}</NavLink>)}
           <div className="nav-group">Danh mục</div>
           <NavLink to="/dm" onClick={close}><span className="ico">🏠</span>Tổng quan danh mục</NavLink>
-          {isAdmin && <NavLink to="/hang-muc" onClick={close}><span className="ico">🧩</span>Quản lý trường (hạng mục)</NavLink>}
+          {canDesign && <NavLink to="/hang-muc" onClick={close}><span className="ico">🧩</span>Quản lý trường (hạng mục)</NavLink>}
           {GROUPS.map((g) => {
             const list = CATALOGS.filter((c) => c.group === g && (isAdmin || !c.adminOnly));
             if (!list.length) return null;

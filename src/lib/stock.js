@@ -53,65 +53,95 @@ export function effectsOf(m, sign = 1) {
   return out;
 }
 
+// Cấp số phiếu theo Quy tắc mã tự sinh (trong giao dịch)
+async function nextNo(tx, code) {
+  const ref = doc(db, 'codeRules', code);
+  const snap = await tx.get(ref);
+  const seed = catalogByKey('codeRules').seed.find((s) => s.code === code);
+  const rule = snap.exists() ? snap.data() : seed;
+  const num = Number(rule.next) || 1;
+  const id = `${rule.prefix ?? code}${String(num).padStart(Number(rule.digits) || 6, '0')}`;
+  // Ghi sau cùng (Firestore: đọc hết rồi mới ghi)
+  const bump = () => (snap.exists() ? tx.update(ref, { next: num + 1 }) : tx.set(ref, { ...seed, next: num + 1 }));
+  return { id, bump };
+}
+
 // Ghi phiếu mới: cấp số, kiểm tra tồn/vị trí/tình trạng, cập nhật tồn và pallet vị trí
 // newOrder (nhập trực tiếp): lập luôn đơn mua PO đã nhận đủ theo đúng các dòng phiếu, trong cùng giao dịch
 export async function postMovement(m, user, { newOrder } = {}) {
-  const meta = MOVE_TYPES[m.type];
-  const ruleRef = doc(db, 'codeRules', meta.code);
   return runTransaction(db, async (tx) => {
-    const ruleSnap = await tx.get(ruleRef);
-    const seed = catalogByKey('codeRules').seed.find((s) => s.code === meta.code);
-    const rule = ruleSnap.exists() ? ruleSnap.data() : seed;
-    const num = Number(rule.next) || 1;
-    const id = `${rule.prefix ?? meta.code}${String(num).padStart(Number(rule.digits) || 6, '0')}`;
+    const no = await nextNo(tx, MOVE_TYPES[m.type].code);
     const at = new Date().toISOString();
-    const mv = { ...m, id, status: 'posted', createdAt: at, createdBy: user.email, createdByName: user.name,
+    const mv = { ...m, id: no.id, status: 'posted', createdAt: at, createdBy: user.email, createdByName: user.name,
       history: [{ at, by: user.email, byName: user.name, action: 'Lập phiếu' }] };
-    let direct = null;
-    if (newOrder) {
-      const poRef = doc(db, 'codeRules', 'PO');
-      const poSnap = await tx.get(poRef);
-      const poSeed = catalogByKey('codeRules').seed.find((s) => s.code === 'PO');
-      const poRule = poSnap.exists() ? poSnap.data() : poSeed;
-      const poNum = Number(poRule.next) || 1;
-      const poId = `${poRule.prefix ?? 'PO'}${String(poNum).padStart(Number(poRule.digits) || 6, '0')}`;
-      // Gộp dòng phiếu theo mã hàng + tình trạng thành dòng PO
-      const keys = new Map();
-      const lines = [];
-      mv.lines = mv.lines.map((l) => {
-        const key = `${l.item}|${l.goodsStatus}`;
-        if (!keys.has(key)) {
-          keys.set(key, lines.length + 1);
-          lines.push({ no: lines.length + 1, item: l.item, itemName: l.itemName || '', qtyKg: 0, doneKg: 0, dueDate: m.date, warehouse: m.warehouse, goodsStatus: l.goodsStatus || '', note: '' });
-        }
-        const ol = lines[keys.get(key) - 1];
-        ol.qtyKg = round(ol.qtyKg + n(l.kg));
-        ol.doneKg = ol.qtyKg;
-        return { ...l, orderLine: ol.no };
-      });
-      mv.orderId = poId; mv.orderType = 'PO'; mv.orderRef = newOrder.refNo || '';
-      direct = { poRef, poSnap, poSeed, poNum, order: {
-        ...newOrder, type: 'PO', id: poId, direct: true, lines, nextLineNo: lines.length + 1, ...summarizeLines(lines), status: 'done', lastMovement: id,
-        createdAt: at, createdBy: user.email, updatedAt: at, updatedBy: user.email,
-        history: [{ at, by: user.email, byName: user.name, action: `Lập đơn khi nhập kho trực tiếp (phiếu ${id})` }] } };
-    }
-    const orderRef = m.orderId ? doc(db, 'orders', m.orderId) : null;
-    const orderSnap = orderRef ? await tx.get(orderRef) : null;
-    if (orderRef && !orderSnap.exists()) throw new Error(`Không tìm thấy đơn ${m.orderId}.`);
-    if (orderSnap) mv.orderType = orderSnap.data().type;
-    const orderUpd = orderRef ? applyOrder({ ...orderSnap.data(), id: m.orderId }, mv, 1) : null;
-    await applyEffects(tx, mv, effectsOf(mv, 1), user);
-    if (direct) {
-      tx.set(doc(db, 'orders', direct.order.id), direct.order);
-      if (direct.poSnap.exists()) tx.update(direct.poRef, { next: direct.poNum + 1 });
-      else tx.set(direct.poRef, { ...direct.poSeed, next: direct.poNum + 1 });
-    }
-    if (orderRef) tx.update(orderRef, { ...orderUpd, lastMovement: id, updatedAt: at, updatedBy: user.email });
-    if (ruleSnap.exists()) tx.update(ruleRef, { next: num + 1 });
-    else tx.set(ruleRef, { ...seed, next: num + 1 });
-    tx.set(doc(db, 'movements', id), mv);
-    return direct ? { id, orderId: direct.order.id } : id;
+    return commit(tx, mv, user, at, newOrder, no.bump);
   });
+}
+
+// Phiếu nhập 2 bước: quản trị lập và in phiếu (chưa vào tồn), thủ kho nhận hàng thực tế rồi xác nhận
+export async function createPendingIn(m, user) {
+  return runTransaction(db, async (tx) => {
+    const no = await nextNo(tx, 'PN');
+    const at = new Date().toISOString();
+    no.bump();
+    tx.set(doc(db, 'movements', no.id), { ...m, type: 'in', id: no.id, status: 'pending', createdAt: at, createdBy: user.email, createdByName: user.name,
+      history: [{ at, by: user.email, byName: user.name, action: 'Lập phiếu, chờ thủ kho nhận hàng' }] });
+    return no.id;
+  });
+}
+// Thủ kho xác nhận: số thực nhận, lot, vị trí… → ghi tồn, cập nhật đơn (nhập trực tiếp: lập PO theo số thực nhận)
+export async function confirmIn(id, lines, user, patch = {}) {
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(doc(db, 'movements', id));
+    if (!snap.exists()) throw new Error(`Không tìm thấy phiếu ${id}.`);
+    const cur = snap.data();
+    if (cur.status !== 'pending') throw new Error(`Phiếu ${id} đã ${cur.status === 'cancelled' ? 'bị hủy' : 'được xác nhận'}.`);
+    const at = new Date().toISOString();
+    const mv = { ...cur, ...patch, lines, status: 'posted', confirmedBy: user.email, confirmedByName: user.name, confirmedAt: at,
+      history: [...(cur.history || []), { at, by: user.email, byName: user.name, action: 'Thủ kho xác nhận đã nhận hàng' }] };
+    return commit(tx, mv, user, at, cur.directPO || null, null);
+  });
+}
+
+async function commit(tx, mv, user, at, newOrder, bump) {
+  const id = mv.id;
+  let direct = null;
+  if (newOrder) {
+    const po = await nextNo(tx, 'PO');
+    // Gộp dòng phiếu theo mã hàng + tình trạng thành dòng PO
+    const keys = new Map();
+    const lines = [];
+    mv.lines = mv.lines.map((l) => {
+      const key = `${l.item}|${l.goodsStatus}`;
+      if (!keys.has(key)) {
+        keys.set(key, lines.length + 1);
+        lines.push({ no: lines.length + 1, item: l.item, itemName: l.itemName || '', qtyKg: 0, doneKg: 0, dueDate: mv.date, warehouse: mv.warehouse, goodsStatus: l.goodsStatus || '', note: '' });
+      }
+      const ol = lines[keys.get(key) - 1];
+      ol.qtyKg = round(ol.qtyKg + n(l.kg));
+      ol.doneKg = ol.qtyKg;
+      return { ...l, orderLine: ol.no };
+    });
+    mv.orderId = po.id; mv.orderType = 'PO'; mv.orderRef = newOrder.refNo || '';
+    direct = { po, order: {
+      ...newOrder, type: 'PO', id: po.id, direct: true, lines, nextLineNo: lines.length + 1, ...summarizeLines(lines), status: 'done', lastMovement: id,
+      createdAt: at, createdBy: user.email, updatedAt: at, updatedBy: user.email,
+      history: [{ at, by: user.email, byName: user.name, action: `Lập đơn khi nhập kho trực tiếp (phiếu ${id})` }] } };
+  }
+  const orderRef = mv.orderId && !direct ? doc(db, 'orders', mv.orderId) : null;
+  const orderSnap = orderRef ? await tx.get(orderRef) : null;
+  if (orderRef && !orderSnap.exists()) throw new Error(`Không tìm thấy đơn ${mv.orderId}.`);
+  if (orderSnap) mv.orderType = orderSnap.data().type;
+  const orderUpd = orderRef ? applyOrder({ ...orderSnap.data(), id: mv.orderId }, mv, 1) : null;
+  await applyEffects(tx, mv, effectsOf(mv, 1), user);
+  if (direct) {
+    tx.set(doc(db, 'orders', direct.order.id), direct.order);
+    direct.po.bump();
+  }
+  if (orderRef) tx.update(orderRef, { ...orderUpd, lastMovement: id, updatedAt: at, updatedBy: user.email });
+  if (bump) bump();
+  tx.set(doc(db, 'movements', id), mv);
+  return direct ? { id, orderId: direct.order.id } : id;
 }
 
 // Hủy phiếu (quản trị): đảo ngược toàn bộ biến động
@@ -120,6 +150,13 @@ export async function cancelMovement(m, reason, user) {
     const ref = doc(db, 'movements', m.id);
     const cur = await tx.get(ref);
     if (!cur.exists() || cur.data().status === 'cancelled') throw new Error('Phiếu đã bị hủy.');
+    const at0 = new Date().toISOString();
+    // Phiếu chờ nhận hàng chưa vào tồn: chỉ đánh dấu hủy
+    if (cur.data().status === 'pending') {
+      tx.update(ref, { status: 'cancelled', cancelReason: reason, cancelledAt: at0, cancelledBy: user.email,
+        history: [...(m.history || []), { at: at0, by: user.email, byName: user.name, action: `Hủy phiếu: ${reason}` }] });
+      return;
+    }
     const orderRef = m.orderId ? doc(db, 'orders', m.orderId) : null;
     const orderSnap = orderRef ? await tx.get(orderRef) : null;
     const orderUpd = orderSnap?.exists() ? applyOrder({ ...orderSnap.data(), id: m.orderId }, m, -1) : null;
