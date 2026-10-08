@@ -3,14 +3,14 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
-import { useCollection, useMyWarehouses, useOpCompany, useOrders } from '../../lib/hooks';
+import { useOpCompany, useOrders } from '../../lib/hooks';
 import { CompanyPicker } from '../../components/TripBits';
-import { ORDER_STATUS, ORDER_TYPES, OPEN_STATUSES, createOrder, leftKg, lineDue, lineShip, lineWh, orderTotals, saveOrder, setOrderState, summarizeLines, transitKg } from '../../lib/orders';
+import { ORDER_STATUS, ORDER_TYPES, OPEN_STATUSES, createOrder, leftKg, lineDue, lineFrom, lineShip, lineTo, lineWh, orderTotals, setOrderState, stoRoute, summarizeLines, transitKg } from '../../lib/orders';
 import { MOVE_TYPES } from '../../lib/stock';
 import { STATUS_META, fmtTime, vnDate } from '../../lib/trips';
 import { exportSheets, exportTemplate, readFirstSheet, toNumber, toYmd } from '../../lib/excel';
 import { fmtDate, fmtNum, norm } from '../../lib/utils';
-import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
+import { Empty, ErrorBox, Modal } from '../../components/ui';
 import Balance from './Balance';
 import SOForm from './SOForm';
 import { ColumnPicker } from '../../components/FormTools';
@@ -21,7 +21,7 @@ const t = (kg) => fmtNum((Number(kg) || 0) / 1000, 3);
 const pct = (o) => { const x = orderTotals(o); return x.qty ? Math.min(100, (x.done / x.qty) * 100) : 0; };
 // SO/PO: kinh doanh, kế toán. STO: thêm thủ kho (kho đi)
 export const canManageOrders = (hasRole, type) => (type === 'STO' ? hasRole('kinh_doanh', 'ke_toan', 'thu_kho') : hasRole('kinh_doanh', 'ke_toan'));
-const partyText = (o) => (o.type === 'STO' ? `${o.fromWarehouse} → ${o.toWarehouse}` : o.partyName || o.partyCode);
+const partyText = (o) => (o.type === 'STO' ? stoRoute(o) : o.partyName || o.partyCode);
 
 // Nút lập phiếu kho theo đơn: SO/STO → phiếu xuất kho, PO/STO → phiếu nhập kho
 export function MoveButtons({ o, sm }) {
@@ -29,14 +29,14 @@ export function MoveButtons({ o, sm }) {
   if (!hasRole('thu_kho') || !OPEN_STATUSES.concat(o.type === 'STO' ? ['closed'] : []).includes(o.status)) return null;
   const x = orderTotals(o);
   const cls = 'btn' + (sm ? ' sm' : ' primary');
-  const outWh = o.type === 'STO' ? o.fromWarehouse : o.warehouse;
-  const inWh = o.type === 'STO' ? o.toWarehouse : o.warehouse;
+  // Có dòng còn phải làm ở kho mình phụ trách (dòng không ghi kho = kho nào cũng được)
+  const mine = (mt, need) => (o.lines || []).some((l) => need(l) > 0 && (!lineWh(o, l, mt) || inMyWarehouses(lineWh(o, l, mt))));
   const stop = (e) => e.stopPropagation();
   return (
     <>
-      {['SO', 'STO'].includes(o.type) && OPEN_STATUSES.includes(o.status) && x.left > 0 && (!outWh || inMyWarehouses(outWh)) &&
+      {['SO', 'STO'].includes(o.type) && OPEN_STATUSES.includes(o.status) && x.left > 0 && mine('out', leftKg) &&
         <Link className={cls} onClick={stop} to={`/kho/out?order=${o.id}`}>📤 Lập phiếu xuất kho</Link>}
-      {(o.type === 'PO' ? OPEN_STATUSES.includes(o.status) && x.left > 0 : o.type === 'STO' && x.transit > 0) && (!inWh || inMyWarehouses(inWh)) &&
+      {(o.type === 'PO' ? OPEN_STATUSES.includes(o.status) && x.left > 0 && mine('in', leftKg) : o.type === 'STO' && x.transit > 0 && mine('in', transitKg)) &&
         <Link className={cls} onClick={stop} to={`/kho/in?order=${o.id}`}>📥 Lập phiếu nhập kho</Link>}
     </>
   );
@@ -78,7 +78,7 @@ function OrderList({ type }) {
   const so = type === 'SO';
   const pl = so || type === 'PO'; // SO, PO: kho / ngày / TTHH theo từng dòng
   const fk = type.toLowerCase();
-  const customHead = pl ? fieldsOf(`${fk}Head`).filter((f) => f.custom && !f.hidden) : [];
+  const customHead = fieldsOf(`${fk}Head`).filter((f) => f.custom && !f.hidden);
   const { rows, error } = useOrders(type);
   const [status, setStatus] = useState('opening');
   const [co, setCo] = useOpCompany();
@@ -91,10 +91,10 @@ function OrderList({ type }) {
   const list = useMemo(() => {
     const f = norm(q);
     return rows
-      .filter((o) => (sto ? inMyWarehouses(o.fromWarehouse) || inMyWarehouses(o.toWarehouse) : (o.lines || []).some((l) => { const w = lineWh(o, l); return !w || inMyWarehouses(w); })))
+      .filter((o) => (o.lines || []).some((l) => [lineWh(o, l, 'out'), lineWh(o, l, 'in')].some((w) => !w || inMyWarehouses(w))))
       .filter((o) => !co || o.company === co)
       .filter((o) => (status === 'opening' ? OPEN_STATUSES.includes(o.status) : !status || o.status === status))
-      .filter((o) => !f || norm([o.id, o.refNo, o.partyCode, o.partyName, o.fromWarehouse, o.toWarehouse, o.shipCode, ...(o.lines || []).flatMap((l) => [l.item, l.itemName])].join(' ')).includes(f))
+      .filter((o) => !f || norm([o.id, o.refNo, o.partyCode, o.partyName, o.fromWarehouse, o.toWarehouse, o.shipCode, ...(o.lines || []).flatMap((l) => [l.item, l.itemName, l.warehouse, l.fromWarehouse, l.toWarehouse, l.shipCode])].join(' ')).includes(f))
       .sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')) || String(b.createdAt).localeCompare(String(a.createdAt)));
   }, [rows, status, q, inMyWarehouses, sto, co]);
   const sum = list.reduce((s, o) => { const x = orderTotals(o); return { qty: s.qty + x.qty, done: s.done + x.done, transit: s.transit + x.transit, left: s.left + (OPEN_STATUSES.includes(o.status) ? x.left : 0) }; }, { qty: 0, done: 0, left: 0, transit: 0 });
@@ -105,11 +105,12 @@ function OrderList({ type }) {
   const cols = [
     { key: 'id', label: 'Số đơn', locked: true, cls: 'mono nowrap', render: (o) => o.id },
     { key: 'company', label: 'Công ty', render: (o) => <b>{o.company}</b> },
-    { key: 'refNo', label: 'Số Ecount', cls: 'mono', render: (o) => o.refNo, hideDefault: pl },
-    { key: 'date', label: pl ? 'Ngày tạo đơn' : 'Ngày', cls: 'nowrap', render: (o) => fmtDate(o.date) },
-    { key: 'party', label: meta.partyLabel, cls: 'nowrap', render: (o) => partyText(o) },
+    { key: 'refNo', label: 'Số Ecount', cls: 'mono', render: (o) => o.refNo, hideDefault: true },
+    { key: 'date', label: 'Ngày tạo đơn', cls: 'nowrap', render: (o) => fmtDate(o.date) },
+    ...(sto ? [] : [{ key: 'party', label: meta.partyLabel, cls: 'nowrap', render: (o) => partyText(o) }]),
     ...customHead.map((f) => ({ key: f.key, label: f.label, render: (o) => displayValue(f, o[f.key]) })),
-    ...(sto ? [] : [{ key: 'warehouse', label: so ? 'Kho xuất' : 'Kho nhập', render: (o) => uniqText(o, lineWh) }]),
+    ...(sto ? [{ key: 'from', label: 'Kho xuất', render: (o) => uniqText(o, lineFrom) }, { key: 'to', label: 'Kho nhập', render: (o) => uniqText(o, lineTo) }]
+      : [{ key: 'warehouse', label: so ? 'Kho xuất' : 'Kho nhập', render: (o) => uniqText(o, lineWh) }]),
     ...(so ? [{ key: 'ship', label: 'Mã giao', render: (o) => uniqText(o, lineShip) }] : []),
     { key: 'items', label: 'Mặt hàng', render: (o) => [...new Set(o.lines.map((l) => l.item))].join(', ') },
     { key: 'qty', label: 'Đặt (tấn)', num: true, render: (o, c) => t(c.x.qty) },
@@ -117,7 +118,7 @@ function OrderList({ type }) {
     ...(sto ? [{ key: 'transit', label: meta.transit, num: true, render: (o, c) => t(c.x.transit) }] : []),
     { key: 'left', label: meta.left, num: true, render: (o, c) => <b>{OPEN_STATUSES.includes(o.status) ? t(c.x.left) : '–'}</b> },
     { key: 'progress', label: 'Tiến độ', render: (o) => <div style={{ width: 130 }}><Progress o={o} /></div> },
-    { key: 'due', label: so ? 'Ngày giao (sớm nhất)' : pl ? 'ETA (sớm nhất)' : meta.due, cls: 'nowrap', style: (o, c) => (c.isLate ? { color: 'var(--red)', fontWeight: 600 } : undefined), render: (o, c) => <>{fmtDate(o.dueDate)}{c.isLate ? ' ⚠' : ''}</> },
+    { key: 'due', label: so ? 'Ngày giao (sớm nhất)' : pl ? 'ETA (sớm nhất)' : 'Ngày chuyển (sớm nhất)', cls: 'nowrap', style: (o, c) => (c.isLate ? { color: 'var(--red)', fontWeight: 600 } : undefined), render: (o, c) => <>{fmtDate(o.dueDate)}{c.isLate ? ' ⚠' : ''}</> },
     { key: 'status', label: 'Trạng thái', locked: true, render: (o) => <OrderStatus status={o.status} /> },
   ];
   const [hidden, setHidden] = usePref(`orderListHidden:${type}`, cols.filter((c) => c.hideDefault).map((c) => c.key));
@@ -126,11 +127,11 @@ function OrderList({ type }) {
   const exportExcel = () => {
     const out = [];
     list.forEach((o) => o.lines.forEach((l) => out.push({
-      'Số đơn': o.id, 'Công ty': o.company || '', ...(pl ? {} : { 'Số đơn Ecount': o.refNo }), 'Ngày đơn': o.date,
-      ...(sto ? { 'Kho đi': o.fromWarehouse, 'Kho đến': o.toWarehouse } : { [`Mã ${meta.partyLabel}`]: o.partyCode, [`Tên ${meta.partyLabel}`]: o.partyName }),
+      'Số đơn': o.id, 'Công ty': o.company || '', 'Ngày đơn': o.date,
+      ...(sto ? { 'Kho xuất': lineFrom(o, l), 'Kho nhập': lineTo(o, l) } : { [`Mã ${meta.partyLabel}`]: o.partyCode, [`Tên ${meta.partyLabel}`]: o.partyName }),
       ...Object.fromEntries(customHead.map((f) => [f.label, displayValue(f, o[f.key], true)])),
-      ...(so ? { 'Mã giao hàng': lineShip(o, l) } : {}), ...(pl ? { TTHH: l.goodsStatus || '' } : {}), Kho: pl ? lineWh(o, l) : o.warehouse, [meta.due]: pl ? lineDue(o, l) : o.dueDate,
-      ...(pl ? Object.fromEntries(fieldsOf(`${fk}Line`).filter((f) => f.custom && !f.hidden).map((f) => [f.label, displayValue(f, l[f.key], true)])) : {}),
+      ...(so ? { 'Mã giao hàng': lineShip(o, l) } : {}), TTHH: l.goodsStatus || '', ...(sto ? {} : { Kho: lineWh(o, l) }), [meta.due]: lineDue(o, l),
+      ...Object.fromEntries(fieldsOf(`${fk}Line`).filter((f) => f.custom && !f.hidden).map((f) => [f.label, displayValue(f, l[f.key], true)])),
       'Mã hàng': l.item, 'Tên hàng': l.itemName, 'Đặt (tấn)': l.qtyKg / 1000, [`${meta.done} (tấn)`]: (l.doneKg || 0) / 1000,
       ...(sto ? { 'Đang đi đường (tấn)': transitKg(l) / 1000, 'Đã nhận (tấn)': (l.receivedKg || 0) / 1000 } : {}),
       [`${meta.left} (tấn)`]: OPEN_STATUSES.includes(o.status) ? leftKg(l) / 1000 : 0, 'Trạng thái': ORDER_STATUS[o.status]?.label, 'Ghi chú': o.note,
@@ -184,145 +185,8 @@ function OrderList({ type }) {
         )}
       </div>
       {current && !edit && <OrderDetail o={current} onClose={() => setOpen(null)} onEdit={() => setEdit(current)} />}
-      {edit && (pl
-        ? <SOForm type={type} order={edit === 'new' ? null : edit} onClose={(id) => { setEdit(null); if (id) setOpen(id); }} />
-        : <OrderForm type={type} order={edit === 'new' ? null : edit} onClose={(id) => { setEdit(null); if (id) setOpen(id); }} />)}
+      {edit && <SOForm type={type} order={edit === 'new' ? null : edit} onClose={(id) => { setEdit(null); if (id) setOpen(id); }} />}
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-const emptyLine = () => ({ item: '', itemName: '', qtyT: '', note: '' });
-
-function OrderForm({ type, order, onClose }) {
-  const meta = ORDER_TYPES[type];
-  const { email, name } = useApp();
-  const warehouses = useMyWarehouses();
-  const parties = useCollection(meta.party || null).rows;
-  const allWarehouses = useCollection('warehouses').rows.filter((w) => w.active !== false).sort((a, b) => a.code.localeCompare(b.code));
-  const sto = type === 'STO';
-  const shipto = useCollection('shipto').rows;
-  const items = useCollection('items').rows;
-  const itemMap = useMemo(() => new Map(items.map((i) => [i.code, i])), [items]);
-  const [defaultCo] = useOpCompany();
-  const [h, setH] = useState(() => order
-    ? { company: order.company || '', refNo: order.refNo || '', date: order.date || '', partyCode: order.partyCode || '', partyName: order.partyName || '', shipCode: order.shipCode || '',
-      warehouse: order.warehouse || '', fromWarehouse: order.fromWarehouse || '', toWarehouse: order.toWarehouse || '', dueDate: order.dueDate || '', tolerancePct: order.tolerancePct ?? '', note: order.note || '' }
-    : { company: defaultCo, refNo: '', date: vnDate(), partyCode: '', partyName: '', shipCode: '', warehouse: '', fromWarehouse: '', toWarehouse: '', dueDate: '', tolerancePct: '', note: '' });
-  const [lines, setLines] = useState(() => order
-    ? order.lines.map((l) => ({ no: l.no, item: l.item, itemName: l.itemName, qtyT: l.qtyKg / 1000, doneKg: l.doneKg || 0, note: l.note || '' }))
-    : [emptyLine()]);
-  const [err, setErr] = useState('');
-  const [busy, setBusy] = useState(false);
-  const set = (k, v) => setH((x) => ({ ...x, [k]: v }));
-  const setLine = (i, p) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...p } : l)));
-
-  const submit = async (e) => {
-    e.preventDefault();
-    setErr('');
-    if (sto && (!h.fromWarehouse || !h.toWarehouse)) return setErr('Chọn kho đi và kho đến.');
-    if (sto && h.fromWarehouse === h.toWarehouse) return setErr('Kho đến phải khác kho đi.');
-    if (!sto && !h.partyCode.trim() && !h.partyName.trim()) return setErr(`Chọn ${meta.partyLabel.toLowerCase()}.`);
-    if (!h.company) return setErr('Chọn công ty của đơn.');
-    if (!h.date) return setErr('Nhập ngày đơn.');
-    const out = [];
-    for (const [i, l] of lines.entries()) {
-      if (!l.item || !itemMap.has(l.item)) return setErr(`Dòng ${i + 1}: chọn mã hàng có trong danh mục.`);
-      const kg = Math.round(Number(l.qtyT) * 1000 * 1000) / 1000;
-      if (!(kg > 0)) return setErr(`Dòng ${i + 1}: nhập số lượng (tấn).`);
-      out.push({ ...(l.no != null ? { no: l.no } : {}), item: l.item, itemName: itemMap.get(l.item).name, qtyKg: kg, note: l.note.trim() });
-    }
-    const { fromWarehouse, toWarehouse, ...rest } = h;
-    const whName = (c) => allWarehouses.find((w) => w.code === c)?.name || c;
-    const data = { ...rest, ...(sto ? { fromWarehouse, toWarehouse, warehouse: '', partyCode: toWarehouse, partyName: `Chuyển đến kho ${whName(toWarehouse)}`, shipCode: '' } : {}),
-      type, refNo: h.refNo.trim(), note: h.note.trim(), ...(sto ? {} : { partyCode: h.partyCode.trim(), partyName: h.partyName.trim() }),
-      tolerancePct: h.tolerancePct === '' ? 0 : Number(h.tolerancePct), lines: out };
-    setBusy(true);
-    try {
-      if (data.refNo && !order) {
-        const dup = await getDocs(query(collection(db, 'orders'), where('refNo', '==', data.refNo)));
-        if (dup.docs.some((d) => d.data().type === type && d.data().status !== 'cancelled')) throw new Error(`Số đơn Ecount ${data.refNo} đã có trong hệ thống.`);
-      }
-      const id = order ? (await saveOrder(order.id, data, { email, name }), order.id) : await createOrder(data, { email, name });
-      onClose(id);
-    } catch (e2) {
-      setErr(e2.code === 'permission-denied' ? 'Bạn không có quyền lập/sửa đơn.' : e2.message);
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal title={order ? `Sửa ${order.id}` : `Lập ${meta.label.toLowerCase()}`} onClose={() => onClose()} wide>
-      <form onSubmit={submit}>
-        <div className="form-grid">
-          <Field label={type === 'SO' ? 'Công ty bán' : type === 'PO' ? 'Công ty mua' : 'Công ty chủ hàng'} required>
-            <CompanyPicker value={h.company} allowAll={false} required onChange={(v) => set('company', v)} />
-          </Field>
-          {sto && (
-            <>
-              <Field label="Kho đi (xuất)" required>
-                <select value={h.fromWarehouse} disabled={!!order} onChange={(e) => set('fromWarehouse', e.target.value)}>
-                  <option value="">-- Chọn --</option>
-                  {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-                </select>
-              </Field>
-              <Field label="Kho đến (nhập)" required>
-                <select value={h.toWarehouse} disabled={!!order} onChange={(e) => set('toWarehouse', e.target.value)}>
-                  <option value="">-- Chọn --</option>
-                  {allWarehouses.filter((w) => w.code !== h.fromWarehouse).map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-                </select>
-              </Field>
-            </>
-          )}
-          <Field label={sto ? 'Số chứng từ Ecount (nếu có)' : 'Số đơn Ecount / số hợp đồng'} help="Để đối chiếu với kế toán"><input value={h.refNo} onChange={(e) => set('refNo', e.target.value)} /></Field>
-          <Field label="Ngày đơn" required><input type="date" value={h.date} onChange={(e) => set('date', e.target.value)} /></Field>
-          {!sto && <Field label={meta.partyLabel} required>
-            <input list="dl-ord-party" value={h.partyCode} placeholder="Mã"
-              onChange={(e) => { const p = parties.find((x) => x.code === e.target.value); setH((x) => ({ ...x, partyCode: e.target.value, partyName: p ? p.name : x.partyName, shipCode: '' })); }} />
-            <input value={h.partyName} placeholder="Tên" style={{ marginTop: 4 }} onChange={(e) => set('partyName', e.target.value)} />
-          </Field>}
-          {type === 'SO' && (
-            <Field label="Giao đến (Shipto)">
-              <select value={h.shipCode} onChange={(e) => set('shipCode', e.target.value)}>
-                <option value="">-- Chọn --</option>
-                {shipto.filter((s) => s.customerCode === h.partyCode).map((s) => <option key={s.shipCode} value={s.shipCode}>{s.shipCode} – {s.address}</option>)}
-              </select>
-            </Field>
-          )}
-          {!sto && <Field label={type === 'SO' ? 'Xuất từ kho' : 'Nhập về kho'} help="Bỏ trống nếu chưa biết kho">
-            <select value={h.warehouse} onChange={(e) => set('warehouse', e.target.value)}>
-              <option value="">-- Kho nào cũng được --</option>
-              {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-            </select>
-          </Field>}
-          <Field label={meta.due}><input type="date" value={h.dueDate} onChange={(e) => set('dueDate', e.target.value)} /></Field>
-          <Field label="Dung sai cho phép (%)" help="Được giao/nhận vượt số đặt tối đa bao nhiêu %"><input type="number" step="any" min="0" value={h.tolerancePct} onChange={(e) => set('tolerancePct', e.target.value)} /></Field>
-          <Field label="Ghi chú" full><textarea rows={2} value={h.note} onChange={(e) => set('note', e.target.value)} /></Field>
-        </div>
-        <div className="section-head">Mặt hàng</div>
-        <table>
-          <thead><tr><th>Mã hàng</th><th>Tên hàng</th><th className="num">Số lượng (tấn)</th>{order && <th className="num">{meta.done}</th>}<th>Ghi chú</th><th></th></tr></thead>
-          <tbody>
-            {lines.map((l, i) => (
-              <tr key={i}>
-                <td><input list="dl-ord-item" value={l.item} disabled={l.doneKg > 0} onChange={(e) => setLine(i, { item: e.target.value })} /></td>
-                <td className="small">{itemMap.get(l.item)?.name || l.itemName}</td>
-                <td><input type="number" step="any" min="0" value={l.qtyT} onChange={(e) => setLine(i, { qtyT: e.target.value })} style={{ width: 110 }} /></td>
-                {order && <td className="num">{t(l.doneKg)}</td>}
-                <td><input value={l.note} onChange={(e) => setLine(i, { note: e.target.value })} /></td>
-                <td><button type="button" className="btn ghost" disabled={lines.length === 1 || l.doneKg > 0} title={l.doneKg > 0 ? 'Dòng đã giao/nhận, không xóa được' : ''}
-                  onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>✕</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <button type="button" className="btn sm" style={{ marginTop: 6 }} onClick={() => setLines((ls) => [...ls, emptyLine()])}>+ Thêm mặt hàng</button>
-        <ErrorBox error={err} />
-        <div className="form-actions"><button className="btn primary" disabled={busy}>{busy ? 'Đang lưu…' : order ? 'Lưu' : 'Lập đơn'}</button></div>
-        <datalist id="dl-ord-party">{parties.map((p) => <option key={p.code} value={p.code}>{p.name}</option>)}</datalist>
-        <datalist id="dl-ord-item">{items.filter((x) => x.active !== false).map((x) => <option key={x.code} value={x.code}>{x.name}</option>)}</datalist>
-      </form>
-    </Modal>
   );
 }
 
@@ -331,10 +195,9 @@ function OrderDetail({ o, onClose, onEdit }) {
   const meta = ORDER_TYPES[o.type];
   const { hasRole, email, name, fieldsOf } = useApp();
   const so = o.type === 'SO';
-  const pl = so || o.type === 'PO';
   const fk = o.type.toLowerCase();
-  const headCustom = pl ? fieldsOf(`${fk}Head`).filter((f) => f.custom && !f.hidden && o[f.key] !== '' && o[f.key] != null) : [];
-  const lineCustom = pl ? fieldsOf(`${fk}Line`).filter((f) => f.custom && !f.hidden) : [];
+  const headCustom = fieldsOf(`${fk}Head`).filter((f) => f.custom && !f.hidden && o[f.key] !== '' && o[f.key] != null);
+  const lineCustom = fieldsOf(`${fk}Line`).filter((f) => f.custom && !f.hidden);
   const canManage = canManageOrders(hasRole, o.type);
   const sto = o.type === 'STO';
   const [moves, setMoves] = useState([]);
@@ -359,8 +222,7 @@ function OrderDetail({ o, onClose, onEdit }) {
     <Modal title={`${meta.label} ${o.id}`} onClose={onClose} wide>
       <p>
         <OrderStatus status={o.status} /> {o.refNo ? <> · Số Ecount <b className="mono">{o.refNo}</b></> : null} · Ngày {fmtDate(o.date)}
-        {' · '}{meta.partyLabel}: <b>{sto ? partyText(o) : `${o.partyCode} ${o.partyName}`}</b>{!pl && o.shipCode ? ` · giao ${o.shipCode}` : ''}
-        {!pl && o.warehouse ? ` · Kho ${o.warehouse}` : ''}{!pl && o.dueDate ? ` · ${meta.due}: ${fmtDate(o.dueDate)}` : ''}
+        {' · '}{meta.partyLabel}: <b>{sto ? partyText(o) : `${o.partyCode} ${o.partyName}`}</b>
         {headCustom.map((f) => <span key={f.key}> · {f.label}: <b>{displayValue(f, o[f.key])}</b></span>)}
         {Number(o.tolerancePct) ? ` · Dung sai ${o.tolerancePct}%` : ''}
       </p>
@@ -370,16 +232,16 @@ function OrderDetail({ o, onClose, onEdit }) {
         <div className="stat"><div className="stat-label">Đặt</div><div className="stat-value">{t(x.qty)} tấn</div></div>
         <div className="stat green"><div className="stat-label">{meta.done}</div><div className="stat-value">{t(x.done)} tấn</div></div>
         {sto && <div className="stat"><div className="stat-label">{meta.transit}</div><div className="stat-value">{t(x.transit)} tấn</div></div>}
-        {sto && <div className="stat green"><div className="stat-label">{meta.received} tại kho {o.toWarehouse}</div><div className="stat-value">{t(x.received)} tấn</div></div>}
+        {sto && <div className="stat green"><div className="stat-label">{meta.received}</div><div className="stat-value">{t(x.received)} tấn</div></div>}
         <div className="stat amber"><div className="stat-label">{meta.left}</div><div className="stat-value">{isOpen ? t(x.left) : '0'} tấn</div>{!isOpen && x.left > 0 && <div className="stat-sub">{t(x.left)} tấn không thực hiện ({ORDER_STATUS[o.status].label.toLowerCase()})</div>}</div>
       </div>
       <div className="table-wrap" style={{ marginBottom: 12 }}>
         <table>
-          <thead><tr><th>#</th>{pl && <><th>{so ? 'Ngày giao' : 'ETA'}</th><th>{so ? 'Kho xuất' : 'Kho nhập'}</th></>}<th>Mã hàng</th><th>Tên hàng</th>{pl && <>{so && <th>Mã giao</th>}<th>TTHH</th>{lineCustom.map((f) => <th key={f.key}>{f.label}</th>)}</>}<th className="num">Đặt (tấn)</th><th className="num">{meta.done}</th>
+          <thead><tr><th>#</th><th>{meta.due}</th>{sto ? <><th>Kho xuất</th><th>Kho nhập</th></> : <th>{so ? 'Kho xuất' : 'Kho nhập'}</th>}<th>Mã hàng</th><th>Tên hàng</th>{so && <th>Mã giao</th>}<th>TTHH</th>{lineCustom.map((f) => <th key={f.key}>{f.label}</th>)}<th className="num">Đặt (tấn)</th><th className="num">{meta.done}</th>
             {sto && <><th className="num">{meta.transit}</th><th className="num">{meta.received}</th></>}<th className="num">{meta.left}</th><th>Ghi chú</th></tr></thead>
           <tbody>{o.lines.map((l) => (
-            <tr key={l.no}><td>{l.no}</td>{pl && <><td className="nowrap">{fmtDate(lineDue(o, l))}</td><td>{lineWh(o, l) || 'Kho nào cũng được'}</td></>}<td>{l.item}</td><td>{l.itemName}</td>
-              {pl && <>{so && <td>{lineShip(o, l)}</td>}<td>{l.goodsStatus || (so ? 'KTC/DGC' : '')}</td>{lineCustom.map((f) => <td key={f.key}>{displayValue(f, l[f.key])}</td>)}</>}<td className="num">{t(l.qtyKg)}</td><td className="num">{t(l.doneKg)}</td>
+            <tr key={l.no}><td>{l.no}</td><td className="nowrap">{fmtDate(lineDue(o, l))}</td>{sto ? <><td>{lineFrom(o, l)}</td><td>{lineTo(o, l)}</td></> : <td>{lineWh(o, l) || 'Kho nào cũng được'}</td>}<td>{l.item}</td><td>{l.itemName}</td>
+              {so && <td>{lineShip(o, l)}</td>}<td>{l.goodsStatus || (so ? 'KTC/DGC' : '')}</td>{lineCustom.map((f) => <td key={f.key}>{displayValue(f, l[f.key])}</td>)}<td className="num">{t(l.qtyKg)}</td><td className="num">{t(l.doneKg)}</td>
               {sto && <><td className="num">{t(transitKg(l))}</td><td className="num">{t(l.receivedKg)}</td></>}
               <td className="num"><b>{isOpen ? t(leftKg(l)) : '–'}</b></td><td className="small">{l.note}</td></tr>
           ))}</tbody>

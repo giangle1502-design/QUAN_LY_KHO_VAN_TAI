@@ -17,21 +17,34 @@ export const ORDER_TYPES = {
 };
 // Đơn nào được chọn trên phiếu xuất / phiếu nhập
 export const ORDER_FOR_MOVE = { out: ['SO', 'STO'], in: ['PO', 'STO'] };
-export const orderWarehouse = (o, moveType) => (o.type === 'STO' ? (moveType === 'out' ? o.fromWarehouse : o.toWarehouse) : o.warehouse);
-// SO: mỗi dòng có kho xuất, ngày giao, mã giao, TTHH riêng (dòng trống thì theo đầu đơn – đơn cũ)
-export const lineWh = (o, l) => l.warehouse || o.warehouse || '';
+// Kho chung ở đầu đơn (rỗng nếu các dòng khác kho)
+export const orderWarehouse = (o, moveType) => (o.type === 'STO' ? (moveType === 'in' ? o.toWarehouse : o.fromWarehouse) : o.warehouse) || '';
+// Mỗi dòng có kho riêng (dòng trống thì theo đầu đơn – đơn cũ). STO: dòng có kho xuất và kho nhập
+export const lineFrom = (o, l) => l.fromWarehouse || o.fromWarehouse || '';
+export const lineTo = (o, l) => l.toWarehouse || o.toWarehouse || '';
+export const lineWh = (o, l, moveType = 'out') => (o.type === 'STO' ? (moveType === 'in' ? lineTo(o, l) : lineFrom(o, l)) : l.warehouse || o.warehouse || '');
 export const lineDue = (o, l) => l.dueDate || o.dueDate || '';
 export const lineShip = (o, l) => l.shipCode || o.shipCode || '';
+// Các kho xuất / nhập của STO (để hiển thị, lọc)
+export const stoFroms = (o) => [...new Set((o.lines || []).map((l) => lineFrom(o, l)).filter(Boolean))];
+export const stoTos = (o) => [...new Set((o.lines || []).map((l) => lineTo(o, l)).filter(Boolean))];
+export const stoRoute = (o) => `${stoFroms(o).join(', ')} → ${stoTos(o).join(', ')}`;
 // Đơn có phần làm ở kho này không (dòng không ghi kho = kho nào cũng được)
 export function orderInWarehouse(o, moveType, wh) {
-  if (o.type === 'STO') { const ow = orderWarehouse(o, moveType); return !ow || !wh || ow === wh; }
-  return !wh || (o.lines || []).some((l) => { const w = lineWh(o, l); return !w || w === wh; });
+  return !wh || (o.lines || []).some((l) => { const w = lineWh(o, l, moveType); return !w || w === wh; });
 }
 // Tóm tắt lên đầu đơn để lọc / sắp xếp: kho, mã giao chung (nếu mọi dòng giống nhau), ngày giao sớm nhất
-export function summarizeLines(lines) {
+export function summarizeLines(lines, sto = false) {
   const uniq = (k) => [...new Set(lines.map((l) => l[k] || ''))];
-  const whs = uniq('warehouse'); const ships = uniq('shipCode');
   const dues = lines.map((l) => l.dueDate).filter(Boolean).sort();
+  if (sto) {
+    const fr = uniq('fromWarehouse'); const to = uniq('toWarehouse');
+    return {
+      fromWarehouse: fr.length === 1 ? fr[0] : '', fromWarehouses: fr.filter(Boolean),
+      toWarehouse: to.length === 1 ? to[0] : '', toWarehouses: to.filter(Boolean), warehouse: '', shipCode: '', dueDate: dues[0] || '',
+    };
+  }
+  const whs = uniq('warehouse'); const ships = uniq('shipCode');
   return {
     warehouse: whs.length === 1 ? whs[0] : '', warehouses: whs.filter(Boolean),
     shipCode: ships.length === 1 ? ships[0] : '', shipCodes: ships.filter(Boolean), dueDate: dues[0] || '',
@@ -92,8 +105,6 @@ export async function createOrder(o, user) {
 export function applyOrder(order, m, sign) {
   const sto = order.type === 'STO';
   if (!ORDER_FOR_MOVE[m.type]?.includes(order.type)) throw new Error(`Phiếu ${m.type === 'in' ? 'nhập' : 'xuất'} kho không gắn được với ${order.id}.`);
-  const wh = sto ? orderWarehouse(order, m.type) : '';
-  if (wh && m.warehouse !== wh) throw new Error(`${order.id} ${m.type === 'out' ? 'xuất từ' : 'nhập về'} kho ${wh}, phiếu đang ở kho ${m.warehouse}.`);
   const receiving = sto && m.type === 'in';
   const k = receiving ? 'receivedKg' : 'doneKg';
   const lines = order.lines.map((l) => ({ ...l }));
@@ -101,14 +112,14 @@ export function applyOrder(order, m, sign) {
     const i = lines.findIndex((l) => l.no === ml.orderLine);
     if (i < 0) throw new Error(`Dòng ${ml.item} không khớp dòng nào của đơn ${order.id}.`);
     if (lines[i].item !== ml.item) throw new Error(`Mã hàng ${ml.item} khác mã hàng dòng đơn (${lines[i].item}).`);
-    const lw = sto ? '' : lineWh(order, lines[i]);
+    const lw = lineWh(order, lines[i], m.type);
     if (lw && lw !== m.warehouse) throw new Error(`Dòng ${ml.item} của ${order.id} ${m.type === 'out' ? 'xuất từ' : 'nhập về'} kho ${lw}, phiếu đang ở kho ${m.warehouse}.`);
     lines[i][k] = Math.round((n(lines[i][k]) + sign * Math.abs(n(ml.kg))) * 1000) / 1000;
     if (lines[i][k] < -EPS) lines[i][k] = 0;
   }
   if (sto && !receiving && sign < 0) {
     const bad = lines.find((l) => n(l.receivedKg) > n(l.doneKg) + EPS);
-    if (bad) throw new Error(`Kho ${order.toWarehouse} đã nhận ${n(bad.receivedKg) / 1000} tấn ${bad.item} theo ${order.id}: hủy phiếu nhập ở kho đến trước.`);
+    if (bad) throw new Error(`Kho ${lineTo(order, bad)} đã nhận ${n(bad.receivedKg) / 1000} tấn ${bad.item} theo ${order.id}: hủy phiếu nhập ở kho đến trước.`);
   }
   if (sign > 0) {
     const okStatus = receiving ? [...OPEN_STATUSES, 'closed'] : OPEN_STATUSES;
@@ -132,7 +143,7 @@ export function matchOrderLine(order, item, usedKg = {}, moveType = 'out', opts 
   let bestLeft = -Infinity;
   for (const l of order?.lines || []) {
     if (l.item !== item) continue;
-    if (order.type !== 'STO' && opts.warehouse && lineWh(order, l) && lineWh(order, l) !== opts.warehouse) continue;
+    if (opts.warehouse && lineWh(order, l, moveType) && lineWh(order, l, moveType) !== opts.warehouse) continue;
     if (opts.status && l.goodsStatus && l.goodsStatus !== opts.status) continue;
     const left = openKg(order, l, moveType) - (usedKg[l.no] || 0);
     if (left > bestLeft) { best = l.no; bestLeft = left; }

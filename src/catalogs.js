@@ -364,6 +364,28 @@ FORM_DEFS.push(
       { key: 'note', label: 'Ghi chú', type: 'text' },
     ],
   },
+  {
+    key: 'stoHead', group: 'Biểu mẫu đơn hàng', icon: '🧾', title: 'Lệnh chuyển kho (STO) – phần chung', short: 'STO phần chung', form: true,
+    fields: [
+      { key: 'date', label: 'Ngày tạo đơn', type: 'date', required: true },
+      { key: 'company', label: 'Công ty chủ hàng', type: 'ref', ref: 'companies', required: true },
+      { key: 'tolerancePct', label: 'Dung sai cho phép (%)', type: 'percent', help: 'Được xuất vượt số lệnh tối đa bao nhiêu %' },
+      { key: 'note', label: 'Ghi chú', type: 'textarea' },
+    ],
+  },
+  {
+    key: 'stoLine', group: 'Biểu mẫu đơn hàng', icon: '📦', title: 'Lệnh chuyển kho (STO) – dòng hàng', short: 'STO dòng hàng', form: true,
+    fields: [
+      { key: 'dueDate', label: 'Ngày chuyển', type: 'date' },
+      { key: 'fromWarehouse', label: 'Kho xuất', type: 'ref', ref: 'warehouses', required: true },
+      { key: 'toWarehouse', label: 'Kho nhập', type: 'ref', ref: 'warehouses', required: true },
+      { key: 'item', label: 'Mã hàng', type: 'ref', ref: 'items', required: true },
+      { key: 'itemName', label: 'Tên hàng', type: 'text', system: true },
+      { key: 'qtyT', label: 'Số lượng (tấn)', type: 'number', required: true },
+      { key: 'goodsStatus', label: 'TTHH', type: 'select', options: ['KTC', 'HTC', 'DGC'], help: 'Bỏ trống = tình trạng nào cũng được' },
+      { key: 'note', label: 'Ghi chú', type: 'text' },
+    ],
+  },
 );
 export const catalogByKey = (k) => CATALOGS.find((c) => c.key === k) || FORM_DEFS.find((c) => c.key === k);
 // Tên hiển thị của 1 bản ghi khi được chọn ở trường ref

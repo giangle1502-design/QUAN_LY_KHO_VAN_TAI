@@ -40,7 +40,7 @@ export default function Dashboard() {
     const list = ordersHere.filter((o) => o.type === ty);
     return { count: list.length, left: list.reduce((s, o) => s + orderTotals(o).left, 0), late: list.filter((o) => o.dueDate && o.dueDate < today).length };
   };
-  const stoHere = openOrders.filter((o) => o.type === 'STO' && [o.fromWarehouse, o.toWarehouse].some((w) => inMyWarehouses(w) && (!wh || w === wh)));
+  const stoHere = openOrders.filter((o) => o.type === 'STO' && (o.lines || []).flatMap((l) => [l.fromWarehouse || o.fromWarehouse, l.toWarehouse || o.toWarehouse]).some((w) => inMyWarehouses(w) && (!wh || w === wh)));
   const stoTransit = stoHere.reduce((s, o) => s + orderTotals(o).transit, 0);
   const byStatus = ['KTC', 'HTC', 'DGC'].map((c) => [c, sumKg(stock.filter((r) => r.goodsStatus === c))]);
 

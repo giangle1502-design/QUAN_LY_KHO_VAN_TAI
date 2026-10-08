@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { useCollection, useOpCompany } from '../../lib/hooks';
+import { useCollection, useMyWarehouses, useOpCompany } from '../../lib/hooks';
 import { CompanyPicker } from '../../components/TripBits';
 import FieldInput from '../../components/FieldInput';
 import { AddFieldButton, ColumnPicker, QuickAdd } from '../../components/FormTools';
@@ -23,35 +23,46 @@ const CFG = {
     headVias: [{ key: 'partyCode', label: 'Nhà cung cấp', ref: 'suppliers' }, { key: 'company', label: 'Công ty mua', ref: 'companies' }],
     lineVias: [{ key: 'item', label: 'Mã hàng', ref: 'items' }, { key: 'warehouse', label: 'Kho nhập', ref: 'warehouses' }],
     hint: 'Mỗi dòng có ngày hàng về, kho nhập, TTHH riêng: cùng 1 mã hàng về nhiều đợt hoặc nhập nhiều kho thì thêm nhiều dòng (⧉ để nhân bản).' },
+  // Lệnh chuyển kho: kho xuất, kho nhập theo từng dòng → 1 lệnh chuyển nhiều tuyến (K1→K2, K1→K3…)
+  STO: { head: 'stoHead', line: 'stoLine', party: null, title: 'lệnh chuyển kho (STO)', done: 'Đã xuất', received: 'Đã nhận',
+    headVias: [{ key: 'company', label: 'Công ty chủ hàng', ref: 'companies' }],
+    lineVias: [{ key: 'item', label: 'Mã hàng', ref: 'items' }, { key: 'fromWarehouse', label: 'Kho xuất', ref: 'warehouses' }, { key: 'toWarehouse', label: 'Kho nhập', ref: 'warehouses' }],
+    hint: 'Mỗi dòng có kho xuất, kho nhập, ngày chuyển, TTHH riêng: chuyển cùng 1 mã hàng đi nhiều kho thì thêm nhiều dòng (⧉ để nhân bản).' },
 };
 const BUILTIN_HEAD = ['date', 'company', 'partyCode', 'tolerancePct', 'note'];
-const BUILTIN_LINE = ['dueDate', 'warehouse', 'item', 'itemName', 'qtyT', 'shipCode', 'goodsStatus', 'note'];
+const BUILTIN_LINE = ['dueDate', 'warehouse', 'fromWarehouse', 'toWarehouse', 'item', 'itemName', 'qtyT', 'shipCode', 'goodsStatus', 'note'];
 const n = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? 0 : Number(v));
 
 export default function SOForm({ type = 'SO', order, onClose }) {
   const cfg = CFG[type];
+  const sto = type === 'STO';
   const HEAD_VIAS = cfg.headVias;
   const LINE_VIAS = cfg.lineVias;
-  const { email, name, fieldsOf } = useApp();
+  const { email, name, fieldsOf, hasRole } = useApp();
   const headFields = fieldsOf(cfg.head).filter((f) => !f.hidden);
   const lineFields = fieldsOf(cfg.line).filter((f) => !f.hidden);
-  const parties = useCollection(cfg.party).rows;
+  const parties = useCollection(cfg.party).rows; // STO: không có khách hàng / nhà cung cấp
   const companies = useCollection('companies').rows;
   const items = useCollection('items').rows;
   const shipto = useCollection('shipto').rows;
   const warehouses = useCollection('warehouses').rows.filter((w) => w.active !== false).sort((a, b) => a.code.localeCompare(b.code));
+  // Thủ kho chỉ lập lệnh chuyển đi từ kho của mình
+  const myWarehouses = useMyWarehouses();
+  const fromOpts = hasRole('kinh_doanh', 'ke_toan') ? warehouses : myWarehouses;
   const itemMap = useMemo(() => new Map(items.map((i) => [i.code, i])), [items]);
   const recOf = {
     partyCode: (v) => parties.find((p) => p.code === v), company: (v) => companies.find((c) => c.code === v),
     item: (v) => itemMap.get(v), shipCode: (v) => shipto.find((s) => s.shipCode === v), warehouse: (v) => warehouses.find((w) => w.code === v),
+    fromWarehouse: (v) => warehouses.find((w) => w.code === v), toWarehouse: (v) => warehouses.find((w) => w.code === v),
   };
   const [defaultCo] = useOpCompany();
   const [h, setH] = useState(() => (order ? { ...order, tolerancePct: order.tolerancePct || '' }
     : { company: defaultCo, date: vnDate(), partyCode: '', partyName: '', tolerancePct: '', note: '' }));
   // Đơn cũ (kho / mã giao / hạn giao ở đầu đơn): chép xuống từng dòng
   const [lines, setLines] = useState(() => (order
-    ? order.lines.map((l) => ({ ...l, qtyT: n(l.qtyKg) / 1000, warehouse: l.warehouse || order.warehouse || '', shipCode: l.shipCode || order.shipCode || '', dueDate: l.dueDate || order.dueDate || '', goodsStatus: l.goodsStatus || '', note: l.note || '' }))
-    : [{ dueDate: '', warehouse: '', item: '', itemName: '', qtyT: '', shipCode: '', goodsStatus: '', note: '' }]));
+    ? order.lines.map((l) => ({ ...l, qtyT: n(l.qtyKg) / 1000, warehouse: l.warehouse || order.warehouse || '', shipCode: l.shipCode || order.shipCode || '', dueDate: l.dueDate || order.dueDate || '', goodsStatus: l.goodsStatus || '', note: l.note || '',
+      ...(sto ? { fromWarehouse: l.fromWarehouse || order.fromWarehouse || '', toWarehouse: l.toWarehouse || order.toWarehouse || '' } : {}) }))
+    : [{ dueDate: '', warehouse: '', fromWarehouse: '', toWarehouse: '', item: '', itemName: '', qtyT: '', shipCode: '', goodsStatus: '', note: '' }]));
   const [hiddenCols, setHiddenCols] = usePref(`${type}LineHiddenCols`, []);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -81,10 +92,10 @@ export default function SOForm({ type = 'SO', order, onClose }) {
   // Dòng mới lấy sẵn ngày giao, kho, mã giao, TTHH của dòng trên cho nhanh
   const addLine = () => setLines((ls) => {
     const last = ls[ls.length - 1] || {};
-    return [...ls, { dueDate: last.dueDate || '', warehouse: last.warehouse || '', item: '', itemName: '', qtyT: '', shipCode: last.shipCode || '', goodsStatus: last.goodsStatus || '', note: '' }];
+    return [...ls, { dueDate: last.dueDate || '', warehouse: last.warehouse || '', fromWarehouse: last.fromWarehouse || '', toWarehouse: last.toWarehouse || '', item: '', itemName: '', qtyT: '', shipCode: last.shipCode || '', goodsStatus: last.goodsStatus || '', note: '' }];
   });
   const copyLine = (i) => setLines((ls) => {
-    const { no, doneKg, qtyKg, ...rest } = ls[i]; // eslint-disable-line no-unused-vars
+    const { no, doneKg, receivedKg, qtyKg, ...rest } = ls[i]; // eslint-disable-line no-unused-vars
     return [...ls.slice(0, i + 1), { ...rest }, ...ls.slice(i + 1)];
   });
   const total = lines.reduce((s, l) => s + n(l.qtyT), 0);
@@ -93,8 +104,8 @@ export default function SOForm({ type = 'SO', order, onClose }) {
     e.preventDefault();
     setErr('');
     if (!h.date) return setErr('Nhập ngày tạo đơn.');
-    if (!h.company) return setErr('Chọn công ty xuất.');
-    if (!h.partyCode.trim()) return setErr(`Chọn ${cfg.partyLabel}.`);
+    if (!h.company) return setErr(sto ? 'Chọn công ty chủ hàng.' : 'Chọn công ty xuất.');
+    if (!sto && !h.partyCode.trim()) return setErr(`Chọn ${cfg.partyLabel}.`);
     const headCustom = {};
     for (const f of headFields.filter((x) => !BUILTIN_HEAD.includes(x.key))) {
       const v = cleanValue(f, h[f.key]);
@@ -107,7 +118,12 @@ export default function SOForm({ type = 'SO', order, onClose }) {
       if (!l.item || !itemMap.has(l.item)) return setErr(no + 'chọn mã hàng có trong danh mục (hoặc bấm + để thêm mã hàng mới).');
       const kg = Math.round(n(l.qtyT) * 1000 * 1000) / 1000;
       if (!(kg > 0)) return setErr(no + 'nhập số lượng (tấn).');
-      if (l.shipCode && !myShips.some((s) => s.shipCode === l.shipCode)) return setErr(no + `mã giao ${l.shipCode} không thuộc khách hàng ${h.partyCode}.`);
+      if (sto) {
+        if (!l.fromWarehouse || !l.toWarehouse) return setErr(no + 'chọn kho xuất và kho nhập.');
+        if (l.fromWarehouse === l.toWarehouse) return setErr(no + 'kho nhập phải khác kho xuất.');
+        if (!n(l.doneKg) && !fromOpts.some((w) => w.code === l.fromWarehouse)) return setErr(no + `bạn chỉ lập lệnh chuyển đi từ kho mình phụ trách (${fromOpts.map((w) => w.code).join(', ')}).`);
+      }
+      if (!sto && l.shipCode && !myShips.some((s) => s.shipCode === l.shipCode)) return setErr(no + `mã giao ${l.shipCode} không thuộc khách hàng ${h.partyCode}.`);
       const custom = {};
       for (const f of lineFields.filter((x) => !BUILTIN_LINE.includes(x.key))) {
         const v = cleanValue(f, l[f.key]);
@@ -115,12 +131,17 @@ export default function SOForm({ type = 'SO', order, onClose }) {
         custom[f.key] = v;
       }
       out.push({ ...(l.no != null ? { no: l.no } : {}), item: l.item, itemName: itemMap.get(l.item).name, qtyKg: kg,
-        dueDate: l.dueDate || '', warehouse: l.warehouse || '', shipCode: l.shipCode || '', goodsStatus: l.goodsStatus || '', note: String(l.note || '').trim(), ...custom });
+        dueDate: l.dueDate || '', ...(sto ? { fromWarehouse: l.fromWarehouse, toWarehouse: l.toWarehouse } : { warehouse: l.warehouse || '', shipCode: l.shipCode || '' }),
+        goodsStatus: l.goodsStatus || '', note: String(l.note || '').trim(), ...custom });
     }
+    const sum = summarizeLines(out, sto);
+    const whName = (c) => warehouses.find((w) => w.code === c)?.name || c;
     const data = {
-      ...headCustom, type, company: h.company, date: h.date, partyCode: h.partyCode.trim(), partyName: String(h.partyName || '').trim(),
+      ...headCustom, type, company: h.company, date: h.date,
+      ...(sto ? { partyCode: sum.toWarehouses.join(', '), partyName: `Chuyển đến kho ${sum.toWarehouses.map(whName).join(', ')}` }
+        : { partyCode: h.partyCode.trim(), partyName: String(h.partyName || '').trim() }),
       refNo: order?.refNo || '', tolerancePct: h.tolerancePct === '' ? 0 : Number(h.tolerancePct), note: String(h.note || '').trim(),
-      lines: out, ...summarizeLines(out),
+      lines: out, ...sum,
     };
     setBusy(true);
     try {
@@ -163,6 +184,16 @@ export default function SOForm({ type = 'SO', order, onClose }) {
           {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
         </select>
       );
+      case 'fromWarehouse': case 'toWarehouse': {
+        const opts = f.key === 'fromWarehouse' ? fromOpts : warehouses.filter((w) => w.code !== l.fromWarehouse);
+        return (
+          <select value={l[f.key]} disabled={done} title={done ? 'Dòng đã xuất, không đổi kho được' : ''} onChange={(e) => set(e.target.value)}>
+            <option value="">-- Chọn --</option>
+            {l[f.key] && !opts.some((w) => w.code === l[f.key]) && <option value={l[f.key]}>{l[f.key]}</option>}
+            {opts.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
+          </select>
+        );
+      }
       case 'item': return (
         <div className="cell-add">
           <input list="dl-so-item" value={l.item} disabled={done} title={done ? 'Dòng đã giao, không đổi mã hàng được' : ''} onChange={(e) => set(e.target.value)} />
@@ -182,7 +213,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
       );
       case 'goodsStatus': return (
         <select value={l.goodsStatus} onChange={(e) => set(e.target.value)}>
-          <option value="">{type === 'PO' ? '-- Theo thực tế --' : 'KTC hoặc DGC'}</option>
+          <option value="">{type === 'PO' ? '-- Theo thực tế --' : sto ? '-- Loại nào cũng được --' : 'KTC hoặc DGC'}</option>
           {(f.options || ['KTC', 'DGC']).map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
       );
@@ -222,14 +253,15 @@ export default function SOForm({ type = 'SO', order, onClose }) {
             <table className="so-lines">
               <thead>
                 <tr><th>#</th>{shownLine.map((f) => <th key={f.key} className={f.key === 'qtyT' ? 'num' : ''} title={f.link ? `Tự lấy theo ${viaLabel(LINE_VIAS, f.link.via)}` : f.help || ''}>{f.label}{f.required && <b className="req"> *</b>}{f.link ? ' ↳' : ''}</th>)}
-                  {order && <th className="num">{cfg.done}</th>}<th></th></tr>
+                  {order && <th className="num">{cfg.done}</th>}{order && sto && <th className="num">{cfg.received}</th>}<th></th></tr>
               </thead>
               <tbody>
                 {lines.map((l, i) => (
                   <tr key={i}>
                     <td className="small">{i + 1}</td>
-                    {shownLine.map((f) => <td key={f.key} className={f.key === 'item' ? 'w-item' : f.key === 'shipCode' ? 'w-ship' : f.key === 'qtyT' ? 'w-qty' : ''}>{lineInput(f, l, i)}</td>)}
+                    {shownLine.map((f) => <td key={f.key} className={f.key === 'item' ? 'w-item' : ['shipCode', 'fromWarehouse', 'toWarehouse'].includes(f.key) ? 'w-ship' : f.key === 'qtyT' ? 'w-qty' : ''}>{lineInput(f, l, i)}</td>)}
                     {order && <td className="num">{n(l.doneKg) ? fmtNum(n(l.doneKg) / 1000, 3) : ''}</td>}
+                    {order && sto && <td className="num">{n(l.receivedKg) ? fmtNum(n(l.receivedKg) / 1000, 3) : ''}</td>}
                     <td className="nowrap">
                       <button type="button" className="btn ghost sm" title="Nhân bản dòng (vd. cùng mã hàng giao điểm khác / kho khác)" onClick={() => copyLine(i)}>⧉</button>
                       <button type="button" className="btn ghost sm" disabled={lines.length === 1 || n(l.doneKg) > 0} title={n(l.doneKg) > 0 ? 'Dòng đã giao, không xóa được' : 'Xóa dòng'}

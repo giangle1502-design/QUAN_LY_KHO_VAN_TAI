@@ -120,7 +120,7 @@ service cloud.firestore {
     }
 
     // ==== Đơn bán (SO) / đơn mua (PO) ====
-    // Kinh doanh, kế toán lập/sửa/đóng SO, PO, STO; thủ kho lập/sửa STO đi từ kho của mình.
+    // Kinh doanh, kế toán lập/sửa/đóng SO, PO, STO; thủ kho lập/sửa STO mà mọi kho xuất đều là kho của mình.
     // Thủ kho chỉ cập nhật "đã giao/nhận" khi ghi phiếu kho mới gắn đơn đó
     function orderMgr() { return hasRole('kinh_doanh') || hasRole('ke_toan'); }
     function movementForOrder(mid, oid) {
@@ -128,18 +128,24 @@ service cloud.firestore {
         && getAfter(mvPath(mid)).data.createdBy == me()
         && getAfter(mvPath(mid)).data.orderId == oid;
     }
+    // STO: kho xuất ghi theo từng dòng (fromWarehouses); lệnh cũ ghi ở đầu đơn (fromWarehouse)
+    function allMine(list) {
+      return !('warehouses' in profile()) || profile().warehouses.size() == 0 || list.toSet().difference(profile().warehouses.toSet()).size() == 0;
+    }
+    function stoFromMine(d) {
+      return 'fromWarehouses' in d ? d.fromWarehouses.size() > 0 && allMine(d.fromWarehouses) : inMyWarehouse(d.fromWarehouse);
+    }
     match /orders/{id} {
       allow read: if isStaff();
       allow create: if (isAdmin() || orderMgr()
-          || (hasRole('thu_kho') && request.resource.data.type == 'STO' && inMyWarehouse(request.resource.data.fromWarehouse)))
+          || (hasRole('thu_kho') && request.resource.data.type == 'STO' && stoFromMine(request.resource.data)))
         && request.resource.data.id == id && request.resource.data.createdBy == me()
         && request.resource.data.status == 'open' && request.resource.data.type in ['SO', 'PO', 'STO'];
       allow update: if isAdmin()
         || (orderMgr() && request.resource.data.type == resource.data.type
           && request.resource.data.id == resource.data.id && request.resource.data.createdBy == resource.data.createdBy)
         || (hasRole('thu_kho') && resource.data.type == 'STO' && request.resource.data.type == 'STO'
-          && inMyWarehouse(resource.data.fromWarehouse) && request.resource.data.fromWarehouse == resource.data.fromWarehouse
-          && request.resource.data.toWarehouse == resource.data.toWarehouse && request.resource.data.createdBy == resource.data.createdBy)
+          && stoFromMine(resource.data) && stoFromMine(request.resource.data) && request.resource.data.createdBy == resource.data.createdBy)
         || (hasRole('thu_kho')
           && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['lines', 'status', 'lastMovement', 'updatedAt', 'updatedBy'])

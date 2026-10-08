@@ -209,7 +209,7 @@ src/
 firestore.rules            # Phân quyền trên máy chủ
 ```
 
-## Đơn bán (SO) / đơn mua (PO) 2 phần
+## Đơn bán (SO) / đơn mua (PO) / chuyển kho (STO) 2 phần
 - **Phần chung**: Ngày tạo đơn, Công ty xuất, Khách hàng, Dung sai, Ghi chú + trường tự thêm (nút "+ Thêm trường", quản trị). Trường có thể **liên kết** với Khách hàng / Công ty: chọn khách hàng thì tự lấy giá trị (vd. Điều khoản thanh toán lưu ở danh mục Khách hàng).
 - **Dòng hàng**: Ngày giao, Kho xuất, Mã hàng, Số lượng (tấn), Mã giao, TTHH (KTC/DGC, trống = cả hai) + trường tự thêm (liên kết được với Mã hàng / Mã giao / Kho). 1 mã hàng giao nhiều điểm hoặc nhiều kho = nhiều dòng (⧉ nhân bản dòng).
 - Nút **+** cạnh Khách hàng, Mã hàng, Mã giao, Công ty: thêm ngay vào danh mục không rời form (kinh doanh, kế toán được thêm khách hàng / mã giao / mã hàng: cần publish lại firestore.rules).
@@ -218,3 +218,4 @@ firestore.rules            # Phân quyền trên máy chủ
 - Cấu hình trường: Quản lý trường → nhóm "Biểu mẫu đơn hàng".
 - **PO** cùng kiểu: phần chung (Ngày tạo đơn, Công ty mua, Nhà cung cấp) + dòng hàng (Ngày hàng về ETA, Kho nhập, Mã hàng, SL, TTHH khi nhập). Phiếu nhập theo PO chỉ lấy dòng của kho đang nhập và điền sẵn TTHH.
 - Ô **Lý do** (phiếu nhập/xuất/điều chỉnh, hủy chuyến) có nút **+** thêm lý do mới (thủ kho, kinh doanh, kế toán: cần publish lại firestore.rules).
+- **STO** cùng kiểu: phần chung (Ngày tạo đơn, Công ty chủ hàng) + dòng hàng (Ngày chuyển, **Kho xuất, Kho nhập**, Mã hàng, SL, TTHH; trống = loại nào cũng được). 1 lệnh chuyển được nhiều tuyến (K1→K2, K1→K3, K2→K1…). Phiếu xuất ở kho nào chỉ lấy các dòng xuất từ kho đó; phiếu nhập ở kho nào chỉ lấy hàng đang đi đường của các dòng nhập về kho đó. Thủ kho chỉ lập lệnh có kho xuất là kho mình (cần publish lại firestore.rules). Lệnh cũ (kho đi/kho đến ở đầu lệnh) vẫn dùng bình thường; mở sửa thì kho được chép xuống từng dòng.

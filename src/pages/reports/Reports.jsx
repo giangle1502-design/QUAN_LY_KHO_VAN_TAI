@@ -337,10 +337,12 @@ function ForSales({ wh, co, q }) {
         }
         // Hàng sắp về: PO còn chưa về; STO về kho đang xem (còn phải xuất + đang đi đường)
         let inc = 0;
+        const fw = l.fromWarehouse || o.fromWarehouse;
+        const tw = l.toWarehouse || o.toWarehouse;
         if (o.type === 'PO' && inScope(l.warehouse || o.warehouse)) inc = leftKg(l);
-        if (o.type === 'STO' && wh && o.toWarehouse === wh && o.fromWarehouse !== wh) inc = leftKg(l) + transitKg(l);
+        if (o.type === 'STO' && wh && tw === wh && fw !== wh) inc = leftKg(l) + transitKg(l);
         if (o.type === 'STO' && !wh) inc = transitKg(l);
-        if (o.type === 'STO' && wh && o.fromWarehouse === wh && o.toWarehouse !== wh && leftKg(l) > 0) {
+        if (o.type === 'STO' && wh && fw === wh && tw !== wh && leftKg(l) > 0) {
           const x = get(l.item, l.itemName); x.pending += leftKg(l); x.soN += 1;
         }
         if (inc > 0) {

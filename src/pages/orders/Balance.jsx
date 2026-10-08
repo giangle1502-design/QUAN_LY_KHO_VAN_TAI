@@ -41,9 +41,11 @@ export default function Balance() {
     for (const o of orders) {
       // STO: kho đi coi như phải giao, kho đến coi như sắp về; xem tất cả kho thì chỉ còn hàng đang đi đường
       if (o.type === 'STO') {
-        const from = !wh ? inMyWarehouses(o.fromWarehouse) : o.fromWarehouse === wh;
-        const to = !wh ? inMyWarehouses(o.toWarehouse) : o.toWarehouse === wh;
         for (const l of o.lines) {
+          const fw = l.fromWarehouse || o.fromWarehouse;
+          const tw = l.toWarehouse || o.toWarehouse;
+          const from = !wh ? inMyWarehouses(fw) : fw === wh;
+          const to = !wh ? inMyWarehouses(tw) : tw === wh;
           const x = get(l.item, l.itemName);
           const left = leftKg(l);
           const tr = transitKg(l);
