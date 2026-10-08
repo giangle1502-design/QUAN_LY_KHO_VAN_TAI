@@ -158,7 +158,7 @@ export const CATALOGS = [
     ],
   },
   {
-    key: 'suppliers', group: 'Hàng hóa', icon: '🏭', title: 'Nhà cung cấp', short: 'Nhà cung cấp', idField: 'code',
+    key: 'suppliers', group: 'Hàng hóa', icon: '🏭', title: 'Nhà cung cấp', short: 'Nhà cung cấp', idField: 'code', editRoles: ['kinh_doanh', 'ke_toan'],
     fields: [
       { key: 'code', label: 'Mã nhà cung cấp', type: 'text', required: true },
       { key: 'name', label: 'Tên nhà cung cấp', type: 'text', required: true },
@@ -214,7 +214,7 @@ export const CATALOGS = [
     ],
   },
   {
-    key: 'reasons', group: 'Kho', icon: '📝', title: 'Lý do', short: 'Lý do', idField: 'code',
+    key: 'reasons', group: 'Kho', icon: '📝', title: 'Lý do', short: 'Lý do', idField: 'code', editRoles: ['thu_kho', 'ke_toan', 'kinh_doanh'],
     fields: [
       { key: 'code', label: 'Mã lý do', type: 'text', required: true },
       { key: 'name', label: 'Lý do', type: 'text', required: true },
@@ -341,6 +341,30 @@ export const FORM_DEFS = [
     ],
   },
 ];
+FORM_DEFS.push(
+  {
+    key: 'poHead', group: 'Biểu mẫu đơn hàng', icon: '🧾', title: 'Đơn mua (PO) – phần chung', short: 'PO phần chung', form: true,
+    fields: [
+      { key: 'date', label: 'Ngày tạo đơn', type: 'date', required: true },
+      { key: 'company', label: 'Công ty mua', type: 'ref', ref: 'companies', required: true },
+      { key: 'partyCode', label: 'Nhà cung cấp', type: 'ref', ref: 'suppliers', required: true },
+      { key: 'tolerancePct', label: 'Dung sai cho phép (%)', type: 'percent', help: 'Được nhận vượt số đặt tối đa bao nhiêu %' },
+      { key: 'note', label: 'Ghi chú', type: 'textarea' },
+    ],
+  },
+  {
+    key: 'poLine', group: 'Biểu mẫu đơn hàng', icon: '📦', title: 'Đơn mua (PO) – dòng hàng', short: 'PO dòng hàng', form: true,
+    fields: [
+      { key: 'dueDate', label: 'Ngày hàng về (ETA)', type: 'date' },
+      { key: 'warehouse', label: 'Kho nhập', type: 'ref', ref: 'warehouses' },
+      { key: 'item', label: 'Mã hàng', type: 'ref', ref: 'items', required: true },
+      { key: 'itemName', label: 'Tên hàng', type: 'text', system: true },
+      { key: 'qtyT', label: 'Số lượng (tấn)', type: 'number', required: true },
+      { key: 'goodsStatus', label: 'TTHH khi nhập', type: 'select', options: ['KTC', 'HTC', 'DGC'], help: 'Điền sẵn tình trạng trên phiếu nhập kho' },
+      { key: 'note', label: 'Ghi chú', type: 'text' },
+    ],
+  },
+);
 export const catalogByKey = (k) => CATALOGS.find((c) => c.key === k) || FORM_DEFS.find((c) => c.key === k);
 // Tên hiển thị của 1 bản ghi khi được chọn ở trường ref
 export const refLabel = (row) => (row ? [row.code || row.plate || row.idCard || row.email, row.name].filter(Boolean).join(' – ') : '');

@@ -76,7 +76,9 @@ function OrderList({ type }) {
   const canManage = canManageOrders(hasRole, type);
   const sto = type === 'STO';
   const so = type === 'SO';
-  const customHead = so ? fieldsOf('soHead').filter((f) => f.custom && !f.hidden) : [];
+  const pl = so || type === 'PO'; // SO, PO: kho / ngày / TTHH theo từng dòng
+  const fk = type.toLowerCase();
+  const customHead = pl ? fieldsOf(`${fk}Head`).filter((f) => f.custom && !f.hidden) : [];
   const { rows, error } = useOrders(type);
   const [status, setStatus] = useState('opening');
   const [co, setCo] = useOpCompany();
@@ -103,11 +105,11 @@ function OrderList({ type }) {
   const cols = [
     { key: 'id', label: 'Số đơn', locked: true, cls: 'mono nowrap', render: (o) => o.id },
     { key: 'company', label: 'Công ty', render: (o) => <b>{o.company}</b> },
-    { key: 'refNo', label: 'Số Ecount', cls: 'mono', render: (o) => o.refNo, hideDefault: so },
-    { key: 'date', label: so ? 'Ngày tạo đơn' : 'Ngày', cls: 'nowrap', render: (o) => fmtDate(o.date) },
+    { key: 'refNo', label: 'Số Ecount', cls: 'mono', render: (o) => o.refNo, hideDefault: pl },
+    { key: 'date', label: pl ? 'Ngày tạo đơn' : 'Ngày', cls: 'nowrap', render: (o) => fmtDate(o.date) },
     { key: 'party', label: meta.partyLabel, cls: 'nowrap', render: (o) => partyText(o) },
     ...customHead.map((f) => ({ key: f.key, label: f.label, render: (o) => displayValue(f, o[f.key]) })),
-    ...(sto ? [] : [{ key: 'warehouse', label: so ? 'Kho xuất' : 'Kho', render: (o) => uniqText(o, lineWh) }]),
+    ...(sto ? [] : [{ key: 'warehouse', label: so ? 'Kho xuất' : 'Kho nhập', render: (o) => uniqText(o, lineWh) }]),
     ...(so ? [{ key: 'ship', label: 'Mã giao', render: (o) => uniqText(o, lineShip) }] : []),
     { key: 'items', label: 'Mặt hàng', render: (o) => [...new Set(o.lines.map((l) => l.item))].join(', ') },
     { key: 'qty', label: 'Đặt (tấn)', num: true, render: (o, c) => t(c.x.qty) },
@@ -115,7 +117,7 @@ function OrderList({ type }) {
     ...(sto ? [{ key: 'transit', label: meta.transit, num: true, render: (o, c) => t(c.x.transit) }] : []),
     { key: 'left', label: meta.left, num: true, render: (o, c) => <b>{OPEN_STATUSES.includes(o.status) ? t(c.x.left) : '–'}</b> },
     { key: 'progress', label: 'Tiến độ', render: (o) => <div style={{ width: 130 }}><Progress o={o} /></div> },
-    { key: 'due', label: so ? 'Ngày giao (sớm nhất)' : meta.due, cls: 'nowrap', style: (o, c) => (c.isLate ? { color: 'var(--red)', fontWeight: 600 } : undefined), render: (o, c) => <>{fmtDate(o.dueDate)}{c.isLate ? ' ⚠' : ''}</> },
+    { key: 'due', label: so ? 'Ngày giao (sớm nhất)' : pl ? 'ETA (sớm nhất)' : meta.due, cls: 'nowrap', style: (o, c) => (c.isLate ? { color: 'var(--red)', fontWeight: 600 } : undefined), render: (o, c) => <>{fmtDate(o.dueDate)}{c.isLate ? ' ⚠' : ''}</> },
     { key: 'status', label: 'Trạng thái', locked: true, render: (o) => <OrderStatus status={o.status} /> },
   ];
   const [hidden, setHidden] = usePref(`orderListHidden:${type}`, cols.filter((c) => c.hideDefault).map((c) => c.key));
@@ -124,11 +126,11 @@ function OrderList({ type }) {
   const exportExcel = () => {
     const out = [];
     list.forEach((o) => o.lines.forEach((l) => out.push({
-      'Số đơn': o.id, 'Công ty': o.company || '', ...(so ? {} : { 'Số đơn Ecount': o.refNo }), 'Ngày đơn': o.date,
+      'Số đơn': o.id, 'Công ty': o.company || '', ...(pl ? {} : { 'Số đơn Ecount': o.refNo }), 'Ngày đơn': o.date,
       ...(sto ? { 'Kho đi': o.fromWarehouse, 'Kho đến': o.toWarehouse } : { [`Mã ${meta.partyLabel}`]: o.partyCode, [`Tên ${meta.partyLabel}`]: o.partyName }),
       ...Object.fromEntries(customHead.map((f) => [f.label, displayValue(f, o[f.key], true)])),
-      ...(so ? { 'Mã giao hàng': lineShip(o, l), 'TTHH': l.goodsStatus || '' } : {}), Kho: so ? lineWh(o, l) : o.warehouse, [meta.due]: so ? lineDue(o, l) : o.dueDate,
-      ...(so ? Object.fromEntries(fieldsOf('soLine').filter((f) => f.custom && !f.hidden).map((f) => [f.label, displayValue(f, l[f.key], true)])) : {}),
+      ...(so ? { 'Mã giao hàng': lineShip(o, l) } : {}), ...(pl ? { TTHH: l.goodsStatus || '' } : {}), Kho: pl ? lineWh(o, l) : o.warehouse, [meta.due]: pl ? lineDue(o, l) : o.dueDate,
+      ...(pl ? Object.fromEntries(fieldsOf(`${fk}Line`).filter((f) => f.custom && !f.hidden).map((f) => [f.label, displayValue(f, l[f.key], true)])) : {}),
       'Mã hàng': l.item, 'Tên hàng': l.itemName, 'Đặt (tấn)': l.qtyKg / 1000, [`${meta.done} (tấn)`]: (l.doneKg || 0) / 1000,
       ...(sto ? { 'Đang đi đường (tấn)': transitKg(l) / 1000, 'Đã nhận (tấn)': (l.receivedKg || 0) / 1000 } : {}),
       [`${meta.left} (tấn)`]: OPEN_STATUSES.includes(o.status) ? leftKg(l) / 1000 : 0, 'Trạng thái': ORDER_STATUS[o.status]?.label, 'Ghi chú': o.note,
@@ -182,8 +184,8 @@ function OrderList({ type }) {
         )}
       </div>
       {current && !edit && <OrderDetail o={current} onClose={() => setOpen(null)} onEdit={() => setEdit(current)} />}
-      {edit && (so
-        ? <SOForm order={edit === 'new' ? null : edit} onClose={(id) => { setEdit(null); if (id) setOpen(id); }} />
+      {edit && (pl
+        ? <SOForm type={type} order={edit === 'new' ? null : edit} onClose={(id) => { setEdit(null); if (id) setOpen(id); }} />
         : <OrderForm type={type} order={edit === 'new' ? null : edit} onClose={(id) => { setEdit(null); if (id) setOpen(id); }} />)}
     </div>
   );
@@ -329,8 +331,10 @@ function OrderDetail({ o, onClose, onEdit }) {
   const meta = ORDER_TYPES[o.type];
   const { hasRole, email, name, fieldsOf } = useApp();
   const so = o.type === 'SO';
-  const headCustom = so ? fieldsOf('soHead').filter((f) => f.custom && !f.hidden && o[f.key] !== '' && o[f.key] != null) : [];
-  const lineCustom = so ? fieldsOf('soLine').filter((f) => f.custom && !f.hidden) : [];
+  const pl = so || o.type === 'PO';
+  const fk = o.type.toLowerCase();
+  const headCustom = pl ? fieldsOf(`${fk}Head`).filter((f) => f.custom && !f.hidden && o[f.key] !== '' && o[f.key] != null) : [];
+  const lineCustom = pl ? fieldsOf(`${fk}Line`).filter((f) => f.custom && !f.hidden) : [];
   const canManage = canManageOrders(hasRole, o.type);
   const sto = o.type === 'STO';
   const [moves, setMoves] = useState([]);
@@ -355,8 +359,8 @@ function OrderDetail({ o, onClose, onEdit }) {
     <Modal title={`${meta.label} ${o.id}`} onClose={onClose} wide>
       <p>
         <OrderStatus status={o.status} /> {o.refNo ? <> · Số Ecount <b className="mono">{o.refNo}</b></> : null} · Ngày {fmtDate(o.date)}
-        {' · '}{meta.partyLabel}: <b>{sto ? partyText(o) : `${o.partyCode} ${o.partyName}`}</b>{!so && o.shipCode ? ` · giao ${o.shipCode}` : ''}
-        {!so && o.warehouse ? ` · Kho ${o.warehouse}` : ''}{!so && o.dueDate ? ` · ${meta.due}: ${fmtDate(o.dueDate)}` : ''}
+        {' · '}{meta.partyLabel}: <b>{sto ? partyText(o) : `${o.partyCode} ${o.partyName}`}</b>{!pl && o.shipCode ? ` · giao ${o.shipCode}` : ''}
+        {!pl && o.warehouse ? ` · Kho ${o.warehouse}` : ''}{!pl && o.dueDate ? ` · ${meta.due}: ${fmtDate(o.dueDate)}` : ''}
         {headCustom.map((f) => <span key={f.key}> · {f.label}: <b>{displayValue(f, o[f.key])}</b></span>)}
         {Number(o.tolerancePct) ? ` · Dung sai ${o.tolerancePct}%` : ''}
       </p>
@@ -371,11 +375,11 @@ function OrderDetail({ o, onClose, onEdit }) {
       </div>
       <div className="table-wrap" style={{ marginBottom: 12 }}>
         <table>
-          <thead><tr><th>#</th>{so && <><th>Ngày giao</th><th>Kho xuất</th></>}<th>Mã hàng</th><th>Tên hàng</th>{so && <><th>Mã giao</th><th>TTHH</th>{lineCustom.map((f) => <th key={f.key}>{f.label}</th>)}</>}<th className="num">Đặt (tấn)</th><th className="num">{meta.done}</th>
+          <thead><tr><th>#</th>{pl && <><th>{so ? 'Ngày giao' : 'ETA'}</th><th>{so ? 'Kho xuất' : 'Kho nhập'}</th></>}<th>Mã hàng</th><th>Tên hàng</th>{pl && <>{so && <th>Mã giao</th>}<th>TTHH</th>{lineCustom.map((f) => <th key={f.key}>{f.label}</th>)}</>}<th className="num">Đặt (tấn)</th><th className="num">{meta.done}</th>
             {sto && <><th className="num">{meta.transit}</th><th className="num">{meta.received}</th></>}<th className="num">{meta.left}</th><th>Ghi chú</th></tr></thead>
           <tbody>{o.lines.map((l) => (
-            <tr key={l.no}><td>{l.no}</td>{so && <><td className="nowrap">{fmtDate(lineDue(o, l))}</td><td>{lineWh(o, l) || 'Kho nào cũng được'}</td></>}<td>{l.item}</td><td>{l.itemName}</td>
-              {so && <><td>{lineShip(o, l)}</td><td>{l.goodsStatus || 'KTC/DGC'}</td>{lineCustom.map((f) => <td key={f.key}>{displayValue(f, l[f.key])}</td>)}</>}<td className="num">{t(l.qtyKg)}</td><td className="num">{t(l.doneKg)}</td>
+            <tr key={l.no}><td>{l.no}</td>{pl && <><td className="nowrap">{fmtDate(lineDue(o, l))}</td><td>{lineWh(o, l) || 'Kho nào cũng được'}</td></>}<td>{l.item}</td><td>{l.itemName}</td>
+              {pl && <>{so && <td>{lineShip(o, l)}</td>}<td>{l.goodsStatus || (so ? 'KTC/DGC' : '')}</td>{lineCustom.map((f) => <td key={f.key}>{displayValue(f, l[f.key])}</td>)}</>}<td className="num">{t(l.qtyKg)}</td><td className="num">{t(l.doneKg)}</td>
               {sto && <><td className="num">{t(transitKg(l))}</td><td className="num">{t(l.receivedKg)}</td></>}
               <td className="num"><b>{isOpen ? t(leftKg(l)) : '–'}</b></td><td className="small">{l.note}</td></tr>
           ))}</tbody>
@@ -482,7 +486,7 @@ function ImportOrders({ type, existing, onDone }) {
         }
         // SO: kho, mã giao, ngày giao theo từng dòng (1 đơn nhiều kho / nhiều điểm giao)
         groups.get(refNo).lines.push({ item, itemName: itemMap.get(item).name, qtyKg: Math.round(kg * 1000) / 1000, note: '',
-          ...(type === 'SO' ? { warehouse: String(v(r, 'warehouse') ?? '').trim(), shipCode: String(v(r, 'shipCode') ?? '').trim(), dueDate: toYmd(v(r, 'dueDate')) || '', goodsStatus: '' } : {}) });
+          ...(type !== 'STO' ? { warehouse: String(v(r, 'warehouse') ?? '').trim(), shipCode: type === 'SO' ? String(v(r, 'shipCode') ?? '').trim() : '', dueDate: toYmd(v(r, 'dueDate')) || '', goodsStatus: '' } : {}) });
       });
       const have = new Set(existing.filter((o) => o.status !== 'cancelled').map((o) => o.refNo));
       let made = 0;
@@ -491,7 +495,7 @@ function ImportOrders({ type, existing, onDone }) {
         if (have.has(g.refNo)) { skipped++; continue; }
         if (!g.partyCode && !g.partyName) { errs.push(`Đơn ${g.refNo}: thiếu mã/tên đối tác.`); continue; }
         if (!g.company) { errs.push(`Đơn ${g.refNo}: thiếu công ty.`); continue; }
-        if (type === 'SO') Object.assign(g, summarizeLines(g.lines));
+        if (type !== 'STO') Object.assign(g, summarizeLines(g.lines));
         await createOrder(g, { email, name });
         made++;
       }

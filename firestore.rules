@@ -157,7 +157,9 @@ service cloud.firestore {
         'companies', 'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses',
         'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'threepl', 'codeRules'];
       // Kinh doanh, kế toán thêm/sửa nhanh khách hàng, địa chỉ giao, mã hàng ngay khi lập đơn (không xóa)
-      allow create, update: if coll in ['soldto', 'shipto', 'items'] && (hasRole('kinh_doanh') || hasRole('ke_toan'));
+      allow create, update: if coll in ['soldto', 'shipto', 'items', 'suppliers'] && (hasRole('kinh_doanh') || hasRole('ke_toan'));
+      // Thêm nhanh lý do ngay trên phiếu kho / đơn hàng
+      allow create, update: if coll == 'reasons' && (hasRole('thu_kho') || hasRole('kinh_doanh') || hasRole('ke_toan'));
       allow create: if coll in ['locations', 'docks'] && hasRole('thu_kho')
         && inMyWarehouse(request.resource.data.warehouse)
         && (coll != 'locations' || request.resource.data.currentPallets in [0, null]);

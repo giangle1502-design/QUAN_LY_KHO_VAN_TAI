@@ -337,7 +337,7 @@ function ForSales({ wh, co, q }) {
         }
         // Hàng sắp về: PO còn chưa về; STO về kho đang xem (còn phải xuất + đang đi đường)
         let inc = 0;
-        if (o.type === 'PO' && inScope(o.warehouse)) inc = leftKg(l);
+        if (o.type === 'PO' && inScope(l.warehouse || o.warehouse)) inc = leftKg(l);
         if (o.type === 'STO' && wh && o.toWarehouse === wh && o.fromWarehouse !== wh) inc = leftKg(l) + transitKg(l);
         if (o.type === 'STO' && !wh) inc = transitKg(l);
         if (o.type === 'STO' && wh && o.fromWarehouse === wh && o.toWarehouse !== wh && leftKg(l) > 0) {
@@ -345,7 +345,8 @@ function ForSales({ wh, co, q }) {
         }
         if (inc > 0) {
           const x = get(l.item, l.itemName); x.incoming += inc; x.poN += 1;
-          if (o.dueDate && (!x.eta || o.dueDate < x.eta)) x.eta = o.dueDate;
+          const eta = l.dueDate || o.dueDate;
+          if (eta && (!x.eta || eta < x.eta)) x.eta = eta;
         }
       }
     }

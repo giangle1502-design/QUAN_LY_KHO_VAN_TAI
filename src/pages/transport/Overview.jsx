@@ -11,6 +11,7 @@ import { fmtNum } from '../../lib/utils';
 import { Pipeline, StatusBadge, WarehousePicker, totalPayload } from '../../components/TripBits';
 import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
 import { useTripAction } from './Ops';
+import { QuickAdd } from '../../components/FormTools';
 
 const addDays = (ymd, n) => { const d = new Date(ymd + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const PRESETS = [
@@ -193,6 +194,7 @@ function TripDetail({ trip: t, onClose }) {
                     {reasons.map((r) => <option key={r.code} value={`${r.code} – ${r.name}`}>{r.name}</option>)}
                     <option value="Khác">Khác</option>
                   </select>
+                  <QuickAdd catKey="reasons" preset={{ appliesTo: 'Hủy chuyến' }} onAdded={(id, r) => setCancelReason(`${id} – ${r?.name || ''}`)} />
                   <button className="btn danger" disabled={!cancelReason} onClick={() => act(t, { status: ST.CANCELLED, cancelReason, cancelTime: nowISO() }, `Hủy chuyến: ${cancelReason}`)}>Hủy chuyến</button>
                 </>
               )}
