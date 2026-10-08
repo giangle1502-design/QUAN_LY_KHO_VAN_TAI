@@ -5,7 +5,7 @@ import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
 import { CATALOGS, FIELD_TYPES, RESULT_TYPES, catalogByKey } from '../catalogs';
 import { checkFormula, formulaToKeys, formulaToLabels } from '../lib/formula';
-import { CHOICE_TYPES, DATE_DEFAULTS, parseChoices, toStored } from '../lib/fields';
+import { CHOICE_TYPES, DATE_DEFAULTS, HEIGHT_OPTS, WIDTH_OPTS, parseChoices, toStored } from '../lib/fields';
 
 const REF_TARGETS = CATALOGS.filter((c) => !['codeRules', 'users'].includes(c.key));
 import { norm } from '../lib/utils';
@@ -65,7 +65,7 @@ export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường'
   const [open, setOpen] = useState(false);
   const [listOpen, setListOpen] = useState(false);
   const [editing, setEditing] = useState(null); // trường tự thêm đang sửa
-  const EMPTY = { label: '', type: 'text', ref: '', options: '', def: '', via: '', viaCat: '', field: '', required: false, formula: '', resultType: 'currency' };
+  const EMPTY = { label: '', type: 'text', ref: '', options: '', def: '', via: '', viaCat: '', field: '', required: false, formula: '', resultType: 'currency', width: 0, height: 0 };
   const [f, setF] = useState(EMPTY);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -76,8 +76,13 @@ export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường'
     setEditing(x); setErr('');
     setF({ label: x.label, type: x.type, ref: x.ref || '', options: (x.options || []).join(', '), def: x.default === undefined ? '' : x.default,
       via: x.link?.via || '', viaCat: '', field: x.link?.field || '', required: !!x.required,
-      formula: x.type === 'formula' ? formulaToLabels(x.formula, fieldsOf(formKey), otherList()) : '', resultType: x.resultType || 'number' });
+      formula: x.type === 'formula' ? formulaToLabels(x.formula, fieldsOf(formKey), otherList()) : '', resultType: x.resultType || 'number',
+      width: Number(x.width) || 0, height: Number(x.height) || 0 });
     setOpen(true);
+  };
+  // Chỉnh nhanh độ rộng / cao cho mọi trường (trường chính và trường thêm)
+  const setSize = async (x, k, v) => {
+    try { await setDoc(doc(db, 'settings', 'fields'), { [formKey]: toStored(fieldsOf(formKey).map((y) => (y.key === x.key ? { ...y, [k]: v || undefined } : y))) }, { merge: true }); } catch (e) { window.alert(e.message); }
   };
   const remove = async (x) => {
     if (!window.confirm(`Xóa trường "${x.label}"? Dữ liệu đã nhập ở trường này vẫn còn trong bản ghi nhưng không hiển thị nữa.`)) return;
@@ -111,6 +116,7 @@ export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường'
     // Sửa: giữ ẩn / người được xem như cũ
     const keep = editing ? { hidden: !!editing.hidden, ...(editing.viewers?.length ? { viewers: editing.viewers } : {}), ...(editing.salesSees ? { salesSees: true } : {}) } : { hidden: false };
     const base = { key, label: lb, type: f.type, custom: true, required: f.required, ...keep, ...(f.type === 'ref' ? { ref: f.ref } : {}),
+      ...(Number(f.width) ? { width: Number(f.width) } : {}), ...(Number(f.height) ? { height: Number(f.height) } : {}),
       ...(CHOICE_TYPES.includes(f.type) && parseChoices(f.options, f.type).length ? { options: parseChoices(f.options, f.type) } : {}),
       ...(defVal !== '' && defVal !== undefined && f.type !== 'formula' ? { default: defVal } : {}),
       ...(f.type === 'formula' ? { formula: formulaToKeys(f.formula, own, other), resultType: f.resultType } : {}) };
@@ -147,20 +153,23 @@ export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường'
   return (
     <>
       <button type="button" className="btn sm" onClick={startAdd}>{label}</button>
-      <button type="button" className="btn sm" title="Sửa / xóa trường đã thêm" onClick={() => setListOpen(true)}>✎ Sửa trường</button>
+      <button type="button" className="btn sm" title="Sửa / xóa trường, chỉnh độ rộng / cao" onClick={() => setListOpen(true)}>✎ Sửa trường</button>
       {listOpen && !open && (
         <span onSubmit={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
-        <Modal title={`Trường đã thêm – ${catalogByKey(formKey)?.title}`} onClose={() => setListOpen(false)}>
-          {!fieldsOf(formKey).some((x) => x.custom) ? <p className="hint">Chưa có trường tự thêm.</p> : (
-            <table><tbody>
-              {fieldsOf(formKey).filter((x) => x.custom).map((x) => (
+        <Modal title={`Trường – ${catalogByKey(formKey)?.title}`} onClose={() => setListOpen(false)} wide>
+          <p className="hint">Chỉnh độ rộng, độ cao ô nhập của mọi trường (lưu ngay). Trường tự thêm sửa / xóa được.</p>
+          {(
+            <table><thead><tr><th>Trường</th><th>Rộng</th><th>Cao</th><th></th></tr></thead><tbody>
+              {fieldsOf(formKey).filter((x) => !x.system && !x.hidden || x.custom).map((x) => (
                 <tr key={x.key}>
                   <td><b>{x.label}</b>{x.hidden && <span className="badge" style={{ marginLeft: 4 }}>đang ẩn</span>}
                     <div className="small">{FIELD_TYPES.find((t) => t[0] === x.type)?.[1] || x.type}{x.link ? ' · có liên kết' : ''}{x.viewers?.length || x.salesSees ? ' · 🔒 giới hạn người xem' : ''}
-                      {x.type === 'formula' ? ` · ${formulaToLabels(x.formula, fieldsOf(formKey), otherList())}` : ''}</div></td>
+                      {x.type === 'formula' ? ` · ${formulaToLabels(x.formula, fieldsOf(formKey), otherList())}` : ''}{!x.custom ? ' · trường chính' : ''}</div></td>
+                  <td><select value={Number(x.width) || 0} onChange={(e) => setSize(x, 'width', Number(e.target.value))}>{WIDTH_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></td>
+                  <td><select value={Number(x.height) || 0} onChange={(e) => setSize(x, 'height', Number(e.target.value))}>{HEIGHT_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></td>
                   <td className="nowrap">
-                    <button type="button" className="btn sm" onClick={() => startEdit(x)}>✎ Sửa</button>{' '}
-                    <button type="button" className="btn sm danger" onClick={() => remove(x)}>🗑 Xóa</button>
+                    {x.custom && <><button type="button" className="btn sm" onClick={() => startEdit(x)}>✎ Sửa</button>{' '}
+                    <button type="button" className="btn sm danger" onClick={() => remove(x)}>🗑 Xóa</button></>}
                   </td>
                 </tr>
               ))}
@@ -246,6 +255,12 @@ export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường'
                 </select>
               </Field>
             )}
+            <Field label="Độ rộng × độ cao ô nhập">
+              <span className="nowrap">
+                <select value={f.width} onChange={(e) => set('width', Number(e.target.value))}>{WIDTH_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+                <select value={f.height} onChange={(e) => set('height', Number(e.target.value))} style={{ marginLeft: 4 }}>{HEIGHT_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+              </span>
+            </Field>
             <Field label="Bắt buộc nhập"><input type="checkbox" checked={f.required} onChange={(e) => set('required', e.target.checked)} /></Field>
           </div>
           <ErrorBox error={err} />

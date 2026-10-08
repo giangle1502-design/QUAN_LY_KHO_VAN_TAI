@@ -273,7 +273,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
           {(f.options || ['KTC', 'DGC']).map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
       );
-      case 'note': return <input value={l.note} onChange={(e) => set(e.target.value)} />;
+      case 'note': return Number(f.height) > 40 ? <textarea value={l.note} onChange={(e) => set(e.target.value)} /> : <input value={l.note} onChange={(e) => set(e.target.value)} />;
       default: return (
         <div className="cell-add">
           <FieldInput field={f} value={f.type === 'formula' ? lc[i][f.key] : l[f.key]} onChange={(v) => set(v)} />
@@ -291,7 +291,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
           <div className="section-head"><span className="grow">Thông tin chung của đơn</span><AddFieldButton formKey={cfg.head} vias={HEAD_VIAS} /></div>
           <div className="form-grid">
             {headFields.map((f) => (
-              <Field key={f.key} label={f.label} required={f.required} full={f.type === 'textarea'}
+              <Field key={f.key} label={f.label} required={f.required} size={f} full={f.type === 'textarea' && !f.width}
                 help={f.link ? `Tự lấy theo ${viaLabel(HEAD_VIAS, f.link.via)}` : f.help}>
                 {headInput(f)}
               </Field>
@@ -315,7 +315,8 @@ export default function SOForm({ type = 'SO', order, onClose }) {
                 {lines.map((l, i) => (
                   <tr key={i}>
                     <td className="small">{i + 1}</td>
-                    {shownLine.map((f) => <td key={f.key} className={f.key === 'item' ? 'w-item' : ['shipCode', 'fromWarehouse', 'toWarehouse'].includes(f.key) ? 'w-ship' : f.key === 'qtyT' ? 'w-qty' : ''}>{lineInput(f, l, i)}</td>)}
+                    {shownLine.map((f) => <td key={f.key} style={{ ...(f.width ? { minWidth: Math.min(f.width, 600) } : {}), ...(f.height ? { '--fh': `${f.height}px` } : {}) }}
+                      className={(f.key === 'item' ? 'w-item' : ['shipCode', 'fromWarehouse', 'toWarehouse'].includes(f.key) ? 'w-ship' : f.key === 'qtyT' ? 'w-qty' : '') + (f.height ? ' fh' : '')}>{lineInput(f, l, i)}</td>)}
                     {order && <td className="num">{n(l.doneKg) ? fmtNum(n(l.doneKg) / 1000, 3) : ''}</td>}
                     {order && sto && <td className="num">{n(l.receivedKg) ? fmtNum(n(l.receivedKg) / 1000, 3) : ''}</td>}
                     <td className="nowrap">

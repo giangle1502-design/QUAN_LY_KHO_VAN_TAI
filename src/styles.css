@@ -342,3 +342,12 @@ table.split td input { min-width: 70px; text-align: right; }
 table.split tr.need td { background: #f8fafc; }
 table.split tfoot td { background: #f8fafc; border-top: 2px solid var(--line); }
 .so-lines .readonly-val { white-space: nowrap; }
+
+/* Độ rộng / cao trường do quản trị chỉnh (Quản lý trường) */
+.fh textarea, .fh input:not([type=checkbox]), .fh select, .fh .readonly-val { min-height: var(--fh); }
+.fh textarea { height: var(--fh); }
+td.fh textarea, td.fh input:not([type=checkbox]), td.fh select { min-height: var(--fh); }
+@media (max-width: 700px) { .form-grid > .field.fw { grid-column: auto !important; } }
+.field textarea { width: 100%; }
+.cell-add > textarea, .cell-add > .readonly-val { flex: 1; }
+table.so-lines textarea { width: 100%; min-width: 90px; padding: 5px 6px; }

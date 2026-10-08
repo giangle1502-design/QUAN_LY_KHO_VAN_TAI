@@ -23,9 +23,18 @@ export function Modal({ title, onClose, children, wide }) {
   );
 }
 
-export function Field({ label, required, help, children, full }) {
+// size: cấu hình trường { width, height } (px) từ Quản lý trường
+export function Field({ label, required, help, children, full, size }) {
+  const w = Number(size?.width) || 0;
+  const h = Number(size?.height) || 0;
+  const wide = full || w >= 900;
+  const style = {
+    ...(!wide && w ? { gridColumn: `span ${Math.min(4, Math.max(1, Math.round(w / 240)))}` } : {}),
+    ...(!wide && w && w < 230 ? { maxWidth: w + 40 } : {}),
+    ...(h ? { '--fh': `${h}px` } : {}),
+  };
   return (
-    <label className={'field' + (full ? ' full' : '')}>
+    <label className={'field' + (wide ? ' full' : '') + (w && !wide ? ' fw' : '') + (h ? ' fh' : '')} style={style}>
       <span>{label}{required && <b className="req"> *</b>}</span>
       {children}
       {help && <small className="small">{help}</small>}

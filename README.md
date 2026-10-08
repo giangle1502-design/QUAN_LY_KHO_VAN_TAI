@@ -267,6 +267,9 @@ Phiếu nhập kho chọn **Nguồn nhập** ở đầu phiếu:
 ## Sửa / xóa trường ngay trên form
 - Cạnh "+ Thêm trường" có **✎ Sửa trường**: danh sách trường đã thêm, ✎ Sửa (tên, kiểu, danh sách chọn, mặc định, công thức, liên kết, bắt buộc; giữ nguyên ẩn và người được xem) và 🗑 Xóa. Đổi tên trường không làm hỏng công thức đang dùng nó.
 
+## Độ rộng / độ cao trường
+- Mọi trường (trường chính và trường thêm) chỉnh được **Rộng** (Tự động, Hẹp, Vừa, Rộng, Rất rộng 2 cột, 3 cột, Cả dòng) và **Cao** (1, 2, 3, 5, 8 dòng): ở nút ✎ Sửa trường trên form (lưu ngay), cột "Rộng × Cao" trong Quản lý trường, hoặc khi thêm / sửa trường. Ô chữ cao hơn 1 dòng thành ô nhập nhiều dòng. Áp dụng cho form đơn hàng (phần chung + bảng dòng hàng) và form các danh mục.
+
 ## Trường công thức
 - Kiểu **Công thức (tự tính)**: vd. dòng hàng `Thành tiền = [Số lượng (tấn)] * [Đơn giá]`; phần chung `Giá trị hàng hóa = SUM([Thành tiền]) * (1 + [VAT])`.
 - Dùng + − * / ( ), SUM (cộng 1 trường của mọi dòng, dùng ở phần chung), ROUND, MIN, MAX, ABS. Phần trăm tính như Excel: VAT 8% = 0,08. Dòng hàng dùng được trường ở phần chung.

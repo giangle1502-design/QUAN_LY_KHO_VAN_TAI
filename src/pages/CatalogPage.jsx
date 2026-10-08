@@ -255,7 +255,7 @@ export function EditForm({ cat, fields, row, existing = [], onClose, onSaved }) 
           {shownFields.map((f) => {
             const ro = !editable || f.computed || f.system || (!isNew && keys.includes(f.key));
             return (
-              <Field key={f.key} label={f.label} required={f.required && !ro} help={f.help} full={f.type === 'textarea' || f.type === 'multiref'}>
+              <Field key={f.key} label={f.label} required={f.required && !ro} help={f.help} full={f.type === 'multiref' || (f.type === 'textarea' && !f.width)} size={f}>
                 {ro && (f.computed || f.system) ? (
                   <div className="readonly-val">{String(displayValue(f, data[f.key]) || '—')}{f.key === 'usedPct' && data[f.key] != null ? '%' : ''}</div>
                 ) : (

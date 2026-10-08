@@ -25,7 +25,7 @@ export default function FieldInput({ field: f, value, onChange, disabled, onPick
       </select>
     );
   if (f.type === 'checkbox') return <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} disabled={disabled} />;
-  if (f.type === 'textarea') return <textarea rows={2} value={value ?? ''} onChange={(e) => onChange(e.target.value)} disabled={disabled} />;
+  if (f.type === 'textarea' || (f.type === 'text' && Number(f.height) > 40 && !f.options?.length)) return <textarea rows={2} value={value ?? ''} onChange={(e) => onChange(e.target.value)} disabled={disabled} />;
   if (f.type === 'currency') return <MoneyInput value={value} onChange={onChange} disabled={disabled} />;
   if (f.type === 'percent')
     return (

@@ -7,7 +7,7 @@ import { CATALOGS, FIELD_TYPES, FORM_DEFS, GROUPS, RESULT_TYPES, ROLES, catalogB
 import { checkFormula, formulaToKeys, formulaToLabels } from '../lib/formula';
 import { syncFieldPrivacy } from '../lib/orderSecrets';
 import { useCollection } from '../lib/hooks';
-import { DATE_DEFAULTS, canChoose, canDefault, keyFieldsOf, parseChoices } from '../lib/fields';
+import { DATE_DEFAULTS, HEIGHT_OPTS, WIDTH_OPTS, canChoose, canDefault, keyFieldsOf, parseChoices } from '../lib/fields';
 import { norm } from '../lib/utils';
 import { ErrorBox, Modal } from '../components/ui';
 
@@ -79,7 +79,8 @@ export default function FieldManager() {
       if (e) return setErr(`Công thức "${f.label}": ${e}`);
     }
     const out = list.map((f) => {
-      const o = { key: f.key, label: f.label.trim(), required: !!f.required, hidden: !!f.hidden };
+      const o = { key: f.key, label: f.label.trim(), required: !!f.required, hidden: !!f.hidden,
+        ...(Number(f.width) ? { width: Number(f.width) } : {}), ...(Number(f.height) ? { height: Number(f.height) } : {}) };
       if (canChoose(f)) { const c = parseChoices(f.optionsText, f.type); if (c.length) o.options = c; }
       // Giá trị mặc định khi tạo mới ('' = bỏ mặc định có sẵn trong code)
       const d = String(f.defText ?? '').trim().replace(/%$/, '');
@@ -137,7 +138,7 @@ export default function FieldManager() {
       <div className="table-wrap">
         <table>
           <thead>
-            <tr><th className="stt">STT</th><th>Tên trường</th><th>Kiểu dữ liệu</th><th>Danh sách chọn / Công thức</th><th>Mặc định</th>{cat.form && <th>Người được xem</th>}<th>Bắt buộc</th><th>Ẩn</th><th></th></tr>
+            <tr><th className="stt">STT</th><th>Tên trường</th><th>Kiểu dữ liệu</th><th>Danh sách chọn / Công thức</th><th>Mặc định</th><th title="Độ rộng / cao ô nhập trên form">Rộng × Cao</th>{cat.form && <th>Người được xem</th>}<th>Bắt buộc</th><th>Ẩn</th><th></th></tr>
           </thead>
           <tbody>
             {list.map((f, i) => {
@@ -189,6 +190,12 @@ export default function FieldManager() {
                           {DATE_DEFAULTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
                       ) : <input type="text" value={f.defText} onChange={(e) => upd(i, { defText: e.target.value })} style={{ width: 110 }}
                         placeholder={f.type === 'ref' ? `Mã ${catalogByKey(f.ref)?.short || ''}` : f.type === 'percent' ? 'VD: 8' : ''} />}
+                  </td>
+                  <td className="nowrap">
+                    <select value={Number(f.width) || 0} onChange={(e) => upd(i, { width: Number(e.target.value) })} title="Độ rộng">
+                      {WIDTH_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+                    <select value={Number(f.height) || 0} onChange={(e) => upd(i, { height: Number(e.target.value) })} title="Độ cao" style={{ marginLeft: 4 }}>
+                      {HEIGHT_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
                   </td>
                   {cat.form && (
                     <td>

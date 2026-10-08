@@ -26,6 +26,7 @@ export function mergeFields(catKey, stored = []) {
         options: CHOICE_TYPES.includes(base.type) && !base.labels && !base.computed && !base.system && s.options?.length ? s.options : base.options,
         // default '' = admin bỏ giá trị mặc định có sẵn trong code
         ...('default' in s ? (s.default === '' ? { default: undefined } : { default: s.default }) : {}),
+        ...(s.width ? { width: s.width } : {}), ...(s.height ? { height: s.height } : {}),
         builtin: true,
       });
       seen.add(s.key);
@@ -101,6 +102,8 @@ export function toStored(list) {
     const o = { key: f.key, label: String(f.label || '').trim(), required: !!f.required, hidden: !!f.hidden };
     if (f.options?.length && canChoose(f)) o.options = f.options;
     if (f.default !== undefined && f.default !== '') o.default = f.default;
+    if (f.width) o.width = f.width;
+    if (f.height) o.height = f.height;
     if (f.custom) Object.assign(o, { custom: true, type: f.type, ...(f.ref ? { ref: f.ref } : {}), ...(f.link ? { link: f.link } : {}),
       ...(f.type === 'formula' ? { formula: f.formula || '', resultType: f.resultType || 'number' } : {}), ...(f.viewers?.length ? { viewers: f.viewers } : {}), ...(f.salesSees ? { salesSees: true } : {}) });
     return o;
@@ -144,3 +147,7 @@ export function visibleFields(list, me, ...others) {
   };
   return list.filter((f) => vis(f));
 }
+
+// Lựa chọn độ rộng / cao trường (px). Rộng ≥ 900 = cả dòng
+export const WIDTH_OPTS = [[0, 'Tự động'], [120, 'Hẹp'], [200, 'Vừa'], [320, 'Rộng'], [480, 'Rất rộng (2 cột)'], [720, '3 cột'], [900, 'Cả dòng']];
+export const HEIGHT_OPTS = [[0, 'Tự động'], [38, '1 dòng'], [60, '2 dòng'], [84, '3 dòng'], [130, '5 dòng'], [200, '8 dòng']];
