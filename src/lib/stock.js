@@ -1,7 +1,7 @@
 import { doc, runTransaction } from 'firebase/firestore';
 import { db } from '../firebase';
 import { catalogByKey } from '../catalogs';
-import { applyOrder } from './orders';
+import { applyOrder, summarizeLines } from './orders';
 
 // ============================================================================
 // Tồn kho: mỗi dòng tồn = 1 document `stock/{kho__vị trí__mã hàng__lot__tình trạng}`
@@ -54,7 +54,8 @@ export function effectsOf(m, sign = 1) {
 }
 
 // Ghi phiếu mới: cấp số, kiểm tra tồn/vị trí/tình trạng, cập nhật tồn và pallet vị trí
-export async function postMovement(m, user) {
+// newOrder (nhập trực tiếp): lập luôn đơn mua PO đã nhận đủ theo đúng các dòng phiếu, trong cùng giao dịch
+export async function postMovement(m, user, { newOrder } = {}) {
   const meta = MOVE_TYPES[m.type];
   const ruleRef = doc(db, 'codeRules', meta.code);
   return runTransaction(db, async (tx) => {
@@ -66,17 +67,50 @@ export async function postMovement(m, user) {
     const at = new Date().toISOString();
     const mv = { ...m, id, status: 'posted', createdAt: at, createdBy: user.email, createdByName: user.name,
       history: [{ at, by: user.email, byName: user.name, action: 'Lập phiếu' }] };
+    let direct = null;
+    if (newOrder) {
+      const poRef = doc(db, 'codeRules', 'PO');
+      const poSnap = await tx.get(poRef);
+      const poSeed = catalogByKey('codeRules').seed.find((s) => s.code === 'PO');
+      const poRule = poSnap.exists() ? poSnap.data() : poSeed;
+      const poNum = Number(poRule.next) || 1;
+      const poId = `${poRule.prefix ?? 'PO'}${String(poNum).padStart(Number(poRule.digits) || 6, '0')}`;
+      // Gộp dòng phiếu theo mã hàng + tình trạng thành dòng PO
+      const keys = new Map();
+      const lines = [];
+      mv.lines = mv.lines.map((l) => {
+        const key = `${l.item}|${l.goodsStatus}`;
+        if (!keys.has(key)) {
+          keys.set(key, lines.length + 1);
+          lines.push({ no: lines.length + 1, item: l.item, itemName: l.itemName || '', qtyKg: 0, doneKg: 0, dueDate: m.date, warehouse: m.warehouse, goodsStatus: l.goodsStatus || '', note: '' });
+        }
+        const ol = lines[keys.get(key) - 1];
+        ol.qtyKg = round(ol.qtyKg + n(l.kg));
+        ol.doneKg = ol.qtyKg;
+        return { ...l, orderLine: ol.no };
+      });
+      mv.orderId = poId; mv.orderType = 'PO'; mv.orderRef = newOrder.refNo || '';
+      direct = { poRef, poSnap, poSeed, poNum, order: {
+        ...newOrder, type: 'PO', id: poId, direct: true, lines, nextLineNo: lines.length + 1, ...summarizeLines(lines), status: 'done', lastMovement: id,
+        createdAt: at, createdBy: user.email, updatedAt: at, updatedBy: user.email,
+        history: [{ at, by: user.email, byName: user.name, action: `Lập đơn khi nhập kho trực tiếp (phiếu ${id})` }] } };
+    }
     const orderRef = m.orderId ? doc(db, 'orders', m.orderId) : null;
     const orderSnap = orderRef ? await tx.get(orderRef) : null;
     if (orderRef && !orderSnap.exists()) throw new Error(`Không tìm thấy đơn ${m.orderId}.`);
     if (orderSnap) mv.orderType = orderSnap.data().type;
     const orderUpd = orderRef ? applyOrder({ ...orderSnap.data(), id: m.orderId }, mv, 1) : null;
     await applyEffects(tx, mv, effectsOf(mv, 1), user);
+    if (direct) {
+      tx.set(doc(db, 'orders', direct.order.id), direct.order);
+      if (direct.poSnap.exists()) tx.update(direct.poRef, { next: direct.poNum + 1 });
+      else tx.set(direct.poRef, { ...direct.poSeed, next: direct.poNum + 1 });
+    }
     if (orderRef) tx.update(orderRef, { ...orderUpd, lastMovement: id, updatedAt: at, updatedBy: user.email });
     if (ruleSnap.exists()) tx.update(ruleRef, { next: num + 1 });
     else tx.set(ruleRef, { ...seed, next: num + 1 });
     tx.set(doc(db, 'movements', id), mv);
-    return id;
+    return direct ? { id, orderId: direct.order.id } : id;
   });
 }
 

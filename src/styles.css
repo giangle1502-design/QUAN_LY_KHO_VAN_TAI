@@ -324,3 +324,4 @@ table.so-lines td { padding: 4px; vertical-align: top; }
 table.so-lines input, table.so-lines select { width: 100%; min-width: 90px; padding: 5px 6px; }
 table.so-lines td.w-item { min-width: 150px; } table.so-lines td.w-ship { min-width: 160px; } table.so-lines td.w-qty input { min-width: 80px; text-align: right; }
 .link-hint { color: var(--muted); font-size: 11px; }
+.seg.wrap { flex-wrap: wrap; }

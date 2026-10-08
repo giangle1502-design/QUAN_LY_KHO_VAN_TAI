@@ -219,3 +219,11 @@ firestore.rules            # Phân quyền trên máy chủ
 - **PO** cùng kiểu: phần chung (Ngày tạo đơn, Công ty mua, Nhà cung cấp) + dòng hàng (Ngày hàng về ETA, Kho nhập, Mã hàng, SL, TTHH khi nhập). Phiếu nhập theo PO chỉ lấy dòng của kho đang nhập và điền sẵn TTHH.
 - Ô **Lý do** (phiếu nhập/xuất/điều chỉnh, hủy chuyến) có nút **+** thêm lý do mới (thủ kho, kinh doanh, kế toán: cần publish lại firestore.rules).
 - **STO** cùng kiểu: phần chung (Ngày tạo đơn, Công ty chủ hàng) + dòng hàng (Ngày chuyển, **Kho xuất, Kho nhập**, Mã hàng, SL, TTHH; trống = loại nào cũng được). 1 lệnh chuyển được nhiều tuyến (K1→K2, K1→K3, K2→K1…). Phiếu xuất ở kho nào chỉ lấy các dòng xuất từ kho đó; phiếu nhập ở kho nào chỉ lấy hàng đang đi đường của các dòng nhập về kho đó. Thủ kho chỉ lập lệnh có kho xuất là kho mình (cần publish lại firestore.rules). Lệnh cũ (kho đi/kho đến ở đầu lệnh) vẫn dùng bình thường; mở sửa thì kho được chép xuống từng dòng.
+
+## Nhập kho: trực tiếp và gián tiếp
+Phiếu nhập kho chọn **Nguồn nhập** ở đầu phiếu:
+- **Nhập trực tiếp**: hàng về không có PO trước. Chọn nhà cung cấp (nút + thêm mới), số chứng từ NCC, nhập hàng như thường. Lưu phiếu thì hệ thống **tự lập luôn đơn mua (PO) đã nhận đủ** (gộp theo mã hàng + TTHH, kho nhập = kho phiếu) trong cùng 1 giao dịch. PO này có nhãn "trực tiếp" ở danh sách đơn mua.
+- **Theo PO**: nhập theo đơn mua đã lập trước (như cũ).
+- **Nhận hàng chuyển kho (STO)**: tự điền lot, TTHH, số lượng từ phiếu xuất ở kho đi (như cũ).
+- **Hàng trả về (SO)**: khách trả hàng theo đơn bán. Tự điền lot, TTHH, số lượng đã giao từ các phiếu xuất của SO; thủ kho sửa số thực trả, chọn vị trí. Không trả quá phần đã giao. Đơn bán ghi "Khách trả về" theo từng dòng; phần trả về **không làm tăng phần còn phải giao** (cần giao bù thì kinh doanh thêm dòng vào SO). Nhận ở kho nào cũng được. Nút **↩ Nhập hàng trả về** trên đơn bán đã giao.
+- Phiếu nhập luôn phải có nguồn (đơn / nhà cung cấp). Cần publish lại firestore.rules để thủ kho lập được PO khi nhập trực tiếp.

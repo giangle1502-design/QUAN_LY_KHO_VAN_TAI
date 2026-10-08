@@ -140,7 +140,11 @@ service cloud.firestore {
       allow create: if (isAdmin() || orderMgr()
           || (hasRole('thu_kho') && request.resource.data.type == 'STO' && stoFromMine(request.resource.data)))
         && request.resource.data.id == id && request.resource.data.createdBy == me()
-        && request.resource.data.status == 'open' && request.resource.data.type in ['SO', 'PO', 'STO'];
+        && request.resource.data.status == 'open' && request.resource.data.type in ['SO', 'PO', 'STO']
+        // Nhập trực tiếp: thủ kho lập PO đã nhận đủ cùng lúc với phiếu nhập kho gắn PO đó
+        || ((isAdmin() || hasRole('thu_kho')) && request.resource.data.type == 'PO' && request.resource.data.direct == true
+          && request.resource.data.id == id && request.resource.data.createdBy == me() && request.resource.data.status == 'done'
+          && movementForOrder(request.resource.data.lastMovement, id));
       allow update: if isAdmin()
         || (orderMgr() && request.resource.data.type == resource.data.type
           && request.resource.data.id == resource.data.id && request.resource.data.createdBy == resource.data.createdBy)

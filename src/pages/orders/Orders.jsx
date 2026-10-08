@@ -5,7 +5,7 @@ import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { useOpCompany, useOrders } from '../../lib/hooks';
 import { CompanyPicker } from '../../components/TripBits';
-import { ORDER_STATUS, ORDER_TYPES, OPEN_STATUSES, createOrder, leftKg, lineDue, lineFrom, lineShip, lineTo, lineWh, orderTotals, setOrderState, stoRoute, summarizeLines, transitKg } from '../../lib/orders';
+import { ORDER_STATUS, ORDER_TYPES, OPEN_STATUSES, createOrder, leftKg, lineDue, lineFrom, lineShip, lineTo, lineWh, orderTotals, returnableKg, setOrderState, stoRoute, summarizeLines, transitKg } from '../../lib/orders';
 import { MOVE_TYPES } from '../../lib/stock';
 import { STATUS_META, fmtTime, vnDate } from '../../lib/trips';
 import { exportSheets, exportTemplate, readFirstSheet, toNumber, toYmd } from '../../lib/excel';
@@ -26,8 +26,12 @@ const partyText = (o) => (o.type === 'STO' ? stoRoute(o) : o.partyName || o.part
 // Nút lập phiếu kho theo đơn: SO/STO → phiếu xuất kho, PO/STO → phiếu nhập kho
 export function MoveButtons({ o, sm }) {
   const { hasRole, inMyWarehouses } = useApp();
-  if (!hasRole('thu_kho') || !OPEN_STATUSES.concat(o.type === 'STO' ? ['closed'] : []).includes(o.status)) return null;
+  if (!hasRole('thu_kho') || o.status === 'cancelled') return null;
   const x = orderTotals(o);
+  // SO đã giao: thủ kho nhận hàng khách trả về (phiếu nhập kho theo SO)
+  const ret = o.type === 'SO' && (o.lines || []).some((l) => returnableKg(l) > 0);
+  if (!OPEN_STATUSES.concat(o.type === 'STO' ? ['closed'] : []).includes(o.status))
+    return ret ? <Link className={'btn' + (sm ? ' sm' : '')} onClick={(e) => e.stopPropagation()} to={`/kho/in?order=${o.id}`}>↩ Nhập hàng trả về</Link> : null;
   const cls = 'btn' + (sm ? ' sm' : ' primary');
   // Có dòng còn phải làm ở kho mình phụ trách (dòng không ghi kho = kho nào cũng được)
   const mine = (mt, need) => (o.lines || []).some((l) => need(l) > 0 && (!lineWh(o, l, mt) || inMyWarehouses(lineWh(o, l, mt))));
@@ -38,6 +42,7 @@ export function MoveButtons({ o, sm }) {
         <Link className={cls} onClick={stop} to={`/kho/out?order=${o.id}`}>📤 Lập phiếu xuất kho</Link>}
       {(o.type === 'PO' ? OPEN_STATUSES.includes(o.status) && x.left > 0 && mine('in', leftKg) : o.type === 'STO' && x.transit > 0 && mine('in', transitKg)) &&
         <Link className={cls} onClick={stop} to={`/kho/in?order=${o.id}`}>📥 Lập phiếu nhập kho</Link>}
+      {ret && !sm && <Link className="btn" onClick={stop} to={`/kho/in?order=${o.id}`}>↩ Nhập hàng trả về</Link>}
     </>
   );
 }
@@ -103,7 +108,7 @@ function OrderList({ type }) {
   // Cột danh sách đơn: mỗi người dùng tự chọn cột muốn xem (⚙ Cột hiển thị)
   const uniqText = (o, f) => [...new Set((o.lines || []).map((l) => f(o, l)).filter(Boolean))].join(', ');
   const cols = [
-    { key: 'id', label: 'Số đơn', locked: true, cls: 'mono nowrap', render: (o) => o.id },
+    { key: 'id', label: 'Số đơn', locked: true, cls: 'mono nowrap', render: (o) => <>{o.id}{o.direct ? <span className="badge" title="Lập tự động khi nhập kho trực tiếp" style={{ marginLeft: 4 }}>trực tiếp</span> : null}</> },
     { key: 'company', label: 'Công ty', render: (o) => <b>{o.company}</b> },
     { key: 'refNo', label: 'Số Ecount', cls: 'mono', render: (o) => o.refNo, hideDefault: true },
     { key: 'date', label: 'Ngày tạo đơn', cls: 'nowrap', render: (o) => fmtDate(o.date) },
@@ -211,6 +216,7 @@ function OrderDetail({ o, onClose, onEdit }) {
     (s) => setTrips(s.docs.map((d) => ({ ...d.data(), id: d.id }))), () => setTrips([])), [o.id]);
   const x = orderTotals(o);
   const isOpen = OPEN_STATUSES.includes(o.status);
+  const hasRet = (o.lines || []).some((l) => Number(l.returnedKg) > 0);
   const act = async (action) => {
     setErr(''); setBusy(true);
     try { await setOrderState(o.id, action, reason.trim(), { email, name }); setReason(''); } catch (e) { setErr(e.message); }
@@ -226,6 +232,7 @@ function OrderDetail({ o, onClose, onEdit }) {
         {headCustom.map((f) => <span key={f.key}> · {f.label}: <b>{displayValue(f, o[f.key])}</b></span>)}
         {Number(o.tolerancePct) ? ` · Dung sai ${o.tolerancePct}%` : ''}
       </p>
+      {o.direct && <p className="small">Đơn mua lập tự động khi <b>nhập kho trực tiếp</b> (hàng về không có PO trước).</p>}
       {o.note && <p className="small">Ghi chú: {o.note}</p>}
       {o.closeReason && <p className="small">Lý do {o.status === 'cancelled' ? 'hủy' : 'đóng'}: {o.closeReason}</p>}
       <div className="stats">
@@ -237,11 +244,11 @@ function OrderDetail({ o, onClose, onEdit }) {
       </div>
       <div className="table-wrap" style={{ marginBottom: 12 }}>
         <table>
-          <thead><tr><th>#</th><th>{meta.due}</th>{sto ? <><th>Kho xuất</th><th>Kho nhập</th></> : <th>{so ? 'Kho xuất' : 'Kho nhập'}</th>}<th>Mã hàng</th><th>Tên hàng</th>{so && <th>Mã giao</th>}<th>TTHH</th>{lineCustom.map((f) => <th key={f.key}>{f.label}</th>)}<th className="num">Đặt (tấn)</th><th className="num">{meta.done}</th>
+          <thead><tr><th>#</th><th>{meta.due}</th>{sto ? <><th>Kho xuất</th><th>Kho nhập</th></> : <th>{so ? 'Kho xuất' : 'Kho nhập'}</th>}<th>Mã hàng</th><th>Tên hàng</th>{so && <th>Mã giao</th>}<th>TTHH</th>{lineCustom.map((f) => <th key={f.key}>{f.label}</th>)}<th className="num">Đặt (tấn)</th><th className="num">{meta.done}</th>{hasRet && <th className="num">Khách trả về</th>}
             {sto && <><th className="num">{meta.transit}</th><th className="num">{meta.received}</th></>}<th className="num">{meta.left}</th><th>Ghi chú</th></tr></thead>
           <tbody>{o.lines.map((l) => (
             <tr key={l.no}><td>{l.no}</td><td className="nowrap">{fmtDate(lineDue(o, l))}</td>{sto ? <><td>{lineFrom(o, l)}</td><td>{lineTo(o, l)}</td></> : <td>{lineWh(o, l) || 'Kho nào cũng được'}</td>}<td>{l.item}</td><td>{l.itemName}</td>
-              {so && <td>{lineShip(o, l)}</td>}<td>{l.goodsStatus || (so ? 'KTC/DGC' : '')}</td>{lineCustom.map((f) => <td key={f.key}>{displayValue(f, l[f.key])}</td>)}<td className="num">{t(l.qtyKg)}</td><td className="num">{t(l.doneKg)}</td>
+              {so && <td>{lineShip(o, l)}</td>}<td>{l.goodsStatus || (so ? 'KTC/DGC' : '')}</td>{lineCustom.map((f) => <td key={f.key}>{displayValue(f, l[f.key])}</td>)}<td className="num">{t(l.qtyKg)}</td><td className="num">{t(l.doneKg)}</td>{hasRet && <td className="num">{t(l.returnedKg)}</td>}
               {sto && <><td className="num">{t(transitKg(l))}</td><td className="num">{t(l.receivedKg)}</td></>}
               <td className="num"><b>{isOpen ? t(leftKg(l)) : '–'}</b></td><td className="small">{l.note}</td></tr>
           ))}</tbody>
@@ -249,7 +256,7 @@ function OrderDetail({ o, onClose, onEdit }) {
       </div>
 
       <div className="form-actions" style={{ justifyContent: 'flex-start', marginBottom: 8 }}><MoveButtons o={o} /></div>
-      <div className="section-head">Phiếu {sto ? 'xuất / nhập kho' : MOVE_TYPES[moveType].label.toLowerCase()} theo đơn ({moves.length})</div>
+      <div className="section-head">Phiếu {sto || hasRet ? 'xuất / nhập kho' : MOVE_TYPES[moveType].label.toLowerCase()} theo đơn ({moves.length})</div>
       {!moves.length ? <Empty text={`Chưa có phiếu ${sto ? 'xuất / nhập kho' : MOVE_TYPES[moveType].label.toLowerCase()} nào gắn đơn này.`} /> : (
         <table style={{ marginBottom: 12 }}><tbody>
           {moves.map((m) => (

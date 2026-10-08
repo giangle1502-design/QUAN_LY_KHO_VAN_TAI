@@ -64,12 +64,12 @@ export default function PrintMovement({ pick = false }) {
       {m.status === 'cancelled' && <div className="error-box">PHIẾU ĐÃ HỦY: {m.cancelReason}</div>}
       <table className="print-info"><tbody>
         {co && <tr><td>Công ty chủ hàng</td><td>{co.code}{co.name && co.name !== co.code ? ` – ${co.name}` : ''}</td></tr>}
-        {(m.partyCode || m.partyName) && <tr><td>{m.type === 'in' ? 'Nhà cung cấp' : 'Khách hàng'}</td><td>{m.partyCode} {m.partyName}</td></tr>}
+        {(m.partyCode || m.partyName) && <tr><td>{m.type === 'in' && m.source !== 'SO' && m.orderType !== 'SO' ? 'Nhà cung cấp' : m.type === 'in' ? 'Khách hàng trả hàng' : 'Khách hàng'}</td><td>{m.partyCode} {m.partyName}</td></tr>}
         {m.shipCode && <tr><td>Giao đến</td><td>{m.shipCode}</td></tr>}
         {(m.carrier || m.carrierName) && <tr><td>Đơn vị vận tải</td><td>{m.carrierName || m.carrier}</td></tr>}
         {m.plate && <tr><td>Số xe</td><td>{m.plate}</td></tr>}
         {m.driverName && <tr><td>Tài xế</td><td>{m.driverName}{m.idCard ? ` · CCCD ${m.idCard}` : ''}{m.driverPhone ? ` · ĐT ${m.driverPhone}` : ''}</td></tr>}
-        {m.orderId && <tr><td>{m.orderType === 'STO' || String(m.orderId).startsWith('STO') ? 'Theo lệnh chuyển kho' : m.type === 'in' ? 'Theo đơn mua' : 'Theo đơn bán'}</td><td>{m.orderId}{m.orderRef ? ` (số Ecount ${m.orderRef})` : ''}</td></tr>}
+        {m.orderId && <tr><td>{m.orderType === 'STO' || String(m.orderId).startsWith('STO') ? 'Theo lệnh chuyển kho' : m.type === 'in' && m.orderType === 'SO' ? 'Hàng trả về theo đơn bán' : m.type === 'in' ? (m.source === 'direct' ? 'Nhập trực tiếp, đơn mua' : 'Theo đơn mua') : 'Theo đơn bán'}</td><td>{m.orderId}{m.orderRef ? ` (số ${m.source === 'direct' ? 'chứng từ NCC' : 'Ecount'} ${m.orderRef})` : ''}</td></tr>}
         {trip && <tr><td>Xe</td><td>{trip.plate} · {trip.driverName} · CCCD {trip.idCard}{trip.carrierName ? ` · ${trip.carrierName}` : ''} · chuyến {m.tripId}{trip.dock ? ` · cửa ${trip.dock}` : ''}</td></tr>}
         {m.reason && <tr><td>Lý do</td><td>{m.reason}</td></tr>}
         {m.note && <tr><td>Ghi chú</td><td>{m.note}</td></tr>}

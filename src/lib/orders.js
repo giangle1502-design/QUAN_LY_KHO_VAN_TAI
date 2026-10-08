@@ -15,8 +15,16 @@ export const ORDER_TYPES = {
   // Lệnh chuyển kho: kho đi lập phiếu xuất kho, kho đến lập phiếu nhập kho. Đã xuất − đã nhận = hàng đang đi đường
   STO: { label: 'Lệnh chuyển kho (STO)', short: 'STO', party: null, partyLabel: 'Kho đi → kho đến', moveType: 'both', done: 'Đã xuất', left: 'Còn phải xuất', due: 'Ngày chuyển', received: 'Đã nhận', transit: 'Đang đi đường' },
 };
-// Đơn nào được chọn trên phiếu xuất / phiếu nhập
-export const ORDER_FOR_MOVE = { out: ['SO', 'STO'], in: ['PO', 'STO'] };
+// Đơn nào được chọn trên phiếu xuất / phiếu nhập. Phiếu nhập theo SO = hàng khách trả về
+export const ORDER_FOR_MOVE = { out: ['SO', 'STO'], in: ['PO', 'STO', 'SO'] };
+// Nguồn nhập kho: trực tiếp (tạo PO kèm phiếu nhập) hoặc từ chứng từ có sẵn
+export const IN_SOURCES = {
+  direct: { label: 'Nhập trực tiếp (tạo PO và nhập kho luôn)', short: 'Nhập trực tiếp' },
+  PO: { label: 'Theo đơn mua (PO) đã có', short: 'Theo PO' },
+  STO: { label: 'Theo lệnh chuyển kho (STO)', short: 'Nhận hàng chuyển kho' },
+  SO: { label: 'Hàng trả về theo đơn bán (SO)', short: 'Hàng trả về (SO)' },
+};
+export const isReturn = (o, moveType) => o?.type === 'SO' && moveType === 'in';
 // Kho chung ở đầu đơn (rỗng nếu các dòng khác kho)
 export const orderWarehouse = (o, moveType) => (o.type === 'STO' ? (moveType === 'in' ? o.toWarehouse : o.fromWarehouse) : o.warehouse) || '';
 // Mỗi dòng có kho riêng (dòng trống thì theo đầu đơn – đơn cũ). STO: dòng có kho xuất và kho nhập
@@ -68,7 +76,9 @@ export const orderTotals = (o) => (o.lines || []).reduce(
   (t, l) => ({ qty: t.qty + n(l.qtyKg), done: t.done + n(l.doneKg), left: t.left + leftKg(l), received: t.received + n(l.receivedKg), transit: t.transit + transitKg(l) }),
   { qty: 0, done: 0, left: 0, received: 0, transit: 0 });
 // Phần còn lại phiếu này có thể làm: phiếu nhập theo STO = hàng đang đi đường, còn lại = chưa giao/nhận
-export const openKg = (o, l, moveType) => (o.type === 'STO' && moveType === 'in' ? transitKg(l) : leftKg(l));
+// SO trả về: được trả tối đa phần đã giao trừ phần đã trả
+export const returnableKg = (l) => Math.max(0, n(l.doneKg) - n(l.returnedKg));
+export const openKg = (o, l, moveType) => (o.type === 'STO' && moveType === 'in' ? transitKg(l) : isReturn(o, moveType) ? returnableKg(l) : leftKg(l));
 
 // Trạng thái tự tính (trừ khi đã đóng / hủy)
 export function statusOf(o, lines = o.lines) {
@@ -106,13 +116,15 @@ export function applyOrder(order, m, sign) {
   const sto = order.type === 'STO';
   if (!ORDER_FOR_MOVE[m.type]?.includes(order.type)) throw new Error(`Phiếu ${m.type === 'in' ? 'nhập' : 'xuất'} kho không gắn được với ${order.id}.`);
   const receiving = sto && m.type === 'in';
-  const k = receiving ? 'receivedKg' : 'doneKg';
+  const returning = isReturn(order, m.type);
+  const k = receiving ? 'receivedKg' : returning ? 'returnedKg' : 'doneKg';
   const lines = order.lines.map((l) => ({ ...l }));
   for (const ml of m.lines) {
     const i = lines.findIndex((l) => l.no === ml.orderLine);
     if (i < 0) throw new Error(`Dòng ${ml.item} không khớp dòng nào của đơn ${order.id}.`);
     if (lines[i].item !== ml.item) throw new Error(`Mã hàng ${ml.item} khác mã hàng dòng đơn (${lines[i].item}).`);
-    const lw = lineWh(order, lines[i], m.type);
+    // Hàng trả về nhận ở kho nào cũng được
+    const lw = returning ? '' : lineWh(order, lines[i], m.type);
     if (lw && lw !== m.warehouse) throw new Error(`Dòng ${ml.item} của ${order.id} ${m.type === 'out' ? 'xuất từ' : 'nhập về'} kho ${lw}, phiếu đang ở kho ${m.warehouse}.`);
     lines[i][k] = Math.round((n(lines[i][k]) + sign * Math.abs(n(ml.kg))) * 1000) / 1000;
     if (lines[i][k] < -EPS) lines[i][k] = 0;
@@ -120,6 +132,16 @@ export function applyOrder(order, m, sign) {
   if (sto && !receiving && sign < 0) {
     const bad = lines.find((l) => n(l.receivedKg) > n(l.doneKg) + EPS);
     if (bad) throw new Error(`Kho ${lineTo(order, bad)} đã nhận ${n(bad.receivedKg) / 1000} tấn ${bad.item} theo ${order.id}: hủy phiếu nhập ở kho đến trước.`);
+  }
+  if (!sto && !returning && sign < 0) {
+    const bad = lines.find((l) => n(l.returnedKg) > n(l.doneKg) + EPS);
+    if (bad) throw new Error(`Khách đã trả về ${n(bad.returnedKg) / 1000} tấn ${bad.item} theo ${order.id}: hủy phiếu nhập hàng trả về trước.`);
+  }
+  if (returning) {
+    if (sign > 0 && order.status === 'cancelled') throw new Error(`Đơn ${order.id} đã hủy.`);
+    const over = lines.find((l) => n(l.returnedKg) > n(l.doneKg) + EPS);
+    if (sign > 0 && over) throw new Error(`Trả về vượt hàng đã giao theo ${order.id}: ${over.item} mới giao ${n(over.doneKg) / 1000} tấn, tổng trả về sẽ là ${n(over.returnedKg) / 1000} tấn.`);
+    return { lines, status: order.status };
   }
   if (sign > 0) {
     const okStatus = receiving ? [...OPEN_STATUSES, 'closed'] : OPEN_STATUSES;
@@ -143,7 +165,7 @@ export function matchOrderLine(order, item, usedKg = {}, moveType = 'out', opts 
   let bestLeft = -Infinity;
   for (const l of order?.lines || []) {
     if (l.item !== item) continue;
-    if (opts.warehouse && lineWh(order, l, moveType) && lineWh(order, l, moveType) !== opts.warehouse) continue;
+    if (opts.warehouse && !isReturn(order, moveType) && lineWh(order, l, moveType) && lineWh(order, l, moveType) !== opts.warehouse) continue;
     if (opts.status && l.goodsStatus && l.goodsStatus !== opts.status) continue;
     const left = openKg(order, l, moveType) - (usedKg[l.no] || 0);
     if (left > bestLeft) { best = l.no; bestLeft = left; }
@@ -166,7 +188,8 @@ export async function saveOrder(id, patch, user) {
       const done = o ? n(o.doneKg) : 0;
       if (o && l.item !== o.item && done > EPS) throw new Error(`Dòng ${o.item} đã giao/nhận ${done / 1000} tấn, không đổi mã hàng được.`);
       if (n(l.qtyKg) < done - EPS) throw new Error(`Dòng ${l.item}: số lượng đặt không được nhỏ hơn phần đã giao/nhận (${done / 1000} tấn).`);
-      return { ...l, no: o ? o.no : next++, doneKg: done, ...(cur.type === 'STO' ? { receivedKg: o ? n(o.receivedKg) : 0 } : {}) };
+      return { ...l, no: o ? o.no : next++, doneKg: done, ...(cur.type === 'STO' ? { receivedKg: o ? n(o.receivedKg) : 0 } : {}),
+        ...(o && n(o.returnedKg) ? { returnedKg: n(o.returnedKg) } : {}) };
     });
     for (const o of cur.lines) {
       if (n(o.doneKg) > EPS && !lines.some((l) => l.no === o.no)) throw new Error(`Dòng ${o.item} đã giao/nhận, không xóa được.`);
