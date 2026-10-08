@@ -4,7 +4,7 @@ import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
 import { CATALOGS, FIELD_TYPES, RESULT_TYPES, catalogByKey } from '../catalogs';
-import { checkFormula, formulaToKeys } from '../lib/formula';
+import { checkFormula, formulaToKeys, formulaToLabels } from '../lib/formula';
 import { CHOICE_TYPES, DATE_DEFAULTS, parseChoices, toStored } from '../lib/fields';
 
 const REF_TARGETS = CATALOGS.filter((c) => !['codeRules', 'users'].includes(c.key));
@@ -63,18 +63,34 @@ export function ColumnPicker({ cols, hidden, setHidden }) {
 export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường' }) {
   const { canDesign, fieldsOf } = useApp();
   const [open, setOpen] = useState(false);
+  const [listOpen, setListOpen] = useState(false);
+  const [editing, setEditing] = useState(null); // trường tự thêm đang sửa
   const EMPTY = { label: '', type: 'text', ref: '', options: '', def: '', via: '', viaCat: '', field: '', required: false, formula: '', resultType: 'currency' };
   const [f, setF] = useState(EMPTY);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   if (!canDesign) return null;
+  const startAdd = () => { setEditing(null); setF(EMPTY); setErr(''); setOpen(true); };
+  // Sửa trường đã thêm: điền sẵn cấu hình hiện tại
+  const startEdit = (x) => {
+    setEditing(x); setErr('');
+    setF({ label: x.label, type: x.type, ref: x.ref || '', options: (x.options || []).join(', '), def: x.default === undefined ? '' : x.default,
+      via: x.link?.via || '', viaCat: '', field: x.link?.field || '', required: !!x.required,
+      formula: x.type === 'formula' ? formulaToLabels(x.formula, fieldsOf(formKey), otherList()) : '', resultType: x.resultType || 'number' });
+    setOpen(true);
+  };
+  const remove = async (x) => {
+    if (!window.confirm(`Xóa trường "${x.label}"? Dữ liệu đã nhập ở trường này vẫn còn trong bản ghi nhưng không hiển thị nữa.`)) return;
+    try { await setDoc(doc(db, 'settings', 'fields'), { [formKey]: toStored(fieldsOf(formKey).filter((y) => y.key !== x.key)) }, { merge: true }); } catch (e) { window.alert(e.message); }
+  };
   const via = f.via === '__cat' ? (f.viaCat ? { key: '__cat', label: catalogByKey(f.viaCat)?.short, ref: f.viaCat } : null) : vias.find((v) => v.key === f.via);
   const targetFields = via ? fieldsOf(via.ref).filter((x) => !x.hidden) : [];
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   // Công thức: tra tên trường cùng phần và phần còn lại của đơn (dòng hàng ↔ phần chung)
   const otherKey = /Head$/.test(formKey) ? formKey.replace(/Head$/, 'Line') : /Line$/.test(formKey) ? formKey.replace(/Line$/, 'Head') : '';
   const own = fieldsOf(formKey).filter((x) => !x.hidden);
-  const other = otherKey && catalogByKey(otherKey) ? fieldsOf(otherKey).filter((x) => !x.hidden) : [];
+  const otherList = () => (otherKey && catalogByKey(otherKey) ? fieldsOf(otherKey) : []);
+  const other = otherList().filter((x) => !x.hidden);
   const numericFields = (list) => list.filter((x) => ['number', 'currency', 'percent', 'formula'].includes(x.type));
   const fErr = f.type === 'formula' && f.formula ? checkFormula(f.formula, [own, other], /Head$/.test(formKey) ? other : []) : '';
   const save = async () => {
@@ -82,7 +98,7 @@ export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường'
     const lb = f.label.trim();
     if (!lb) return setErr('Nhập tên trường.');
     const cur = fieldsOf(formKey);
-    if (cur.some((x) => norm(x.label) === norm(lb))) return setErr('Đã có trường cùng tên.');
+    if (cur.some((x) => x.key !== editing?.key && norm(x.label) === norm(lb))) return setErr('Đã có trường cùng tên.');
     if (f.type === 'ref' && !f.ref) return setErr('Chọn danh mục để lấy dữ liệu.');
     if (f.type === 'formula' && !f.formula.trim()) return setErr('Nhập công thức.');
     if (fErr) return setErr(fErr);
@@ -91,8 +107,10 @@ export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường'
     if (defVal !== '' && ['number', 'percent', 'currency'].includes(f.type) && !Number.isFinite(defVal)) return setErr('Giá trị mặc định phải là số.');
     if (defVal !== '' && f.type !== 'checkbox' && choices.length && !choices.includes(defVal)) return setErr('Giá trị mặc định phải nằm trong danh sách chọn.');
     const slug = norm(lb).replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30) || 'truong';
-    const key = `c_${slug}_${Date.now().toString(36).slice(-4)}`;
-    const base = { key, label: lb, type: f.type, custom: true, required: f.required, hidden: false, ...(f.type === 'ref' ? { ref: f.ref } : {}),
+    const key = editing ? editing.key : `c_${slug}_${Date.now().toString(36).slice(-4)}`;
+    // Sửa: giữ ẩn / người được xem như cũ
+    const keep = editing ? { hidden: !!editing.hidden, ...(editing.viewers?.length ? { viewers: editing.viewers } : {}), ...(editing.salesSees ? { salesSees: true } : {}) } : { hidden: false };
+    const base = { key, label: lb, type: f.type, custom: true, required: f.required, ...keep, ...(f.type === 'ref' ? { ref: f.ref } : {}),
       ...(CHOICE_TYPES.includes(f.type) && parseChoices(f.options, f.type).length ? { options: parseChoices(f.options, f.type) } : {}),
       ...(defVal !== '' && defVal !== undefined && f.type !== 'formula' ? { default: defVal } : {}),
       ...(f.type === 'formula' ? { formula: formulaToKeys(f.formula, own, other), resultType: f.resultType } : {}) };
@@ -116,20 +134,48 @@ export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường'
       }
       base.link = { via: viaKey, field: target };
     }
-    patch[formKey] = [...toStored(cur), ...extra, base];
+    patch[formKey] = editing
+      ? toStored(cur).flatMap((x) => (x.key === key ? [...extra, base] : [x]))
+      : [...toStored(cur), ...extra, base];
     setBusy(true);
     try {
       await setDoc(doc(db, 'settings', 'fields'), patch, { merge: true });
-      setOpen(false); setF(EMPTY);
+      setOpen(false); setF(EMPTY); setEditing(null);
     } catch (e) { setErr(e.message); }
     setBusy(false);
   };
   return (
     <>
-      <button type="button" className="btn sm" onClick={() => setOpen(true)}>{label}</button>
+      <button type="button" className="btn sm" onClick={startAdd}>{label}</button>
+      <button type="button" className="btn sm" title="Sửa / xóa trường đã thêm" onClick={() => setListOpen(true)}>✎ Sửa trường</button>
+      {listOpen && !open && (
+        <span onSubmit={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+        <Modal title={`Trường đã thêm – ${catalogByKey(formKey)?.title}`} onClose={() => setListOpen(false)}>
+          {!fieldsOf(formKey).some((x) => x.custom) ? <p className="hint">Chưa có trường tự thêm.</p> : (
+            <table><tbody>
+              {fieldsOf(formKey).filter((x) => x.custom).map((x) => (
+                <tr key={x.key}>
+                  <td><b>{x.label}</b>{x.hidden && <span className="badge" style={{ marginLeft: 4 }}>đang ẩn</span>}
+                    <div className="small">{FIELD_TYPES.find((t) => t[0] === x.type)?.[1] || x.type}{x.link ? ' · có liên kết' : ''}{x.viewers?.length || x.salesSees ? ' · 🔒 giới hạn người xem' : ''}
+                      {x.type === 'formula' ? ` · ${formulaToLabels(x.formula, fieldsOf(formKey), otherList())}` : ''}</div></td>
+                  <td className="nowrap">
+                    <button type="button" className="btn sm" onClick={() => startEdit(x)}>✎ Sửa</button>{' '}
+                    <button type="button" className="btn sm danger" onClick={() => remove(x)}>🗑 Xóa</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody></table>
+          )}
+          <div className="form-actions">
+            <Link className="btn ghost" to={`/hang-muc?dm=${formKey}`} target="_blank" style={{ marginRight: 'auto' }}>Sắp xếp / ẩn / người được xem…</Link>
+            <button type="button" className="btn" onClick={() => setListOpen(false)}>Đóng</button>
+          </div>
+        </Modal>
+        </span>
+      )}
       {open && (
         <span onSubmit={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
-        <Modal title={`Thêm trường – ${catalogByKey(formKey)?.title}`} onClose={() => setOpen(false)}>
+        <Modal title={`${editing ? `Sửa trường "${editing.label}"` : 'Thêm trường'} – ${catalogByKey(formKey)?.title}`} onClose={() => setOpen(false)}>
           <div className="form-grid">
             <Field label="Tên trường" required><input value={f.label} onChange={(e) => set('label', e.target.value)} placeholder="VD: Điều khoản thanh toán" autoFocus /></Field>
             <Field label="Kiểu dữ liệu">
@@ -206,7 +252,7 @@ export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường'
           <div className="form-actions">
             <Link className="btn ghost" to={`/hang-muc?dm=${formKey}`} target="_blank" style={{ marginRight: 'auto' }}>Sắp xếp / ẩn / đổi tên trường…</Link>
             <button type="button" className="btn" onClick={() => setOpen(false)}>Đóng</button>
-            <button type="button" className="btn primary" disabled={busy} onClick={save}>{busy ? 'Đang lưu…' : 'Thêm trường'}</button>
+            <button type="button" className="btn primary" disabled={busy} onClick={save}>{busy ? 'Đang lưu…' : editing ? 'Lưu' : 'Thêm trường'}</button>
           </div>
         </Modal>
         </span>

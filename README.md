@@ -264,6 +264,9 @@ Phiếu nhập kho chọn **Nguồn nhập** ở đầu phiếu:
 - **Giá trị mặc định** cho mọi trường (có sẵn hoặc tự thêm, trừ trường hệ thống tự tính): tự điền khi tạo mới, người nhập vẫn sửa được. Ngày: Hôm nay, Ngày mai, Sau 2/3/7/30 ngày. Ô chọn danh mục: nhập mã (vd. kho K1), trường liên kết tự điền theo.
 - Thiết lập ở "+ Thêm trường" (trường mới) hoặc cột **Mặc định** trong Quản lý trường (mọi trường). Để trống = bỏ mặc định. Không cần sửa firestore.rules.
 
+## Sửa / xóa trường ngay trên form
+- Cạnh "+ Thêm trường" có **✎ Sửa trường**: danh sách trường đã thêm, ✎ Sửa (tên, kiểu, danh sách chọn, mặc định, công thức, liên kết, bắt buộc; giữ nguyên ẩn và người được xem) và 🗑 Xóa. Đổi tên trường không làm hỏng công thức đang dùng nó.
+
 ## Trường công thức
 - Kiểu **Công thức (tự tính)**: vd. dòng hàng `Thành tiền = [Số lượng (tấn)] * [Đơn giá]`; phần chung `Giá trị hàng hóa = SUM([Thành tiền]) * (1 + [VAT])`.
 - Dùng + − * / ( ), SUM (cộng 1 trường của mọi dòng, dùng ở phần chung), ROUND, MIN, MAX, ABS. Phần trăm tính như Excel: VAT 8% = 0,08. Dòng hàng dùng được trường ở phần chung.
