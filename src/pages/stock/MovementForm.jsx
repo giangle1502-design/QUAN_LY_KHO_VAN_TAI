@@ -98,7 +98,10 @@ function Form({ type }) {
   }).sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')));
   const [autoFill, setAutoFill] = useState('');
   const [fillNote, setFillNote] = useState('');
-  const pickOrder = (id) => {
+  // Chọn từ bảng đơn: { dòng đơn: kg cần xuất } và kho xuất
+  const [plan, setPlan] = useState(null);
+  const [ordPicking, setOrdPicking] = useState(false);
+  const pickOrder = (id, opts = {}) => {
     const o = orders.find((x) => x.id === id);
     setFillNote('');
     if (!o) return setHead((h) => ({ ...h, orderId: id }));
@@ -113,19 +116,22 @@ function Form({ type }) {
     // Đơn nhiều kho: chưa chọn kho thì lấy kho đầu tiên (còn phải làm) của đơn mà mình được thao tác
     // (kho đang chọn không còn phần nào của đơn thì chuyển sang kho có phần còn phải làm)
     const openWhs = o.lines.filter((l) => openKg(o, l, type) > 0).map((l) => lineWh(o, l, type));
-    const tw = ow || (whCode && openWhs.some((c) => !c || c === whCode) ? whCode : '') || openWhs.find((c) => c && warehouses.some((x) => x.code === c)) || whCode || '';
+    const tw = opts.wh || ow || (whCode && openWhs.some((c) => !c || c === whCode) ? whCode : '') || openWhs.find((c) => c && warehouses.some((x) => x.code === c)) || whCode || '';
     if (tw && tw !== opWh) setOpWh(tw);
     // SO nhiều điểm giao: lấy mã giao của dòng đầu tiên làm ở kho này
-    const myLine = o.lines.find((l) => openKg(o, l, type) > 0 && (!tw || !lineWh(o, l, type) || lineWh(o, l, type) === tw)) || null;
+    const inPlan = (l) => !opts.plan || opts.plan[l.no] > 0;
+    const myLine = o.lines.find((l) => inPlan(l) && openKg(o, l, type) > 0 && (!tw || !lineWh(o, l, type) || lineWh(o, l, type) === tw)) || null;
     // STO: các kho đầu kia của những dòng làm ở kho này
-    const others = [...new Set(o.lines.filter((l) => openKg(o, l, type) > 0 && (!tw || lineWh(o, l, type) === tw))
+    const others = [...new Set(o.lines.filter((l) => inPlan(l) && openKg(o, l, type) > 0 && (!tw || lineWh(o, l, type) === tw))
       .map((l) => (type === 'out' ? lineTo(o, l) : lineFrom(o, l))).filter(Boolean))].join(', ');
     const party = o.type !== 'STO' ? { partyCode: o.partyCode, partyName: o.partyName, shipCode: o.shipCode || (myLine ? lineShip(o, myLine) : '') }
       : { partyCode: others, partyName: `Chuyển ${type === 'out' ? 'đến' : 'từ'} kho ${others}`, shipCode: '' };
     setHead((h) => ({ ...h, orderId: id, ...party, ...(o.company ? { company: o.company } : {}) }));
     // Nhập theo STO: luôn lấy hàng từ phiếu xuất ở kho đi (mã, lot, NSX, HSD, TTHH, số lượng), không phải nhập lại
     if (type === 'in' && o.type === 'STO') { fillFromTransfer(o, tw); return; }
-    const empty = lines.every((l) => (type === 'in' ? !l.item : !l.stockId));
+    setPlan(opts.plan || null);
+    if (opts.force) setLines([type === 'in' ? newLine() : stockLine()]);
+    const empty = opts.force || lines.every((l) => (type === 'in' ? !l.item : !l.stockId));
     if (!empty) return;
     if (type === 'out') { setAutoFill(id); return; }
     // Phiếu nhập theo PO: điền sẵn các mặt hàng còn chưa về (thủ kho chọn vị trí, sửa số thực nhận)
@@ -187,7 +193,7 @@ function Form({ type }) {
     if (stockLoading) return;
     const ow = orderWarehouse(order, 'out');
     if (ow && ow !== whCode) return;
-    const fifo = [...stock].filter((r) => (order.type === 'STO' || statusMap.get(r.goodsStatus)?.allowOutbound !== false) && (!order.company || (r.company || '') === order.company))
+    const fifo = [...stock].filter((r) => r.warehouse === whCode && (order.type === 'STO' || statusMap.get(r.goodsStatus)?.allowOutbound !== false) && (!order.company || (r.company || '') === order.company))
       .sort((a, b) => String(a.inDate).localeCompare(String(b.inDate)) || String(a.location).localeCompare(String(b.location)));
     const next = [];
     const short = [];
@@ -195,7 +201,9 @@ function Form({ type }) {
     for (const ol of order.lines) {
       // Dòng SO của kho khác thì để phiếu ở kho đó làm
       if (lineWh(order, ol, 'out') && lineWh(order, ol, 'out') !== whCode) continue;
-      let need = openKg(order, ol, 'out');
+      // Chọn từ bảng: chỉ các dòng đã tích, đúng số lượng muốn xuất
+      if (plan && !(plan[ol.no] > 0)) continue;
+      let need = plan ? Math.min(plan[ol.no], openKg(order, ol, 'out') * (1 + num(order.tolerancePct) / 100)) : openKg(order, ol, 'out');
       if (need > 0.001) anyNeed = true;
       for (const r of fifo.filter((x) => x.item === ol.item && (!ol.goodsStatus || x.goodsStatus === ol.goodsStatus))) {
         if (need <= 0.001) break;
@@ -211,7 +219,7 @@ function Form({ type }) {
     if (next.length) setLines(next);
     if (!anyNeed) { setFillNote(`${order.id} không còn dòng nào cần xuất từ kho ${whCode} (dòng còn lại thuộc kho khác hoặc đã giao đủ).`); setAutoFill(''); return; }
     setFillNote(`${next.length ? `Đã chọn sẵn ${next.length} dòng tồn theo FIFO cho ${order.id}. Sửa số bao nếu xe chở ít hơn.` : `Kho ${whCode} không còn tồn được xuất cho ${order.id}.`}${short.length ? ` Không đủ tồn: ${short.join(', ')}.` : ''}`);
-    setAutoFill('');
+    setAutoFill(''); setPlan(null);
   }, [autoFill, order, stock, stockLoading, whCode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Mở từ nút "Lập phiếu" trên đơn hàng: /kho/out?order=SO000001
@@ -262,10 +270,7 @@ function Form({ type }) {
     if (type === 'in' && source === 'direct' && !head.partyCode.trim()) return setErr('Chọn nhà cung cấp (bấm + để thêm nhà cung cấp mới).');
     if (type === 'in' && source !== 'direct' && !head.orderId) return setErr(`Chọn ${{ PO: 'đơn mua (PO)', STO: 'lệnh chuyển kho (STO)', SO: 'đơn bán (SO) của hàng trả về' }[source]}.`);
     if (type === 'adjust' && !head.reason) return setErr('Chọn lý do điều chỉnh.');
-    if (type === 'out') {
-      const miss = [!head.carrier.trim() && !head.carrierName.trim() && 'đơn vị vận tải', !head.plate.trim() && 'số xe', !head.driverName.trim() && 'tên tài xế'].filter(Boolean);
-      if (miss.length) return setErr(`Phiếu xuất cần thông tin vận tải: nhập ${miss.join(', ')}.`);
-    }
+    // Thông tin vận tải không bắt buộc: bổ sung sau ở Phiếu kho → mở phiếu → Sửa thông tin vận tải
     const out = [];
     for (const [i, l] of lines.entries()) {
       const no = `Dòng ${i + 1}: `;
@@ -393,7 +398,10 @@ function Form({ type }) {
                     return <option key={o.id} value={o.id}>{o.id}{o.refNo ? ` (${o.refNo})` : ''} · {who} · {o.type === 'STO' && type === 'in' ? 'đang đi đường' : isReturn(o, type) ? 'được trả tối đa' : 'còn'} {fmtNum(left / 1000, 3)} tấn</option>;
                   })}
                 </select>
+                {type === 'out' && <button type="button" className="btn primary sm" style={{ marginTop: 6 }} onClick={() => setOrdPicking(true)}>🔎 Tìm & chọn đơn (bảng)</button>}
               </Field>}
+              {ordPicking && <OrderPicker orders={orders} myWh={warehouses} whCode={whCode} onClose={() => setOrdPicking(false)}
+                onPick={(id, pl, w) => { setOrdPicking(false); pickOrder(id, { plan: pl, wh: w, force: true }); }} />}
               {type === 'out' && (
                 <Field label="Giao đến (Shipto)">
                   <select value={head.shipCode} onChange={(e) => setH('shipCode', e.target.value)}>
@@ -406,7 +414,7 @@ function Form({ type }) {
           )}
           {type === 'out' && (
             <div className="full transport-box">
-              <div className="section-head">🚚 Thông tin vận tải (bắt buộc với phiếu xuất bán và STO chuyển kho)</div>
+              <div className="section-head">🚚 Thông tin vận tải (chưa có thì để trống, bổ sung sau ở Phiếu kho)</div>
               <div className="form-grid">
                 <Field label="Chuyến xe đang ở cửa" help="Chọn để tự điền xe, tài xế đã đăng ký ở cổng">
                   <select value={head.tripId} onChange={(e) => setH('tripId', e.target.value)}>
@@ -414,12 +422,12 @@ function Form({ type }) {
                     {tripOpts.map((t) => <option key={t.id} value={t.id}>{t.id} · {t.plate} · cửa {t.dock}</option>)}
                   </select>
                 </Field>
-                <Field label="Số xe" required><input list="dl-mv-plate" value={head.plate} onChange={(e) => pickPlate(e.target.value)} placeholder="VD: 51C-12345" /></Field>
-                <Field label="Đơn vị vận tải" required>
+                <Field label="Số xe"><input list="dl-mv-plate" value={head.plate} onChange={(e) => pickPlate(e.target.value)} placeholder="VD: 51C-12345" /></Field>
+                <Field label="Đơn vị vận tải">
                   <input list="dl-mv-carrier" value={head.carrier} placeholder="Mã" onChange={(e) => pickCarrier(e.target.value)} />
                   <input value={head.carrierName} placeholder="Tên đơn vị" style={{ marginTop: 4 }} onChange={(e) => setH('carrierName', e.target.value)} />
                 </Field>
-                <Field label="Tài xế" required>
+                <Field label="Tài xế">
                   <input list="dl-mv-driver" value={head.idCard} placeholder="Số CCCD" onChange={(e) => pickDriver(e.target.value)} />
                   <input value={head.driverName} placeholder="Họ tên" style={{ marginTop: 4 }} onChange={(e) => setH('driverName', e.target.value)} />
                   <input value={head.driverPhone} placeholder="Điện thoại" style={{ marginTop: 4 }} onChange={(e) => setH('driverPhone', e.target.value)} />
@@ -724,5 +732,98 @@ function StockLine({ type, l, set, rows, byId, blocked, locations, statuses, ple
       )}
       <QtyFields l={l} onTons={setTons} onPallets={setPallets} onBags={setBags} />
     </div>
+  );
+}
+
+// Bảng chọn đơn xuất kho: tìm theo số đơn, mã hàng, khách hàng, kho… → tích dòng đơn (cùng 1 đơn, cùng kho xuất) → nhập số lượng xuất
+function OrderPicker({ orders, myWh, whCode, onClose, onPick }) {
+  const [q, setQ] = useState('');
+  const [fWh, setFWh] = useState('');
+  const [fType, setFType] = useState('');
+  const [sel, setSel] = useState({}); // key → số tấn xuất (chuỗi)
+  const [err, setErr] = useState('');
+  const mine = new Set(myWh.map((w) => w.code));
+  const rows = useMemo(() => {
+    const out = [];
+    for (const o of orders) {
+      if (!['SO', 'STO'].includes(o.type)) continue;
+      for (const l of o.lines) {
+        const left = openKg(o, l, 'out');
+        if (left <= 0.001) continue;
+        const wh = lineWh(o, l, 'out');
+        if (wh && !mine.has(wh)) continue;
+        out.push({ key: `${o.id}#${l.no}`, o, l, wh, left, due: l.dueDate || o.dueDate || '',
+          who: o.type === 'STO' ? `→ kho ${lineTo(o, l)}` : `${o.partyCode} ${o.partyName || ''}`, ship: o.type === 'SO' ? lineShip(o, l) : '' });
+      }
+    }
+    return out.sort((a, b) => String(a.due || '9999').localeCompare(String(b.due || '9999')) || a.o.id.localeCompare(b.o.id) || a.l.no - b.l.no);
+  }, [orders]); // eslint-disable-line react-hooks/exhaustive-deps
+  const f = q.trim().toLowerCase();
+  const shown = rows.filter((r) => (!fWh || r.wh === fWh || !r.wh) && (!fType || r.o.type === fType)
+    && (!f || [r.o.id, r.o.refNo, r.l.item, r.l.itemName, r.who, r.wh, r.ship].join(' ').toLowerCase().includes(f)));
+  const chosen = rows.filter((r) => sel[r.key] != null);
+  const first = chosen[0];
+  const selWh = chosen.find((r) => r.wh)?.wh || '';
+  // Một phiếu xuất = 1 đơn, 1 kho xuất
+  const lockOf = (r) => (first && r.o.id !== first.o.id ? `Phiếu này đang xuất theo ${first.o.id}` : selWh && r.wh && r.wh !== selWh ? `Dòng này xuất từ kho ${r.wh}` : '');
+  const toggle = (r) => setSel((x) => {
+    const n = { ...x };
+    if (n[r.key] != null) delete n[r.key]; else n[r.key] = String(r3(r.left / 1000));
+    return n;
+  });
+  const ok = () => {
+    setErr('');
+    if (!chosen.length) return setErr('Tích ít nhất 1 dòng đơn cần xuất.');
+    const wh = selWh || fWh || whCode;
+    if (!wh) return setErr('Các dòng đã chọn không ghi kho xuất: chọn kho ở ô lọc Kho xuất.');
+    const plan = {};
+    for (const r of chosen) {
+      const kg = r3(num(sel[r.key]) * 1000);
+      if (!(kg > 0)) return setErr(`${r.o.id} · ${r.l.item}: nhập số tấn muốn xuất.`);
+      plan[r.l.no] = kg;
+    }
+    onPick(first.o.id, plan, wh);
+  };
+  const total = chosen.reduce((s, r) => s + num(sel[r.key]), 0);
+  return (
+    <Modal title="Chọn đơn xuất kho" onClose={onClose} wide>
+      <div className="filters" style={{ marginBottom: 8 }}>
+        <input type="search" autoFocus placeholder="Tìm số đơn, mã hàng, tên hàng, khách hàng, kho, mã giao…" value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: 1, minWidth: 260 }} />
+        <select value={fWh} onChange={(e) => setFWh(e.target.value)}>
+          <option value="">Kho xuất: tất cả</option>
+          {myWh.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
+        </select>
+        <select value={fType} onChange={(e) => setFType(e.target.value)}>
+          <option value="">SO và STO</option><option value="SO">Đơn bán (SO)</option><option value="STO">Chuyển kho (STO)</option>
+        </select>
+      </div>
+      <div className="table-wrap" style={{ maxHeight: '60vh', overflow: 'auto' }}>
+        <table className="picker">
+          <thead><tr><th></th><th>Số đơn</th><th>Ngày giao</th><th>Khách hàng / kho nhận</th><th>Mã giao</th><th>Kho xuất</th><th>Mã hàng</th><th>Tên hàng</th><th>TTHH</th><th className="num">Còn phải xuất (tấn)</th><th className="num">SL xuất (tấn)</th></tr></thead>
+          <tbody>
+            {!shown.length && <tr><td colSpan={11} className="small">Không có dòng đơn nào còn phải xuất phù hợp.</td></tr>}
+            {shown.map((r) => {
+              const on = sel[r.key] != null;
+              const lock = !on && lockOf(r);
+              return (
+                <tr key={r.key} className={on ? 'picked' : lock ? 'locked' : ''} title={lock || ''} style={{ cursor: lock ? 'not-allowed' : 'pointer' }} onClick={() => !lock && toggle(r)}>
+                  <td><input type="checkbox" checked={on} disabled={!!lock} readOnly /></td>
+                  <td className="mono">{r.o.id} <span className="badge">{r.o.type}</span></td><td>{fmtDate(r.due)}</td><td>{r.who}</td><td>{r.ship}</td><td>{r.wh || 'Kho nào cũng được'}</td>
+                  <td>{r.l.item}</td><td>{r.l.itemName}</td><td>{r.l.goodsStatus || (r.o.type === 'SO' ? 'KTC/DGC' : 'Tất cả')}</td><td className="num">{fmtNum(r.left / 1000, 3)}</td>
+                  <td className="num" onClick={(e) => e.stopPropagation()}>
+                    {on && <input type="number" step="any" min="0" value={sel[r.key]} style={{ width: 100 }} onChange={(e) => setSel((x) => ({ ...x, [r.key]: e.target.value }))} />}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <ErrorBox error={err} />
+      <div className="form-actions">
+        <span className="small" style={{ marginRight: 'auto' }}>{chosen.length ? `Đã chọn ${chosen.length} dòng của ${first.o.id} · ${fmtNum(total, 3)} tấn` : 'Bấm vào dòng để chọn. Mỗi phiếu xuất theo 1 đơn và 1 kho xuất.'}</span>
+        <button type="button" className="btn primary" onClick={ok}>Chọn hàng theo FIFO →</button>
+      </div>
+    </Modal>
   );
 }

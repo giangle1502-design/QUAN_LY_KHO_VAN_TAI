@@ -117,7 +117,11 @@ service cloud.firestore {
         || (hasRole('thu_kho') && resource.data.status == 'pending' && request.resource.data.status == 'posted'
           && resource.data.type == 'in' && request.resource.data.type == 'in' && inMyWarehouse(resource.data.warehouse)
           && request.resource.data.warehouse == resource.data.warehouse && request.resource.data.id == resource.data.id
-          && request.resource.data.createdBy == resource.data.createdBy && request.resource.data.confirmedBy == me());
+          && request.resource.data.createdBy == resource.data.createdBy && request.resource.data.confirmedBy == me())
+        // Thủ kho bổ sung / sửa thông tin vận tải của phiếu xuất sau khi lập
+        || (hasRole('thu_kho') && resource.data.type == 'out' && resource.data.status != 'cancelled' && inMyWarehouse(resource.data.warehouse)
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['plate', 'carrier', 'carrierName', 'idCard', 'driverName', 'driverPhone', 'history', 'updatedAt', 'updatedBy']));
     }
     match /stock/{id} {
       allow read: if isStaff();

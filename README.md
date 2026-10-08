@@ -236,5 +236,11 @@ Phiếu nhập kho chọn **Nguồn nhập** ở đầu phiếu:
 ## Quyền thiết lập biểu mẫu
 - Danh mục *Phân quyền* có ô **Được thiết lập biểu mẫu**: người được tích sẽ thấy *Quản lý trường* và nút *+ Thêm trường* trên đơn hàng để tự thêm / đổi tên / ẩn / sắp xếp trường (cần publish lại firestore.rules).
 
+## Xuất kho: chọn đơn dạng bảng, vận tải bổ sung sau
+- Trên phiếu xuất bấm **🔎 Tìm & chọn đơn (bảng)**: tìm theo số đơn, mã hàng, tên hàng, khách hàng, kho, mã giao; lọc theo kho và loại (SO / STO).
+- Tích các dòng của **một** đơn, một kho xuất, nhập **SL xuất (tấn)** rồi bấm **Chọn hàng theo FIFO →**: app tự lấy lot/vị trí theo FIFO trong kho đó.
+- Số xe, đơn vị vận tải, tài xế, CCCD **không bắt buộc**. Bổ sung sau ở **Phiếu kho → mở phiếu xuất → Bổ sung thông tin vận tải** (quản trị hoặc thủ kho phụ trách kho; lưu lịch sử sửa).
+- Cần **publish lại firestore.rules** để thủ kho sửa được thông tin vận tải.
+
 ## Sửa lỗi
 - Đề nghị giải chấp (và các thao tác theo kho) bị chặn quyền với tài khoản quản trị gốc chưa có hồ sơ trong *Phân quyền*: rules nay cho quản trị thao tác mọi kho.

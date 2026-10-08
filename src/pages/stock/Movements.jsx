@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
-import { useOpCompany, useOpWarehouse } from '../../lib/hooks';
+import { useCollection, useOpCompany, useOpWarehouse } from '../../lib/hooks';
 import { MOVE_TYPES, cancelMovement } from '../../lib/stock';
 import { fmtTime, vnDate } from '../../lib/trips';
 import { exportSheets } from '../../lib/excel';
@@ -118,6 +118,7 @@ function Detail({ m, onClose }) {
         {m.type === 'in' && m.status === 'posted' && <> <Link className="btn sm" to={`/kho/phieu/${m.id}/nhan`} target="_blank">🏷️ In nhãn pallet</Link></>}
         {m.type === 'out' && <> <Link className="btn sm" to={`/kho/phieu/${m.id}/soan`} target="_blank">📋 Phiếu soạn hàng</Link></>}</p>
       {m.status === 'cancelled' && <div className="error-box">Đã hủy: {m.cancelReason}</div>}
+      {m.type === 'out' && <TransportBox m={m} />}
       <div className="table-wrap" style={{ marginBottom: 12 }}>
         <table>
           <thead><tr><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th><th>Vị trí</th>{m.type === 'move' && <th>Đến vị trí</th>}<th>Tình trạng</th>
@@ -141,5 +142,64 @@ function Detail({ m, onClose }) {
         </div>
       )}
     </Modal>
+  );
+}
+
+// Thông tin vận tải của phiếu xuất: không bắt buộc khi lập phiếu, thủ kho / quản trị bổ sung sau
+const TRANSPORT = ['plate', 'carrier', 'carrierName', 'idCard', 'driverName', 'driverPhone'];
+function TransportBox({ m }) {
+  const { hasRole, inMyWarehouses, email, name } = useApp();
+  const vehicles = useCollection('vehicles').rows;
+  const carriers = useCollection('carriers').rows;
+  const drivers = useCollection('drivers').rows;
+  const [edit, setEdit] = useState(false);
+  const [h, setH] = useState(() => Object.fromEntries(TRANSPORT.map((k) => [k, m[k] || ''])));
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const can = hasRole('thu_kho') && inMyWarehouses(m.warehouse) && m.status !== 'cancelled';
+  const missing = !m.plate && !m.driverName && !m.carrierName && !m.carrier;
+  const set = (k, v) => setH((x) => ({ ...x, [k]: v }));
+  const pickPlate = (v) => {
+    const veh = vehicles.find((x) => x.plate === v.trim().toUpperCase());
+    const car = veh && carriers.find((c) => c.code === veh.carrier);
+    setH((x) => ({ ...x, plate: v.toUpperCase(), ...(veh ? { carrier: veh.carrier || x.carrier, carrierName: car?.name || x.carrierName } : {}) }));
+  };
+  const pickCarrier = (v) => { const c = carriers.find((x) => x.code === v); setH((x) => ({ ...x, carrier: v, carrierName: c ? c.name : x.carrierName })); };
+  const pickDriver = (v) => { const d = drivers.find((x) => x.idCard === v); setH((x) => ({ ...x, idCard: v, ...(d ? { driverName: d.name || '', driverPhone: d.phone || '' } : {}) })); };
+  const save = async () => {
+    setErr(''); setBusy(true);
+    const at = new Date().toISOString();
+    try {
+      await updateDoc(doc(db, 'movements', m.id), { ...Object.fromEntries(TRANSPORT.map((k) => [k, String(h[k] || '').trim()])), updatedAt: at, updatedBy: email,
+        history: [...(m.history || []), { at, by: email, byName: name, action: 'Cập nhật thông tin vận tải' }] });
+      setEdit(false);
+    } catch (e) { setErr(e.code === 'permission-denied' ? 'Bạn không có quyền sửa phiếu của kho này.' : e.message); }
+    setBusy(false);
+  };
+  return (
+    <div className="card" style={{ marginBottom: 12 }}>
+      <div className="section-head"><span className="grow">🚚 Thông tin vận tải</span>
+        {can && !edit && <button type="button" className="btn sm" onClick={() => setEdit(true)}>{missing ? '+ Bổ sung' : '✏️ Sửa'} thông tin vận tải</button>}</div>
+      {!edit ? (
+        <p style={{ margin: 0 }}>{missing ? <span className="small">Chưa có thông tin vận tải.</span>
+          : <>Số xe <b>{m.plate || '–'}</b> · Đơn vị vận tải {m.carrierName || m.carrier || '–'} · Tài xế {m.driverName || '–'}{m.idCard ? ` · CCCD ${m.idCard}` : ''}{m.driverPhone ? ` · ĐT ${m.driverPhone}` : ''}</>}</p>
+      ) : (
+        <>
+          <div className="form-grid">
+            <label className="field"><span>Số xe</span><input list="dl-tb-plate" value={h.plate} onChange={(e) => pickPlate(e.target.value)} placeholder="VD: 51C-12345" /></label>
+            <label className="field"><span>Đơn vị vận tải</span><input list="dl-tb-carrier" value={h.carrier} placeholder="Mã" onChange={(e) => pickCarrier(e.target.value)} />
+              <input value={h.carrierName} placeholder="Tên đơn vị" style={{ marginTop: 4 }} onChange={(e) => set('carrierName', e.target.value)} /></label>
+            <label className="field"><span>Tài xế</span><input list="dl-tb-driver" value={h.idCard} placeholder="Số CCCD" onChange={(e) => pickDriver(e.target.value)} />
+              <input value={h.driverName} placeholder="Họ tên" style={{ marginTop: 4 }} onChange={(e) => set('driverName', e.target.value)} />
+              <input value={h.driverPhone} placeholder="Điện thoại" style={{ marginTop: 4 }} onChange={(e) => set('driverPhone', e.target.value)} /></label>
+          </div>
+          <ErrorBox error={err} />
+          <div className="form-actions"><button type="button" className="btn" onClick={() => setEdit(false)}>Thôi</button><button type="button" className="btn primary" disabled={busy} onClick={save}>{busy ? 'Đang lưu…' : 'Lưu thông tin vận tải'}</button></div>
+          <datalist id="dl-tb-plate">{vehicles.map((v) => <option key={v.plate} value={v.plate}>{v.carrier}</option>)}</datalist>
+          <datalist id="dl-tb-carrier">{carriers.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</datalist>
+          <datalist id="dl-tb-driver">{drivers.map((d) => <option key={d.idCard} value={d.idCard}>{d.name}</option>)}</datalist>
+        </>
+      )}
+    </div>
   );
 }
