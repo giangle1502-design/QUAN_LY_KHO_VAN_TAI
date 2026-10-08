@@ -7,7 +7,7 @@ import { useCollection, useMyWarehouses, useOpCompany, useStock } from '../../li
 import { postMovement } from '../../lib/stock';
 import { usePendingRelease, useShortfall } from '../../lib/shortfall';
 import { exportSheets } from '../../lib/excel';
-import { fmtDate, fmtNum, today } from '../../lib/utils';
+import { fmtDate, fmtNum, norm, today } from '../../lib/utils';
 import { CompanyPicker } from '../../components/TripBits';
 import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
 
@@ -50,8 +50,27 @@ async function createRelease(data, user) {
   });
 }
 
-// Đổi tình trạng HTC → DGC cho đúng các dòng tồn trong đề nghị (phiếu TC), đánh dấu đề nghị đã giải chấp
+// Tình trạng sau giải chấp theo danh mục kho (TTHH khi giải chấp); bỏ trống: cảng → KTC, kho khác → DGC
+export const releaseStatusOfWh = (w) => (['KTC', 'DGC'].includes(w?.releaseStatus) ? w.releaseStatus
+  : /\b(cang|port)\b/.test(norm(`${w?.name || ''} ${w?.code || ''}`)) ? 'KTC' : 'DGC');
+export async function releaseStatusOf(whCode) {
+  const w = await getDoc(doc(db, 'warehouses', whCode)).then((x) => (x.exists() ? x.data() : null)).catch(() => null);
+  return releaseStatusOfWh(w);
+}
+// Gộp dòng đề nghị theo mã hàng (+ số CT, vị trí hàng hóa) để in / gửi ngân hàng
+export function groupLines(lines) {
+  const m = new Map();
+  for (const l of lines || []) {
+    const k = [l.item, l.docNo, l.place].join('|');
+    if (!m.has(k)) m.set(k, { ...l, kg: 0 });
+    m.get(k).kg += num(l.kg);
+  }
+  return [...m.values()];
+}
+
+// Đổi tình trạng HTC → DGC (cảng: KTC) cho đúng các dòng tồn trong đề nghị (phiếu TC), đánh dấu đề nghị đã giải chấp
 async function postRelease(r, { email, name }) {
+  const to = await releaseStatusOf(r.warehouse);
   const lines = [];
   for (const [i, l] of r.lines.entries()) {
     const s = await getDoc(doc(db, 'stock', l.stockId));
@@ -64,7 +83,7 @@ async function postRelease(r, { email, name }) {
       item: x.item, itemName: x.itemName || '', lot: x.lot || '', mfgDate: x.mfgDate || '', expDate: x.expDate || '', inDate: x.inDate || '',
       location: x.location, goodsStatus: 'HTC', pledgee: x.pledgee || '', company: x.company || '',
       bags: k === 1 ? num(x.bags) : Math.round(num(x.bags) * k), pallets: k === 1 ? num(x.pallets) : r3(num(x.pallets) * k), kg: num(l.kg),
-      toStatus: 'DGC', toPledgee: '',
+      toStatus: to, toPledgee: '',
     });
   }
   const mid = await postMovement({
@@ -73,10 +92,10 @@ async function postRelease(r, { email, name }) {
   }, { email, name });
   const at = new Date().toISOString();
   await updateDoc(doc(db, 'releaseRequests', r.id), {
-    status: 'released', movementId: mid, releasedAt: at, releasedBy: email,
-    history: [...(r.history || []), { at, by: email, byName: name, action: `Đổi HTC → DGC, phiếu ${mid}` }],
+    status: 'released', movementId: mid, releasedAt: at, releasedBy: email, toStatus: to,
+    history: [...(r.history || []), { at, by: email, byName: name, action: `Đổi HTC → ${to}, phiếu ${mid}` }],
   });
-  return mid;
+  return { mid, to };
 }
 
 // Danh sách đề nghị giải chấp
@@ -99,11 +118,11 @@ export default function Release() {
     .sort((a, b) => String(b.id).localeCompare(String(a.id)));
 
   const release = async (r) => {
-    if (!window.confirm(`Đổi ${ton3(totKg(r))} tấn trong ${r.id} từ HTC sang DGC?`)) return;
+    if (!window.confirm(`Đổi ${ton3(totKg(r))} tấn trong ${r.id} từ HTC sang ${await releaseStatusOf(r.warehouse)}?`)) return;
     setBusy(r.id); setMsg('');
     try {
-      const mid = await postRelease(r, { email, name });
-      setMsg(`Đã đổi ${r.id}: phiếu ${mid} chuyển ${ton3(totKg(r))} tấn sang DGC.`);
+      const { mid, to } = await postRelease(r, { email, name });
+      setMsg(`Đã đổi ${r.id}: phiếu ${mid} chuyển ${ton3(totKg(r))} tấn sang ${to}.`);
     } catch (e) {
       setMsg('Lỗi: ' + (e.code === 'permission-denied' ? 'Bạn không có quyền giải chấp hàng ở kho này.' : e.message));
     }
@@ -119,10 +138,13 @@ export default function Release() {
   };
 
   const exportExcel = () => exportSheets(`De_nghi_giai_chap_${today()}`, {
-    'Đề nghị giải chấp': list.flatMap((r) => r.lines.map((l, i) => ({
+    'Đề nghị giải chấp': list.flatMap((r) => groupLines(r.lines).map((l, i) => ({
       'Số đề nghị': r.id, Ngày: r.date, 'Công ty': r.company, 'Ngân hàng': r.pledgee, Kho: r.warehouse, 'Trạng thái': RELEASE_STATUS[r.status]?.label,
-      STT: i + 1, 'Số CT (BCT)': l.docNo, 'Mã hàng': l.item, 'Tên hàng': l.itemName, Lot: l.lot, 'Vị trí': l.location, 'Vị trí hàng hóa': l.place,
-      'Số lượng (tấn)': num(l.kg) / 1000, 'Phiếu giải chấp': r.movementId || '',
+      STT: i + 1, 'Số CT (BCT)': l.docNo, 'Mã hàng': l.item, 'Tên hàng': l.itemName, 'Vị trí hàng hóa': l.place,
+      'Số lượng (tấn)': num(l.kg) / 1000, 'Đổi sang': r.toStatus || (r.status === 'released' ? 'DGC' : ''), 'Phiếu giải chấp': r.movementId || '',
+    }))),
+    'Chi tiết theo lot': list.flatMap((r) => r.lines.map((l) => ({
+      'Số đề nghị': r.id, Kho: r.warehouse, 'Mã hàng': l.item, Lot: l.lot, 'Vị trí': l.location, 'Số lượng (tấn)': num(l.kg) / 1000,
     }))),
   });
 
@@ -142,7 +164,7 @@ export default function Release() {
       {msg && <div className={msg.startsWith('Lỗi') ? 'error-box' : 'ok-box'}>{msg}</div>}
       {tab === 'thieu' ? <Shortfall co={co} setCo={setCo} canEdit={canEdit} onPlan={(preset) => setForm({ preset })} /> : <>
       <p className="hint">
-        Lập đề nghị từ hàng đang thế chấp (HTC): khi lưu, hệ thống <b>đổi ngay</b> các dòng hàng trong đề nghị sang <b>DGC</b> (phiếu TC),
+        Lập đề nghị từ hàng đang thế chấp (HTC): khi lưu, hệ thống <b>đổi ngay</b> các dòng hàng trong đề nghị sang tình trạng đặt ở <i>Danh sách kho → TTHH khi giải chấp</i> (mặc định: cảng → <b>KTC</b>, kho → <b>DGC</b>) bằng phiếu TC,
         xuất kho được luôn. Bấm <b>🖨 In</b> → Lưu PDF, chèn chữ ký số và gửi ngân hàng.
       </p>
       <div className="toolbar">
@@ -324,8 +346,8 @@ function ReleaseForm({ onClose, preset }) {
       const id = await createRelease(data, { email, name });
       // Lưu đề nghị là đổi ngay HTC → DGC; đề nghị chỉ còn để in PDF, ký số, gửi ngân hàng
       try {
-        const mid = await postRelease({ ...data, id, history: [{ at: new Date().toISOString(), by: email, byName: name, action: 'Lập đề nghị' }] }, { email, name });
-        onClose(id, `Đã lập đề nghị ${id} và đổi ${fmtNum(total, 3, 3)} tấn sang DGC (phiếu ${mid}). Bấm 🖨 In → Lưu PDF để ký số gửi ngân hàng.`);
+        const { mid, to } = await postRelease({ ...data, id, history: [{ at: new Date().toISOString(), by: email, byName: name, action: 'Lập đề nghị' }] }, { email, name });
+        onClose(id, `Đã lập đề nghị ${id} và đổi ${fmtNum(total, 3, 3)} tấn sang ${to} (phiếu ${mid}). Bấm 🖨 In → Lưu PDF để ký số gửi ngân hàng.`);
       } catch (e3) {
         onClose(id, `Lỗi: đã lập đề nghị ${id} nhưng chưa đổi được sang DGC (${e3.message}). Bấm ✅ Đổi DGC ở dòng đề nghị để thử lại.`);
       }
@@ -382,7 +404,7 @@ function ReleaseForm({ onClose, preset }) {
               </table>
             )}
         </div>
-        <p className="small">Đã chọn {chosen.length} dòng · <b>{fmtNum(total, 3, 3)} tấn</b>. Vị trí hàng hóa mặc định là tên kho, sửa được trước khi lưu.</p>
+        <p className="small">Đã chọn {chosen.length} dòng · <b>{fmtNum(total, 3, 3)} tấn</b>. Bản in gộp theo mã hàng (cùng số CT, vị trí hàng hóa).{h.warehouse ? <> Khi lưu, hàng chuyển ngay sang <b>{releaseStatusOfWh(myWh.find((w) => w.code === h.warehouse))}</b>.</> : null} Vị trí hàng hóa mặc định là tên kho, sửa được trước khi lưu.</p>
         {err && <div className="error-box">{err}</div>}
         <div className="form-actions"><button className="btn primary" disabled={busy}>{busy ? 'Đang lưu…' : 'Lập đề nghị'}</button></div>
       </form>
@@ -441,7 +463,7 @@ export function PrintRelease() {
       <table className="gc-lines">
         <thead><tr><th>STT</th><th>SỐ CT</th><th>MÃ HÀNG</th><th>TÊN HÀNG</th><th>ĐVT</th><th>SỐ LƯỢNG</th><th>VỊ TRÍ HÀNG HÓA</th></tr></thead>
         <tbody>
-          {r.lines.map((l, i) => (
+          {groupLines(r.lines).map((l, i) => (
             <tr key={i}><td className="c">{i + 1}</td><td className="c">{l.docNo}</td><td>{l.item}</td><td>{l.itemName}</td><td className="c">{l.unit || 'TẤN'}</td>
               <td className="num">{tonPrint(l.kg)}</td><td>{l.place}</td></tr>
           ))}

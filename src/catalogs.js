@@ -183,6 +183,8 @@ export const CATALOGS = [
       { key: 'name', label: 'Tên kho', type: 'text', required: true },
       { key: 'hasGuard', label: 'Có bảo vệ', type: 'checkbox', default: true,
         help: 'Kho không có bảo vệ: luồng xe bỏ qua bước Chờ vào cửa và Chờ ra cổng' },
+      { key: 'releaseStatus', label: 'TTHH khi giải chấp', type: 'select', options: ['DGC', 'KTC'],
+        help: 'Hàng HTC ở kho này khi giải chấp chuyển sang tình trạng nào. Bỏ trống: kho có chữ "Cảng" → KTC, kho khác → DGC' },
       { key: 'address', label: 'Địa chỉ', type: 'textarea' },
       { key: 'manager', label: 'Người phụ trách', type: 'text' },
       { key: 'phone', label: 'Điện thoại', type: 'text' },

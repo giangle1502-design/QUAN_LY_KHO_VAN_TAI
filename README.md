@@ -90,7 +90,7 @@ Menu *Kho → Đề nghị giải chấp* (kế toán, quản trị):
 1. **+ Lập đề nghị giải chấp**: chọn công ty, ngân hàng nhận thế chấp, kho → hiện hàng HTC của công ty đó tại ngân hàng đó. Tích dòng cần giải chấp, sửa số tấn (giải chấp một phần được), nhập **Số bộ chứng từ (BCT)** do nhân viên tự đặt (in ở cột SỐ CT, áp cho mọi dòng, sửa riêng từng dòng được) và Vị trí hàng hóa in trên đề nghị (mặc định tên kho). Hàng đã nằm trong đề nghị khác đang chờ duyệt không chọn lại được.
 2. Số đề nghị tự cấp: **HSGC + yymmdd + số thứ tự trong ngày** (vd. HSGC26070210).
 3. **🖨 In**: đúng mẫu "ĐỀ NGHỊ GIẢI CHẤP" gửi ngân hàng (A4). Thông tin lấy từ danh mục: *Công ty* (tên, số ĐKKD + nơi cấp, người đại diện, chức vụ, địa chỉ, điện thoại, fax, email, nơi lập) và *Bên nhận thế chấp* (tên đầy đủ, tên gọi tắt).
-4. **Lưu đề nghị là đổi ngay**: hệ thống lập phiếu đổi tình trạng (TC) HTC → DGC cho đúng các dòng trong đề nghị, xuất kho được luôn. Đề nghị chỉ còn để 🖨 In → Lưu PDF, chèn chữ ký số và gửi ngân hàng. Nếu đổi DGC bị lỗi, đề nghị ở trạng thái *Chưa đổi DGC*, bấm **✅ Đổi DGC** để thử lại hoặc **Hủy**.
+4. **Lưu đề nghị là đổi ngay**: hệ thống lập phiếu đổi tình trạng (TC) HTC → tình trạng đặt ở *Danh sách kho → TTHH khi giải chấp* (KTC hoặc DGC; bỏ trống thì kho có chữ "Cảng" → KTC, kho khác → DGC) cho đúng các dòng trong đề nghị, xuất kho được luôn. Bản in / Excel gộp theo mã hàng (cùng số CT, vị trí hàng hóa). Đề nghị chỉ còn để 🖨 In → Lưu PDF, chèn chữ ký số và gửi ngân hàng. Nếu đổi DGC bị lỗi, đề nghị ở trạng thái *Chưa đổi DGC*, bấm **✅ Đổi DGC** để thử lại hoặc **Hủy**.
 
 ### Hàng thiếu cho đơn bán
 
