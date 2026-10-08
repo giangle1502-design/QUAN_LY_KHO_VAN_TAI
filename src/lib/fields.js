@@ -102,7 +102,7 @@ export function toStored(list) {
     if (f.options?.length && canChoose(f)) o.options = f.options;
     if (f.default !== undefined && f.default !== '') o.default = f.default;
     if (f.custom) Object.assign(o, { custom: true, type: f.type, ...(f.ref ? { ref: f.ref } : {}), ...(f.link ? { link: f.link } : {}),
-      ...(f.type === 'formula' ? { formula: f.formula || '', resultType: f.resultType || 'number' } : {}), ...(f.viewers?.length ? { viewers: f.viewers } : {}) });
+      ...(f.type === 'formula' ? { formula: f.formula || '', resultType: f.resultType || 'number' } : {}), ...(f.viewers?.length ? { viewers: f.viewers } : {}), ...(f.salesSees ? { salesSees: true } : {}) });
     return o;
   });
 }
@@ -125,10 +125,12 @@ export function fillEmptyLinks(fields, row, recFor) {
 }
 
 // Trường chỉ người được chỉ định xem (email hoặc mã vai trò); quản trị luôn xem được
-export const isPrivate = (f) => !!(f.custom && f.viewers?.length && f.type !== 'formula');
+// salesSees: sale phụ trách của đơn cũng xem được giá trị trong đơn của mình (vd. Giá bán)
+export const isPrivate = (f) => !!(f.custom && (f.viewers?.length || f.salesSees) && f.type !== 'formula');
+export const isViewer = (f, me) => !!(me.isAdmin || f.viewers?.includes(me.email) || f.viewers?.includes(me.role));
 export function canSeeField(f, me) {
-  if (me.isAdmin || !f.viewers?.length) return true;
-  return f.viewers.includes(me.email) || f.viewers.includes(me.role);
+  if (!isPrivate(f) || isViewer(f, me)) return true;
+  return !!(f.salesSees && me.role === 'kinh_doanh' && me.ownSale !== false);
 }
 // Lọc trường người dùng được xem. Trường công thức chỉ hiện khi xem được mọi trường nó dùng
 export function visibleFields(list, me, ...others) {

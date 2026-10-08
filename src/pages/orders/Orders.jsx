@@ -93,6 +93,13 @@ function OrderList({ type }) {
   const { rows: rawRows, error } = useOrders(type);
   const secMap = useOrderSecrets(type);
   const rows = useMemo(() => rawRows.map((o) => viewOrder(o, secMap, headSeen, lineSeen)), [rawRows, secMap, headSeen, lineSeen]);
+  // Quản trị: giữ "sale phụ trách" trên giá trị riêng tư khớp với đơn (đổi sale / gán sale cho đơn cũ)
+  useEffect(() => {
+    if (!isAdmin || !secMap.docs?.length || !rawRows.length) return;
+    const salesOf = new Map(rawRows.map((o) => [o.id, o.sales || '']));
+    const stale = secMap.docs.filter((d) => salesOf.has(d.orderId) && (d.sales || '') !== salesOf.get(d.orderId));
+    stale.forEach((d) => updateDoc(doc(db, 'orderSecrets', d._id), { sales: salesOf.get(d.orderId) }).catch(() => {}));
+  }, [isAdmin, secMap, rawRows]);
   const [status, setStatus] = useState('opening');
   const [co, setCo] = useOpCompany();
   const [q, setQ] = useState('');

@@ -124,21 +124,27 @@ export function computeFormulas(fields, row, { extraFields = [], rowExtra = {}, 
   const out = { ...row };
   const find = fieldResolver(fields, extraFields);
   const findLine = fieldResolver(lineFields);
+  // Trường dùng trong công thức chưa có giá trị (chưa nhập / không được xem) → kết quả để trống
+  let missing = false;
+  const empty = (v) => v === '' || v == null;
   const getVar = (name) => {
     const f = find(name);
     if (!f) return 0;
-    const own = fields.includes(f);
-    return varValue(f, own ? out[f.key] : rowExtra[f.key]);
+    const v = fields.includes(f) ? out[f.key] : rowExtra[f.key];
+    if (empty(v)) missing = true;
+    return varValue(f, v);
   };
   const sumVar = (name) => {
     const f = findLine(name);
-    return f && lines ? lines.reduce((s, l) => s + varValue(f, l[f.key]), 0) : 0;
+    if (!f || !lines || lines.every((l) => empty(l[f.key]))) { missing = true; return 0; }
+    return lines.reduce((s, l) => s + varValue(f, l[f.key]), 0);
   };
   for (let pass = 0; pass < 3; pass++) {
     for (const f of fs) {
       try {
+        missing = false;
         const r = evalTree(parseFormula(f.formula), getVar, sumVar) * (f.resultType === 'percent' ? 100 : 1);
-        out[f.key] = Number.isFinite(r) ? Math.round(r * 1e6) / 1e6 : '';
+        out[f.key] = !missing && Number.isFinite(r) ? Math.round(r * 1e6) / 1e6 : '';
       } catch { out[f.key] = ''; }
     }
   }

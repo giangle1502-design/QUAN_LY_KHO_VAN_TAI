@@ -248,13 +248,18 @@ service cloud.firestore {
     }
 
     // Giá trị trường đơn hàng chỉ người được chỉ định xem (vd. Đơn giá): người trong viewers (email hoặc vai trò) và quản trị
-    function seesSecret(d) { return isAdmin() || me() in d.viewers || (isActive() && profile().get('role', '') in d.viewers); }
+    // salesSees: sale phụ trách của đơn (sales) xem được giá trị trong đơn của mình, vd. Giá bán
+    function seesSecret(d) {
+      return isAdmin() || me() in d.viewers || (isActive() && profile().get('role', '') in d.viewers)
+        || (d.get('salesSees', false) == true && d.get('sales', '') == me() && hasRole('kinh_doanh'));
+    }
     match /orderSecrets/{id} {
       allow read: if isStaff() && seesSecret(resource.data);
       allow create: if isStaff() && (isAdmin() || orderMgr() || hasRole('thu_kho')) && seesSecret(request.resource.data)
         && id == request.resource.data.orderId + '__' + request.resource.data.field;
       allow update: if isStaff() && (isAdmin() || ((orderMgr() || hasRole('thu_kho')) && seesSecret(resource.data)
         && request.resource.data.viewers == resource.data.viewers && request.resource.data.field == resource.data.field
+        && request.resource.data.get('salesSees', false) == resource.data.get('salesSees', false)
         && request.resource.data.orderId == resource.data.orderId));
       allow delete: if isAdmin();
     }

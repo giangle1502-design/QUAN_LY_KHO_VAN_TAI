@@ -91,17 +91,18 @@ export default function FieldManager() {
       }
       if (f.custom) Object.assign(o, { custom: true, type: f.type, ...(f.type === 'ref' ? { ref: f.ref } : {}), ...(f.link ? { link: f.link } : {}),
         ...(f.type === 'formula' ? { formula: formulaToKeys(f.formulaText, list, other), resultType: f.resultType || 'number' } : {}),
-        ...(f.viewers?.length && f.type !== 'formula' ? { viewers: f.viewers } : {}) });
+        ...(f.viewers?.length && f.type !== 'formula' ? { viewers: f.viewers } : {}), ...(f.salesSees && f.type !== 'formula' ? { salesSees: true } : {}) });
       return o;
     });
     // Đổi người được xem trường đơn hàng: chuyển dữ liệu đã nhập sang / ra khỏi phần riêng tư
     const before = fieldsOf(catKey);
     const changed = cat.form ? out.filter((o) => o.custom && o.type !== 'formula'
-      && (before.find((b) => b.key === o.key)?.viewers || []).join(',') !== (o.viewers || []).join(',')) : [];
+      && ((before.find((b) => b.key === o.key)?.viewers || []).join(',') !== (o.viewers || []).join(',')
+        || !!before.find((b) => b.key === o.key)?.salesSees !== !!o.salesSees)) : [];
     try {
       await setDoc(doc(db, 'settings', 'fields'), { [catKey]: out }, { merge: true });
       let moved = 0;
-      for (const o of changed) moved += await syncFieldPrivacy(catKey.slice(0, -4).toUpperCase(), catKey.endsWith('Head') ? 'head' : 'line', o.key, o.viewers || []);
+      for (const o of changed) moved += await syncFieldPrivacy(catKey.slice(0, -4).toUpperCase(), catKey.endsWith('Head') ? 'head' : 'line', o.key, o.viewers || [], !!o.salesSees);
       setDirty(false); setMsg(`Đã lưu. Các form, bảng và Excel của danh mục này đã cập nhật.${changed.length ? ` Đã áp quyền xem cho ${changed.length} trường (${moved} đơn có dữ liệu).` : ''}`);
     } catch (e) {
       setErr(e.message);
@@ -194,7 +195,7 @@ export default function FieldManager() {
                       {!f.custom ? <span className="small">Mọi người</span>
                         : f.type === 'formula' ? <span className="small" title="Chỉ hiện với người xem được mọi trường trong công thức">Theo trường trong công thức</span>
                         : <button type="button" className="btn ghost sm" disabled={!isAdmin} title={isAdmin ? '' : 'Chỉ quản trị đặt người được xem'} onClick={() => setViewersOf(i)}>
-                          {f.viewers?.length ? `🔒 ${viewerText(f.viewers)}` : 'Mọi người'}</button>}
+                          {f.viewers?.length || f.salesSees ? `🔒 ${[f.salesSees ? 'Sale của đơn' : '', viewerText(f.viewers || [])].filter(Boolean).join(', ')}` : 'Mọi người'}</button>}
                     </td>
                   )}
                   <td><input type="checkbox" checked={!!f.required} disabled={isKey || auto || (f.builtin && cat.fields.find((x) => x.key === f.key)?.required)} onChange={(e) => upd(i, { required: e.target.checked })} /></td>
@@ -211,7 +212,8 @@ export default function FieldManager() {
         </table>
       </div>
       {viewersOf != null && list[viewersOf] && (
-        <ViewersPicker field={list[viewersOf]} onClose={() => setViewersOf(null)} onSave={(v) => { upd(viewersOf, { viewers: v }); setViewersOf(null); }} />
+        <ViewersPicker field={list[viewersOf]} hasSales={/^(so|po)/.test(catKey)} onClose={() => setViewersOf(null)}
+          onSave={(v, ss) => { upd(viewersOf, { viewers: v, salesSees: ss }); setViewersOf(null); }} />
       )}
       <div className="inline-add card" style={{ marginTop: 12, alignItems: 'center' }}>
         <b>Thêm trường:</b>
@@ -234,14 +236,19 @@ export default function FieldManager() {
 const viewerText = (v) => v.map((x) => ROLES.find((r) => r[0] === x)?.[1] || x).join(', ');
 
 // Chọn người / vai trò được xem 1 trường đơn hàng (quản trị luôn xem được)
-function ViewersPicker({ field, onClose, onSave }) {
+function ViewersPicker({ field, hasSales, onClose, onSave }) {
   const users = useCollection('users').rows.filter((u) => u.active !== false).sort((a, b) => String(a.name).localeCompare(String(b.name)));
   const [sel, setSel] = useState(field.viewers || []);
+  const [ss, setSs] = useState(!!field.salesSees);
   const toggle = (x) => setSel((s) => (s.includes(x) ? s.filter((y) => y !== x) : [...s, x]));
   return (
     <Modal title={`Người được xem: ${field.label}`} onClose={onClose}>
       <p className="hint">Không chọn ai = mọi người xem được. Đã chọn thì chỉ những người / vai trò này và quản trị thấy trường này (cả trên màn hình, Excel và dữ liệu tải về). Trường công thức dùng trường này cũng ẩn với người khác.</p>
-      <div className="section-head">Theo vai trò</div>
+      {hasSales && (
+        <label className="check" style={{ marginBottom: 8 }}><input type="checkbox" checked={ss} onChange={(e) => setSs(e.target.checked)} />
+          <span><b>Sale phụ trách của đơn</b> xem được giá trị trong đơn của mình (vd. Giá bán: sale nào thấy đơn của sale đó). Người / vai trò chọn dưới đây xem được tất cả.</span></label>
+      )}
+      <div className="section-head">Người / vai trò xem được tất cả · theo vai trò</div>
       <div className="tags">{ROLES.filter((r) => r[0] !== 'admin').map(([k, l]) => (
         <label key={k} className={'chip' + (sel.includes(k) ? ' on' : '')}><input type="checkbox" hidden checked={sel.includes(k)} onChange={() => toggle(k)} />{l}</label>
       ))}</div>
@@ -250,8 +257,8 @@ function ViewersPicker({ field, onClose, onSave }) {
         <label key={u.email} className={'chip' + (sel.includes(u.email) ? ' on' : '')} title={u.email}><input type="checkbox" hidden checked={sel.includes(u.email)} onChange={() => toggle(u.email)} />{u.name || u.email}</label>
       ))}</div>
       <div className="form-actions">
-        <button type="button" className="btn" onClick={() => setSel([])}>Bỏ giới hạn</button>
-        <button type="button" className="btn primary" onClick={() => onSave(sel)}>Xong</button>
+        <button type="button" className="btn" onClick={() => { setSel([]); setSs(false); }}>Bỏ giới hạn</button>
+        <button type="button" className="btn primary" onClick={() => onSave(sel, ss)}>Xong</button>
       </div>
     </Modal>
   );

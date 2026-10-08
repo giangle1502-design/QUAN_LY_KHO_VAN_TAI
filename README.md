@@ -272,7 +272,9 @@ Phiếu nhập kho chọn **Nguồn nhập** ở đầu phiếu:
 ## Sale chỉ thấy đơn của mình, trường chỉ người được chỉ định xem
 - SO/PO có **Sale phụ trách**. Vai trò Kinh doanh chỉ thấy / sửa đơn có Sale phụ trách là mình, trừ người được tích "Kinh doanh: xem đơn của mọi sale" ở Phân quyền. Sale lập đơn thì tự là sale phụ trách. Quản trị có nút "Gán sale cho N đơn cũ" (= người lập đơn).
 - Quản lý trường → biểu mẫu đơn hàng → cột **Người được xem** (chỉ quản trị): chọn vai trò / người. Giá trị trường đó lưu riêng ở `orderSecrets`, firestore.rules chỉ cho những người này và quản trị đọc (không chỉ ẩn trên màn hình). Trường công thức dùng trường riêng tư cũng ẩn với người khác. Đổi người xem thì dữ liệu đã nhập được chuyển theo.
-- **Cần publish lại firestore.rules** (thêm salesOnly / mySale cho orders và collection orderSecrets).
+- Ô **"Sale phụ trách của đơn"** trong Người được xem (SO/PO): sale chỉ thấy / nhập giá trị đó trong đơn của mình (vd. Giá bán), người / vai trò được chọn xem tất cả. Giá mua: chỉ chọn người / vai trò, không tích ô này.
+- Trường công thức thiếu giá trị (chưa nhập hoặc không được xem) thì để trống, không ra 0.
+- **Cần publish lại firestore.rules** (salesOnly / mySale cho orders, collection orderSecrets có salesSees).
 
 ## Sửa lỗi
 - Đề nghị giải chấp (và các thao tác theo kho) bị chặn quyền với tài khoản quản trị gốc chưa có hồ sơ trong *Phân quyền*: rules nay cho quản trị thao tác mọi kho.

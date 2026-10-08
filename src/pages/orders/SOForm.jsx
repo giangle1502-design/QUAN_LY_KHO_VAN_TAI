@@ -7,7 +7,7 @@ import FieldInput from '../../components/FieldInput';
 import { AddFieldButton, ColumnPicker, QuickAdd } from '../../components/FormTools';
 import { ErrorBox, Field, Modal } from '../../components/ui';
 import { createOrder, saveOrder, summarizeLines } from '../../lib/orders';
-import { cleanValue, defaultsOf, fillEmptyLinks, linkPatch } from '../../lib/fields';
+import { cleanValue, defaultsOf, fillEmptyLinks, linkPatch, visibleFields } from '../../lib/fields';
 import { computeFormulas } from '../../lib/formula';
 import { splitSecrets } from '../../lib/orderSecrets';
 import { usePref } from '../../lib/prefs';
@@ -33,10 +33,12 @@ const n = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? 0 : Number(
 export default function SOForm({ type = 'SO', order, onClose }) {
   const cfg = CFG[type];
   const sto = type === 'STO';
-  const { email, name, fieldsOf, seenFieldsOf, hasRole, role, salesOnly } = useApp();
-  // Chỉ các trường người dùng được xem (trường riêng tư, công thức dùng trường riêng tư bị ẩn)
-  const headFields = seenFieldsOf(cfg.head, fieldsOf(cfg.line)).filter((f) => !f.hidden);
-  const lineFields = seenFieldsOf(cfg.line, fieldsOf(cfg.head)).filter((f) => !f.hidden);
+  const { email, name, fieldsOf, isAdmin, hasRole, role, salesOnly } = useApp();
+  // Chỉ các trường người dùng được xem (trường riêng tư, công thức dùng trường riêng tư bị ẩn).
+  // Trường "sale phụ trách xem được" (vd. Giá bán): sale chỉ nhập / xem trong đơn của mình
+  const me = { isAdmin, email, role, ownSale: order ? order.sales === email : role === 'kinh_doanh' };
+  const headFields = visibleFields(fieldsOf(cfg.head), me, fieldsOf(cfg.line)).filter((f) => !f.hidden);
+  const lineFields = visibleFields(fieldsOf(cfg.line), me, fieldsOf(cfg.head)).filter((f) => !f.hidden);
   const salesUsers = useCollection(sto || salesOnly ? '' : 'users').rows.filter((u) => u.role === 'kinh_doanh' && u.active !== false);
   // Liên kết được với mọi trường chọn danh mục trên form (có sẵn hoặc tự thêm); dòng hàng còn liên kết được với phần chung (h:…)
   const HEAD_VIAS = headFields.filter((f) => f.type === 'ref' && f.ref).map((f) => ({ key: f.key, label: f.label, ref: f.ref }));

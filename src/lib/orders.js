@@ -106,7 +106,7 @@ export async function createOrder(o, user, secrets) {
       ...o, id, lines, nextLineNo: lines.length + 1, status: 'open', createdAt: at, createdBy: user.email, updatedAt: at, updatedBy: user.email,
       history: [{ at, by: user.email, byName: user.name, action: 'Lập đơn' }],
     });
-    writeSecrets(tx, { id, type: o.type }, lines, secrets, user.email);
+    writeSecrets(tx, { id, type: o.type, sales: o.sales }, lines, secrets, user.email);
     if (snap.exists()) tx.update(ruleRef, { next: num + 1 });
     else tx.set(ruleRef, { ...seed, next: num + 1 });
     return id;
@@ -203,7 +203,7 @@ export async function saveOrder(id, patch, user, secrets) {
       ...patch, lines, carriers: [...new Set(lines.map((l) => l.carrier).filter(Boolean))], nextLineNo: next, status: statusOf(cur, lines), updatedAt: at, updatedBy: user.email,
       history: [...(cur.history || []), { at, by: user.email, byName: user.name, action: 'Sửa đơn' }],
     });
-    writeSecrets(tx, cur, lines, secrets, user.email);
+    writeSecrets(tx, { ...cur, sales: patch.sales ?? cur.sales }, lines, secrets, user.email);
   });
 }
 
