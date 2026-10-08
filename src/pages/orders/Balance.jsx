@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useOpCompany, useOpWarehouse, useOrders, useStock } from '../../lib/hooks';
 import { leftKg, transitKg } from '../../lib/orders';
@@ -93,7 +94,8 @@ export default function Balance() {
         <input type="search" placeholder="Tìm mã hàng…" value={q} onChange={(e) => setQ(e.target.value)} />
         <label className="small"><input type="checkbox" checked={onlyShort} onChange={(e) => setOnlyShort(e.target.checked)} /> Chỉ mã hàng bị thiếu</label>
         <span className="small">{short ? <b style={{ color: 'var(--red)' }}>{short} mã hàng dự kiến thiếu</b> : 'Không mã hàng nào dự kiến thiếu'}</span>
-        <button className="btn" style={{ marginLeft: 'auto' }} onClick={exportExcel}>⬇ Excel</button>
+        <Link className="btn" style={{ marginLeft: 'auto' }} to="/kho/giai-chap?tab=thieu">⚠ Hàng thiếu cần giải chấp</Link>
+        <button className="btn" onClick={exportExcel}>⬇ Excel</button>
       </div>
       <ErrorBox error={error} />
       <div className="table-wrap">

@@ -93,6 +93,10 @@ Menu *Kho → Đề nghị giải chấp* (kế toán, quản trị):
 4. Ngân hàng duyệt → **✅ Giải chấp**: hệ thống lập phiếu đổi tình trạng (TC) HTC → DGC cho đúng các dòng trong đề nghị. Nếu hàng đã bị xuất/chuyển sau khi lập đề nghị thì báo lỗi, không giải chấp.
 5. Ngân hàng không duyệt → **Hủy** (ghi lý do), hàng được nhả ra để lập đề nghị khác.
 
+### Hàng thiếu cho đơn bán
+
+Đơn bán chỉ xuất được hàng KTC và DGC. Tab **⚠ Hàng thiếu cho đơn bán** (`/kho/giai-chap?tab=thieu`) tổng hợp theo công ty + kho + mã hàng: SO còn phải giao, tồn KTC + DGC, **Thiếu**, tồn HTC, phần đang nằm trong đề nghị chờ duyệt và **Còn cần giải chấp**. Phần *Gợi ý đề nghị giải chấp* gom phần còn thiếu theo công ty + kho + ngân hàng; **+ Lập đề nghị** mở form đề nghị đã tích sẵn các dòng HTC nhập trước để bù đủ phần thiếu. Danh sách Đơn bán (SO) hiện cảnh báo đỏ khi có hàng thiếu, kèm link sang tab này; Cân đối theo mã hàng có nút sang tab này.
+
 ## Đơn hàng (SO / PO)
 
 Đơn là kế hoạch, phiếu kho là thực hiện. Ví dụ: SO 100 tấn, xuất 20 tấn → đơn hiện *Đã giao 20, Còn phải giao 80*. PO 100 tấn, về 20 tấn → *Đã nhận 20, Còn chưa về 80*.

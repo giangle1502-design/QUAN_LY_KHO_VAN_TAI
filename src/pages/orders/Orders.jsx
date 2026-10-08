@@ -18,12 +18,31 @@ import { ColumnPicker } from '../../components/FormTools';
 import { displayValue } from '../../components/FieldInput';
 import { usePref } from '../../lib/prefs';
 import { useCollection } from '../../lib/hooks';
+import { useShortfall } from '../../lib/shortfall';
 
 const t = (kg) => fmtNum((Number(kg) || 0) / 1000, 3);
 const pct = (o) => { const x = orderTotals(o); return x.qty ? Math.min(100, (x.done / x.qty) * 100) : 0; };
 // SO/PO: kinh doanh, kế toán. STO: thêm thủ kho (kho đi)
 export const canManageOrders = (hasRole, type) => (type === 'STO' ? hasRole('kinh_doanh', 'ke_toan', 'thu_kho') : hasRole('kinh_doanh', 'ke_toan'));
 const partyText = (o) => (o.type === 'STO' ? stoRoute(o) : o.partyName || o.partyCode);
+
+// Cảnh báo đơn bán thiếu hàng KTC + DGC → xem tổng hợp để làm đề nghị giải chấp
+function ShortBanner({ co }) {
+  const { inMyWarehouses } = useApp();
+  const rows = useShortfall('').rows.filter((r) => (!r.warehouse || inMyWarehouses(r.warehouse)) && (!co || r.company === co));
+  if (!rows.length) return null;
+  const kg = rows.reduce((s, r) => s + r.short, 0);
+  const need = rows.reduce((s, r) => s + r.need, 0);
+  const ids = [...new Set(rows.flatMap((r) => r.orders))];
+  return (
+    <div className="error-box" style={{ marginBottom: 10 }}>
+      ⚠ Tồn KTC + DGC không đủ cho đơn bán: thiếu <b>{t(kg)} tấn</b> ở {rows.length} mã hàng ({rows.slice(0, 4).map((r) => `${r.item}${r.warehouse ? ' @' + r.warehouse : ''} ${t(r.short)}`).join('; ')}{rows.length > 4 ? '; …' : ''}).
+      {need > 0.001 ? <> Còn cần giải chấp {t(need)} tấn.</> : <> Đã có đề nghị giải chấp chờ ngân hàng duyệt đủ phần thiếu.</>}{' '}
+      <span className="small">Đơn: {ids.slice(0, 6).join(', ')}{ids.length > 6 ? '…' : ''}.</span>{' '}
+      <Link to="/kho/giai-chap?tab=thieu"><b>Xem tổng hợp hàng thiếu →</b></Link>
+    </div>
+  );
+}
 
 // Nút lập phiếu kho theo đơn: SO/STO → phiếu xuất kho (thủ kho), PO/STO/SO trả về → phiếu nhập kho (quản trị lập, thủ kho nhận hàng)
 export function MoveButtons({ o, sm }) {
@@ -198,6 +217,7 @@ function OrderList({ type }) {
         </div>
       </div>
       {msg && <div className="ok-box" style={{ marginBottom: 10 }}>{msg}</div>}
+      {type === 'SO' && <ShortBanner co={co} />}
       <ErrorBox error={error} />
       <div className="table-wrap">
         {!list.length ? <Empty /> : (
