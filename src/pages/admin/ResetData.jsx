@@ -39,12 +39,19 @@ export default function ResetData() {
     if (!window.confirm('Xóa hẳn các dữ liệu đã chọn? Không khôi phục được.')) return;
     setBusy(true);
     const summary = {};
+    const failed = [];
     try {
       for (const [k, l] of [...TX, ...CATS.map((c) => [c.key, c.title]), ['deleteRequests', 'Lịch sử xóa']]) {
         if (!pick[k]) continue;
         add(`Đang xóa ${l}…`);
-        summary[k] = await wipeCollection(k);
-        add(`✓ ${l}: đã xóa ${summary[k]} bản ghi`);
+        try {
+          summary[k] = await wipeCollection(k);
+          add(`✓ ${l}: đã xóa ${summary[k]} bản ghi`);
+        } catch (e) {
+          // Báo rõ nhóm nào bị chặn rồi làm tiếp nhóm khác
+          failed.push(l);
+          add(`✗ ${l}: ${e.code === 'permission-denied' ? 'bị chặn quyền xóa (rules trên Firebase chưa có dòng "allow delete: if isSuper()")' : e.message}`);
+        }
       }
       if (pick.locReset && !pick.locations) { const n = await resetLocations(); add(`✓ Vị trí: đưa ${n} vị trí về 0 pallet`); summary.locationsReset = n; }
       if (pick.codeReset) { const n = await resetCodeRules(); add(`✓ Mã tự sinh: đưa ${n} quy tắc về số 1`); summary.codeRulesReset = n; }
@@ -52,7 +59,8 @@ export default function ResetData() {
       await setDoc(ref, { id: ref.id, coll: '*', docId: 'Xóa dữ liệu chạy thử', label: chosen.join(', '), data: summary, reason: 'Làm lại từ đầu',
         status: 'reset', requestedBy: email, requestedByName: name, requestedAt: new Date().toISOString(), decidedBy: email, decidedByName: name,
         decidedAt: new Date().toISOString(), createdAt: serverTimestamp() });
-      add('Hoàn tất.');
+      add(failed.length ? `Xong, còn ${failed.length} nhóm chưa xóa được: ${failed.join(', ')}.` : 'Hoàn tất.');
+      if (failed.length) setErr(`Chưa xóa được: ${failed.join(', ')}. Kiểm tra lại firestore.rules đã publish trên Firebase.`);
       setTyped('');
     } catch (e) {
       setErr(e.code === 'permission-denied' ? 'Không có quyền xóa: cần publish lại firestore.rules mới.' : e.message);
