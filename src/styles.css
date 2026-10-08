@@ -325,3 +325,16 @@ table.so-lines input, table.so-lines select { width: 100%; min-width: 90px; padd
 table.so-lines td.w-item { min-width: 150px; } table.so-lines td.w-ship { min-width: 160px; } table.so-lines td.w-qty input { min-width: 80px; text-align: right; }
 .link-hint { color: var(--muted); font-size: 11px; }
 .seg.wrap { flex-wrap: wrap; }
+
+/* Kéo chỉnh độ rộng cột */
+th { position: sticky; }
+th .col-grip { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; z-index: 2; touch-action: none; }
+th .col-grip:hover, body.col-resizing th .col-grip:hover { background: rgba(37, 99, 235, .35); }
+body.col-resizing { cursor: col-resize; user-select: none; }
+table.resized { table-layout: fixed; }
+table.resized th { overflow: hidden; text-overflow: ellipsis; }
+table.resized td { overflow: hidden; overflow-wrap: anywhere; }
+table.resized td input, table.resized td select { max-width: 100%; min-width: 0; }
+@media print { th .col-grip { display: none; } }
+label.check { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; font-size: 14px; cursor: pointer; }
+label.check input { margin-top: 3px; }

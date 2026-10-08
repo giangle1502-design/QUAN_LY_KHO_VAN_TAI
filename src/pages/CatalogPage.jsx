@@ -12,6 +12,7 @@ import { exportSheets, exportTemplate, readFirstSheet, toNumber, toYmd } from '.
 import { norm, today } from '../lib/utils';
 import FieldInput, { displayValue } from '../components/FieldInput';
 import { Empty, ErrorBox, Field, Modal } from '../components/ui';
+import { deleteOrRequest } from '../lib/deletes';
 
 export default function CatalogPage() {
   const { key } = useParams();
@@ -174,7 +175,7 @@ function Cell({ f, r }) {
 // Form thêm / sửa 1 bản ghi
 // ---------------------------------------------------------------------------
 export function EditForm({ cat, fields, row, existing = [], onClose, onSaved }) {
-  const { canEdit, isAdmin, email } = useApp();
+  const { canEdit, isAdmin, isSuper, email, name } = useApp();
   const isNew = !row._id;
   const editable = canEdit(cat, isNew ? null : row);
   const keys = keyFieldsOf(cat);
@@ -231,10 +232,13 @@ export function EditForm({ cat, fields, row, existing = [], onClose, onSaved }) 
     setErr('');
     const used = await findUsage(cat, row._id);
     if (used) return setErr(`Không xóa được: đang được dùng ở ${used}.`);
-    if (!window.confirm('Xóa bản ghi này?')) return;
+    let reason = '';
+    if (isSuper) { if (!window.confirm('Xóa bản ghi này? Không khôi phục được.')) return; }
+    else { reason = window.prompt('Lý do xóa (quản trị gốc sẽ duyệt trước khi xóa hẳn):', ''); if (reason === null) return; }
     try {
-      await deleteDoc(doc(db, cat.key, row._id));
-      onSaved('Đã xóa.');
+      const { _id, ...data } = row;
+      const r = await deleteOrRequest({ coll: cat.key, id: _id, label: data.name || data.code || _id, data, reason }, { email, name }, isSuper);
+      onSaved(r === 'deleted' ? 'Đã xóa.' : 'Đã gửi yêu cầu xóa, chờ quản trị gốc duyệt.');
     } catch (e) {
       setErr(e.message);
     }
@@ -260,7 +264,7 @@ export function EditForm({ cat, fields, row, existing = [], onClose, onSaved }) 
         {!isNew && row.updatedBy && <p className="small">Sửa lần cuối bởi {row.updatedBy}</p>}
         <ErrorBox error={err} />
         <div className="form-actions">
-          {!isNew && isAdmin && <button type="button" className="btn danger" onClick={remove} style={{ marginRight: 'auto' }}>Xóa</button>}
+          {!isNew && (isSuper || editable) && <button type="button" className="btn danger" onClick={remove} style={{ marginRight: 'auto' }}>{isSuper ? 'Xóa' : 'Đề nghị xóa'}</button>}
           <button type="button" className="btn" onClick={onClose}>Đóng</button>
           {editable && <button className="btn primary" disabled={busy}>{busy ? 'Đang lưu…' : 'Lưu'}</button>}
         </div>

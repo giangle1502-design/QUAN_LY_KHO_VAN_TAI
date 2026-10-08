@@ -52,7 +52,7 @@ export function AppProvider({ children }) {
   const hasRole = useCallback((...roles) => isAdmin || roles.includes(role), [isAdmin, role]);
 
   const value = useMemo(() => ({
-    user, email, role, isAdmin, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole,
+    user, email, role, isAdmin, isSuper, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole,
     name: userDoc?.name || user?.displayName || email,
     fieldConfig, fieldsOf, settings,
     loading: user === undefined || (!!user && userDoc === undefined && !isSuper),

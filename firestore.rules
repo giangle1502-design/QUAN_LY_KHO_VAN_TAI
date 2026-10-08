@@ -2,6 +2,11 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Quản trị gốc được xóa mọi bản ghi (duyệt yêu cầu xóa, xóa dữ liệu chạy thử)
+    match /{coll}/{id} {
+      allow delete: if isSuper();
+    }
+
     // ==== Email quản trị gốc (sửa cho khớp VITE_SUPER_ADMINS) ====
     function superAdmins() { return ['giangle1502@gmail.com', 'gianglevan.vap@gmail.com']; }
 
@@ -26,15 +31,15 @@ service cloud.firestore {
     // Phân quyền: ai cũng đọc được hồ sơ của mình; quản trị đọc/sửa tất cả
     match /users/{email} {
       allow read: if signedIn() && (email == me() || isStaff());
-      allow write: if isAdmin();
+      allow create, update: if isAdmin();
     }
 
     // Cấu hình hạng mục và cài đặt chung
     match /settings/{id} {
       allow read: if isStaff();
-      allow write: if isAdmin();
+      allow create, update: if isAdmin();
       // Người được cấp quyền "Thiết lập biểu mẫu" tự thêm / sửa trường
-      allow write: if id == 'fields' && isActive() && profile().formDesigner == true;
+      allow create, update: if id == 'fields' && isActive() && profile().formDesigner == true;
     }
 
     // ==== Chuyến xe ====
@@ -61,7 +66,6 @@ service cloud.firestore {
       allow update: if isAdmin()
         || (inMyWarehouse(resource.data.warehouse) && sameTrip()
             && ((hasRole('bao_ve') && guardStep()) || (hasRole('thu_kho') && dockStep())));
-      allow delete: if isAdmin();
     }
 
     // Cấp số chứng từ: nhân viên vận hành chỉ được tăng "Số tiếp theo"
@@ -174,7 +178,15 @@ service cloud.firestore {
             .hasOnly(['lines', 'status', 'lastMovement', 'updatedAt', 'updatedBy'])
           && request.resource.data.status in ['open', 'partial', 'done', 'closed']
           && movementForOrder(request.resource.data.lastMovement, id));
-      allow delete: if isAdmin();
+    }
+
+    // ==== Xóa dữ liệu ====
+    // Chỉ quản trị gốc xóa thẳng; người khác gửi yêu cầu xóa để quản trị gốc duyệt
+    match /deleteRequests/{id} {
+      allow read: if isSuper() || (isStaff() && resource.data.requestedBy == me());
+      allow create: if isStaff() && request.resource.data.id == id && request.resource.data.requestedBy == me()
+        && (request.resource.data.status == 'pending' || (isSuper() && request.resource.data.status in ['deleted', 'reset']));
+      allow update: if isSuper();
     }
 
     // Danh mục thủ kho được sửa trong kho của mình (không sửa tồn kho hiện tại)
@@ -182,7 +194,7 @@ service cloud.firestore {
       allow read: if isStaff() && coll in [
         'companies', 'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses',
         'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'threepl', 'codeRules'];
-      allow write: if isAdmin() && coll in [
+      allow create, update: if isAdmin() && coll in [
         'companies', 'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses',
         'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'threepl', 'codeRules'];
       // Kinh doanh, kế toán thêm/sửa nhanh khách hàng, địa chỉ giao, mã hàng ngay khi lập đơn (không xóa)

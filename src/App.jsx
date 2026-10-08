@@ -21,9 +21,11 @@ import Release, { PrintRelease } from './pages/stock/Release';
 import Dashboard from './pages/Dashboard';
 import Orders from './pages/orders/Orders';
 import Reports from './pages/reports/Reports';
+import Deletes from './pages/admin/Deletes';
+import ResetData from './pages/admin/ResetData';
 
 export default function App() {
-  const { user, allowed, isAdmin, canDesign, hasRole, loading, logout, email } = useApp();
+  const { user, allowed, isAdmin, isSuper, canDesign, hasRole, loading, logout, email } = useApp();
   if (loading) return <div className="center">Đang tải…</div>;
   if (!user) return <Login />;
   if (!user.emailVerified) return <VerifyEmail user={user} logout={logout} />;
@@ -63,6 +65,8 @@ export default function App() {
         <Route path="kho/nhan-hang/:id" element={<Receive />} />
         <Route path="kho/:type" element={<MovementForm />} />
         {canDesign && <Route path="hang-muc" element={<FieldManager />} />}
+        <Route path="quan-tri/xoa" element={<Deletes />} />
+        {isSuper && <Route path="quan-tri/du-lieu" element={<ResetData />} />}
         <Route path="*" element={<Navigate to="/" />} />
       </Route>
     </Routes>

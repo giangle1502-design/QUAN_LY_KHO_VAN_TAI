@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { collection, deleteDoc, doc, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { deleteOrRequest } from '../../lib/deletes';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useOpWarehouse } from '../../lib/hooks';
@@ -129,7 +130,7 @@ export default function Overview() {
 
 // Chi tiết chuyến xe: mốc thời gian, lịch sử; quản trị được sửa, hủy, xóa
 function TripDetail({ trip: t, onClose }) {
-  const { isAdmin } = useApp();
+  const { isAdmin, isSuper, email, name } = useApp();
   const reasons = useCollection('reasons').rows.filter((r) => r.appliesTo === 'Hủy chuyến');
   const [act, err] = useTripAction();
   const [edit, setEdit] = useState(null);
@@ -185,8 +186,13 @@ function TripDetail({ trip: t, onClose }) {
           {isAdmin && (
             <div className="form-actions">
               <button className="btn danger" style={{ marginRight: 'auto' }} onClick={async () => {
-                if (window.confirm(`Xóa hẳn chuyến ${t.id}? Không khôi phục được.`)) { await deleteDoc(doc(db, 'trips', t.id)); onClose(); }
-              }}>Xóa</button>
+                let reason = '';
+                if (isSuper) { if (!window.confirm(`Xóa hẳn chuyến ${t.id}? Không khôi phục được.`)) return; }
+                else { reason = window.prompt(`Lý do xóa chuyến ${t.id} (quản trị gốc sẽ duyệt):`, ''); if (reason === null) return; }
+                const r = await deleteOrRequest({ coll: 'trips', id: t.id, label: `${t.plate || ''} ${t.driverName || ''}`.trim() || t.id, data: t, reason }, { email, name }, isSuper);
+                if (r === 'requested') window.alert('Đã gửi yêu cầu xóa, chờ quản trị gốc duyệt.');
+                onClose();
+              }}>{isSuper ? 'Xóa' : 'Đề nghị xóa'}</button>
               {ACTIVE.includes(t.status) && (
                 <>
                   <select value={cancelReason} onChange={(e) => setCancelReason(e.target.value)}>

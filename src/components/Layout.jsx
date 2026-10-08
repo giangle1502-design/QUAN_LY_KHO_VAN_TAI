@@ -1,15 +1,23 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { db } from '../firebase';
+import { installColumnResize } from '../lib/colResize';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { CATALOGS, GROUPS, roleLabel } from '../catalogs';
 import { REPORTS } from '../pages/reports/Reports';
 
 export default function Layout() {
-  const { name, email, role, isAdmin, canDesign, hasRole, logout, settings } = useApp();
+  const { name, email, role, isAdmin, isSuper, canDesign, hasRole, logout, settings } = useApp();
   const [open, setOpen] = useState(false);
   const loc = useLocation();
   const orderTab = (k) => ({ isActive }) => (isActive && (new URLSearchParams(loc.search).get('tab') || 'SO') === k ? 'active' : '');
   const close = () => setOpen(false);
+  const mainRef = useRef(null);
+  useEffect(() => installColumnResize(mainRef.current), []);
+  // Số yêu cầu xóa đang chờ quản trị gốc duyệt
+  const [nDel, setNDel] = useState(0);
+  useEffect(() => (isSuper ? onSnapshot(query(collection(db, 'deleteRequests'), where('status', '==', 'pending')), (s) => setNDel(s.size), () => {}) : undefined), [isSuper]);
   return (
     <div className="shell">
       <aside className={'side' + (open ? ' open' : '')}>
@@ -43,6 +51,9 @@ export default function Layout() {
           <div className="nav-group">Danh mục</div>
           <NavLink to="/dm" onClick={close}><span className="ico">🏠</span>Tổng quan danh mục</NavLink>
           {canDesign && <NavLink to="/hang-muc" onClick={close}><span className="ico">🧩</span>Quản lý trường (hạng mục)</NavLink>}
+          <div className="nav-group">Quản trị dữ liệu</div>
+          <NavLink to="/quan-tri/xoa" onClick={close}><span className="ico">🗑️</span>{isSuper ? 'Duyệt xóa & lịch sử' : 'Yêu cầu xóa của tôi'}{nDel ? <span className="badge red" style={{ marginLeft: 6 }}>{nDel}</span> : null}</NavLink>
+          {isSuper && <NavLink to="/quan-tri/du-lieu" onClick={close}><span className="ico">🧹</span>Xóa dữ liệu chạy thử</NavLink>}
           {GROUPS.map((g) => {
             const list = CATALOGS.filter((c) => c.group === g && (isAdmin || !c.adminOnly));
             if (!list.length) return null;
@@ -62,7 +73,7 @@ export default function Layout() {
         </div>
       </aside>
       {open && <div className="side-bg" onClick={close} />}
-      <main>
+      <main ref={mainRef}>
         <button className="menu-btn" onClick={() => setOpen(true)}>☰</button>
         <Outlet />
       </main>

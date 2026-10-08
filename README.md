@@ -242,5 +242,12 @@ Phiếu nhập kho chọn **Nguồn nhập** ở đầu phiếu:
 - Số xe, đơn vị vận tải, tài xế, CCCD **không bắt buộc**. Bổ sung sau ở **Phiếu kho → mở phiếu xuất → Bổ sung thông tin vận tải** (quản trị hoặc thủ kho phụ trách kho; lưu lịch sử sửa).
 - Cần **publish lại firestore.rules** để thủ kho sửa được thông tin vận tải.
 
+## Độ rộng cột, xóa dữ liệu và duyệt xóa
+- **Độ rộng cột:** mọi bảng đều kéo được mép phải tiêu đề cột để chỉnh rộng / hẹp. Độ rộng lưu theo trang trên từng máy; bấm đúp vào mép cột để trả về mặc định.
+- **Chỉ quản trị gốc** (email trong `superAdmins()` / `VITE_SUPER_ADMINS`) được xóa thẳng; mỗi lần xóa đều ghi lịch sử.
+- **Người dùng khác** (kể cả vai trò quản trị) bấm **Đề nghị xóa** kèm lý do → yêu cầu vào **Quản trị dữ liệu → Duyệt xóa & lịch sử**. Quản trị gốc xem dữ liệu, bấm **Duyệt xóa** (xóa hẳn) hoặc **Từ chối**.
+- **Xóa dữ liệu chạy thử** (quản trị gốc, `/quan-tri/du-lieu`): chọn nhóm dữ liệu (đơn hàng, phiếu kho, tồn kho, giải chấp, chuyến xe, bộ đếm; đưa pallet vị trí về 0; đưa số chứng từ về 1; danh mục tùy chọn), gõ `XOA DU LIEU` để xác nhận. Không xóa tài khoản & phân quyền, cấu hình biểu mẫu.
+- Cần **publish lại firestore.rules**.
+
 ## Sửa lỗi
 - Đề nghị giải chấp (và các thao tác theo kho) bị chặn quyền với tài khoản quản trị gốc chưa có hồ sơ trong *Phân quyền*: rules nay cho quản trị thao tác mọi kho.
