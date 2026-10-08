@@ -12,7 +12,9 @@ const TX = [
   ['movements', 'Phiếu kho (nhập, xuất, chuyển vị trí, điều chỉnh, đổi tình trạng)'],
   ['stock', 'Tồn kho'],
   ['releaseRequests', 'Đề nghị giải chấp'],
-  ['trips', 'Chuyến xe'],
+  ['trips', 'Chuyến xe (gồm chuyến đã chia xe)'],
+  ['tripPhotos', 'Ảnh phiếu giao hàng của chuyến'],
+  ['tripPrivate', '3PL của chuyến (GHA)'],
   ['counters', 'Bộ đếm số theo ngày (số đề nghị giải chấp…)'],
 ];
 const CATS = CATALOGS.filter((c) => !['users', 'codeRules'].includes(c.key));
