@@ -156,6 +156,8 @@ service cloud.firestore {
       allow write: if isAdmin() && coll in [
         'companies', 'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses',
         'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'threepl', 'codeRules'];
+      // Kinh doanh, kế toán thêm/sửa nhanh khách hàng, địa chỉ giao, mã hàng ngay khi lập đơn (không xóa)
+      allow create, update: if coll in ['soldto', 'shipto', 'items'] && (hasRole('kinh_doanh') || hasRole('ke_toan'));
       allow create: if coll in ['locations', 'docks'] && hasRole('thu_kho')
         && inMyWarehouse(request.resource.data.warehouse)
         && (coll != 'locations' || request.resource.data.currentPallets in [0, null]);

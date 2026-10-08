@@ -173,12 +173,12 @@ function Cell({ f, r }) {
 // ---------------------------------------------------------------------------
 // Form thêm / sửa 1 bản ghi
 // ---------------------------------------------------------------------------
-function EditForm({ cat, fields, row, existing, onClose, onSaved }) {
+export function EditForm({ cat, fields, row, existing = [], onClose, onSaved }) {
   const { canEdit, isAdmin, email } = useApp();
   const isNew = !row._id;
   const editable = canEdit(cat, isNew ? null : row);
   const keys = keyFieldsOf(cat);
-  const [form, setForm] = useState(() => (isNew ? defaultsOf(fields) : { ...row }));
+  const [form, setForm] = useState(() => (isNew ? { ...defaultsOf(fields), ...row } : { ...row }));
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const shownFields = fields.filter((f) => !f.hidden);
@@ -220,7 +220,7 @@ function EditForm({ cat, fields, row, existing, onClose, onSaved }) {
       } else {
         await setDoc(doc(db, cat.key, id), { ...final, updatedAt: serverTimestamp(), updatedBy: email }, { merge: true });
       }
-      onSaved(isNew ? 'Đã thêm.' : 'Đã lưu.');
+      onSaved(isNew ? 'Đã thêm.' : 'Đã lưu.', id, final);
     } catch (e2) {
       setErr(e2.code === 'permission-denied' ? 'Không có quyền ghi (kiểm tra phân quyền).' : e2.message);
     }

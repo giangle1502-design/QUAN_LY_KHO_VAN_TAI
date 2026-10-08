@@ -307,3 +307,20 @@ table.picker tr.picked td { background: #e8f1fd; }
 .stock-pick > span { display: flex; flex-direction: column; }
 .stock-pick > span.grow { flex: 1; min-width: 160px; }
 .stock-pick small { color: var(--muted); font-size: 11px; }
+
+/* Form đơn hàng: nút + thêm nhanh, chọn cột, bảng dòng hàng */
+.quick-add { padding: 2px 9px; font-weight: 700; flex-shrink: 0; }
+.cell-add { display: flex; gap: 4px; align-items: center; }
+.cell-add > input, .cell-add > select { flex: 1; min-width: 0; }
+.col-picker { position: relative; display: inline-block; }
+.col-picker-menu { position: absolute; right: 0; top: 100%; margin-top: 4px; z-index: 60; background: #fff; border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 6px 24px #0002; padding: 8px 12px; display: flex; flex-direction: column; gap: 4px; min-width: 220px; font-size: 13px; }
+.col-picker-menu label { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.so-section { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; background: #fbfcfe; }
+.so-section .section-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 0; }
+.so-section .section-head .grow { flex: 1; }
+table.so-lines th { white-space: nowrap; font-size: 12px; }
+table.so-lines td { padding: 4px; vertical-align: top; }
+table.so-lines input, table.so-lines select { width: 100%; min-width: 90px; padding: 5px 6px; }
+table.so-lines td.w-item { min-width: 150px; } table.so-lines td.w-ship { min-width: 160px; } table.so-lines td.w-qty input { min-width: 80px; text-align: right; }
+.link-hint { color: var(--muted); font-size: 11px; }

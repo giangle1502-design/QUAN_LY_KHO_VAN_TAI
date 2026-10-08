@@ -3,7 +3,7 @@ import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useMyWarehouses, useOpWarehouse, useOrders } from '../../lib/hooks';
-import { OPEN_STATUSES, ORDER_FOR_MOVE, openKg, orderWarehouse } from '../../lib/orders';
+import { OPEN_STATUSES, ORDER_FOR_MOVE, openKg, orderInWarehouse, orderWarehouse } from '../../lib/orders';
 import { fmtNum } from '../../lib/utils';
 import { PURPOSES, firstStatus, nowISO, reserveCodes, vnDate, STATUS_META } from '../../lib/trips';
 import { ErrorBox, Field } from '../../components/ui';
@@ -38,11 +38,12 @@ export default function Register() {
   const orderLeft = (o) => o.lines.reduce((s, l) => s + openKg(o, l, moveType), 0) / 1000;
   const ordersOf = (code) => orders.filter((o) => orderLeft(o) > 0 && (o.type === 'STO'
     ? orderWarehouse(o, moveType) === wh?.code
-    : o.partyCode === code && (!o.warehouse || o.warehouse === wh?.code)));
+    : o.partyCode === code && orderInWarehouse(o, moveType, wh?.code)));
   // Chọn đơn SO/PO: khối lượng mặc định = phần còn lại của đơn
   const pickOrder = (i, id) => {
     const o = orders.find((x) => x.id === id);
-    const s = o?.shipCode && shipto.find((x) => x.shipCode === o.shipCode);
+    const sc = o && (o.shipCode || (o.shipCodes?.length === 1 ? o.shipCodes[0] : ''));
+    const s = sc && shipto.find((x) => x.shipCode === sc);
     const sto = o?.type === 'STO' ? (moveType === 'out'
       ? { partyCode: o.toWarehouse, partyName: `Chuyển đến kho ${o.toWarehouse}`, shipCode: '', address: '' }
       : { partyCode: o.fromWarehouse, partyName: `Chuyển từ kho ${o.fromWarehouse}` }) : {};

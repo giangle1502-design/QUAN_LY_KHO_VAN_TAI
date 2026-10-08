@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
-import { CATALOGS, FIELD_TYPES, GROUPS, catalogByKey } from '../catalogs';
+import { CATALOGS, FIELD_TYPES, FORM_DEFS, GROUPS, catalogByKey } from '../catalogs';
 import { keyFieldsOf } from '../lib/fields';
 import { norm } from '../lib/utils';
 import { ErrorBox } from '../components/ui';
@@ -29,6 +29,12 @@ export default function FieldManager() {
   }, [catKey, fieldsOf]);
 
   const keys = keyFieldsOf(cat);
+  // Mô tả trường liên kết: "Tự lấy theo Khách hàng → Điều khoản thanh toán"
+  const linkText = (lk) => {
+    const viaF = cat.fields.find((x) => x.key === lk.via);
+    const target = viaF?.ref && catalogByKey(viaF.ref) ? fieldsOf(viaF.ref).find((x) => x.key === lk.field) : null;
+    return `Tự lấy theo ${viaF?.label || lk.via} → ${target?.label || lk.field}`;
+  };
   const upd = (i, patch) => { setList((l) => l.map((f, j) => (j === i ? { ...f, ...patch } : f))); setDirty(true); };
   const move = (i, d) => {
     const j = i + d;
@@ -60,7 +66,7 @@ export default function FieldManager() {
     const out = list.map((f) => {
       const o = { key: f.key, label: f.label.trim(), required: !!f.required, hidden: !!f.hidden };
       if (f.type === 'select' && !f.labels) o.options = f.optionsText.split(',').map((s) => s.trim()).filter(Boolean);
-      if (f.custom) Object.assign(o, { custom: true, type: f.type, ...(f.type === 'ref' ? { ref: f.ref } : {}) });
+      if (f.custom) Object.assign(o, { custom: true, type: f.type, ...(f.type === 'ref' ? { ref: f.ref } : {}), ...(f.link ? { link: f.link } : {}) });
       return o;
     });
     try {
@@ -84,6 +90,7 @@ export default function FieldManager() {
                 {CATALOGS.filter((c) => c.group === g).map((c) => <option key={c.key} value={c.key}>{c.title}</option>)}
               </optgroup>
             ))}
+            <optgroup label="Biểu mẫu đơn hàng">{FORM_DEFS.map((c) => <option key={c.key} value={c.key}>{c.title}</option>)}</optgroup>
           </select>
           <button className="btn primary" disabled={!dirty} onClick={save}>Lưu thay đổi</button>
         </div>
@@ -125,6 +132,7 @@ export default function FieldManager() {
                         )}
                       </>
                     ) : <span className="small">{typeLabel(f.type)}{f.ref ? `: ${catalogByKey(f.ref)?.short}` : ''}</span>}
+                    {f.link && <div className="link-hint">↳ {linkText(f.link)}</div>}
                   </td>
                   <td>
                     {f.type === 'select' && !f.labels

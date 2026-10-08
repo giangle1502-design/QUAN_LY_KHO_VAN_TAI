@@ -1,14 +1,16 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
 export function Modal({ title, onClose, children, wide }) {
+  const ref = useRef();
   useEffect(() => {
-    const h = (e) => e.key === 'Escape' && onClose();
+    // Esc chỉ đóng hộp thoại trên cùng (vd. hộp "+ thêm khách hàng" mở trên form đơn hàng)
+    const h = (e) => e.key === 'Escape' && ref.current === [...document.querySelectorAll('.modal-bg')].pop() && onClose();
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [onClose]);
   return createPortal(
-    <div className="modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div ref={ref} className="modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={'modal' + (wide ? ' wide' : '')}>
         <div className="modal-head">
           <h3>{title}</h3>

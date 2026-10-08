@@ -53,8 +53,9 @@ export default function Balance() {
         }
         continue;
       }
-      if (o.warehouse && (!inMyWarehouses(o.warehouse) || (wh && o.warehouse !== wh))) continue;
       for (const l of o.lines) {
+        const lw = l.warehouse || o.warehouse;
+        if (lw && (!inMyWarehouses(lw) || (wh && lw !== wh))) continue;
         const left = leftKg(l);
         if (left <= 0) continue;
         const x = get(l.item, l.itemName);

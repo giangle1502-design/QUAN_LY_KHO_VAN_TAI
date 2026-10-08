@@ -5,7 +5,7 @@ import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useMyWarehouses, useOpCompany, useOpWarehouse, useOrders, useStock, useTrips } from '../../lib/hooks';
 import { CompanyPicker } from '../../components/TripBits';
-import { OPEN_STATUSES, ORDER_FOR_MOVE, ORDER_TYPES, matchOrderLine, openKg, orderWarehouse } from '../../lib/orders';
+import { OPEN_STATUSES, ORDER_FOR_MOVE, ORDER_TYPES, lineShip, lineWh, matchOrderLine, openKg, orderInWarehouse, orderWarehouse } from '../../lib/orders';
 import { MOVE_TYPES, ageDays, kgOf, postMovement, suggestPallets } from '../../lib/stock';
 import { ST, vnDate } from '../../lib/trips';
 import { fmtDate, fmtNum } from '../../lib/utils';
@@ -86,8 +86,7 @@ function Form({ type }) {
   // Đơn đang mở phù hợp kho và khách / nhà cung cấp
   const order = orders.find((o) => o.id === head.orderId);
   const orderOpts = orders.filter((o) => {
-    const ow = orderWarehouse(o, type);
-    return (!ow || ow === whCode) && (o.type === 'STO' || !head.partyCode || o.partyCode === head.partyCode || o.id === head.orderId);
+    return orderInWarehouse(o, type, whCode) && (o.type === 'STO' || !head.partyCode || o.partyCode === head.partyCode || o.id === head.orderId);
   }).sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')));
   const [autoFill, setAutoFill] = useState('');
   const [fillNote, setFillNote] = useState('');
@@ -95,19 +94,23 @@ function Form({ type }) {
     const o = orders.find((x) => x.id === id);
     setFillNote('');
     if (!o) return setHead((h) => ({ ...h, orderId: id }));
-    const party = o.type !== 'STO' ? { partyCode: o.partyCode, partyName: o.partyName, shipCode: o.shipCode || '' }
+    // SO nhiều điểm giao: lấy mã giao của dòng đầu tiên làm ở kho này
+    const myLine = o.lines.find((l) => openKg(o, l, type) > 0 && (!whCode || !lineWh(o, l) || lineWh(o, l) === whCode));
+    const party = o.type !== 'STO' ? { partyCode: o.partyCode, partyName: o.partyName, shipCode: o.shipCode || (myLine ? lineShip(o, myLine) : '') }
       : type === 'out' ? { partyCode: o.toWarehouse, partyName: `Chuyển đến kho ${o.toWarehouse}`, shipCode: '' }
         : { partyCode: o.fromWarehouse, partyName: `Chuyển từ kho ${o.fromWarehouse}`, shipCode: '' };
     setHead((h) => ({ ...h, orderId: id, ...party, ...(o.company ? { company: o.company } : {}) }));
     const ow = orderWarehouse(o, type);
     if (ow && ow !== opWh) setOpWh(ow);
+    // SO nhiều kho: chưa chọn kho thì lấy kho đầu tiên của đơn mà mình được thao tác
+    else if (!ow && !opWh && o.warehouses?.length) { const w = o.warehouses.find((c) => warehouses.some((x) => x.code === c)); if (w) setOpWh(w); }
     // Nhập theo STO: luôn lấy hàng từ phiếu xuất ở kho đi (mã, lot, NSX, HSD, TTHH, số lượng), không phải nhập lại
     if (type === 'in' && o.type === 'STO') { fillFromTransfer(o); return; }
     const empty = lines.every((l) => (type === 'in' ? !l.item : !l.stockId));
     if (!empty) return;
     if (type === 'out') { setAutoFill(id); return; }
     // Phiếu nhập theo PO: điền sẵn các mặt hàng còn chưa về (thủ kho chọn vị trí, sửa số thực nhận)
-    const next = o.lines.filter((l) => openKg(o, l, 'in') > 0).map((l) => {
+    const next = o.lines.filter((l) => openKg(o, l, 'in') > 0 && (!whCode || !lineWh(o, l) || lineWh(o, l) === whCode)).map((l) => {
       const it = itemMap.get(l.item);
       const kg = openKg(o, l, 'in');
       const bags = num(it?.bagWeight) ? Math.round(kg / num(it.bagWeight)) : '';
@@ -158,9 +161,13 @@ function Form({ type }) {
       .sort((a, b) => String(a.inDate).localeCompare(String(b.inDate)) || String(a.location).localeCompare(String(b.location)));
     const next = [];
     const short = [];
+    let anyNeed = false;
     for (const ol of order.lines) {
+      // Dòng SO của kho khác thì để phiếu ở kho đó làm
+      if (order.type !== 'STO' && lineWh(order, ol) && lineWh(order, ol) !== whCode) continue;
       let need = openKg(order, ol, 'out');
-      for (const r of fifo.filter((x) => x.item === ol.item)) {
+      if (need > 0.001) anyNeed = true;
+      for (const r of fifo.filter((x) => x.item === ol.item && (!ol.goodsStatus || x.goodsStatus === ol.goodsStatus))) {
         if (need <= 0.001) break;
         const kgPerBag = num(r.bags) ? num(r.kg) / num(r.bags) : 0;
         if (!kgPerBag) continue;
@@ -172,6 +179,7 @@ function Form({ type }) {
       if (need > 0.001) short.push(`${ol.item} thiếu ${fmtNum(need / 1000, 3)} tấn`);
     }
     if (next.length) setLines(next);
+    if (!anyNeed) { setFillNote(`${order.id} không còn dòng nào cần xuất từ kho ${whCode} (dòng còn lại thuộc kho khác hoặc đã giao đủ).`); setAutoFill(''); return; }
     setFillNote(`${next.length ? `Đã chọn sẵn ${next.length} dòng tồn theo FIFO cho ${order.id}. Sửa số bao nếu xe chở ít hơn.` : `Kho ${whCode} không còn tồn được xuất cho ${order.id}.`}${short.length ? ` Không đủ tồn: ${short.join(', ')}.` : ''}`);
     setAutoFill('');
   }, [autoFill, order, stock, stockLoading, whCode]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -257,8 +265,8 @@ function Form({ type }) {
       const used = {};
       for (const [i, l] of out.entries()) {
         const keep = order.lines.find((x) => x.no === l.orderLine && x.item === l.item);
-        l.orderLine = keep ? keep.no : matchOrderLine(order, l.item, used, type);
-        if (l.orderLine == null) return setErr(`Dòng ${i + 1}: mã hàng ${l.item} không có trong đơn ${order.id}.`);
+        l.orderLine = keep ? keep.no : matchOrderLine(order, l.item, used, type, { warehouse: whCode, status: type === 'out' ? l.goodsStatus : '' });
+        if (l.orderLine == null) return setErr(`Dòng ${i + 1}: mã hàng ${l.item}${type === 'out' ? ` (${l.goodsStatus})` : ''} không có trong đơn ${order.id} cho kho ${whCode} (kiểm tra kho xuất, TTHH của dòng đơn).`);
         used[l.orderLine] = (used[l.orderLine] || 0) + Math.abs(num(l.kg));
       }
     }
@@ -368,7 +376,7 @@ function Form({ type }) {
         </div>
       </div>
 
-      {order && <OrderBox order={order} lines={lines} type={type} stockById={stockById}
+      {order && <OrderBox order={order} lines={lines} type={type} stockById={stockById} wh={whCode}
         onRefill={type === 'in' && order.type === 'STO' ? () => fillFromTransfer(order) : null} />}
       {fillNote && <div className="hint" style={{ marginBottom: 10 }}>{fillNote}</div>}
       <div className="card" style={{ marginBottom: 12 }}>
@@ -412,7 +420,7 @@ function Form({ type }) {
 }
 
 // Đơn đang chọn: đặt / đã giao-nhận / còn lại, và còn lại sau phiếu này
-function OrderBox({ order, lines, type, stockById, onRefill }) {
+function OrderBox({ order, lines, type, stockById, onRefill, wh }) {
   const meta = ORDER_TYPES[order.type];
   const receiving = order.type === 'STO' && type === 'in';
   const doneOf = (l) => num(receiving ? l.receivedKg : l.doneKg);
@@ -422,21 +430,24 @@ function OrderBox({ order, lines, type, stockById, onRefill }) {
     if (item) thisKg[item] = (thisKg[item] || 0) + Math.abs(num(l.kg));
   }
   const t = (kg) => fmtNum(kg / 1000, 3);
+  const perLine = order.type === 'SO' && order.lines.some((l) => l.warehouse || l.shipCode || l.goodsStatus || l.dueDate);
   return (
     <div className="card" style={{ marginBottom: 12 }}>
       <div className="section-head">{meta.label} {order.id}{order.refNo ? ` · Ecount ${order.refNo}` : ''}{order.dueDate ? ` · ${meta.due} ${fmtDate(order.dueDate)}` : ''}
         {onRefill && <button type="button" className="btn sm" style={{ marginLeft: 10 }} onClick={onRefill}>↻ Điền lại hàng từ phiếu xuất</button>}</div>
       <table>
-        <thead><tr><th>Mã hàng</th><th>Tên hàng</th><th className="num">Đặt (tấn)</th>{receiving && <th className="num">Đã xuất ở kho {order.fromWarehouse}</th>}
+        <thead><tr><th>Mã hàng</th><th>Tên hàng</th>{perLine && <><th>Kho</th><th>Giao</th><th>TTHH</th><th>Ngày giao</th></>}<th className="num">Đặt (tấn)</th>{receiving && <th className="num">Đã xuất ở kho {order.fromWarehouse}</th>}
           <th className="num">{receiving ? meta.received : meta.done}</th><th className="num">{receiving ? meta.transit : meta.left}</th><th className="num">Phiếu này</th><th className="num">Còn lại sau phiếu</th></tr></thead>
         <tbody>
           {order.lines.map((l) => {
-            const same = order.lines.filter((x) => x.item === l.item);
+            const here = (x) => !perLine || !wh || !lineWh(order, x) || lineWh(order, x) === wh;
+            const same = order.lines.filter((x) => x.item === l.item && here(x));
             const share = same[0] === l ? thisKg[l.item] || 0 : 0;
             const open = openKg(order, l, type);
             const after = open - share;
             return (
-              <tr key={l.no}><td>{l.item}</td><td>{l.itemName}</td><td className="num">{t(l.qtyKg)}</td>{receiving && <td className="num">{t(num(l.doneKg))}</td>}
+              <tr key={l.no} style={here(l) ? undefined : { opacity: 0.45 }} title={here(l) ? '' : `Dòng này xuất từ kho ${lineWh(order, l)}`}><td>{l.item}</td><td>{l.itemName}</td>
+                {perLine && <><td>{lineWh(order, l)}</td><td>{lineShip(order, l)}</td><td>{l.goodsStatus || 'KTC/DGC'}</td><td>{fmtDate(l.dueDate)}</td></>}<td className="num">{t(l.qtyKg)}</td>{receiving && <td className="num">{t(num(l.doneKg))}</td>}
                 <td className="num">{t(doneOf(l))}</td><td className="num">{t(open)}</td><td className="num">{share ? t(share) : ''}</td>
                 <td className="num" style={after < 0 ? { color: 'var(--red)', fontWeight: 600 } : { fontWeight: 600 }}>{t(after)}{after < 0 ? ' (vượt đơn)' : ''}</td></tr>
             );

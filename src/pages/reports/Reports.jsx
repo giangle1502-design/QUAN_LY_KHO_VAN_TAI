@@ -330,9 +330,10 @@ function ForSales({ wh, co, q }) {
     }
     for (const o of orders) {
       for (const l of o.lines) {
-        if (o.type === 'SO' && inScope(o.warehouse) && leftKg(l) > 0) {
+        if (o.type === 'SO' && inScope(l.warehouse || o.warehouse) && leftKg(l) > 0) {
           const x = get(l.item, l.itemName); x.pending += leftKg(l); x.soN += 1;
-          if (o.dueDate && (!x.due || o.dueDate < x.due)) x.due = o.dueDate;
+          const due = l.dueDate || o.dueDate;
+          if (due && (!x.due || due < x.due)) x.due = due;
         }
         // Hàng sắp về: PO còn chưa về; STO về kho đang xem (còn phải xuất + đang đi đường)
         let inc = 0;
@@ -384,12 +385,15 @@ function ForSales({ wh, co, q }) {
 function useOrderLines(type, wh, co, q, onlyLate) {
   const { orders, error, inScope } = useOpenOrders(wh, co);
   const today = vnDate();
-  const rows = orders.filter((o) => o.type === type && OPEN_STATUSES.includes(o.status) && inScope(o.warehouse))
-    .flatMap((o) => o.lines.filter((l) => leftKg(l) > 0).map((l) => ({
-      _k: `${o.id}-${l.no}`, id: o.id, refNo: o.refNo || '', date: o.date, partyCode: o.partyCode, partyName: o.partyName, company: o.company || '', shipCode: o.shipCode || '',
-      warehouse: o.warehouse || '', item: l.item, itemName: l.itemName, qty: n(l.qtyKg), done: n(l.doneKg), left: leftKg(l),
-      due: o.dueDate || '', late: o.dueDate && o.dueDate < today ? ageDays(o.dueDate) : 0, status: o.status,
-    })))
+  const rows = orders.filter((o) => o.type === type && OPEN_STATUSES.includes(o.status))
+    .flatMap((o) => o.lines.filter((l) => leftKg(l) > 0 && inScope(l.warehouse || o.warehouse)).map((l) => {
+      const due = l.dueDate || o.dueDate || '';
+      return {
+        _k: `${o.id}-${l.no}`, id: o.id, refNo: o.refNo || '', date: o.date, partyCode: o.partyCode, partyName: o.partyName, company: o.company || '', shipCode: l.shipCode || o.shipCode || '',
+        warehouse: l.warehouse || o.warehouse || '', item: l.item, itemName: l.itemName, qty: n(l.qtyKg), done: n(l.doneKg), left: leftKg(l),
+        due, late: due && due < today ? ageDays(due) : 0, status: o.status, goodsStatus: l.goodsStatus || '',
+      };
+    }))
     .filter((r) => matchItem(q, r.id, r.refNo, r.partyCode, r.partyName, r.item, r.itemName))
     .filter((r) => !onlyLate || r.late > 0)
     .sort((a, b) => String(a.due || '9999').localeCompare(String(b.due || '9999')) || a.id.localeCompare(b.id));

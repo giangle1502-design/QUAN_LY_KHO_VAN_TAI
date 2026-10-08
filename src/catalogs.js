@@ -78,7 +78,7 @@ export const CATALOGS = [
   // ---------------- Khách hàng ----------------
   {
     key: 'soldto', group: 'Khách hàng', icon: '🏢', title: 'Soldto (khách hàng xuất hóa đơn)',
-    short: 'Soldto', idField: 'code',
+    short: 'Soldto', idField: 'code', editRoles: ['kinh_doanh', 'ke_toan'],
     fields: [
       { key: 'code', label: 'Mã khách hàng', type: 'text', required: true, help: 'Nên trùng mã trên Ecount' },
       { key: 'name', label: 'Tên khách hàng', type: 'text', required: true },
@@ -92,7 +92,7 @@ export const CATALOGS = [
   },
   {
     key: 'shipto', group: 'Khách hàng', icon: '📍', title: 'Shipto (địa chỉ giao hàng)',
-    short: 'Shipto', idField: 'shipCode',
+    short: 'Shipto', idField: 'shipCode', editRoles: ['kinh_doanh', 'ke_toan'],
     fields: [
       { key: 'customerCode', label: 'Mã khách hàng', type: 'ref', ref: 'soldto', required: true,
         fill: { customerName: 'name', taxCode: 'taxCode' } },
@@ -108,7 +108,7 @@ export const CATALOGS = [
 
   // ---------------- Hàng hóa ----------------
   {
-    key: 'items', group: 'Hàng hóa', icon: '🏷️', title: 'Mã hàng', short: 'Mã hàng', idField: 'code',
+    key: 'items', group: 'Hàng hóa', icon: '🏷️', title: 'Mã hàng', short: 'Mã hàng', idField: 'code', editRoles: ['kinh_doanh', 'ke_toan'],
     fields: [
       { key: 'code', label: 'Mã hàng', type: 'text', required: true, help: 'Nên trùng mã trên Ecount' },
       { key: 'name', label: 'Tên hàng', type: 'text', required: true },
@@ -314,7 +314,34 @@ export const CATALOGS = [
 ];
 
 export const GROUPS = [...new Set(CATALOGS.map((c) => c.group))];
-export const catalogByKey = (k) => CATALOGS.find((c) => c.key === k);
+// Biểu mẫu đơn hàng (không phải danh mục): cấu hình trường ở "Quản lý trường" như danh mục.
+// Trường "liên kết" (link: { via, field }) tự lấy giá trị từ bản ghi đã chọn ở trường via (vd. khách hàng → điều khoản thanh toán)
+export const FORM_DEFS = [
+  {
+    key: 'soHead', group: 'Biểu mẫu đơn hàng', icon: '🧾', title: 'Đơn bán (SO) – phần chung', short: 'SO phần chung', form: true,
+    fields: [
+      { key: 'date', label: 'Ngày tạo đơn', type: 'date', required: true },
+      { key: 'company', label: 'Công ty xuất', type: 'ref', ref: 'companies', required: true },
+      { key: 'partyCode', label: 'Khách hàng', type: 'ref', ref: 'soldto', required: true },
+      { key: 'tolerancePct', label: 'Dung sai cho phép (%)', type: 'percent', help: 'Được giao vượt số đặt tối đa bao nhiêu %' },
+      { key: 'note', label: 'Ghi chú', type: 'textarea' },
+    ],
+  },
+  {
+    key: 'soLine', group: 'Biểu mẫu đơn hàng', icon: '📦', title: 'Đơn bán (SO) – dòng hàng', short: 'SO dòng hàng', form: true,
+    fields: [
+      { key: 'dueDate', label: 'Ngày giao', type: 'date' },
+      { key: 'warehouse', label: 'Kho xuất', type: 'ref', ref: 'warehouses' },
+      { key: 'item', label: 'Mã hàng', type: 'ref', ref: 'items', required: true },
+      { key: 'itemName', label: 'Tên hàng', type: 'text', system: true },
+      { key: 'qtyT', label: 'Số lượng (tấn)', type: 'number', required: true },
+      { key: 'shipCode', label: 'Mã giao', type: 'ref', ref: 'shipto' },
+      { key: 'goodsStatus', label: 'TTHH', type: 'select', options: ['KTC', 'DGC'], help: 'Bỏ trống = KTC hoặc DGC đều được' },
+      { key: 'note', label: 'Ghi chú', type: 'text' },
+    ],
+  },
+];
+export const catalogByKey = (k) => CATALOGS.find((c) => c.key === k) || FORM_DEFS.find((c) => c.key === k);
 // Tên hiển thị của 1 bản ghi khi được chọn ở trường ref
 export const refLabel = (row) => (row ? [row.code || row.plate || row.idCard || row.email, row.name].filter(Boolean).join(' – ') : '');
 export const refValue = (catalog, row) => {

@@ -35,7 +35,7 @@ export default function Dashboard() {
   const empty = locations.filter((l) => l.emptyBin !== false && !l.locked).length;
   const expiring = useMemo(() => stock.filter((r) => r.expDate && r.expDate <= addDays(today, 30)).sort((a, b) => a.expDate.localeCompare(b.expDate)), [stock, today]);
   const { rows: openOrders } = useOrders('', true);
-  const ordersHere = openOrders.filter((o) => !o.warehouse || (inMyWarehouses(o.warehouse) && (!wh || o.warehouse === wh)));
+  const ordersHere = openOrders.filter((o) => o.type === 'STO' || (o.lines || []).some((l) => { const w = l.warehouse || o.warehouse; return !w || (inMyWarehouses(w) && (!wh || w === wh)); }));
   const orderSum = (ty) => {
     const list = ordersHere.filter((o) => o.type === ty);
     return { count: list.length, left: list.reduce((s, o) => s + orderTotals(o).left, 0), late: list.filter((o) => o.dueDate && o.dueDate < today).length };

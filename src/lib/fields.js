@@ -70,3 +70,20 @@ export function cleanValue(f, v) {
   if (typeof v === 'string') return v.trim();
   return v ?? '';
 }
+
+// Danh sách trường đã gộp → dạng lưu ở settings/fields (giữ trường tự thêm, liên kết, danh sách chọn)
+export function toStored(list) {
+  return list.map((f) => {
+    const o = { key: f.key, label: String(f.label || '').trim(), required: !!f.required, hidden: !!f.hidden };
+    if (f.type === 'select' && !f.labels && f.options?.length) o.options = f.options;
+    if (f.custom) Object.assign(o, { custom: true, type: f.type, ...(f.ref ? { ref: f.ref } : {}), ...(f.link ? { link: f.link } : {}) });
+    return o;
+  });
+}
+
+// Trường liên kết: chọn bản ghi ở trường `via` (vd. khách hàng) thì tự lấy giá trị từ trường tương ứng của bản ghi đó
+export function linkPatch(fields, via, rec) {
+  const p = {};
+  for (const f of fields) if (f.link?.via === via) p[f.key] = rec ? rec[f.link.field] ?? '' : '';
+  return p;
+}
