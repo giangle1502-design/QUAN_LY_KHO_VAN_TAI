@@ -11,6 +11,7 @@ import { catalogByKey } from '../catalogs';
 // ============================================================================
 
 export const ST = {
+  PLANNED: 'planned',
   ARRIVED: 'arrived',
   WAITING_GATE: 'waiting_gate',
   PROCESSING: 'processing',
@@ -20,9 +21,10 @@ export const ST = {
   CANCELLED: 'cancelled',
 };
 
-export const STAGES = [ST.ARRIVED, ST.WAITING_GATE, ST.PROCESSING, ST.WAITING_EXIT, ST.WAITING_DELIVERY, ST.COMPLETED];
+export const STAGES = [ST.PLANNED, ST.ARRIVED, ST.WAITING_GATE, ST.PROCESSING, ST.WAITING_EXIT, ST.WAITING_DELIVERY, ST.COMPLETED];
 
 export const STATUS_META = {
+  [ST.PLANNED]: { label: 'Đã chia xe, chờ đến kho', tone: '' },
   [ST.ARRIVED]: { label: 'Xe đến kho', tone: '' },
   [ST.WAITING_GATE]: { label: 'Chờ vào cửa', tone: 'amber' },
   [ST.PROCESSING]: { label: 'Đang xuất/nhập', tone: 'blue' },
@@ -39,6 +41,7 @@ export const purposeLabel = (p) => (p === 'import' ? 'Nhập hàng' : 'Lấy hà
 // Các bước chuyến xe sẽ đi qua (để vẽ thanh tiến trình)
 export function stagesOf(trip) {
   return STAGES.filter((s) => {
+    if (s === ST.PLANNED && trip.source !== 'plan') return false;
     if (!trip.hasGuard && (s === ST.ARRIVED || s === ST.WAITING_EXIT)) return false;
     if (trip.purpose === 'import' && s === ST.WAITING_DELIVERY) return false;
     return true;

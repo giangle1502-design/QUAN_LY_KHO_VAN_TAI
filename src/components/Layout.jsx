@@ -8,7 +8,7 @@ import { CATALOGS, GROUPS, roleLabel } from '../catalogs';
 import { REPORTS } from '../pages/reports/Reports';
 
 export default function Layout() {
-  const { name, email, role, isAdmin, isSuper, canDesign, hasRole, logout, settings } = useApp();
+  const { name, email, role, isAdmin, isSuper, can3PL, canDesign, hasRole, logout, settings } = useApp();
   const [open, setOpen] = useState(false);
   const loc = useLocation();
   const orderTab = (k) => ({ isActive }) => (isActive && (new URLSearchParams(loc.search).get('tab') || 'SO') === k ? 'active' : '');
@@ -22,6 +22,19 @@ export default function Layout() {
     <div className="shell">
       <aside className={'side' + (open ? ' open' : '')}>
         <div className="brand">{settings.companyName}<small>Kho & vận tải</small></div>
+        {role === 'tai_xe' ? (
+        <nav>
+          <NavLink to="/tai-xe" onClick={close}><span className="ico">🧑‍✈️</span>Chuyến của tôi</NavLink>
+        </nav>
+        ) : role === 'van_tai' ? (
+        <nav>
+          <NavLink to="/van-tai?tab=don" onClick={close}><span className="ico">🚛</span>Vận chuyển</NavLink>
+          <NavLink to="/dm/vehicles" onClick={close}><span className="ico">🚚</span>Xe của đơn vị</NavLink>
+          <NavLink to="/dm/drivers" onClick={close}><span className="ico">🧑‍✈️</span>Tài xế của đơn vị</NavLink>
+          {can3PL && <NavLink to="/dm/threepl" onClick={close}><span className="ico">🤝</span>3PL</NavLink>}
+          <NavLink to="/quan-tri/xoa" onClick={close}><span className="ico">🗑️</span>Yêu cầu xóa của tôi</NavLink>
+        </nav>
+        ) : (
         <nav>
           <NavLink to="/" end onClick={close}><span className="ico">📈</span>Tổng quan</NavLink>
           <div className="nav-group">Đơn hàng</div>
@@ -35,6 +48,7 @@ export default function Layout() {
           {hasRole('thu_kho') && <NavLink to="/xe/thu-kho" onClick={close}><span className="ico">📦</span>Thủ kho điều phối</NavLink>}
           {isAdmin && <NavLink to="/xe/giao-hang" onClick={close}><span className="ico">✅</span>Xác nhận giao hàng</NavLink>}
           <NavLink to="/xe/tong-quan" onClick={close}><span className="ico">📊</span>Tổng quan chuyến xe</NavLink>
+          <NavLink to="/van-tai" onClick={close}><span className="ico">🚛</span>Vận chuyển (chia xe, cước)</NavLink>
           <div className="nav-group">Kho hàng</div>
           <NavLink to="/kho/ton" onClick={close}><span className="ico">🏭</span>Tồn kho</NavLink>
           {isAdmin && <NavLink to="/kho/in" onClick={close}><span className="ico">📝</span>Lập phiếu nhập kho</NavLink>}
@@ -55,7 +69,7 @@ export default function Layout() {
           <NavLink to="/quan-tri/xoa" onClick={close}><span className="ico">🗑️</span>{isSuper ? 'Duyệt xóa & lịch sử' : 'Yêu cầu xóa của tôi'}{nDel ? <span className="badge red" style={{ marginLeft: 6 }}>{nDel}</span> : null}</NavLink>
           {isSuper && <NavLink to="/quan-tri/du-lieu" onClick={close}><span className="ico">🧹</span>Xóa dữ liệu chạy thử</NavLink>}
           {GROUPS.map((g) => {
-            const list = CATALOGS.filter((c) => c.group === g && (isAdmin || !c.adminOnly));
+            const list = CATALOGS.filter((c) => c.group === g && (isAdmin || !c.adminOnly) && (!c.only3PL || can3PL));
             if (!list.length) return null;
             return (
               <div key={g}>
@@ -67,6 +81,7 @@ export default function Layout() {
             );
           })}
         </nav>
+        )}
         <div className="me">
           <div><b>{name}</b><small>{email}</small><small className="role">{roleLabel(role)}</small></div>
           <button className="btn ghost sm" onClick={logout}>Đăng xuất</button>

@@ -16,8 +16,9 @@ import { deleteOrRequest } from '../lib/deletes';
 
 export default function CatalogPage() {
   const { key } = useParams();
+  const { can3PL } = useApp();
   const cat = catalogByKey(key);
-  if (!cat) return <Navigate to="/" />;
+  if (!cat || (cat.only3PL && !can3PL)) return <Navigate to="/" />;
   return <Catalog key={key} cat={cat} />;
 }
 
@@ -36,8 +37,10 @@ function Catalog({ cat }) {
 
   // Người không phải quản trị chỉ thấy dữ liệu của kho được giao
   const mine = useMemo(
-    () => (cat.warehouseField && !isAdmin ? rows.filter((r) => inMyWarehouses(r[cat.warehouseField])) : rows),
-    [rows, cat, isAdmin, inMyWarehouses]
+    () => (cat.warehouseField && !isAdmin ? rows.filter((r) => inMyWarehouses(r[cat.warehouseField]))
+      // Đơn vị vận tải chỉ thấy xe, tài xế của đơn vị mình
+      : cat.carrierField && app.myCarrier ? rows.filter((r) => r[cat.carrierField] === app.myCarrier) : rows),
+    [rows, cat, isAdmin, inMyWarehouses, app.myCarrier]
   );
   // Dòng còn thiếu trường bắt buộc (vd. nhập Excel chưa đủ, bổ sung sau)
   const reqFields = fields.filter((f) => f.required && !f.computed && !f.system && !f.hidden);
@@ -93,7 +96,7 @@ function Catalog({ cat }) {
       <div className="page-head">
         <h1>{cat.icon} {cat.title}</h1>
         <div className="actions">
-          {editable && <button className="btn primary" onClick={() => setEditing({})}>+ Thêm</button>}
+          {editable && <button className="btn primary" onClick={() => setEditing(cat.carrierField && app.myCarrier ? { [cat.carrierField]: app.myCarrier } : {})}>+ Thêm</button>}
           <button className="btn" onClick={exportExcel}>⬇ Excel</button>
           {canDesign && <Link className="btn" to={`/hang-muc?dm=${cat.key}`} title="Đổi tên, ẩn, thêm trường cho danh mục này">🧩 Quản lý trường</Link>}
           {editable && (
@@ -105,6 +108,7 @@ function Catalog({ cat }) {
           )}
         </div>
       </div>
+      {cat.help && <p className="hint">{cat.help}</p>}
       {editable && (
         <p className="hint">
           Nhập Excel: dòng đầu là tiêu đề cột, đặt đúng tên trường như File mẫu. Dòng trùng {keyFieldsOf(cat).map((k) => fields.find((f) => f.key === k)?.label).join(' + ')} sẽ được cập nhật.

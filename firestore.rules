@@ -32,6 +32,10 @@ service cloud.firestore {
     match /users/{email} {
       allow read: if signedIn() && (email == me() || isStaff());
       allow create, update: if isAdmin();
+      // Điều phối vận tải tạo / khóa tài khoản tài xế của đơn vị mình
+      allow create, update: if hasRole('van_tai') && myCarrier() != ''
+        && request.resource.data.role == 'tai_xe' && request.resource.data.carrier == myCarrier()
+        && (resource == null || (resource.data.get('role', '') == 'tai_xe' && resource.data.get('carrier', '') == myCarrier()));
     }
 
     // Cấu hình hạng mục và cài đặt chung
@@ -58,18 +62,78 @@ service cloud.firestore {
         'status', 'gateConfirmTime', 'dock', 'dockAssignTime', 'processDoneTime', 'gateExitTime',
         'deliveryCompleteTime', 'updatedAt', 'updatedBy', 'history']);
     }
+    // ==== Vận tải theo chuyến (điều phối chia xe, tài xế xác nhận từng bước) ====
+    function myCarrier() { return profile().get('carrier', ''); }
+    function myIdCard() { return profile().get('idCard', ''); }
+    function ownCarrierTrip() {
+      return myCarrier() != '' && resource.data.get('source', '') == 'plan'
+        && resource.data.get('carrier', '') == myCarrier() && request.resource.data.get('carrier', '') == myCarrier();
+    }
+    function stepStatus(canCancel) {
+      return request.resource.data.status == resource.data.status
+        || (resource.data.status == 'planned' && request.resource.data.status in ['arrived', 'waiting_gate'])
+        || (resource.data.status == 'waiting_delivery' && request.resource.data.status == 'completed')
+        || (canCancel && resource.data.status == 'planned' && request.resource.data.status == 'cancelled');
+    }
+    function driverKeys() {
+      return ['plate', 'vehicleType', 'idCard', 'driverName', 'driverPhone', 'status', 'arrivalTime', 'arrivalDate', 'gateConfirmTime',
+        'driverRegAt', 'driverArrivedAt', 'driverLoadedAt', 'driverAtDestAt', 'driverDeliveredAt', 'deliveryCompleteTime', 'lines', 'photoCount',
+        'history', 'updatedAt', 'updatedBy'];
+    }
+    function costKeys() { return ['costs', 'costStatus', 'costBy', 'costAt']; }
+    // Không tự chốt chi phí; kế toán chốt rồi thì không sửa nữa
+    function costOk(allowed) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(costKeys())
+        || (resource.data.get('costStatus', '') != 'approved' && request.resource.data.get('costStatus', '') in allowed);
+    }
+    // GHA: đơn vị vận tải được dùng 3PL
+    function gha() {
+      return hasRole('van_tai') && myCarrier() != ''
+        && get(/databases/$(database)/documents/carriers/$(myCarrier())).data.get('uses3PL', false) == true;
+    }
     match /trips/{id} {
       allow read: if isStaff();
       allow create: if (isAdmin() || ((hasRole('bao_ve') || hasRole('thu_kho')) && inMyWarehouse(request.resource.data.warehouse)))
         && request.resource.data.status in ['arrived', 'waiting_gate']
         && request.resource.data.createdBy == me();
+      // Chia xe: chuyến chờ xe đến kho
+      allow create: if (isAdmin() || (hasRole('van_tai') && myCarrier() != '' && request.resource.data.carrier == myCarrier()))
+        && request.resource.data.status == 'planned' && request.resource.data.source == 'plan'
+        && request.resource.data.createdBy == me();
       allow update: if isAdmin()
         || (inMyWarehouse(resource.data.warehouse) && sameTrip()
-            && ((hasRole('bao_ve') && guardStep()) || (hasRole('thu_kho') && dockStep())));
+            && ((hasRole('bao_ve') && guardStep()) || (hasRole('thu_kho') && dockStep())))
+        // Điều phối vận tải: sửa chuyến, làm thay tài xế, nhập chi phí
+        || (hasRole('van_tai') && ownCarrierTrip() && stepStatus(true) && costOk(['entered'])
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(driverKeys().concat(costKeys()).concat(['plannedDate', 'note', 'cancelReason', 'cancelTime'])))
+        // Tài xế: nhận chuyến (CCCD của mình) và xác nhận từng bước; nhóm xe nội bộ tự tính cước
+        || (hasRole('tai_xe') && ownCarrierTrip() && myIdCard() != ''
+          && resource.data.get('idCard', '') in ['', myIdCard()] && request.resource.data.idCard == myIdCard()
+          && stepStatus(false) && costOk(['auto'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(driverKeys().concat(costKeys())))
+        // Kế toán chốt chi phí chuyến
+        || (hasRole('ke_toan') && request.resource.data.costStatus == 'approved'
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['costStatus', 'costApprovedBy', 'costApprovedAt', 'history', 'updatedAt', 'updatedBy']));
+    }
+    // Ảnh phiếu giao hàng (nén, lưu thẳng Firestore)
+    match /tripPhotos/{id} {
+      allow read: if isStaff();
+      allow create: if isStaff() && request.resource.data.by == me() && request.resource.data.data.size() < 900000
+        && (isAdmin() || ((hasRole('van_tai') || hasRole('tai_xe')) && request.resource.data.carrier == myCarrier()));
+    }
+    // 3PL của chuyến: chỉ GHA và quản trị gốc (admin khách không đọc được)
+    match /tripPrivate/{id} {
+      allow read: if isSuper() || (gha() && resource.data.carrier == myCarrier());
+      allow create, update: if isSuper() || (gha() && request.resource.data.carrier == myCarrier());
+    }
+    match /threepl/{id} {
+      allow read, create, update: if isSuper() || gha();
     }
 
     // Cấp số chứng từ: nhân viên vận hành chỉ được tăng "Số tiếp theo"
-    function opStaff() { return hasRole('bao_ve') || hasRole('thu_kho') || hasRole('ke_toan') || hasRole('kinh_doanh'); }
+    function opStaff() { return hasRole('bao_ve') || hasRole('thu_kho') || hasRole('ke_toan') || hasRole('kinh_doanh') || hasRole('van_tai'); }
     match /codeRules/{code} {
       allow create: if opStaff() && code in ['GRP', 'SP', 'PN', 'PX', 'CV', 'TC', 'DC', 'SO', 'PO', 'STO']
         && request.resource.data.next > 1;
@@ -193,12 +257,17 @@ service cloud.firestore {
     match /{coll}/{id} {
       allow read: if isStaff() && coll in [
         'companies', 'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses',
-        'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'threepl', 'codeRules'];
+        'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'codeRules', 'freightRates'];
       allow create, update: if isAdmin() && coll in [
         'companies', 'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses',
-        'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'threepl', 'codeRules'];
+        'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'codeRules', 'freightRates'];
       // Kinh doanh, kế toán thêm/sửa nhanh khách hàng, địa chỉ giao, mã hàng ngay khi lập đơn (không xóa)
       allow create, update: if coll in ['soldto', 'shipto', 'items', 'suppliers'] && (hasRole('kinh_doanh') || hasRole('ke_toan'));
+      // Kế toán quản lý bảng giá cước
+      allow create, update: if coll == 'freightRates' && hasRole('ke_toan');
+      // Đơn vị vận tải thêm / sửa xe, tài xế của đơn vị mình
+      allow create, update: if coll in ['vehicles', 'drivers'] && hasRole('van_tai') && profile().get('carrier', '') != ''
+        && request.resource.data.carrier == profile().get('carrier', '') && (resource == null || resource.data.carrier == profile().get('carrier', ''));
       // Thêm nhanh lý do ngay trên phiếu kho / đơn hàng
       allow create, update: if coll == 'reasons' && (hasRole('thu_kho') || hasRole('kinh_doanh') || hasRole('ke_toan'));
       allow create: if coll in ['locations', 'docks'] && hasRole('thu_kho')

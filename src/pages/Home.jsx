@@ -6,11 +6,11 @@ import { useApp } from '../context/AppContext';
 import { CATALOGS, GROUPS, ROLES, roleLabel } from '../catalogs';
 
 export default function Home() {
-  const { name, role, isAdmin, settings } = useApp();
+  const { name, role, isAdmin, can3PL, settings } = useApp();
   const [co, setCo] = useState(null);
   const [saved, setSaved] = useState('');
   const [counts, setCounts] = useState({});
-  const cats = CATALOGS.filter((c) => isAdmin || !c.adminOnly);
+  const cats = CATALOGS.filter((c) => (isAdmin || !c.adminOnly) && (!c.only3PL || can3PL));
 
   useEffect(() => {
     cats.forEach((c) =>

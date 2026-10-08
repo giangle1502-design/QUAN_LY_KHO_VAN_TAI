@@ -22,10 +22,12 @@ import Dashboard from './pages/Dashboard';
 import Orders from './pages/orders/Orders';
 import Reports from './pages/reports/Reports';
 import Deletes from './pages/admin/Deletes';
+import Hauling from './pages/transport/Hauling';
+import Driver from './pages/transport/Driver';
 import ResetData from './pages/admin/ResetData';
 
 export default function App() {
-  const { user, allowed, isAdmin, isSuper, canDesign, hasRole, loading, logout, email } = useApp();
+  const { user, allowed, isAdmin, isSuper, role, canDesign, hasRole, loading, logout, email } = useApp();
   if (loading) return <div className="center">Đang tải…</div>;
   if (!user) return <Login />;
   if (!user.emailVerified) return <VerifyEmail user={user} logout={logout} />;
@@ -46,7 +48,9 @@ export default function App() {
       <Route path="kho/phieu/:id/nhan" element={<PrintLabels />} />
       <Route path="kho/giai-chap/:id/in" element={<PrintRelease />} />
       <Route element={<Layout />}>
-        <Route index element={<Dashboard />} />
+        <Route index element={role === 'van_tai' ? <Navigate to="/van-tai" /> : role === 'tai_xe' ? <Navigate to="/tai-xe" /> : <Dashboard />} />
+        <Route path="van-tai" element={<Hauling />} />
+        <Route path="tai-xe" element={<Driver />} />
         <Route path="dm" element={<Home />} />
         <Route path="dm/:key" element={<CatalogPage />} />
         {hasRole('bao_ve', 'thu_kho') && <Route path="xe/dang-ky" element={<Register />} />}

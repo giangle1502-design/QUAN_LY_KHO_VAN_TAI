@@ -39,25 +39,38 @@ export function AppProvider({ children }) {
   const fieldsOf = useCallback((key) => mergeFields(key, fieldConfig[key]), [fieldConfig]);
 
   // Kho người dùng được thao tác (mảng rỗng = tất cả)
+  // Điều phối vận tải / tài xế thuộc 1 đơn vị vận tải
+  const myCarrier = ['van_tai', 'tai_xe'].includes(role) ? userDoc?.carrier || '' : '';
+  const myIdCard = role === 'tai_xe' ? userDoc?.idCard || '' : '';
+  const [carrierDoc, setCarrierDoc] = useState(null);
+  useEffect(() => {
+    if (!myCarrier) { setCarrierDoc(null); return; }
+    return onSnapshot(doc(db, 'carriers', myCarrier), (s) => setCarrierDoc(s.exists() ? s.data() : null), () => setCarrierDoc(null));
+  }, [myCarrier]);
+  // 3PL chỉ GHA (đơn vị vận tải được dùng 3PL) và quản trị gốc thấy, admin khách không thấy
+  const can3PL = isSuper || (role === 'van_tai' && carrierDoc?.uses3PL === true);
   const inMyWarehouses = useCallback((wh) => !myWarehouses.length || myWarehouses.includes(wh), [myWarehouses]);
 
   const canEdit = useCallback((cat, row) => {
+    if (cat.only3PL && !can3PL) return false;
     if (isAdmin) return true;
     if (cat.adminOnly || !cat.editRoles?.includes(role)) return false;
+    // Đơn vị vận tải chỉ sửa xe, tài xế của đơn vị mình
+    if (role === 'van_tai') return !!myCarrier && (!cat.carrierField || !row || row[cat.carrierField] === myCarrier);
     return !cat.warehouseField || !row || inMyWarehouses(row[cat.warehouseField]);
-  }, [isAdmin, role, inMyWarehouses]);
+  }, [isAdmin, role, inMyWarehouses, myCarrier, can3PL]);
 
   // Thiết lập biểu mẫu (thêm / sửa trường): quản trị hoặc người được cấp quyền
   const canDesign = isAdmin || userDoc?.formDesigner === true;
   const hasRole = useCallback((...roles) => isAdmin || roles.includes(role), [isAdmin, role]);
 
   const value = useMemo(() => ({
-    user, email, role, isAdmin, isSuper, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole,
+    user, email, role, isAdmin, isSuper, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, myCarrier, myIdCard, carrierDoc, can3PL, userDoc,
     name: userDoc?.name || user?.displayName || email,
     fieldConfig, fieldsOf, settings,
     loading: user === undefined || (!!user && userDoc === undefined && !isSuper),
     logout: () => signOut(auth),
-  }), [user, email, role, isAdmin, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, userDoc, fieldConfig, fieldsOf, settings, isSuper]);
+  }), [user, email, role, isAdmin, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, myCarrier, myIdCard, carrierDoc, can3PL, userDoc, fieldConfig, fieldsOf, settings, isSuper]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

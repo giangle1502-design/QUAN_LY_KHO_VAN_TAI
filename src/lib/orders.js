@@ -189,14 +189,16 @@ export async function saveOrder(id, patch, user) {
       if (o && l.item !== o.item && done > EPS) throw new Error(`Dòng ${o.item} đã giao/nhận ${done / 1000} tấn, không đổi mã hàng được.`);
       if (n(l.qtyKg) < done - EPS) throw new Error(`Dòng ${l.item}: số lượng đặt không được nhỏ hơn phần đã giao/nhận (${done / 1000} tấn).`);
       return { ...l, no: o ? o.no : next++, doneKg: done, ...(cur.type === 'STO' ? { receivedKg: o ? n(o.receivedKg) : 0 } : {}),
-        ...(o && n(o.returnedKg) ? { returnedKg: n(o.returnedKg) } : {}) };
+        ...(o && n(o.returnedKg) ? { returnedKg: n(o.returnedKg) } : {}),
+        // Đơn vị vận tải admin đã giao cho dòng (form đơn không sửa trường này)
+        ...(o && o.carrier && l.carrier == null ? { carrier: o.carrier } : {}) };
     });
     for (const o of cur.lines) {
       if (n(o.doneKg) > EPS && !lines.some((l) => l.no === o.no)) throw new Error(`Dòng ${o.item} đã giao/nhận, không xóa được.`);
     }
     const at = new Date().toISOString();
     tx.update(ref, {
-      ...patch, lines, nextLineNo: next, status: statusOf(cur, lines), updatedAt: at, updatedBy: user.email,
+      ...patch, lines, carriers: [...new Set(lines.map((l) => l.carrier).filter(Boolean))], nextLineNo: next, status: statusOf(cur, lines), updatedAt: at, updatedBy: user.email,
       history: [...(cur.history || []), { at, by: user.email, byName: user.name, action: 'Sửa đơn' }],
     });
   });

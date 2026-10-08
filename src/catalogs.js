@@ -33,6 +33,8 @@ export const ROLES = [
   ['bao_ve', 'Bảo vệ', 'Xem danh mục (xác nhận xe vào/ra cổng ở bước sau)'],
   ['kinh_doanh', 'Kinh doanh / Mua hàng', 'Lập và theo dõi đơn bán (SO), đơn mua (PO), lệnh chuyển kho (STO); xem tồn kho và chuyến xe'],
   ['ke_toan', 'Kế toán', 'Xem mọi thứ; lập SO/PO; đổi tình trạng thế chấp (KTC, HTC, DGC)'],
+  ['van_tai', 'Điều phối vận tải', 'Thấy đơn được giao cho đơn vị mình, chia xe thành chuyến, làm thay tài xế, nhập cước / chi hộ / bốc xếp / số HĐ; quản lý xe, tài xế của đơn vị'],
+  ['tai_xe', 'Tài xế', 'Dùng điện thoại: nhận chuyến, đăng ký số xe / CCCD, xác nhận đến kho, lấy hàng xong, đến điểm giao, giao xong (chụp phiếu)'],
   ['xem', 'Chỉ xem', 'Chỉ xem danh mục'],
 ];
 export const roleLabel = (r) => ROLES.find((x) => x[0] === r)?.[1] || r || '';
@@ -239,11 +241,13 @@ export const CATALOGS = [
       { key: 'taxCode', label: 'Mã số thuế', type: 'text' },
       { key: 'contact', label: 'Người liên hệ', type: 'text' },
       { key: 'phone', label: 'Điện thoại', type: 'text' },
+      { key: 'kind', label: 'Loại', type: 'select', options: ['Thuê ngoài', 'Nội bộ'], default: 'Thuê ngoài', help: 'Nội bộ: cước tự tính theo bảng giá khi giao xong, không cần nhập hóa đơn' },
+      { key: 'uses3PL', label: 'Được dùng 3PL (GHA)', type: 'checkbox', default: false, help: 'Điều phối của đơn vị này thấy danh mục 3PL và chỉ định 3PL cho chuyến; admin khách không thấy' },
       { key: 'active', label: 'Đang hợp tác', type: 'checkbox', default: true },
     ],
   },
   {
-    key: 'vehicles', group: 'Vận tải', icon: '🚚', title: 'Xe', short: 'Xe', idField: 'plate', upperId: true,
+    key: 'vehicles', group: 'Vận tải', icon: '🚚', title: 'Xe', short: 'Xe', idField: 'plate', upperId: true, editRoles: ['van_tai'], carrierField: 'carrier',
     fields: [
       { key: 'plate', label: 'Biển số xe', type: 'text', required: true },
       { key: 'carrier', label: 'Đơn vị vận tải', type: 'ref', ref: 'carriers' },
@@ -253,7 +257,7 @@ export const CATALOGS = [
     ],
   },
   {
-    key: 'drivers', group: 'Vận tải', icon: '🧑‍✈️', title: 'Tài xế', short: 'Tài xế', idField: 'idCard',
+    key: 'drivers', group: 'Vận tải', icon: '🧑‍✈️', title: 'Tài xế', short: 'Tài xế', idField: 'idCard', editRoles: ['van_tai'], carrierField: 'carrier',
     fields: [
       { key: 'idCard', label: 'Số CCCD', type: 'text', required: true },
       { key: 'name', label: 'Họ tên tài xế', type: 'text', required: true },
@@ -261,9 +265,29 @@ export const CATALOGS = [
       { key: 'license', label: 'Số bằng lái', type: 'text' },
       { key: 'carrier', label: 'Đơn vị vận tải', type: 'ref', ref: 'carriers' },
     ],
+  },  {
+    key: 'freightRates', group: 'Vận tải', icon: '💰', title: 'Bảng giá cước vận chuyển', short: 'Bảng giá cước', idField: 'code', upperId: true, editRoles: ['ke_toan'],
+    help: 'Để trống một điều kiện = áp dụng cho mọi giá trị. Phiếu xuất lấy dòng giá khớp cụ thể nhất (địa chỉ giao > đơn vị vận tải > khách hàng / kho nhận > loại xe > kho đi).',
+    fields: [
+      { key: 'code', label: 'Mã giá', type: 'text', required: true, help: 'VD: K1-BD-T (tự đặt)' },
+      { key: 'basis', label: 'Cách tính', type: 'select', options: ['Theo tấn', 'Theo chuyến'], default: 'Theo tấn', required: true },
+      { key: 'price', label: 'Đơn giá (đ/tấn hoặc đ/chuyến)', type: 'currency', required: true },
+      { key: 'minAmount', label: 'Cước tối thiểu mỗi chuyến (đ)', type: 'currency', help: 'Tính theo tấn mà thấp hơn mức này thì lấy mức này' },
+      { key: 'carrier', label: 'Đơn vị vận tải', type: 'ref', ref: 'carriers' },
+      { key: 'fromWarehouse', label: 'Kho đi', type: 'ref', ref: 'warehouses' },
+      { key: 'toCustomer', label: 'Khách hàng', type: 'ref', ref: 'soldto' },
+      { key: 'toShipCode', label: 'Địa chỉ giao (mã giao)', type: 'ref', ref: 'shipto' },
+      { key: 'toWarehouse', label: 'Kho nhận (chuyển kho)', type: 'ref', ref: 'warehouses' },
+      { key: 'vehicleType', label: 'Loại xe', type: 'select', options: ['', 'Xe tải', 'Container 20', 'Container 40', 'Đầu kéo + mooc'] },
+      { key: 'fromDate', label: 'Hiệu lực từ', type: 'date' },
+      { key: 'toDate', label: 'Hiệu lực đến', type: 'date' },
+      { key: 'note', label: 'Ghi chú', type: 'textarea' },
+      { key: 'active', label: 'Đang áp dụng', type: 'checkbox', default: true },
+    ],
   },
+
   {
-    key: 'threepl', group: 'Vận tải', icon: '🤝', title: 'Danh sách 3-PL', short: 'Danh sách 3-PL', idField: 'code',
+    key: 'threepl', group: 'Vận tải', icon: '🤝', title: 'Danh sách 3-PL', short: 'Danh sách 3-PL', idField: 'code', only3PL: true, editRoles: ['van_tai'],
     fields: [
       { key: 'code', label: 'Mã 3-PL', type: 'text', required: true },
       { key: 'name', label: 'Tên 3-PL', type: 'text', required: true },
@@ -308,6 +332,8 @@ export const CATALOGS = [
       { key: 'name', label: 'Họ tên', type: 'text', required: true },
       { key: 'role', label: 'Vai trò', type: 'select', options: ROLES.map((r) => r[0]), labels: Object.fromEntries(ROLES.map((r) => [r[0], r[1]])), required: true, default: 'xem' },
       { key: 'warehouses', label: 'Kho được thao tác', type: 'multiref', ref: 'warehouses', help: 'Để trống = tất cả kho' },
+      { key: 'carrier', label: 'Thuộc đơn vị vận tải', type: 'ref', ref: 'carriers', help: 'Bắt buộc với vai trò Điều phối vận tải / Tài xế: chỉ thấy dữ liệu của đơn vị này' },
+      { key: 'idCard', label: 'CCCD (tài xế)', type: 'text', help: 'Vai trò Tài xế: số CCCD để nhận chuyến' },
       { key: 'formDesigner', label: 'Được thiết lập biểu mẫu', type: 'checkbox', default: false, help: 'Tự thêm / sửa / ẩn trường của danh mục và biểu mẫu đơn hàng (Quản lý trường, nút + Thêm trường)' },
       { key: 'active', label: 'Đang hoạt động', type: 'checkbox', default: true },
     ],

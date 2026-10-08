@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { useOpCompany, useOrders } from '../../lib/hooks';
@@ -16,6 +16,7 @@ import SOForm from './SOForm';
 import { ColumnPicker } from '../../components/FormTools';
 import { displayValue } from '../../components/FieldInput';
 import { usePref } from '../../lib/prefs';
+import { useCollection } from '../../lib/hooks';
 
 const t = (kg) => fmtNum((Number(kg) || 0) / 1000, 3);
 const pct = (o) => { const x = orderTotals(o); return x.qty ? Math.min(100, (x.done / x.qty) * 100) : 0; };
@@ -198,7 +199,8 @@ function OrderList({ type }) {
 // ---------------------------------------------------------------------------
 function OrderDetail({ o, onClose, onEdit }) {
   const meta = ORDER_TYPES[o.type];
-  const { hasRole, email, name, fieldsOf } = useApp();
+  const { hasRole, isAdmin, email, name, fieldsOf } = useApp();
+  const [assign, setAssign] = useState(false);
   const so = o.type === 'SO';
   const fk = o.type.toLowerCase();
   const headCustom = fieldsOf(`${fk}Head`).filter((f) => f.custom && !f.hidden && o[f.key] !== '' && o[f.key] != null);
@@ -245,17 +247,19 @@ function OrderDetail({ o, onClose, onEdit }) {
       <div className="table-wrap" style={{ marginBottom: 12 }}>
         <table>
           <thead><tr><th>#</th><th>{meta.due}</th>{sto ? <><th>Kho xuất</th><th>Kho nhập</th></> : <th>{so ? 'Kho xuất' : 'Kho nhập'}</th>}<th>Mã hàng</th><th>Tên hàng</th>{so && <th>Mã giao</th>}<th>TTHH</th>{lineCustom.map((f) => <th key={f.key}>{f.label}</th>)}<th className="num">Đặt (tấn)</th><th className="num">{meta.done}</th>{hasRet && <th className="num">Khách trả về</th>}
-            {sto && <><th className="num">{meta.transit}</th><th className="num">{meta.received}</th></>}<th className="num">{meta.left}</th><th>Ghi chú</th></tr></thead>
+            {sto && <><th className="num">{meta.transit}</th><th className="num">{meta.received}</th></>}<th className="num">{meta.left}</th>{o.type !== 'PO' && <th>Vận tải</th>}<th>Ghi chú</th></tr></thead>
           <tbody>{o.lines.map((l) => (
             <tr key={l.no}><td>{l.no}</td><td className="nowrap">{fmtDate(lineDue(o, l))}</td>{sto ? <><td>{lineFrom(o, l)}</td><td>{lineTo(o, l)}</td></> : <td>{lineWh(o, l) || 'Kho nào cũng được'}</td>}<td>{l.item}</td><td>{l.itemName}</td>
               {so && <td>{lineShip(o, l)}</td>}<td>{l.goodsStatus || (so ? 'KTC/DGC' : '')}</td>{lineCustom.map((f) => <td key={f.key}>{displayValue(f, l[f.key])}</td>)}<td className="num">{t(l.qtyKg)}</td><td className="num">{t(l.doneKg)}</td>{hasRet && <td className="num">{t(l.returnedKg)}</td>}
               {sto && <><td className="num">{t(transitKg(l))}</td><td className="num">{t(l.receivedKg)}</td></>}
-              <td className="num"><b>{isOpen ? t(leftKg(l)) : '–'}</b></td><td className="small">{l.note}</td></tr>
+              <td className="num"><b>{isOpen ? t(leftKg(l)) : '–'}</b></td>{o.type !== 'PO' && <td>{l.carrier || <span className="small">–</span>}</td>}<td className="small">{l.note}</td></tr>
           ))}</tbody>
         </table>
       </div>
 
-      <div className="form-actions" style={{ justifyContent: 'flex-start', marginBottom: 8 }}><MoveButtons o={o} /></div>
+      <div className="form-actions" style={{ justifyContent: 'flex-start', marginBottom: 8 }}><MoveButtons o={o} />
+        {isAdmin && o.type !== 'PO' && isOpen && <button type="button" className="btn" onClick={() => setAssign(true)}>🚛 Giao đơn vị vận tải</button>}</div>
+      {assign && <AssignCarrier o={o} onClose={() => setAssign(false)} />}
       <div className="section-head">Phiếu {sto || hasRet ? 'xuất / nhập kho' : MOVE_TYPES[moveType].label.toLowerCase()} theo đơn ({moves.length})</div>
       {!moves.length ? <Empty text={`Chưa có phiếu ${sto ? 'xuất / nhập kho' : MOVE_TYPES[moveType].label.toLowerCase()} nào gắn đơn này.`} /> : (
         <table style={{ marginBottom: 12 }}><tbody>
@@ -381,5 +385,45 @@ function ImportOrders({ type, existing, onDone }) {
       <button className="btn" disabled={busy} onClick={() => ref.current.click()}>{busy ? 'Đang nhập…' : '⬆ Nhập Excel'}</button>
       <input ref={ref} type="file" accept=".xlsx,.xls,.csv" hidden onChange={(e) => e.target.files[0] && run(e.target.files[0])} />
     </>
+  );
+}
+
+// Admin giao đơn vị vận tải cho từng dòng đơn (SO / STO): đơn vị đó thấy đơn và chia xe
+function AssignCarrier({ o, onClose }) {
+  const { email, name } = useApp();
+  const carriers = useCollection('carriers').rows.filter((c) => c.active !== false);
+  const [map, setMap] = useState(() => Object.fromEntries(o.lines.map((l) => [l.no, l.carrier || ''])));
+  const [all, setAll] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true); setErr('');
+    const lines = o.lines.map((l) => ({ ...l, carrier: map[l.no] || '' }));
+    const at = new Date().toISOString();
+    const changed = lines.filter((l, i) => (o.lines[i].carrier || '') !== l.carrier).map((l) => `dòng ${l.no} → ${l.carrier || 'bỏ'}`);
+    try {
+      await updateDoc(doc(db, 'orders', o.id), { lines, carriers: [...new Set(lines.map((l) => l.carrier).filter(Boolean))], updatedAt: at, updatedBy: email,
+        history: [...(o.history || []), { at, by: email, byName: name, action: `Giao vận tải: ${changed.join(', ') || 'không đổi'}` }] });
+      onClose();
+    } catch (e) { setErr(e.message); }
+    setBusy(false);
+  };
+  const opts = <>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}{c.kind === 'Nội bộ' ? ' (nội bộ)' : ''}</option>)}</>;
+  return (
+    <Modal title={`Giao đơn vị vận tải · ${o.id}`} onClose={onClose} wide>
+      <p className="hint">Đơn vị vận tải được giao sẽ thấy các dòng này ở mục <b>Vận chuyển</b> và tự chia xe theo tải trọng.</p>
+      <div className="filters">Áp cho tất cả dòng:
+        <select value={all} onChange={(e) => { setAll(e.target.value); setMap(Object.fromEntries(o.lines.map((l) => [l.no, e.target.value]))); }}><option value="">-- Chọn --</option>{opts}</select></div>
+      <div className="table-wrap"><table>
+        <thead><tr><th>#</th><th>Kho xuất</th><th>Mã hàng</th><th>Giao đến</th><th className="num">Còn lại (tấn)</th><th>Đơn vị vận tải</th></tr></thead>
+        <tbody>{o.lines.map((l) => (
+          <tr key={l.no}><td>{l.no}</td><td>{lineWh(o, l, 'out')}</td><td>{l.item} {l.itemName}</td><td>{o.type === 'STO' ? `Kho ${lineTo(o, l)}` : lineShip(o, l) || o.partyName}</td>
+            <td className="num">{t(leftKg(l))}</td>
+            <td><select value={map[l.no]} onChange={(e) => setMap((m) => ({ ...m, [l.no]: e.target.value }))}><option value="">-- Chưa giao --</option>{opts}</select></td></tr>
+        ))}</tbody>
+      </table></div>
+      <ErrorBox error={err} />
+      <div className="form-actions"><button className="btn" onClick={onClose}>Thôi</button><button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Đang lưu…' : 'Lưu'}</button></div>
+    </Modal>
   );
 }
