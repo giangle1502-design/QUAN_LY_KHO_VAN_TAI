@@ -108,9 +108,11 @@ export function useStock(wh) {
 // Đơn bán / đơn mua (realtime). type: 'SO' | 'PO' | '' (cả hai); onlyOpen: chỉ đơn chưa xong
 export function useOrders(type, onlyOpen = false) {
   const [state, setState] = useState({ rows: [], loading: true, error: '' });
+  const { salesOnly, email } = useApp();
   useEffect(() => {
-    // Lọc 1 trường trên server (không cần tạo chỉ mục kép), lọc trạng thái trên trình duyệt
-    const q = type ? query(collection(db, 'orders'), where('type', '==', type)) : collection(db, 'orders');
+    // Lọc trên server theo loại đơn (và sale phụ trách nếu người dùng chỉ được xem đơn của mình), lọc trạng thái trên trình duyệt
+    const conds = [...(type ? [where('type', '==', type)] : []), ...(salesOnly ? [where('sales', '==', email || '-')] : [])];
+    const q = conds.length ? query(collection(db, 'orders'), ...conds) : collection(db, 'orders');
     return onSnapshot(
       q,
       (snap) => setState({
@@ -119,6 +121,6 @@ export function useOrders(type, onlyOpen = false) {
       }),
       (e) => setState({ rows: [], loading: false, error: e.message })
     );
-  }, [type, onlyOpen]);
+  }, [type, onlyOpen, salesOnly, email]);
   return state;
 }

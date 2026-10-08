@@ -264,5 +264,15 @@ Phiếu nhập kho chọn **Nguồn nhập** ở đầu phiếu:
 - **Giá trị mặc định** cho mọi trường (có sẵn hoặc tự thêm, trừ trường hệ thống tự tính): tự điền khi tạo mới, người nhập vẫn sửa được. Ngày: Hôm nay, Ngày mai, Sau 2/3/7/30 ngày. Ô chọn danh mục: nhập mã (vd. kho K1), trường liên kết tự điền theo.
 - Thiết lập ở "+ Thêm trường" (trường mới) hoặc cột **Mặc định** trong Quản lý trường (mọi trường). Để trống = bỏ mặc định. Không cần sửa firestore.rules.
 
+## Trường công thức
+- Kiểu **Công thức (tự tính)**: vd. dòng hàng `Thành tiền = [Số lượng (tấn)] * [Đơn giá]`; phần chung `Giá trị hàng hóa = SUM([Thành tiền]) * (1 + [VAT])`.
+- Dùng + − * / ( ), SUM (cộng 1 trường của mọi dòng, dùng ở phần chung), ROUND, MIN, MAX, ABS. Phần trăm tính như Excel: VAT 8% = 0,08. Dòng hàng dùng được trường ở phần chung.
+- Kết quả hiện dạng Số / Tiền / Phần trăm, tính lại ngay khi nhập; trên đơn hàng không lưu mà tính lúc hiển thị (bảng, chi tiết, Excel).
+
+## Sale chỉ thấy đơn của mình, trường chỉ người được chỉ định xem
+- SO/PO có **Sale phụ trách**. Vai trò Kinh doanh chỉ thấy / sửa đơn có Sale phụ trách là mình, trừ người được tích "Kinh doanh: xem đơn của mọi sale" ở Phân quyền. Sale lập đơn thì tự là sale phụ trách. Quản trị có nút "Gán sale cho N đơn cũ" (= người lập đơn).
+- Quản lý trường → biểu mẫu đơn hàng → cột **Người được xem** (chỉ quản trị): chọn vai trò / người. Giá trị trường đó lưu riêng ở `orderSecrets`, firestore.rules chỉ cho những người này và quản trị đọc (không chỉ ẩn trên màn hình). Trường công thức dùng trường riêng tư cũng ẩn với người khác. Đổi người xem thì dữ liệu đã nhập được chuyển theo.
+- **Cần publish lại firestore.rules** (thêm salesOnly / mySale cho orders và collection orderSecrets).
+
 ## Sửa lỗi
 - Đề nghị giải chấp (và các thao tác theo kho) bị chặn quyền với tài khoản quản trị gốc chưa có hồ sơ trong *Phân quyền*: rules nay cho quản trị thao tác mọi kho.

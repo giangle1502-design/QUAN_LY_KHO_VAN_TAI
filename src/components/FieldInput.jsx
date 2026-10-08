@@ -6,6 +6,7 @@ import { fmtDate, fmtNum } from '../lib/utils';
 
 // Ô nhập cho 1 trường theo kiểu dữ liệu
 export default function FieldInput({ field: f, value, onChange, disabled, onPickRef }) {
+  if (f.type === 'formula') return <div className="readonly-val" title="Tự tính theo công thức">{displayValue(f, value) || '–'}</div>;
   if (f.type === 'ref') return <RefInput field={f} value={value} onChange={onChange} disabled={disabled} onPick={onPickRef} />;
   if (f.type === 'multiref') return <MultiRefInput field={f} value={value} onChange={onChange} disabled={disabled} />;
   if (f.type === 'select')
@@ -119,6 +120,7 @@ function MoneyInput({ value, onChange, disabled }) {
 // Giá trị hiển thị trong bảng / Excel
 export function displayValue(f, v, forExcel) {
   if (v === null || v === undefined || v === '') return '';
+  if (f.type === 'formula') return displayValue({ type: f.resultType || 'number' }, v, forExcel);
   if (f.type === 'currency') return forExcel ? Number(v) : `${fmtNum(v)} đ`;
   if (f.type === 'percent') return forExcel ? Number(v) : `${fmtNum(v, 2)}%`;
   if (f.type === 'datetime') return forExcel ? String(v).replace('T', ' ') : `${fmtDate(String(v).slice(0, 10))} ${String(v).slice(11, 16)}`;

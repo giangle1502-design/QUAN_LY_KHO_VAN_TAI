@@ -1,6 +1,7 @@
 import { doc, runTransaction } from 'firebase/firestore';
 import { db } from '../firebase';
 import { catalogByKey } from '../catalogs';
+import { writeSecrets } from './orderSecrets';
 
 // ============================================================================
 // Đơn bán (SO) và đơn mua (PO). Mỗi dòng đơn: số dòng cố định (no), mã hàng,
@@ -91,7 +92,7 @@ export function statusOf(o, lines = o.lines) {
 }
 
 // Lập đơn mới: cấp số SO/PO theo Quy tắc mã tự sinh
-export async function createOrder(o, user) {
+export async function createOrder(o, user, secrets) {
   const ruleRef = doc(db, 'codeRules', o.type);
   return runTransaction(db, async (tx) => {
     const snap = await tx.get(ruleRef);
@@ -105,6 +106,7 @@ export async function createOrder(o, user) {
       ...o, id, lines, nextLineNo: lines.length + 1, status: 'open', createdAt: at, createdBy: user.email, updatedAt: at, updatedBy: user.email,
       history: [{ at, by: user.email, byName: user.name, action: 'Lập đơn' }],
     });
+    writeSecrets(tx, { id, type: o.type }, lines, secrets, user.email);
     if (snap.exists()) tx.update(ruleRef, { next: num + 1 });
     else tx.set(ruleRef, { ...seed, next: num + 1 });
     return id;
@@ -174,7 +176,7 @@ export function matchOrderLine(order, item, usedKg = {}, moveType = 'out', opts 
 }
 
 // Sửa đơn (kinh doanh / kế toán / quản trị): giữ "đã giao/nhận", không cho đặt ít hơn phần đã làm
-export async function saveOrder(id, patch, user) {
+export async function saveOrder(id, patch, user, secrets) {
   const ref = doc(db, 'orders', id);
   return runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
@@ -201,6 +203,7 @@ export async function saveOrder(id, patch, user) {
       ...patch, lines, carriers: [...new Set(lines.map((l) => l.carrier).filter(Boolean))], nextLineNo: next, status: statusOf(cur, lines), updatedAt: at, updatedBy: user.email,
       history: [...(cur.history || []), { at, by: user.email, byName: user.name, action: 'Sửa đơn' }],
     });
+    writeSecrets(tx, cur, lines, secrets, user.email);
   });
 }
 

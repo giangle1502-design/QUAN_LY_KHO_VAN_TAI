@@ -3,20 +3,27 @@ import { useSearchParams } from 'react-router-dom';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
-import { CATALOGS, FIELD_TYPES, FORM_DEFS, GROUPS, catalogByKey } from '../catalogs';
+import { CATALOGS, FIELD_TYPES, FORM_DEFS, GROUPS, RESULT_TYPES, ROLES, catalogByKey } from '../catalogs';
+import { checkFormula, formulaToKeys, formulaToLabels } from '../lib/formula';
+import { syncFieldPrivacy } from '../lib/orderSecrets';
+import { useCollection } from '../lib/hooks';
 import { DATE_DEFAULTS, canChoose, canDefault, keyFieldsOf, parseChoices } from '../lib/fields';
 import { norm } from '../lib/utils';
-import { ErrorBox } from '../components/ui';
+import { ErrorBox, Modal } from '../components/ui';
 
 const typeLabel = (t) => FIELD_TYPES.find((x) => x[0] === t)?.[1] || { multiref: 'Chọn nhiều từ danh mục' }[t] || t;
 const REF_TARGETS = CATALOGS.filter((c) => !['codeRules', 'users'].includes(c.key));
 
 // Quản lý trường (hạng mục): đổi tên, sắp xếp, ẩn, bắt buộc, danh sách chọn và thêm trường mới cho mọi danh mục
 export default function FieldManager() {
-  const { fieldsOf, canDesign } = useApp();
+  const { fieldsOf, canDesign, isAdmin } = useApp();
   const [params] = useSearchParams();
   const [catKey, setCatKey] = useState(() => (catalogByKey(params.get('dm')) ? params.get('dm') : CATALOGS[0].key));
   const cat = catalogByKey(catKey);
+  // Biểu mẫu đơn hàng: phần chung ↔ dòng hàng tra tên trường của nhau (công thức SUM, dùng giá trị phần chung)
+  const otherKey = cat?.form ? (catKey.endsWith('Head') ? catKey.replace(/Head$/, 'Line') : catKey.replace(/Line$/, 'Head')) : '';
+  const other = otherKey ? fieldsOf(otherKey) : [];
+  const [viewersOf, setViewersOf] = useState(null); // vị trí trường đang chọn người xem
   const [list, setList] = useState([]);
   const [dirty, setDirty] = useState(false);
   const [msg, setMsg] = useState('');
@@ -24,7 +31,10 @@ export default function FieldManager() {
   const [nf, setNf] = useState({ label: '', type: 'text', ref: '' });
 
   useEffect(() => {
-    setList(fieldsOf(catKey).map((f) => ({ ...f, optionsText: (f.options || []).join(', '), defText: f.default === undefined ? '' : f.default === true ? 'true' : String(f.default) })));
+    const all = fieldsOf(catKey);
+    const oth = otherKey ? fieldsOf(otherKey) : [];
+    setList(all.map((f) => ({ ...f, optionsText: (f.options || []).join(', '), defText: f.default === undefined ? '' : f.default === true ? 'true' : String(f.default),
+      formulaText: f.type === 'formula' ? formulaToLabels(f.formula, all, oth) : '' })));
     setDirty(false); setMsg(''); setErr('');
   }, [catKey, fieldsOf]);
 
@@ -64,6 +74,10 @@ export default function FieldManager() {
     if (bad) return setErr('Tên trường không được để trống.');
     const noRef = list.find((f) => f.custom && f.type === 'ref' && !f.ref);
     if (noRef) return setErr(`Trường "${noRef.label}": chọn danh mục để lấy dữ liệu.`);
+    for (const f of list.filter((x) => x.custom && x.type === 'formula')) {
+      const e = checkFormula(f.formulaText, [list, other], catKey.endsWith('Head') ? other : []);
+      if (e) return setErr(`Công thức "${f.label}": ${e}`);
+    }
     const out = list.map((f) => {
       const o = { key: f.key, label: f.label.trim(), required: !!f.required, hidden: !!f.hidden };
       if (canChoose(f)) { const c = parseChoices(f.optionsText, f.type); if (c.length) o.options = c; }
@@ -75,12 +89,20 @@ export default function FieldManager() {
         else if (d !== '') o.default = ['number', 'percent', 'currency'].includes(f.type) ? Number(d) : d;
         else if (baseDef !== undefined && baseDef !== '') o.default = '';
       }
-      if (f.custom) Object.assign(o, { custom: true, type: f.type, ...(f.type === 'ref' ? { ref: f.ref } : {}), ...(f.link ? { link: f.link } : {}) });
+      if (f.custom) Object.assign(o, { custom: true, type: f.type, ...(f.type === 'ref' ? { ref: f.ref } : {}), ...(f.link ? { link: f.link } : {}),
+        ...(f.type === 'formula' ? { formula: formulaToKeys(f.formulaText, list, other), resultType: f.resultType || 'number' } : {}),
+        ...(f.viewers?.length && f.type !== 'formula' ? { viewers: f.viewers } : {}) });
       return o;
     });
+    // Đổi người được xem trường đơn hàng: chuyển dữ liệu đã nhập sang / ra khỏi phần riêng tư
+    const before = fieldsOf(catKey);
+    const changed = cat.form ? out.filter((o) => o.custom && o.type !== 'formula'
+      && (before.find((b) => b.key === o.key)?.viewers || []).join(',') !== (o.viewers || []).join(',')) : [];
     try {
       await setDoc(doc(db, 'settings', 'fields'), { [catKey]: out }, { merge: true });
-      setDirty(false); setMsg('Đã lưu. Các form, bảng và Excel của danh mục này đã cập nhật.');
+      let moved = 0;
+      for (const o of changed) moved += await syncFieldPrivacy(catKey.slice(0, -4).toUpperCase(), catKey.endsWith('Head') ? 'head' : 'line', o.key, o.viewers || []);
+      setDirty(false); setMsg(`Đã lưu. Các form, bảng và Excel của danh mục này đã cập nhật.${changed.length ? ` Đã áp quyền xem cho ${changed.length} trường (${moved} đơn có dữ liệu).` : ''}`);
     } catch (e) {
       setErr(e.message);
     }
@@ -114,12 +136,12 @@ export default function FieldManager() {
       <div className="table-wrap">
         <table>
           <thead>
-            <tr><th className="stt">STT</th><th>Tên trường</th><th>Kiểu dữ liệu</th><th>Danh sách chọn (cách nhau dấu phẩy)</th><th>Mặc định</th><th>Bắt buộc</th><th>Ẩn</th><th></th></tr>
+            <tr><th className="stt">STT</th><th>Tên trường</th><th>Kiểu dữ liệu</th><th>Danh sách chọn / Công thức</th><th>Mặc định</th>{cat.form && <th>Người được xem</th>}<th>Bắt buộc</th><th>Ẩn</th><th></th></tr>
           </thead>
           <tbody>
             {list.map((f, i) => {
               const isKey = keys.includes(f.key);
-              const auto = f.computed || f.system;
+              const auto = !!(f.computed || f.system);
               return (
                 <tr key={f.key} className="fm-row">
                   <td className="stt">{i + 1}</td>
@@ -144,7 +166,14 @@ export default function FieldManager() {
                     {f.link && <div className="link-hint">↳ {linkText(f.link)}</div>}
                   </td>
                   <td>
-                    {canChoose(f)
+                    {f.custom && f.type === 'formula' ? (
+                      <>
+                        <textarea rows={2} value={f.formulaText || ''} onChange={(e) => upd(i, { formulaText: e.target.value })} placeholder="VD: [Số lượng (tấn)] * [Đơn giá]" />
+                        <select value={f.resultType || 'number'} onChange={(e) => upd(i, { resultType: e.target.value })} style={{ marginTop: 4 }}>
+                          {RESULT_TYPES.map(([v, l]) => <option key={v} value={v}>Kết quả: {l}</option>)}</select>
+                        {f.formulaText && checkFormula(f.formulaText, [list, other], catKey.endsWith('Head') ? other : []) && <div className="req small">{checkFormula(f.formulaText, [list, other], catKey.endsWith('Head') ? other : [])}</div>}
+                      </>
+                    ) : canChoose(f)
                       ? <input type="text" value={f.optionsText} onChange={(e) => upd(i, { optionsText: e.target.value })} placeholder={f.type === 'percent' ? 'VD: 0, 5, 8, 10' : 'VD: Bao, Kg, Tấn'} />
                       : <span className="small">—</span>}
                   </td>
@@ -160,6 +189,14 @@ export default function FieldManager() {
                       ) : <input type="text" value={f.defText} onChange={(e) => upd(i, { defText: e.target.value })} style={{ width: 110 }}
                         placeholder={f.type === 'ref' ? `Mã ${catalogByKey(f.ref)?.short || ''}` : f.type === 'percent' ? 'VD: 8' : ''} />}
                   </td>
+                  {cat.form && (
+                    <td>
+                      {!f.custom ? <span className="small">Mọi người</span>
+                        : f.type === 'formula' ? <span className="small" title="Chỉ hiện với người xem được mọi trường trong công thức">Theo trường trong công thức</span>
+                        : <button type="button" className="btn ghost sm" disabled={!isAdmin} title={isAdmin ? '' : 'Chỉ quản trị đặt người được xem'} onClick={() => setViewersOf(i)}>
+                          {f.viewers?.length ? `🔒 ${viewerText(f.viewers)}` : 'Mọi người'}</button>}
+                    </td>
+                  )}
                   <td><input type="checkbox" checked={!!f.required} disabled={isKey || auto || (f.builtin && cat.fields.find((x) => x.key === f.key)?.required)} onChange={(e) => upd(i, { required: e.target.checked })} /></td>
                   <td><input type="checkbox" checked={!!f.hidden} disabled={isKey} onChange={(e) => upd(i, { hidden: e.target.checked })} /></td>
                   <td className="act">
@@ -173,6 +210,9 @@ export default function FieldManager() {
           </tbody>
         </table>
       </div>
+      {viewersOf != null && list[viewersOf] && (
+        <ViewersPicker field={list[viewersOf]} onClose={() => setViewersOf(null)} onSave={(v) => { upd(viewersOf, { viewers: v }); setViewersOf(null); }} />
+      )}
       <div className="inline-add card" style={{ marginTop: 12, alignItems: 'center' }}>
         <b>Thêm trường:</b>
         <input placeholder="Tên trường mới" value={nf.label} onChange={(e) => setNf({ ...nf, label: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && add()} />
@@ -188,5 +228,31 @@ export default function FieldManager() {
         <button className="btn" onClick={add}>+ Thêm</button>
       </div>
     </div>
+  );
+}
+
+const viewerText = (v) => v.map((x) => ROLES.find((r) => r[0] === x)?.[1] || x).join(', ');
+
+// Chọn người / vai trò được xem 1 trường đơn hàng (quản trị luôn xem được)
+function ViewersPicker({ field, onClose, onSave }) {
+  const users = useCollection('users').rows.filter((u) => u.active !== false).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const [sel, setSel] = useState(field.viewers || []);
+  const toggle = (x) => setSel((s) => (s.includes(x) ? s.filter((y) => y !== x) : [...s, x]));
+  return (
+    <Modal title={`Người được xem: ${field.label}`} onClose={onClose}>
+      <p className="hint">Không chọn ai = mọi người xem được. Đã chọn thì chỉ những người / vai trò này và quản trị thấy trường này (cả trên màn hình, Excel và dữ liệu tải về). Trường công thức dùng trường này cũng ẩn với người khác.</p>
+      <div className="section-head">Theo vai trò</div>
+      <div className="tags">{ROLES.filter((r) => r[0] !== 'admin').map(([k, l]) => (
+        <label key={k} className={'chip' + (sel.includes(k) ? ' on' : '')}><input type="checkbox" hidden checked={sel.includes(k)} onChange={() => toggle(k)} />{l}</label>
+      ))}</div>
+      <div className="section-head" style={{ marginTop: 10 }}>Theo người dùng</div>
+      <div className="tags">{users.filter((u) => u.role !== 'admin').map((u) => (
+        <label key={u.email} className={'chip' + (sel.includes(u.email) ? ' on' : '')} title={u.email}><input type="checkbox" hidden checked={sel.includes(u.email)} onChange={() => toggle(u.email)} />{u.name || u.email}</label>
+      ))}</div>
+      <div className="form-actions">
+        <button type="button" className="btn" onClick={() => setSel([])}>Bỏ giới hạn</button>
+        <button type="button" className="btn primary" onClick={() => onSave(sel)}>Xong</button>
+      </div>
+    </Modal>
   );
 }

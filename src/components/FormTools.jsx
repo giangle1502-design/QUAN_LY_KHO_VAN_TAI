@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
-import { CATALOGS, FIELD_TYPES, catalogByKey } from '../catalogs';
+import { CATALOGS, FIELD_TYPES, RESULT_TYPES, catalogByKey } from '../catalogs';
+import { checkFormula, formulaToKeys } from '../lib/formula';
 import { CHOICE_TYPES, DATE_DEFAULTS, parseChoices, toStored } from '../lib/fields';
 
 const REF_TARGETS = CATALOGS.filter((c) => !['codeRules', 'users'].includes(c.key));
@@ -62,7 +63,7 @@ export function ColumnPicker({ cols, hidden, setHidden }) {
 export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường' }) {
   const { canDesign, fieldsOf } = useApp();
   const [open, setOpen] = useState(false);
-  const EMPTY = { label: '', type: 'text', ref: '', options: '', def: '', via: '', viaCat: '', field: '', required: false };
+  const EMPTY = { label: '', type: 'text', ref: '', options: '', def: '', via: '', viaCat: '', field: '', required: false, formula: '', resultType: 'currency' };
   const [f, setF] = useState(EMPTY);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -70,6 +71,12 @@ export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường'
   const via = f.via === '__cat' ? (f.viaCat ? { key: '__cat', label: catalogByKey(f.viaCat)?.short, ref: f.viaCat } : null) : vias.find((v) => v.key === f.via);
   const targetFields = via ? fieldsOf(via.ref).filter((x) => !x.hidden) : [];
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  // Công thức: tra tên trường cùng phần và phần còn lại của đơn (dòng hàng ↔ phần chung)
+  const otherKey = /Head$/.test(formKey) ? formKey.replace(/Head$/, 'Line') : /Line$/.test(formKey) ? formKey.replace(/Line$/, 'Head') : '';
+  const own = fieldsOf(formKey).filter((x) => !x.hidden);
+  const other = otherKey && catalogByKey(otherKey) ? fieldsOf(otherKey).filter((x) => !x.hidden) : [];
+  const numericFields = (list) => list.filter((x) => ['number', 'currency', 'percent', 'formula'].includes(x.type));
+  const fErr = f.type === 'formula' && f.formula ? checkFormula(f.formula, [own, other], /Head$/.test(formKey) ? other : []) : '';
   const save = async () => {
     setErr('');
     const lb = f.label.trim();
@@ -77,6 +84,8 @@ export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường'
     const cur = fieldsOf(formKey);
     if (cur.some((x) => norm(x.label) === norm(lb))) return setErr('Đã có trường cùng tên.');
     if (f.type === 'ref' && !f.ref) return setErr('Chọn danh mục để lấy dữ liệu.');
+    if (f.type === 'formula' && !f.formula.trim()) return setErr('Nhập công thức.');
+    if (fErr) return setErr(fErr);
     const choices = parseChoices(f.options, f.type);
     const defVal = f.type === 'checkbox' ? (f.def ? true : '') : f.def === '' ? '' : ['number', 'percent', 'currency'].includes(f.type) ? Number(String(f.def).replace(/%$/, '')) : f.def;
     if (defVal !== '' && ['number', 'percent', 'currency'].includes(f.type) && !Number.isFinite(defVal)) return setErr('Giá trị mặc định phải là số.');
@@ -85,7 +94,8 @@ export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường'
     const key = `c_${slug}_${Date.now().toString(36).slice(-4)}`;
     const base = { key, label: lb, type: f.type, custom: true, required: f.required, hidden: false, ...(f.type === 'ref' ? { ref: f.ref } : {}),
       ...(CHOICE_TYPES.includes(f.type) && parseChoices(f.options, f.type).length ? { options: parseChoices(f.options, f.type) } : {}),
-      ...(defVal !== '' && defVal !== undefined ? { default: defVal } : {}) };
+      ...(defVal !== '' && defVal !== undefined && f.type !== 'formula' ? { default: defVal } : {}),
+      ...(f.type === 'formula' ? { formula: formulaToKeys(f.formula, own, other), resultType: f.resultType } : {}) };
     const patch = {};
     const extra = [];
     if (f.via === '__cat' && !via) return setErr('Chọn danh mục để liên kết.');
@@ -137,7 +147,23 @@ export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường'
               <Field label={f.type === 'select' ? 'Danh sách chọn' : 'Danh sách giá trị chọn sẵn (tùy chọn)'} help="Cách nhau dấu phẩy; để trống = nhập tự do">
                 <input value={f.options} onChange={(e) => set('options', e.target.value)} placeholder={f.type === 'percent' ? 'VD: 0, 5, 8, 10' : f.type === 'select' ? 'VD: 30 ngày, 45 ngày, Trả trước' : 'VD: 1, 2, 3'} /></Field>
             )}
-            {f.type !== 'multiref' && (
+            {f.type === 'formula' && (
+              <Field label="Công thức" required full help="Bấm tên trường để chèn. Dùng + − * / ( ); phần trăm tính như Excel (8% = 0,08). Ở phần chung dùng SUM([trường dòng hàng]) để cộng mọi dòng.">
+                <textarea rows={2} value={f.formula} onChange={(e) => set('formula', e.target.value)} placeholder="VD: [Số lượng (tấn)] * [Đơn giá] * (1 + [VAT])" />
+                <div className="tags" style={{ marginTop: 4 }}>
+                  {numericFields(own).map((x) => <button type="button" key={x.key} className="chip" onClick={() => set('formula', `${f.formula}${f.formula && !/[\s(+\-*/]$/.test(f.formula) ? ' * ' : ''}[${x.label}]`)}>{x.label}</button>)}
+                  {numericFields(other).map((x) => <button type="button" key={x.key} className="chip" title={/Head$/.test(formKey) ? 'Cộng mọi dòng hàng' : 'Lấy từ phần chung'}
+                    onClick={() => set('formula', `${f.formula}${f.formula && !/[\s(+\-*/]$/.test(f.formula) ? ' + ' : ''}${/Head$/.test(formKey) ? `SUM([${x.label}])` : `[${x.label}]`}`)}>{/Head$/.test(formKey) ? `Σ ${x.label}` : `${x.label} (phần chung)`}</button>)}
+                </div>
+                {fErr && <small className="req">{fErr}</small>}
+              </Field>
+            )}
+            {f.type === 'formula' && (
+              <Field label="Kết quả hiện dạng">
+                <select value={f.resultType} onChange={(e) => set('resultType', e.target.value)}>{RESULT_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+              </Field>
+            )}
+            {!['multiref', 'formula'].includes(f.type) && (
               <Field label="Giá trị mặc định" help="Tự điền khi tạo mới (vẫn sửa được)">
                 {f.type === 'checkbox' ? <input type="checkbox" checked={!!f.def} onChange={(e) => set('def', e.target.checked)} />
                   : parseChoices(f.options, f.type).length ? (
@@ -149,6 +175,7 @@ export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường'
                   ) : <input value={f.def} onChange={(e) => set('def', e.target.value)} placeholder={f.type === 'percent' ? 'VD: 8' : f.type === 'ref' ? 'Mã mặc định' : ''} />}
               </Field>
             )}
+            {f.type !== 'formula' && (
             <Field label="Liên kết với" help="Chọn bản ghi ở mục này thì trường tự điền theo (vẫn sửa tay được)">
               <select value={f.via} onChange={(e) => setF((x) => ({ ...x, via: e.target.value, viaCat: '', field: e.target.value ? '__new' : '' }))}>
                 <option value="">-- Không liên kết --</option>
@@ -156,6 +183,7 @@ export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường'
                 <option value="__cat">＋ Danh mục khác…</option>
               </select>
             </Field>
+            )}
             {f.via === '__cat' && (
               <Field label="Danh mục liên kết" help="Form sẽ có thêm ô chọn danh mục này">
                 <select value={f.viaCat} onChange={(e) => setF((x) => ({ ...x, viaCat: e.target.value, field: '__new' }))}>

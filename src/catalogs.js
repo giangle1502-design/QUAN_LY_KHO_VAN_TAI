@@ -23,7 +23,10 @@ export const FIELD_TYPES = [
   ['email', 'Email'],
   ['phone', 'Số điện thoại'],
   ['url', 'Đường link'],
+  ['formula', 'Công thức (tự tính)'],
 ];
+// Kết quả trường công thức hiện dạng
+export const RESULT_TYPES = [['number', 'Số'], ['currency', 'Tiền (VNĐ)'], ['percent', 'Phần trăm (%)']];
 // Kiểu lưu dạng số (căn phải, cộng được, Excel ra số)
 export const NUMERIC_TYPES = ['number', 'currency', 'percent'];
 
@@ -334,6 +337,7 @@ export const CATALOGS = [
       { key: 'warehouses', label: 'Kho được thao tác', type: 'multiref', ref: 'warehouses', help: 'Để trống = tất cả kho' },
       { key: 'carrier', label: 'Thuộc đơn vị vận tải', type: 'ref', ref: 'carriers', help: 'Bắt buộc với vai trò Điều phối vận tải / Tài xế: chỉ thấy dữ liệu của đơn vị này' },
       { key: 'idCard', label: 'CCCD (tài xế)', type: 'text', help: 'Vai trò Tài xế: số CCCD để nhận chuyến' },
+      { key: 'seeAllOrders', label: 'Kinh doanh: xem đơn của mọi sale', type: 'checkbox', default: false, help: 'Không tích: vai trò Kinh doanh chỉ thấy đơn SO/PO có Sale phụ trách là mình' },
       { key: 'formDesigner', label: 'Được thiết lập biểu mẫu', type: 'checkbox', default: false, help: 'Tự thêm / sửa / ẩn trường của danh mục và biểu mẫu đơn hàng (Quản lý trường, nút + Thêm trường)' },
       { key: 'active', label: 'Đang hoạt động', type: 'checkbox', default: true },
     ],
@@ -350,6 +354,7 @@ export const FORM_DEFS = [
       { key: 'date', label: 'Ngày tạo đơn', type: 'date', required: true },
       { key: 'company', label: 'Công ty xuất', type: 'ref', ref: 'companies', required: true },
       { key: 'partyCode', label: 'Khách hàng', type: 'ref', ref: 'soldto', required: true },
+      { key: 'sales', label: 'Sale phụ trách', type: 'email', help: 'Sale chỉ thấy đơn của mình (trừ người được cho xem đơn của mọi sale)' },
       { key: 'tolerancePct', label: 'Dung sai cho phép (%)', type: 'percent', help: 'Được giao vượt số đặt tối đa bao nhiêu %' },
       { key: 'note', label: 'Ghi chú', type: 'textarea' },
     ],
@@ -375,6 +380,7 @@ FORM_DEFS.push(
       { key: 'date', label: 'Ngày tạo đơn', type: 'date', required: true },
       { key: 'company', label: 'Công ty mua', type: 'ref', ref: 'companies', required: true },
       { key: 'partyCode', label: 'Nhà cung cấp', type: 'ref', ref: 'suppliers', required: true },
+      { key: 'sales', label: 'Sale phụ trách', type: 'email', help: 'Sale chỉ thấy đơn của mình (trừ người được cho xem đơn của mọi sale)' },
       { key: 'tolerancePct', label: 'Dung sai cho phép (%)', type: 'percent', help: 'Được nhận vượt số đặt tối đa bao nhiêu %' },
       { key: 'note', label: 'Ghi chú', type: 'textarea' },
     ],

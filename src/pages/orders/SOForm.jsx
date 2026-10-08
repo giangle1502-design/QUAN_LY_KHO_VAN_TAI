@@ -8,6 +8,8 @@ import { AddFieldButton, ColumnPicker, QuickAdd } from '../../components/FormToo
 import { ErrorBox, Field, Modal } from '../../components/ui';
 import { createOrder, saveOrder, summarizeLines } from '../../lib/orders';
 import { cleanValue, defaultsOf, fillEmptyLinks, linkPatch } from '../../lib/fields';
+import { computeFormulas } from '../../lib/formula';
+import { splitSecrets } from '../../lib/orderSecrets';
 import { usePref } from '../../lib/prefs';
 import { vnDate } from '../../lib/trips';
 import { fmtNum } from '../../lib/utils';
@@ -24,16 +26,18 @@ const CFG = {
   STO: { head: 'stoHead', line: 'stoLine', party: null, title: 'lệnh chuyển kho (STO)', done: 'Đã xuất', received: 'Đã nhận',
     hint: 'Mỗi dòng có kho xuất, kho nhập, ngày chuyển, TTHH riêng: chuyển cùng 1 mã hàng đi nhiều kho thì thêm nhiều dòng (⧉ để nhân bản).' },
 };
-const BUILTIN_HEAD = ['date', 'company', 'partyCode', 'tolerancePct', 'note'];
+const BUILTIN_HEAD = ['date', 'company', 'partyCode', 'sales', 'tolerancePct', 'note'];
 const BUILTIN_LINE = ['dueDate', 'warehouse', 'fromWarehouse', 'toWarehouse', 'item', 'itemName', 'qtyT', 'shipCode', 'goodsStatus', 'note'];
 const n = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? 0 : Number(v));
 
 export default function SOForm({ type = 'SO', order, onClose }) {
   const cfg = CFG[type];
   const sto = type === 'STO';
-  const { email, name, fieldsOf, hasRole } = useApp();
-  const headFields = fieldsOf(cfg.head).filter((f) => !f.hidden);
-  const lineFields = fieldsOf(cfg.line).filter((f) => !f.hidden);
+  const { email, name, fieldsOf, seenFieldsOf, hasRole, role, salesOnly } = useApp();
+  // Chỉ các trường người dùng được xem (trường riêng tư, công thức dùng trường riêng tư bị ẩn)
+  const headFields = seenFieldsOf(cfg.head, fieldsOf(cfg.line)).filter((f) => !f.hidden);
+  const lineFields = seenFieldsOf(cfg.line, fieldsOf(cfg.head)).filter((f) => !f.hidden);
+  const salesUsers = useCollection(sto || salesOnly ? '' : 'users').rows.filter((u) => u.role === 'kinh_doanh' && u.active !== false);
   // Liên kết được với mọi trường chọn danh mục trên form (có sẵn hoặc tự thêm); dòng hàng còn liên kết được với phần chung (h:…)
   const HEAD_VIAS = headFields.filter((f) => f.type === 'ref' && f.ref).map((f) => ({ key: f.key, label: f.label, ref: f.ref }));
   const LINE_VIAS = [...lineFields.filter((f) => f.type === 'ref' && f.ref).map((f) => ({ key: f.key, label: f.label, ref: f.ref })),
@@ -67,7 +71,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
   const [h, setH] = useState(() => {
     if (order) return { ...order, tolerancePct: order.tolerancePct || '' };
     const d = defaultsOf(headFields);
-    return { partyCode: '', partyName: '', tolerancePct: '', note: '', ...d, company: d.company || defaultCo, date: d.date || vnDate() };
+    return { partyCode: '', partyName: '', tolerancePct: '', note: '', ...d, company: d.company || defaultCo, date: d.date || vnDate(), sales: d.sales || (role === 'kinh_doanh' ? email : '') };
   });
   const blankLine = () => ({ dueDate: '', warehouse: '', fromWarehouse: '', toWarehouse: '', item: '', itemName: '', qtyT: '', shipCode: '', goodsStatus: '', note: '', ...defaultsOf(lineFields) });
   // Đơn cũ (kho / mã giao / hạn giao ở đầu đơn): chép xuống từng dòng
@@ -137,6 +141,9 @@ export default function SOForm({ type = 'SO', order, onClose }) {
     return [...ls.slice(0, i + 1), { ...rest }, ...ls.slice(i + 1)];
   });
   const total = lines.reduce((s, l) => s + n(l.qtyT), 0);
+  // Trường công thức: tính lại mỗi lần nhập (dòng hàng trước, phần chung sau để dùng SUM)
+  const lc = lines.map((l) => computeFormulas(lineFields, l, { extraFields: headFields, rowExtra: h }));
+  const hc = computeFormulas(headFields, h, { lines: lc, lineFields });
 
   const submit = async (e) => {
     e.preventDefault();
@@ -145,7 +152,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
     if (!h.company) return setErr(sto ? 'Chọn công ty chủ hàng.' : 'Chọn công ty xuất.');
     if (!sto && !h.partyCode.trim()) return setErr(`Chọn ${cfg.partyLabel}.`);
     const headCustom = {};
-    for (const f of headFields.filter((x) => !BUILTIN_HEAD.includes(x.key))) {
+    for (const f of headFields.filter((x) => !BUILTIN_HEAD.includes(x.key) && x.type !== 'formula')) {
       const v = cleanValue(f, h[f.key]);
       if (f.required && (v === '' || v == null)) return setErr(`Nhập ${f.label}.`);
       headCustom[f.key] = v;
@@ -163,7 +170,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
       }
       if (!sto && l.shipCode && !myShips.some((s) => s.shipCode === l.shipCode)) return setErr(no + `mã giao ${l.shipCode} không thuộc khách hàng ${h.partyCode}.`);
       const custom = {};
-      for (const f of lineFields.filter((x) => !BUILTIN_LINE.includes(x.key))) {
+      for (const f of lineFields.filter((x) => !BUILTIN_LINE.includes(x.key) && x.type !== 'formula')) {
         const v = cleanValue(f, l[f.key]);
         if (f.required && (v === '' || v == null)) return setErr(no + `nhập ${f.label}.`);
         custom[f.key] = v;
@@ -172,18 +179,20 @@ export default function SOForm({ type = 'SO', order, onClose }) {
         dueDate: l.dueDate || '', ...(sto ? { fromWarehouse: l.fromWarehouse, toWarehouse: l.toWarehouse } : { warehouse: l.warehouse || '', shipCode: l.shipCode || '' }),
         goodsStatus: l.goodsStatus || '', note: String(l.note || '').trim(), ...custom });
     }
-    const sum = summarizeLines(out, sto);
+    // Trường riêng tư (chỉ người được chỉ định xem) lưu riêng ở orderSecrets
+    const sp = splitSecrets(headFields, lineFields, headCustom, out);
+    const sum = summarizeLines(sp.lines, sto);
     const whName = (c) => warehouses.find((w) => w.code === c)?.name || c;
     const data = {
-      ...headCustom, type, company: h.company, date: h.date,
+      ...sp.head, type, company: h.company, date: h.date, ...(sto ? {} : { sales: salesOnly ? email : String(h.sales || '').trim().toLowerCase() }),
       ...(sto ? { partyCode: sum.toWarehouses.join(', '), partyName: `Chuyển đến kho ${sum.toWarehouses.map(whName).join(', ')}` }
         : { partyCode: h.partyCode.trim(), partyName: String(h.partyName || recOf.partyCode(h.partyCode.trim())?.name || '').trim() }),
       refNo: order?.refNo || '', tolerancePct: h.tolerancePct === '' ? 0 : Number(h.tolerancePct), note: String(h.note || '').trim(),
-      lines: out, ...sum,
+      lines: sp.lines, ...sum,
     };
     setBusy(true);
     try {
-      const id = order ? (await saveOrder(order.id, data, { email, name }), order.id) : await createOrder(data, { email, name });
+      const id = order ? (await saveOrder(order.id, data, { email, name }, sp.secrets), order.id) : await createOrder(data, { email, name }, sp.secrets);
       onClose(id);
     } catch (e2) {
       setErr(e2.code === 'permission-denied' ? 'Bạn không có quyền lập/sửa đơn.' : e2.message);
@@ -203,9 +212,16 @@ export default function SOForm({ type = 'SO', order, onClose }) {
         {h.partyCode && <small className={recOf.partyCode(h.partyCode) || h.partyName ? 'small' : 'req'}>{recOf.partyCode(h.partyCode)?.name || h.partyName || `Chưa có trong danh mục ${cfg.partyLabel}: bấm + để thêm`}</small>}
       </>
     );
+    if (f.key === 'sales') return salesOnly ? <div className="readonly-val">{h.sales || email}</div> : (
+      <select value={h.sales || ''} onChange={(e) => setHead('sales', e.target.value)}>
+        <option value="">-- Chưa giao sale --</option>
+        {h.sales && !salesUsers.some((u) => u.email === h.sales) && <option value={h.sales}>{h.sales}</option>}
+        {salesUsers.map((u) => <option key={u.email} value={u.email}>{u.name} ({u.email})</option>)}
+      </select>
+    );
     return (
       <div className="cell-add">
-        <FieldInput field={f} value={h[f.key]} onChange={(v) => setHead(f.key, v)} />
+        <FieldInput field={f} value={f.type === 'formula' ? hc[f.key] : h[f.key]} onChange={(v) => setHead(f.key, v)} />
         {f.type === 'ref' && <QuickAdd catKey={f.ref} onAdded={(id) => setHead(f.key, id)} />}
       </div>
     );
@@ -258,7 +274,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
       case 'note': return <input value={l.note} onChange={(e) => set(e.target.value)} />;
       default: return (
         <div className="cell-add">
-          <FieldInput field={f} value={l[f.key]} onChange={(v) => set(v)} />
+          <FieldInput field={f} value={f.type === 'formula' ? lc[i][f.key] : l[f.key]} onChange={(v) => set(v)} />
           {f.type === 'ref' && <QuickAdd catKey={f.ref} onAdded={(id) => set(id)} />}
         </div>
       );

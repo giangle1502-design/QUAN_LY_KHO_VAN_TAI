@@ -4,6 +4,7 @@ import { collection, doc, getDocs, onSnapshot, query, updateDoc, where } from 'f
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { useOpCompany, useOrders } from '../../lib/hooks';
+import { useOrderSecrets, viewOrder } from '../../lib/orderSecrets';
 import { CompanyPicker } from '../../components/TripBits';
 import { ORDER_STATUS, ORDER_TYPES, OPEN_STATUSES, createOrder, leftKg, lineDue, lineFrom, lineShip, lineTo, lineWh, orderTotals, returnableKg, setOrderState, stoRoute, summarizeLines, transitKg } from '../../lib/orders';
 import { MOVE_TYPES } from '../../lib/stock';
@@ -78,14 +79,20 @@ export default function Orders() {
 
 function OrderList({ type }) {
   const meta = ORDER_TYPES[type];
-  const { hasRole, inMyWarehouses, fieldsOf } = useApp();
+  const { hasRole, inMyWarehouses, fieldsOf, seenFieldsOf, isAdmin, email } = useApp();
   const canManage = canManageOrders(hasRole, type);
   const sto = type === 'STO';
   const so = type === 'SO';
   const pl = so || type === 'PO'; // SO, PO: kho / ngày / TTHH theo từng dòng
   const fk = type.toLowerCase();
-  const customHead = fieldsOf(`${fk}Head`).filter((f) => f.custom && !f.hidden);
-  const { rows, error } = useOrders(type);
+  // Trường được xem (bỏ trường riêng tư không được chỉ định), giá trị riêng tư + công thức gộp vào đơn
+  const headSeen = useMemo(() => seenFieldsOf(`${fk}Head`, fieldsOf(`${fk}Line`)), [seenFieldsOf, fieldsOf, fk]);
+  const lineSeen = useMemo(() => seenFieldsOf(`${fk}Line`, fieldsOf(`${fk}Head`)), [seenFieldsOf, fieldsOf, fk]);
+  const customHead = headSeen.filter((f) => f.custom && !f.hidden);
+  const customLine = lineSeen.filter((f) => f.custom && !f.hidden);
+  const { rows: rawRows, error } = useOrders(type);
+  const secMap = useOrderSecrets(type);
+  const rows = useMemo(() => rawRows.map((o) => viewOrder(o, secMap, headSeen, lineSeen)), [rawRows, secMap, headSeen, lineSeen]);
   const [status, setStatus] = useState('opening');
   const [co, setCo] = useOpCompany();
   const [q, setQ] = useState('');
@@ -113,7 +120,7 @@ function OrderList({ type }) {
     { key: 'company', label: 'Công ty', render: (o) => <b>{o.company}</b> },
     { key: 'refNo', label: 'Số Ecount', cls: 'mono', render: (o) => o.refNo, hideDefault: true },
     { key: 'date', label: 'Ngày tạo đơn', cls: 'nowrap', render: (o) => fmtDate(o.date) },
-    ...(sto ? [] : [{ key: 'party', label: meta.partyLabel, cls: 'nowrap', render: (o) => partyText(o) }]),
+    ...(sto ? [] : [{ key: 'party', label: meta.partyLabel, cls: 'nowrap', render: (o) => partyText(o) }, { key: 'sales', label: 'Sale phụ trách', cls: 'small', render: (o) => o.sales || '' }]),
     ...customHead.map((f) => ({ key: f.key, label: f.label, render: (o) => displayValue(f, o[f.key]) })),
     ...(sto ? [{ key: 'from', label: 'Kho xuất', render: (o) => uniqText(o, lineFrom) }, { key: 'to', label: 'Kho nhập', render: (o) => uniqText(o, lineTo) }]
       : [{ key: 'warehouse', label: so ? 'Kho xuất' : 'Kho nhập', render: (o) => uniqText(o, lineWh) }]),
@@ -130,14 +137,26 @@ function OrderList({ type }) {
   const [hidden, setHidden] = usePref(`orderListHidden:${type}`, cols.filter((c) => c.hideDefault).map((c) => c.key));
   const shownCols = cols.filter((c) => c.locked || !hidden.includes(c.key));
 
+  // Đơn cũ chưa có Sale phụ trách: gán = người lập đơn nếu người đó là kinh doanh
+  const users = useCollection(isAdmin && !sto ? 'users' : '').rows;
+  const noSales = rawRows.filter((o) => !o.sales && users.some((u) => u.email === o.createdBy && u.role === 'kinh_doanh'));
+  const fillSales = async () => {
+    if (!window.confirm(`Gán Sale phụ trách = người lập đơn cho ${noSales.length} đơn chưa có sale?`)) return;
+    const at = new Date().toISOString();
+    try {
+      for (const o of noSales) await updateDoc(doc(db, 'orders', o.id), { sales: o.createdBy, updatedAt: at, updatedBy: email });
+      setMsg(`Đã gán sale cho ${noSales.length} đơn.`);
+    } catch (e) { setMsg(`Không gán được: ${e.message}`); }
+  };
+
   const exportExcel = () => {
     const out = [];
     list.forEach((o) => o.lines.forEach((l) => out.push({
       'Số đơn': o.id, 'Công ty': o.company || '', 'Ngày đơn': o.date,
-      ...(sto ? { 'Kho xuất': lineFrom(o, l), 'Kho nhập': lineTo(o, l) } : { [`Mã ${meta.partyLabel}`]: o.partyCode, [`Tên ${meta.partyLabel}`]: o.partyName }),
+      ...(sto ? { 'Kho xuất': lineFrom(o, l), 'Kho nhập': lineTo(o, l) } : { [`Mã ${meta.partyLabel}`]: o.partyCode, [`Tên ${meta.partyLabel}`]: o.partyName, 'Sale phụ trách': o.sales || '' }),
       ...Object.fromEntries(customHead.map((f) => [f.label, displayValue(f, o[f.key], true)])),
       ...(so ? { 'Mã giao hàng': lineShip(o, l) } : {}), TTHH: l.goodsStatus || '', ...(sto ? {} : { Kho: lineWh(o, l) }), [meta.due]: lineDue(o, l),
-      ...Object.fromEntries(fieldsOf(`${fk}Line`).filter((f) => f.custom && !f.hidden).map((f) => [f.label, displayValue(f, l[f.key], true)])),
+      ...Object.fromEntries(customLine.map((f) => [f.label, displayValue(f, l[f.key], true)])),
       'Mã hàng': l.item, 'Tên hàng': l.itemName, 'Đặt (tấn)': l.qtyKg / 1000, [`${meta.done} (tấn)`]: (l.doneKg || 0) / 1000,
       ...(sto ? { 'Đang đi đường (tấn)': transitKg(l) / 1000, 'Đã nhận (tấn)': (l.receivedKg || 0) / 1000 } : {}),
       [`${meta.left} (tấn)`]: OPEN_STATUSES.includes(o.status) ? leftKg(l) / 1000 : 0, 'Trạng thái': ORDER_STATUS[o.status]?.label, 'Ghi chú': o.note,
@@ -167,6 +186,7 @@ function OrderList({ type }) {
           <ColumnPicker cols={cols.map((c) => ({ key: c.key, label: c.label, locked: c.locked }))} hidden={hidden} setHidden={setHidden} />
           <button className="btn" onClick={exportExcel}>⬇ Excel</button>
           {canManage && !sto && <ImportOrders type={type} existing={rows} onDone={setMsg} />}
+          {isAdmin && noSales.length > 0 && <button className="btn" onClick={fillSales} title="Sale chỉ thấy đơn có Sale phụ trách là mình">Gán sale cho {noSales.length} đơn cũ</button>}
           {canManage && <button className="btn primary" onClick={() => setEdit('new')}>+ Lập {meta.short}</button>}
         </div>
       </div>
@@ -199,12 +219,12 @@ function OrderList({ type }) {
 // ---------------------------------------------------------------------------
 function OrderDetail({ o, onClose, onEdit }) {
   const meta = ORDER_TYPES[o.type];
-  const { hasRole, isAdmin, email, name, fieldsOf } = useApp();
+  const { hasRole, isAdmin, email, name, fieldsOf, seenFieldsOf } = useApp();
   const [assign, setAssign] = useState(false);
   const so = o.type === 'SO';
   const fk = o.type.toLowerCase();
-  const headCustom = fieldsOf(`${fk}Head`).filter((f) => f.custom && !f.hidden && o[f.key] !== '' && o[f.key] != null);
-  const lineCustom = fieldsOf(`${fk}Line`).filter((f) => f.custom && !f.hidden);
+  const headCustom = seenFieldsOf(`${fk}Head`, fieldsOf(`${fk}Line`)).filter((f) => f.custom && !f.hidden && o[f.key] !== '' && o[f.key] != null);
+  const lineCustom = seenFieldsOf(`${fk}Line`, fieldsOf(`${fk}Head`)).filter((f) => f.custom && !f.hidden);
   const canManage = canManageOrders(hasRole, o.type);
   const sto = o.type === 'STO';
   const [moves, setMoves] = useState([]);
@@ -230,7 +250,7 @@ function OrderDetail({ o, onClose, onEdit }) {
     <Modal title={`${meta.label} ${o.id}`} onClose={onClose} wide>
       <p>
         <OrderStatus status={o.status} /> {o.refNo ? <> · Số Ecount <b className="mono">{o.refNo}</b></> : null} · Ngày {fmtDate(o.date)}
-        {' · '}{meta.partyLabel}: <b>{sto ? partyText(o) : `${o.partyCode} ${o.partyName}`}</b>
+        {' · '}{meta.partyLabel}: <b>{sto ? partyText(o) : `${o.partyCode} ${o.partyName}`}</b>{o.sales ? <> · Sale: <b>{o.sales}</b></> : null}
         {headCustom.map((f) => <span key={f.key}> · {f.label}: <b>{displayValue(f, o[f.key])}</b></span>)}
         {Number(o.tolerancePct) ? ` · Dung sai ${o.tolerancePct}%` : ''}
       </p>
@@ -389,7 +409,8 @@ function ImportOrders({ type, existing, onDone }) {
 }
 
 // Admin giao đơn vị vận tải cho từng dòng đơn (SO / STO): đơn vị đó thấy đơn và chia xe
-function AssignCarrier({ o, onClose }) {
+function AssignCarrier({ o: view, onClose }) {
+  const o = view._raw || view;
   const { email, name } = useApp();
   const carriers = useCollection('carriers').rows.filter((c) => c.active !== false);
   const [map, setMap] = useState(() => Object.fromEntries(o.lines.map((l) => [l.no, l.carrier || ''])));

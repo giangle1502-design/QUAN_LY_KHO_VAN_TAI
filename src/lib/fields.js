@@ -1,4 +1,5 @@
 import { catalogByKey } from '../catalogs';
+import { computeFormulas, fieldResolver, parseFormula, refsOf } from './formula';
 
 // Trường khóa (tạo mã bản ghi) không được ẩn hay bỏ bắt buộc
 export function keyFieldsOf(cat) {
@@ -34,6 +35,8 @@ export function mergeFields(catKey, stored = []) {
     }
   }
   for (const f of cat.fields) if (!seen.has(f.key)) out.push({ ...f, builtin: true });
+  // Trường công thức trong danh mục: tự tính khi lưu như trường hệ thống
+  for (const f of out) if (f.type === 'formula' && f.formula) f.computed = (r) => computeFormulas(out, r)[f.key];
   return out;
 }
 
@@ -51,7 +54,7 @@ export function resolveDefault(v) {
   return d.toISOString().slice(0, 10);
 }
 export const DATE_DEFAULTS = [['today', 'Hôm nay'], ['today+1', 'Ngày mai'], ['today+2', 'Sau 2 ngày'], ['today+3', 'Sau 3 ngày'], ['today+7', 'Sau 7 ngày'], ['today+30', 'Sau 30 ngày']];
-export const canDefault = (f) => f.type !== 'multiref' && !f.computed && !f.system;
+export const canDefault = (f) => !['multiref', 'formula'].includes(f.type) && !f.computed && !f.system;
 export const canChoose = (f) => CHOICE_TYPES.includes(f.type) && !f.labels && !f.computed && !f.system;
 
 export function defaultsOf(fields) {
@@ -76,6 +79,7 @@ export function docIdOf(cat, row) {
 
 // Chuẩn hóa giá trị trước khi lưu
 export function cleanValue(f, v) {
+  if (f.type === 'formula') return v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v);
   if (['number', 'currency', 'percent'].includes(f.type)) return v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v);
   if (f.type === 'checkbox') return !!v;
   if (f.type === 'multiref') return Array.isArray(v) ? v : String(v || '').split(/[,;]/).map((x) => x.trim()).filter(Boolean);
@@ -97,7 +101,8 @@ export function toStored(list) {
     const o = { key: f.key, label: String(f.label || '').trim(), required: !!f.required, hidden: !!f.hidden };
     if (f.options?.length && canChoose(f)) o.options = f.options;
     if (f.default !== undefined && f.default !== '') o.default = f.default;
-    if (f.custom) Object.assign(o, { custom: true, type: f.type, ...(f.ref ? { ref: f.ref } : {}), ...(f.link ? { link: f.link } : {}) });
+    if (f.custom) Object.assign(o, { custom: true, type: f.type, ...(f.ref ? { ref: f.ref } : {}), ...(f.link ? { link: f.link } : {}),
+      ...(f.type === 'formula' ? { formula: f.formula || '', resultType: f.resultType || 'number' } : {}), ...(f.viewers?.length ? { viewers: f.viewers } : {}) });
     return o;
   });
 }
@@ -117,4 +122,23 @@ export function fillEmptyLinks(fields, row, recFor) {
     if (rec && rec[f.link.field] !== undefined && rec[f.link.field] !== '') p[f.key] = rec[f.link.field];
   }
   return p;
+}
+
+// Trường chỉ người được chỉ định xem (email hoặc mã vai trò); quản trị luôn xem được
+export const isPrivate = (f) => !!(f.custom && f.viewers?.length && f.type !== 'formula');
+export function canSeeField(f, me) {
+  if (me.isAdmin || !f.viewers?.length) return true;
+  return f.viewers.includes(me.email) || f.viewers.includes(me.role);
+}
+// Lọc trường người dùng được xem. Trường công thức chỉ hiện khi xem được mọi trường nó dùng
+export function visibleFields(list, me, ...others) {
+  const find = fieldResolver(list, ...others);
+  const vis = (f, depth = 0) => {
+    if (!canSeeField(f, me)) return false;
+    if (f.type !== 'formula' || depth > 5) return true;
+    try {
+      return refsOf(parseFormula(f.formula)).every((r) => { const x = find(r.replace(/^SUM:/, '')); return !x || vis(x, depth + 1); });
+    } catch { return true; }
+  };
+  return list.filter((f) => vis(f));
 }

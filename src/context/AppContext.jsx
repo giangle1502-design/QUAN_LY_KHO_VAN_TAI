@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db, SUPER_ADMINS } from '../firebase';
-import { mergeFields } from '../lib/fields';
+import { canSeeField, mergeFields, visibleFields } from '../lib/fields';
 
 const Ctx = createContext(null);
 export const useApp = () => useContext(Ctx);
@@ -63,14 +63,19 @@ export function AppProvider({ children }) {
   // Thiết lập biểu mẫu (thêm / sửa trường): quản trị hoặc người được cấp quyền
   const canDesign = isAdmin || userDoc?.formDesigner === true;
   const hasRole = useCallback((...roles) => isAdmin || roles.includes(role), [isAdmin, role]);
+  // Kinh doanh chỉ thấy đơn SO/PO có Sale phụ trách là mình (trừ người được cho xem đơn của mọi sale)
+  const salesOnly = role === 'kinh_doanh' && userDoc?.seeAllOrders !== true;
+  // Trường chỉ người được chỉ định xem
+  const seeField = useCallback((f) => canSeeField(f, { isAdmin, email, role }), [isAdmin, email, role]);
+  const seenFieldsOf = useCallback((key, ...others) => visibleFields(fieldsOf(key), { isAdmin, email, role }, ...others), [fieldsOf, isAdmin, email, role]);
 
   const value = useMemo(() => ({
     user, email, role, isAdmin, isSuper, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, myCarrier, myIdCard, carrierDoc, can3PL, userDoc,
     name: userDoc?.name || user?.displayName || email,
-    fieldConfig, fieldsOf, settings,
+    fieldConfig, fieldsOf, settings, salesOnly, seeField, seenFieldsOf,
     loading: user === undefined || (!!user && userDoc === undefined && !isSuper),
     logout: () => signOut(auth),
-  }), [user, email, role, isAdmin, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, myCarrier, myIdCard, carrierDoc, can3PL, userDoc, fieldConfig, fieldsOf, settings, isSuper]);
+  }), [user, email, role, isAdmin, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, myCarrier, myIdCard, carrierDoc, can3PL, userDoc, fieldConfig, fieldsOf, settings, isSuper, salesOnly, seeField, seenFieldsOf]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

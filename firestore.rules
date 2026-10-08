@@ -209,6 +209,9 @@ service cloud.firestore {
     // Kinh doanh, kế toán lập/sửa/đóng SO, PO, STO; thủ kho lập/sửa STO mà mọi kho xuất đều là kho của mình.
     // Thủ kho chỉ cập nhật "đã giao/nhận" khi ghi phiếu kho mới gắn đơn đó
     function orderMgr() { return hasRole('kinh_doanh') || hasRole('ke_toan'); }
+    // Kinh doanh chỉ thấy / sửa đơn có Sale phụ trách là mình (trừ người được tích "xem đơn của mọi sale")
+    function salesOnly() { return hasRole('kinh_doanh') && profile().get('seeAllOrders', false) != true; }
+    function mySale(d) { return !salesOnly() || d.get('sales', '') == me(); }
     function movementForOrder(mid, oid) {
       return ((!exists(mvPath(mid)) && existsAfter(mvPath(mid)) && getAfter(mvPath(mid)).data.createdBy == me())
           || (exists(mvPath(mid)) && get(mvPath(mid)).data.status == 'pending'
@@ -223,8 +226,8 @@ service cloud.firestore {
       return 'fromWarehouses' in d ? d.fromWarehouses.size() > 0 && allMine(d.fromWarehouses) : inMyWarehouse(d.fromWarehouse);
     }
     match /orders/{id} {
-      allow read: if isStaff();
-      allow create: if (isAdmin() || orderMgr()
+      allow read: if isStaff() && mySale(resource.data);
+      allow create: if (isAdmin() || (orderMgr() && mySale(request.resource.data))
           || (hasRole('thu_kho') && request.resource.data.type == 'STO' && stoFromMine(request.resource.data)))
         && request.resource.data.id == id && request.resource.data.createdBy == me()
         && request.resource.data.status == 'open' && request.resource.data.type in ['SO', 'PO', 'STO']
@@ -233,7 +236,7 @@ service cloud.firestore {
           && request.resource.data.id == id && request.resource.data.createdBy == me() && request.resource.data.status == 'done'
           && movementForOrder(request.resource.data.lastMovement, id));
       allow update: if isAdmin()
-        || (orderMgr() && request.resource.data.type == resource.data.type
+        || (orderMgr() && mySale(resource.data) && mySale(request.resource.data) && request.resource.data.type == resource.data.type
           && request.resource.data.id == resource.data.id && request.resource.data.createdBy == resource.data.createdBy)
         || (hasRole('thu_kho') && resource.data.type == 'STO' && request.resource.data.type == 'STO'
           && stoFromMine(resource.data) && stoFromMine(request.resource.data) && request.resource.data.createdBy == resource.data.createdBy)
@@ -242,6 +245,18 @@ service cloud.firestore {
             .hasOnly(['lines', 'status', 'lastMovement', 'updatedAt', 'updatedBy'])
           && request.resource.data.status in ['open', 'partial', 'done', 'closed']
           && movementForOrder(request.resource.data.lastMovement, id));
+    }
+
+    // Giá trị trường đơn hàng chỉ người được chỉ định xem (vd. Đơn giá): người trong viewers (email hoặc vai trò) và quản trị
+    function seesSecret(d) { return isAdmin() || me() in d.viewers || (isActive() && profile().get('role', '') in d.viewers); }
+    match /orderSecrets/{id} {
+      allow read: if isStaff() && seesSecret(resource.data);
+      allow create: if isStaff() && (isAdmin() || orderMgr() || hasRole('thu_kho')) && seesSecret(request.resource.data)
+        && id == request.resource.data.orderId + '__' + request.resource.data.field;
+      allow update: if isStaff() && (isAdmin() || ((orderMgr() || hasRole('thu_kho')) && seesSecret(resource.data)
+        && request.resource.data.viewers == resource.data.viewers && request.resource.data.field == resource.data.field
+        && request.resource.data.orderId == resource.data.orderId));
+      allow delete: if isAdmin();
     }
 
     // ==== Xóa dữ liệu ====
