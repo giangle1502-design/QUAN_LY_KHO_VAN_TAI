@@ -3,7 +3,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
 import { useCollection } from '../lib/hooks';
-import { STEPS, compressImage, doStep, isInternal, suggestFreight } from '../lib/transport';
+import { STEPS, compressImage, doStep } from '../lib/transport';
 import { ErrorBox, Modal } from './ui';
 
 // Thực hiện 1 bước của chuyến (tài xế, hoặc điều phối làm thay)
@@ -11,8 +11,6 @@ export function StepModal({ t, step, onClose }) {
   const { email, name, myIdCard, userDoc } = useApp();
   const vehicles = useCollection('vehicles').rows.filter((v) => !t.carrier || v.carrier === t.carrier);
   const drivers = useCollection('drivers').rows.filter((d) => !t.carrier || d.carrier === t.carrier);
-  const carriers = useCollection('carriers').rows;
-  const rates = useCollection('freightRates').rows;
   const [f, setF] = useState(() => ({ plate: t.plate || '', vehicleType: t.vehicleType || '', idCard: t.idCard || myIdCard || '',
     driverName: t.driverName || (myIdCard ? userDoc?.name || name : ''), driverPhone: t.driverPhone || (myIdCard ? userDoc?.phone || '' : ''), note: '' }));
   const [photos, setPhotos] = useState([]);
@@ -28,12 +26,8 @@ export function StepModal({ t, step, onClose }) {
   const go = async () => {
     setErr(''); setBusy(true);
     try {
-      const car = carriers.find((c) => c.code === t.carrier);
-      // Nhóm xe nội bộ: giao xong thì tự tính cước theo bảng giá, không cần nhập hóa đơn
-      const fr = step === 'delivered' && isInternal(car) ? suggestFreight(t, rates) : null;
-      const autoCosts = step === 'delivered' && isInternal(car) ? { freight: fr?.amount || 0, chiHo: 0, bocXep: 0, other: 0, invoiceNo: '', invoiceDate: '', rate: fr?.rate || '',
-        note: fr ? `Tự tính theo bảng giá ${fr.rate}` : 'Chưa có giá trong bảng giá cước' } : null;
-      await doStep(t, step, { email, name }, { ...f, photos, autoCosts });
+      // Tài xế chỉ xác nhận giao nhận; cước do điều phối / kế toán nhập sau (kể cả xe nội bộ)
+      await doStep(t, step, { email, name }, { ...f, photos });
       onClose(true);
     } catch (e) { setErr(e.code === 'permission-denied' ? 'Bạn không có quyền thực hiện bước này cho chuyến này.' : e.message); }
     setBusy(false);

@@ -7,11 +7,10 @@ import { calcFreight, matchRate } from './freight';
 // Vận tải theo chuyến: admin giao đơn vị vận tải trên đơn → điều phối chia xe thành chuyến (status 'planned')
 // → tài xế đăng ký xe/CCCD → Đến kho (vào luồng bảo vệ / thủ kho) → Lấy hàng xong → Đến điểm giao
 // → Giao xong (chụp phiếu) → điều phối nhập cước, chi hộ, bốc xếp, số HĐ → kế toán chốt.
-// Nhóm xe nội bộ (carriers.kind = 'Nội bộ'): cước tự tính theo bảng giá khi giao xong.
+// Tài xế chỉ xác nhận giao nhận; cước (kể cả xe nội bộ) do điều phối / kế toán nhập sau.
 // ============================================================================
 const num = (v) => (v === '' || v == null ? 0 : Number(v) || 0);
 export const tripKg = (t) => (t.lines || []).reduce((s, l) => s + num(l.plannedKg ?? num(l.payload) * 1000), 0);
-export const isInternal = (car) => car?.kind === 'Nội bộ';
 
 export const STEPS = {
   reg: 'Đăng ký xe & tài xế',
@@ -57,8 +56,7 @@ export async function doStep(t, step, user, data = {}) {
       await setDoc(doc(db, 'tripPhotos', `${t.id}_${(t.photoCount || 0) + i + 1}`), { tripId: t.id, carrier: t.carrier || '', data: img, by: user.email, at });
     }
     upd = { status: ST.COMPLETED, deliveryCompleteTime: at, driverDeliveredAt: at, photoCount: (t.photoCount || 0) + data.photos.length,
-      lines: t.lines.map((l) => ({ ...l, delivered: true, deliveredTime: l.deliveredTime || at })),
-      ...(data.autoCosts ? { costs: data.autoCosts, costStatus: 'auto', costBy: 'Tự động (nhóm xe nội bộ)', costAt: at } : {}) };
+      lines: t.lines.map((l) => ({ ...l, delivered: true, deliveredTime: l.deliveredTime || at })) };
   }
   await updateDoc(doc(db, 'trips', t.id), { ...upd, updatedAt: at, updatedBy: user.email,
     history: hist(t, user, STEPS[step] + (data.note ? `: ${data.note}` : ''), upd.status) });

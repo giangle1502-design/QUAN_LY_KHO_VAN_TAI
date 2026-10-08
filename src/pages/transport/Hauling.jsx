@@ -16,7 +16,7 @@ import { PhotoModal, StepModal } from '../../components/TripSteps';
 const n = (v) => (v === '' || v == null ? 0 : Number(v) || 0);
 const t3 = (kg) => fmtNum(n(kg) / 1000, 3);
 const vnd = (v) => (v == null || v === '' ? '' : fmtNum(n(v)));
-const COST = { '': ['Chưa nhập chi phí', ''], entered: ['Đã nhập · chờ kế toán', 'amber'], auto: ['Nội bộ · tự tính', 'teal'], approved: ['Kế toán đã chốt', 'green'] };
+const COST = { '': ['Chưa nhập chi phí', ''], entered: ['Đã nhập · chờ kế toán chốt', 'amber'], approved: ['Kế toán đã chốt', 'green'] };
 const monthStart = () => today().slice(0, 8) + '01';
 
 export default function Hauling() {
@@ -119,73 +119,104 @@ function ToPlan({ orders, trips }) {
   );
 }
 
+// Chia xe dạng bảng: mỗi chuyến (dòng) × mỗi mã hàng / dòng đơn (cột) nhập số tấn; tổng chuyến không vượt tải trọng xe
 function SplitModal({ rows, carrier, onClose }) {
   const { email, name, can3PL } = useApp();
   const vehicles = useCollection('vehicles').rows.filter((v) => v.carrier === carrier.code);
   const drivers = useCollection('drivers').rows.filter((d) => d.carrier === carrier.code);
   const warehouses = useCollection('warehouses').rows;
   const threepl = useCollection(can3PL && carrier.uses3PL ? 'threepl' : '').rows;
-  const [kg, setKg] = useState(() => Object.fromEntries(rows.map((r) => [r.key, r.rest])));
-  const total = rows.reduce((s, r) => s + n(kg[r.key]), 0);
-  const [cap, setCap] = useState(() => n(vehicles[0]?.payload) || 30);
+  const [need, setNeed] = useState(() => Object.fromEntries(rows.map((r) => [r.key, r.rest])));
+  const total = rows.reduce((s, r) => s + n(need[r.key]), 0);
+  const [cap, setCap] = useState(30);
   const [date, setDate] = useState(() => (rows[0].due && rows[0].due > today() ? rows[0].due : today()));
-  const make = (c) => { const k = Math.max(1, Math.ceil(total / (n(c) * 1000) - 1e-9)); return Array.from({ length: k }, (_, i) => ({ tons: i < k - 1 ? n(c) : +((total - n(c) * 1000 * (k - 1)) / 1000).toFixed(3), plate: '', vehicleType: '', idCard: '', driverName: '', driverPhone: '', threepl: '' })); };
-  const [loads, setLoads] = useState(() => make(cap));
-  useEffect(() => { if (vehicles.length && cap === 30 && n(vehicles[0].payload)) { setCap(n(vehicles[0].payload)); setLoads(make(n(vehicles[0].payload))); } }, [vehicles.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  const blank = (c) => ({ cap: n(c), plate: '', vehicleType: '', idCard: '', driverName: '', driverPhone: '', threepl: '', q: {} });
+  // Xếp lần lượt: lấp đầy từng xe theo thứ tự các mã (ít ghép mã trên 1 xe)
+  const seq = (ls) => { const al = splitLoads(rows.map((r) => ({ ...r, kg: n(need[r.key]) })), ls.map((l) => n(l.cap) * 1000)); return ls.map((l, i) => ({ ...l, q: Object.fromEntries((al[i] || []).map((a) => [a.key, a.kg])) })); };
+  // Chia đều theo tỷ lệ: xe nào cũng chở mọi mã theo tỷ lệ tải trọng
+  const prop = (ls) => {
+    const caps = ls.map((l) => n(l.cap) * 1000); const sumCap = caps.reduce((a, b) => a + b, 0) || 1;
+    const out = ls.map((l) => ({ ...l, q: {} }));
+    for (const r of rows) {
+      let left = n(need[r.key]);
+      out.forEach((l, i) => { const k = i === out.length - 1 ? left : Math.min(left, Math.round(n(need[r.key]) * Math.min(1, caps[i] / Math.max(sumCap, total)))); if (k > 0) l.q[r.key] = k; left -= k; });
+    }
+    return out;
+  };
+  const make = (c, how = 'seq') => { const k = Math.max(1, Math.ceil(total / (n(c) * 1000 || 1) - 1e-9)); const ls = Array.from({ length: k }, () => blank(c)); return how === 'prop' ? prop(ls) : seq(ls); };
+  const [loads, setLoads] = useState(() => make(30));
+  useEffect(() => { const p = n(vehicles[0]?.payload); if (p && cap === 30) { setCap(p); setLoads(make(p)); } }, [vehicles.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const setLoad = (i, p) => setLoads((ls) => ls.map((l, j) => (j === i ? { ...l, ...p } : l)));
-  const pickPlate = (i, v) => { const veh = vehicles.find((x) => x.plate === v.trim().toUpperCase()); setLoad(i, { plate: v.toUpperCase(), ...(veh ? { vehicleType: veh.vehicleType || '', cap: n(veh.payload) } : { cap: 0 }) }); };
+  const setQ = (i, key, tons) => setLoads((ls) => ls.map((l, j) => (j === i ? { ...l, q: { ...l.q, [key]: Math.round(n(tons) * 1000) } } : l)));
+  const pickPlate = (i, v) => { const veh = vehicles.find((x) => x.plate === v.trim().toUpperCase()); setLoad(i, { plate: v.toUpperCase(), ...(veh ? { vehicleType: veh.vehicleType || '', cap: n(veh.payload) || loads[i].cap } : {}) }); };
   const pickDriver = (i, v) => { const d = drivers.find((x) => x.idCard === v); setLoad(i, { idCard: v, ...(d ? { driverName: d.name || '', driverPhone: d.phone || '' } : {}) }); };
-  const loadsKg = loads.map((l) => Math.round(n(l.tons) * 1000));
-  const sumLoads = loadsKg.reduce((s, x) => s + x, 0);
-  const lines = rows.map((r) => ({ ...r, kg: n(kg[r.key]) }));
-  const alloc = splitLoads(lines, loadsKg);
+  const rowKg = (l) => rows.reduce((s, r) => s + n(l.q[r.key]), 0);
+  const colKg = (r) => loads.reduce((s, l) => s + n(l.q[r.key]), 0);
+  const sumLoads = loads.reduce((s, l) => s + rowKg(l), 0);
   const save = async () => {
     setErr('');
-    if (lines.some((l) => l.kg > l.rest + 1)) return setErr('Số tấn chia lớn hơn số còn phải chia.');
-    if (Math.abs(sumLoads - total) > 1) return setErr(`Tổng các chuyến (${t3(sumLoads)} tấn) phải bằng tổng cần chia (${t3(total)} tấn).`);
-    const over = loads.findIndex((l) => l.cap && n(l.tons) > l.cap);
-    if (over >= 0) return setErr(`Chuyến ${over + 1}: ${loads[over].tons} tấn vượt tải trọng xe ${loads[over].plate} (${loads[over].cap} tấn).`);
+    const bad = rows.find((r) => n(need[r.key]) > r.rest + 1);
+    if (bad) return setErr(`${bad.orderId} ${bad.item}: chia nhiều hơn số còn phải chia (${t3(bad.rest)} tấn).`);
+    const off = rows.find((r) => Math.abs(colKg(r) - n(need[r.key])) > 1);
+    if (off) return setErr(`${off.orderId} ${off.item}: các chuyến đang xếp ${t3(colKg(off))} tấn, cần ${t3(need[off.key])} tấn.`);
+    const over = loads.findIndex((l) => n(l.cap) && rowKg(l) > n(l.cap) * 1000 + 1);
+    if (over >= 0) return setErr(`Chuyến ${over + 1}: ${t3(rowKg(loads[over]))} tấn vượt tải trọng ${loads[over].cap} tấn.`);
+    const used = loads.filter((l) => rowKg(l) > 0);
+    if (!used.length) return setErr('Chưa xếp hàng cho chuyến nào.');
     setBusy(true);
     try {
       const wh = warehouses.find((w) => w.code === rows[0].warehouse) || { code: rows[0].warehouse };
-      await createPlannedTrips({ wh, carrier, trips: loads.map((l, i) => ({ ...l, date, lines: alloc[i], threeplName: threepl.find((x) => x.code === l.threepl)?.name || '' })) }, { email, name });
+      await createPlannedTrips({ wh, carrier, trips: used.map((l) => ({ ...l, date, lines: rows.filter((r) => n(l.q[r.key]) > 0).map((r) => ({ ...r, kg: n(l.q[r.key]) })),
+        threeplName: threepl.find((x) => x.code === l.threepl)?.name || '' })) }, { email, name });
       onClose(true);
     } catch (e) { setErr(e.code === 'permission-denied' ? 'Không có quyền tạo chuyến (kiểm tra phân quyền / firestore.rules).' : e.message); }
     setBusy(false);
   };
+  const nTrips = Math.max(1, Math.ceil(total / (n(cap) * 1000 || 1) - 1e-9));
   return (
     <Modal title={`Chia xe · ${carrier.name || carrier.code} · kho ${rows[0].warehouse}`} onClose={() => onClose(false)} wide>
-      <div className="table-wrap" style={{ marginBottom: 10 }}><table>
-        <thead><tr><th>Đơn</th><th>Giao đến</th><th>Mã hàng</th><th className="num">Còn phải chia</th><th className="num">Chia lần này (tấn)</th></tr></thead>
-        <tbody>{rows.map((r) => <tr key={r.key}><td className="mono">{r.orderId}</td><td>{r.partyName}{r.shipCode ? ` · ${r.shipCode}` : ''}</td><td>{r.item}</td><td className="num">{t3(r.rest)}</td>
-          <td className="num"><input type="number" step="0.001" style={{ width: 110, textAlign: 'right' }} value={n(kg[r.key]) / 1000} onChange={(e) => setKg((m) => ({ ...m, [r.key]: Math.round(n(e.target.value) * 1000) }))} /></td></tr>)}</tbody>
-      </table></div>
       <div className="filters">
         <label>Ngày đi <input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
-        <label>Tải trọng mỗi xe (tấn) <input type="number" step="0.5" style={{ width: 90 }} value={cap} onChange={(e) => setCap(e.target.value)} /></label>
-        <button type="button" className="btn" onClick={() => setLoads(make(cap))}>⟳ Chia tự động ({Math.max(1, Math.ceil(total / (n(cap) * 1000 || 1) - 1e-9))} chuyến)</button>
-        <button type="button" className="btn ghost" onClick={() => setLoads((ls) => [...ls, { tons: 0, plate: '', vehicleType: '', idCard: '', driverName: '', driverPhone: '', threepl: '' }])}>+ Thêm chuyến</button>
-        <span className={Math.abs(sumLoads - total) > 1 ? 'badge red' : 'badge green'}>Đã chia {t3(sumLoads)} / {t3(total)} tấn</span>
+        <label>Tải trọng xe (tấn) <input type="number" step="0.5" style={{ width: 80 }} value={cap} onChange={(e) => setCap(e.target.value)} /></label>
+        <button type="button" className="btn" onClick={() => setLoads(make(cap, 'seq'))} title="Lấp đầy từng xe theo thứ tự các mã, ít ghép mã">⟳ Xếp lần lượt từng mã ({nTrips} chuyến)</button>
+        <button type="button" className="btn" onClick={() => setLoads(make(cap, 'prop'))} title="Xe nào cũng chở đủ các mã theo tỷ lệ">⟳ Chia đều các mã cho mọi xe</button>
+        <button type="button" className="btn ghost" onClick={() => setLoads((ls) => [...ls, blank(cap)])}>+ Thêm chuyến</button>
+        <span className={Math.abs(sumLoads - total) > 1 ? 'badge red' : 'badge green'}>Đã xếp {t3(sumLoads)} / {t3(total)} tấn</span>
       </div>
-      <div className="table-wrap"><table className="so-lines">
-        <thead><tr><th>#</th><th>Tấn</th><th>Số xe (bổ sung sau được)</th><th>Tài xế (CCCD)</th><th>Họ tên</th>{threepl.length > 0 && <th>3PL</th>}<th>Hàng trên chuyến</th><th></th></tr></thead>
-        <tbody>{loads.map((l, i) => (
-          <tr key={i}><td>{i + 1}</td>
-            <td><input type="number" step="0.001" value={l.tons} onChange={(e) => setLoad(i, { tons: e.target.value })} style={{ width: 90 }} /></td>
-            <td><input list="dl-sp-plate" value={l.plate} onChange={(e) => pickPlate(i, e.target.value)} />{l.cap ? <div className="small">{l.vehicleType} · {l.cap} tấn</div> : null}</td>
-            <td><input list="dl-sp-driver" value={l.idCard} onChange={(e) => pickDriver(i, e.target.value)} /></td>
-            <td><input value={l.driverName} onChange={(e) => setLoad(i, { driverName: e.target.value })} /></td>
-            {threepl.length > 0 && <td><select value={l.threepl} onChange={(e) => setLoad(i, { threepl: e.target.value })}><option value="">-- Xe GHA --</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</select></td>}
-            <td className="small">{(alloc[i] || []).map((a) => `${a.orderId} ${a.item} ${t3(a.kg)}t`).join('; ')}</td>
-            <td><button type="button" className="btn ghost sm" disabled={loads.length === 1} onClick={() => setLoads((ls) => ls.filter((_, j) => j !== i))}>✕</button></td></tr>
-        ))}</tbody>
+      <p className="small">Mỗi cột là một mã hàng / dòng đơn, mỗi dòng là một chuyến xe. Sửa trực tiếp số tấn từng ô; tổng chuyến phải ≤ tải trọng, tổng cột phải bằng số cần chia.</p>
+      <div className="table-wrap" style={{ maxHeight: '55vh', overflow: 'auto' }}><table className="so-lines split">
+        <thead>
+          <tr><th>#</th><th>Số xe (bổ sung sau được)</th><th>Tải trọng</th>
+            {rows.map((r) => <th key={r.key} className="num" title={`${r.orderId} dòng ${r.no}`}>{r.item}<div className="small" style={{ fontWeight: 400 }}>{r.orderId}{r.shipCode ? ` · ${r.shipCode}` : ''}</div></th>)}
+            <th className="num">Tổng chuyến</th><th>Tài xế (CCCD)</th><th>Họ tên</th>{threepl.length > 0 && <th>3PL</th>}<th></th></tr>
+          <tr className="need"><td colSpan={3} className="small"><b>Cần chia (tấn)</b> · còn lại tối đa</td>
+            {rows.map((r) => <td key={r.key}><input type="number" step="0.001" value={n(need[r.key]) / 1000} onChange={(e) => setNeed((m) => ({ ...m, [r.key]: Math.round(n(e.target.value) * 1000) }))} /><div className="small num">/ {t3(r.rest)}</div></td>)}
+            <td className="num"><b>{t3(total)}</b></td><td colSpan={threepl.length > 0 ? 4 : 3} /></tr>
+        </thead>
+        <tbody>{loads.map((l, i) => {
+          const tot = rowKg(l); const overCap = n(l.cap) && tot > n(l.cap) * 1000 + 1;
+          return (
+            <tr key={i}><td>{i + 1}</td>
+              <td><input list="dl-sp-plate" value={l.plate} onChange={(e) => pickPlate(i, e.target.value)} />{l.vehicleType ? <div className="small">{l.vehicleType}</div> : null}</td>
+              <td><input type="number" step="0.5" value={l.cap} onChange={(e) => setLoad(i, { cap: e.target.value })} style={{ width: 70 }} /></td>
+              {rows.map((r) => <td key={r.key}><input type="number" step="0.001" value={n(l.q[r.key]) ? n(l.q[r.key]) / 1000 : ''} placeholder="0" onChange={(e) => setQ(i, r.key, e.target.value)} /></td>)}
+              <td className="num"><b style={{ color: overCap ? 'var(--red)' : undefined }}>{t3(tot)}</b>{overCap ? <div className="small" style={{ color: 'var(--red)' }}>vượt tải</div> : null}</td>
+              <td><input list="dl-sp-driver" value={l.idCard} onChange={(e) => pickDriver(i, e.target.value)} /></td>
+              <td><input value={l.driverName} onChange={(e) => setLoad(i, { driverName: e.target.value })} /></td>
+              {threepl.length > 0 && <td><select value={l.threepl} onChange={(e) => setLoad(i, { threepl: e.target.value })}><option value="">-- Xe GHA --</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</select></td>}
+              <td><button type="button" className="btn ghost sm" disabled={loads.length === 1} onClick={() => setLoads((ls) => ls.filter((_, j) => j !== i))}>✕</button></td></tr>
+          );
+        })}</tbody>
+        <tfoot><tr><td colSpan={3} className="small"><b>Đã xếp</b></td>
+          {rows.map((r) => { const d = colKg(r) - n(need[r.key]); return <td key={r.key} className="num"><b>{t3(colKg(r))}</b>{Math.abs(d) > 1 ? <div className="small" style={{ color: 'var(--red)' }}>{d > 0 ? 'thừa' : 'thiếu'} {t3(Math.abs(d))}</div> : <div className="small" style={{ color: 'var(--green)' }}>✓</div>}</td>; })}
+          <td className="num"><b>{t3(sumLoads)}</b></td><td colSpan={threepl.length > 0 ? 4 : 3} /></tr></tfoot>
       </table></div>
       <datalist id="dl-sp-plate">{vehicles.map((v) => <option key={v.plate} value={v.plate}>{v.vehicleType} {v.payload ? `${v.payload} tấn` : ''}</option>)}</datalist>
       <datalist id="dl-sp-driver">{drivers.map((d) => <option key={d.idCard} value={d.idCard}>{d.name}</option>)}</datalist>
       <ErrorBox error={err} />
-      <div className="form-actions"><button className="btn" onClick={() => onClose(false)}>Thôi</button><button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Đang tạo…' : `Tạo ${loads.length} chuyến`}</button></div>
+      <div className="form-actions"><button className="btn" onClick={() => onClose(false)}>Thôi</button><button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Đang tạo…' : `Tạo ${loads.filter((l) => rowKg(l) > 0).length} chuyến`}</button></div>
     </Modal>
   );
 }
@@ -271,7 +302,8 @@ function CostModal({ t, onClose }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const approved = t.costStatus === 'approved';
-  const canEdit = !approved && (isAdmin || role === 'van_tai');
+  // Điều phối vận tải hoặc kế toán nhập cước (xe nội bộ: người tính cước cập nhật sau)
+  const canEdit = !approved && (isAdmin || role === 'van_tai' || hasRole('ke_toan'));
   const canApprove = hasRole('ke_toan') && t.costs && !approved;
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   // Bảng giá tải xong sau khi mở: điền sẵn cước gợi ý nếu chưa nhập

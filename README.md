@@ -254,7 +254,8 @@ Phiếu nhập kho chọn **Nguồn nhập** ở đầu phiếu:
 2. **Điều phối vận tải** (vai trò mới, gắn 1 đơn vị vận tải) vào **Vận chuyển → Đơn cần chia xe**: tích dòng cùng kho → **Chia xe**. App gợi ý số chuyến theo tải trọng xe (danh mục Xe), mỗi chuyến nhập số xe / tài xế (bổ sung sau được), GHA chọn thêm 3PL.
 3. **Tài xế** (vai trò mới, điều phối tạo ở tab *Tài khoản tài xế*, gắn CCCD) mở app trên điện thoại → **Chuyến của tôi**: nhận chuyến (số xe, CCCD) → Đến kho → Lấy hàng xong → Đến điểm giao → Giao xong (chụp phiếu, ảnh nén lưu trong Firestore). Điều phối / admin bấm thay được. Bước đến kho nối vào luồng bảo vệ / thủ kho có sẵn.
 4. **Chi phí:** điều phối nhập cước (gợi ý theo **Bảng giá cước**, theo tấn hoặc theo chuyến, có mức tối thiểu), phí chi hộ, bốc xếp, phí khác, số / ngày HĐ → kế toán **Chốt chi phí**. Tab *Chi phí & cước*: tổng theo đơn vị vận tải, xuất Excel.
-5. **Nhóm xe nội bộ** (Đơn vị vận tải → Loại = Nội bộ): giao xong là cước tự tính theo bảng giá, không cần nhập HĐ.
+5. **Nhóm xe nội bộ** (Đơn vị vận tải → Loại = Nội bộ): người tính cước (điều phối / kế toán) cập nhật cước sau. **Tài xế chỉ xác nhận giao nhận**, không ghi được cước.
+- **Đơn nhiều mã hàng:** bảng chia xe dạng ma trận (dòng = chuyến, cột = mã hàng / dòng đơn). Hai cách gợi ý: *Xếp lần lượt từng mã* (ít ghép mã trên 1 xe) hoặc *Chia đều các mã cho mọi xe*; sửa tay từng ô, app kiểm tổng cột = số cần chia và tổng chuyến ≤ tải trọng.
 6. **GHA / 3PL:** đơn vị vận tải tích *Được dùng 3PL (GHA)*. Chỉ điều phối của đơn vị đó và quản trị gốc thấy danh mục 3PL và 3PL của chuyến (lưu riêng ở `tripPrivate`); admin khách không đọc được.
 - Cần **publish lại firestore.rules**.
 

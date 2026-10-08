@@ -241,7 +241,7 @@ export const CATALOGS = [
       { key: 'taxCode', label: 'Mã số thuế', type: 'text' },
       { key: 'contact', label: 'Người liên hệ', type: 'text' },
       { key: 'phone', label: 'Điện thoại', type: 'text' },
-      { key: 'kind', label: 'Loại', type: 'select', options: ['Thuê ngoài', 'Nội bộ'], default: 'Thuê ngoài', help: 'Nội bộ: cước tự tính theo bảng giá khi giao xong, không cần nhập hóa đơn' },
+      { key: 'kind', label: 'Loại', type: 'select', options: ['Thuê ngoài', 'Nội bộ'], default: 'Thuê ngoài', help: 'Nhóm xe nội bộ của công ty; cước do người tính cước cập nhật sau' },
       { key: 'uses3PL', label: 'Được dùng 3PL (GHA)', type: 'checkbox', default: false, help: 'Điều phối của đơn vị này thấy danh mục 3PL và chỉ định 3PL cho chuyến; admin khách không thấy' },
       { key: 'active', label: 'Đang hợp tác', type: 'checkbox', default: true },
     ],

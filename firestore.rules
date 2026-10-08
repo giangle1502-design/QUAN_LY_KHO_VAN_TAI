@@ -107,15 +107,15 @@ service cloud.firestore {
         || (hasRole('van_tai') && ownCarrierTrip() && stepStatus(true) && costOk(['entered'])
           && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(driverKeys().concat(costKeys()).concat(['plannedDate', 'note', 'cancelReason', 'cancelTime'])))
-        // Tài xế: nhận chuyến (CCCD của mình) và xác nhận từng bước; nhóm xe nội bộ tự tính cước
+        // Tài xế: nhận chuyến (CCCD của mình) và xác nhận giao nhận; không được nhập / sửa cước
         || (hasRole('tai_xe') && ownCarrierTrip() && myIdCard() != ''
           && resource.data.get('idCard', '') in ['', myIdCard()] && request.resource.data.idCard == myIdCard()
-          && stepStatus(false) && costOk(['auto'])
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(driverKeys().concat(costKeys())))
-        // Kế toán chốt chi phí chuyến
-        || (hasRole('ke_toan') && request.resource.data.costStatus == 'approved'
+          && stepStatus(false)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(driverKeys()))
+        // Kế toán nhập / sửa / chốt chi phí chuyến (xe nội bộ cập nhật cước sau)
+        || (hasRole('ke_toan') && request.resource.data.get('costStatus', '') in ['entered', 'approved']
           && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['costStatus', 'costApprovedBy', 'costApprovedAt', 'history', 'updatedAt', 'updatedBy']));
+            .hasOnly(costKeys().concat(['costApprovedBy', 'costApprovedAt', 'history', 'updatedAt', 'updatedBy'])));
     }
     // Ảnh phiếu giao hàng (nén, lưu thẳng Firestore)
     match /tripPhotos/{id} {

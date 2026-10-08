@@ -338,3 +338,6 @@ table.resized td input, table.resized td select { max-width: 100%; min-width: 0;
 @media print { th .col-grip { display: none; } }
 label.check { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; font-size: 14px; cursor: pointer; }
 label.check input { margin-top: 3px; }
+table.split td input { min-width: 70px; text-align: right; }
+table.split tr.need td { background: #f8fafc; }
+table.split tfoot td { background: #f8fafc; border-top: 2px solid var(--line); }
