@@ -354,3 +354,12 @@ table.so-lines textarea { width: 100%; min-width: 90px; padding: 5px 6px; }
 
 /* Nút lưu phiếu luôn thấy ở đáy màn hình */
 .sticky-actions { position: sticky; bottom: 0; z-index: 20; background: var(--card, #fff); border-top: 1px solid var(--line); margin: 12px -4px 0; padding: 10px 4px; align-items: center; box-shadow: 0 -4px 10px rgba(0,0,0,.06); }
+
+/* Đổi thứ tự cột bằng kéo thả */
+th.col-drag { cursor: grab; }
+th.col-drop, .col-picker-row.col-drop { box-shadow: inset 3px 0 0 var(--primary); background: #eef4ff; }
+.col-picker-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.col-picker-row label { flex: 1; }
+.col-handle { cursor: grab; color: var(--muted, #888); user-select: none; }
+.col-steps button { border: 1px solid var(--line); background: #fff; border-radius: 4px; padding: 0 5px; cursor: pointer; font-size: 11px; line-height: 18px; }
+.col-steps button:disabled { opacity: .35; cursor: default; }

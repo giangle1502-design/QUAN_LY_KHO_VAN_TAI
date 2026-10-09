@@ -19,6 +19,7 @@ import { displayValue } from '../../components/FieldInput';
 import { usePref } from '../../lib/prefs';
 import { useCollection, usePendingIn } from '../../lib/hooks';
 import { useShortfall } from '../../lib/shortfall';
+import { dragHeadProps, orderCols } from '../../lib/colOrder';
 
 const t = (kg) => fmtNum((Number(kg) || 0) / 1000, 3);
 const pct = (o) => { const x = orderTotals(o); return x.qty ? Math.min(100, (x.done / x.qty) * 100) : 0; };
@@ -159,7 +160,8 @@ function OrderList({ type }) {
     ...(sto ? [{ key: 'from', label: 'Kho xuất', render: (o) => uniqText(o, lineFrom) }, { key: 'to', label: 'Kho nhập', render: (o) => uniqText(o, lineTo) }]
       : [{ key: 'warehouse', label: so ? 'Kho xuất' : 'Kho nhập', render: (o) => uniqText(o, lineWh) }]),
     ...(so ? [{ key: 'ship', label: 'Mã giao', render: (o) => uniqText(o, lineShip) }] : []),
-    { key: 'items', label: 'Mặt hàng', render: (o) => [...new Set(o.lines.map((l) => l.item))].join(', ') },
+    { key: 'items', label: 'Mã hàng', render: (o) => [...new Set(o.lines.map((l) => l.item))].join(', ') },
+    { key: 'itemNames', label: 'Tên hàng', render: (o) => [...new Set(o.lines.map((l) => l.itemName).filter(Boolean))].join(', ') },
     { key: 'qty', label: 'Đặt (tấn)', num: true, render: (o, c) => t(c.x.qty) },
     { key: 'done', label: meta.done, num: true, render: (o, c) => t(c.x.done) },
     ...(sto ? [{ key: 'transit', label: meta.transit, num: true, render: (o, c) => t(c.x.transit) }] : []),
@@ -169,7 +171,11 @@ function OrderList({ type }) {
     { key: 'status', label: 'Trạng thái', locked: true, render: (o) => <OrderStatus status={o.status} /> },
   ];
   const [hidden, setHidden] = usePref(`orderListHidden:${type}`, cols.filter((c) => c.hideDefault).map((c) => c.key));
-  const shownCols = cols.filter((c) => c.locked || !hidden.includes(c.key));
+  // Thứ tự cột: mỗi người tự kéo thả (tiêu đề bảng hoặc trong ⚙ Cột hiển thị)
+  const [colOrder, setColOrder] = usePref(`orderListOrder:${type}`, []);
+  const orderedCols = orderCols(cols, colOrder);
+  const colKeys = orderedCols.map((c) => c.key);
+  const shownCols = orderedCols.filter((c) => c.locked || !hidden.includes(c.key));
 
   // Đơn cũ chưa có Sale phụ trách: gán = người lập đơn nếu người đó là kinh doanh
   const users = useCollection(isAdmin && !sto ? 'users' : '').rows;
@@ -217,7 +223,7 @@ function OrderList({ type }) {
         </select>
         <input type="search" placeholder={`Tìm số đơn, ${meta.partyLabel.toLowerCase()}, mã hàng…`} value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="actions" style={{ marginLeft: 'auto' }}>
-          <ColumnPicker cols={cols.map((c) => ({ key: c.key, label: c.label, locked: c.locked }))} hidden={hidden} setHidden={setHidden} />
+          <ColumnPicker cols={cols.map((c) => ({ key: c.key, label: c.label, locked: c.locked }))} hidden={hidden} setHidden={setHidden} order={colOrder} setOrder={setColOrder} />
           <button className="btn" onClick={exportExcel}>⬇ Excel</button>
           {canManage && !sto && <ImportOrders type={type} existing={rows} onDone={setMsg} />}
           {isAdmin && noSales.length > 0 && <button className="btn" onClick={fillSales} title="Sale chỉ thấy đơn có Sale phụ trách là mình">Gán sale cho {noSales.length} đơn cũ</button>}
@@ -230,7 +236,7 @@ function OrderList({ type }) {
       <div className="table-wrap">
         {!list.length ? <Empty /> : (
           <table>
-            <thead><tr>{shownCols.map((c) => <th key={c.key} className={c.num ? 'num' : ''}>{c.label}</th>)}<th></th></tr></thead>
+            <thead><tr>{shownCols.map((c) => <th key={c.key} className={(c.num ? 'num ' : '') + 'col-drag'} {...dragHeadProps(c.key, colKeys, setColOrder)}>{c.label}</th>)}<th></th></tr></thead>
             <tbody>
               {list.map((o) => {
                 const ctx = { x: orderTotals(o), isLate: OPEN_STATUSES.includes(o.status) && o.dueDate && o.dueDate < today };

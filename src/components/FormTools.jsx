@@ -6,6 +6,7 @@ import { useApp } from '../context/AppContext';
 import { CATALOGS, FIELD_TYPES, RESULT_TYPES, catalogByKey } from '../catalogs';
 import { checkFormula, formulaToKeys, formulaToLabels } from '../lib/formula';
 import { CHOICE_TYPES, DATE_DEFAULTS, HEIGHT_OPTS, WIDTH_OPTS, badChoices, parseChoices, toStored } from '../lib/fields';
+import { dragHeadProps, orderCols } from '../lib/colOrder';
 
 const REF_TARGETS = CATALOGS.filter((c) => !['codeRules', 'users'].includes(c.key));
 import { norm } from '../lib/utils';
@@ -33,7 +34,8 @@ export function QuickAdd({ catKey, preset, onAdded }) {
 }
 
 // Chọn cột muốn hiển thị (mỗi người dùng một cấu hình). cols: [{ key, label, locked }]
-export function ColumnPicker({ cols, hidden, setHidden }) {
+// order / setOrder (tùy chọn): thứ tự cột riêng của người dùng, kéo thả hoặc bấm ▲▼ trong danh sách
+export function ColumnPicker({ cols, hidden, setHidden, order, setOrder }) {
   const [open, setOpen] = useState(false);
   const ref = useRef();
   useEffect(() => {
@@ -43,15 +45,25 @@ export function ColumnPicker({ cols, hidden, setHidden }) {
     return () => document.removeEventListener('mousedown', h);
   }, [open]);
   const toggle = (k) => setHidden(hidden.includes(k) ? hidden.filter((x) => x !== k) : [...hidden, k]);
+  const list = setOrder ? orderCols(cols, order) : cols;
+  const keys = list.map((c) => c.key);
+  const step = (k, d) => { const i = keys.indexOf(k); const j = i + d; if (j < 0 || j >= keys.length) return; const n = [...keys]; [n[i], n[j]] = [n[j], n[i]]; setOrder(n); };
   return (
     <span className="col-picker" ref={ref}>
       <button type="button" className="btn sm" onClick={() => setOpen((o) => !o)}>⚙ Cột hiển thị</button>
       {open && (
         <div className="col-picker-menu">
-          {cols.map((c) => (
-            <label key={c.key}><input type="checkbox" checked={c.locked || !hidden.includes(c.key)} disabled={c.locked} onChange={() => toggle(c.key)} /> {c.label}</label>
+          {list.map((c, i) => (
+            <div key={c.key} className="col-picker-row" {...(setOrder ? dragHeadProps(c.key, keys, setOrder) : {})}>
+              {setOrder && <span className="col-handle" title="Kéo để đổi thứ tự">☰</span>}
+              <label><input type="checkbox" checked={c.locked || !hidden.includes(c.key)} disabled={c.locked} onChange={() => toggle(c.key)} /> {c.label}</label>
+              {setOrder && <span className="col-steps">
+                <button type="button" disabled={!i} onClick={() => step(c.key, -1)} title="Lên trước">▲</button>
+                <button type="button" disabled={i === list.length - 1} onClick={() => step(c.key, 1)} title="Xuống sau">▼</button></span>}
+            </div>
           ))}
-          <small className="small">Chỉ áp dụng cho tài khoản của bạn trên máy này.</small>
+          {setOrder && <button type="button" className="btn sm" style={{ marginTop: 6 }} onClick={() => setOrder([])}>↺ Thứ tự mặc định</button>}
+          <small className="small">{setOrder ? 'Kéo ☰ (hoặc kéo tiêu đề cột trên bảng) để đổi thứ tự. ' : ''}Chỉ áp dụng cho tài khoản của bạn trên máy này.</small>
         </div>
       )}
     </span>

@@ -5,6 +5,7 @@ import { refValue } from '../../catalogs';
 import { CompanyPicker } from '../../components/TripBits';
 import FieldInput from '../../components/FieldInput';
 import { AddFieldButton, ColumnPicker, QuickAdd } from '../../components/FormTools';
+import { dragHeadProps, orderCols } from '../../lib/colOrder';
 import { ErrorBox, Field, Modal } from '../../components/ui';
 import { createOrder, saveOrder, summarizeLines } from '../../lib/orders';
 import { cleanValue, defaultsOf, fillEmptyLinks, linkPatch, visibleFields } from '../../lib/fields';
@@ -85,7 +86,11 @@ export default function SOForm({ type = 'SO', order, onClose }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const shownLine = lineFields.filter((f) => f.required || !hiddenCols.includes(f.key));
+  // Thứ tự cột dòng hàng riêng của từng người (kéo thả tiêu đề hoặc trong ⚙ Cột hiển thị)
+  const [lineOrder, setLineOrder] = usePref(`${type}LineOrder`, []);
+  const orderedLine = orderCols(lineFields, lineOrder);
+  const lineKeys = orderedLine.map((f) => f.key);
+  const shownLine = orderedLine.filter((f) => f.required || !hiddenCols.includes(f.key));
   const myShips = shipto.filter((s) => s.customerCode === h.partyCode);
 
   const setHead = (k, v, rec) => setH((x) => {
@@ -302,13 +307,13 @@ export default function SOForm({ type = 'SO', order, onClose }) {
         <div className="so-section">
           <div className="section-head">
             <span className="grow">Dòng hàng ({lines.length}) · tổng {fmtNum(total, 3, 3)} tấn</span>
-            <ColumnPicker cols={lineFields.map((f) => ({ key: f.key, label: f.label, locked: !!f.required }))} hidden={hiddenCols} setHidden={setHiddenCols} />
+            <ColumnPicker cols={lineFields.map((f) => ({ key: f.key, label: f.label, locked: !!f.required }))} hidden={hiddenCols} setHidden={setHiddenCols} order={lineOrder} setOrder={setLineOrder} />
             <AddFieldButton formKey={cfg.line} vias={LINE_VIAS} />
           </div>
           <div className="table-wrap" style={{ overflowX: 'auto' }}>
             <table className="so-lines">
               <thead>
-                <tr><th>#</th>{shownLine.map((f) => <th key={f.key} className={f.key === 'qtyT' ? 'num' : ''} title={f.link ? `Tự lấy theo ${viaLabel(LINE_VIAS, f.link.via)}` : f.help || ''}>{f.label}{f.required && <b className="req"> *</b>}{f.link ? ' ↳' : ''}</th>)}
+                <tr><th>#</th>{shownLine.map((f) => <th key={f.key} className={(f.key === 'qtyT' ? 'num ' : '') + 'col-drag'} {...dragHeadProps(f.key, lineKeys, setLineOrder)} title={f.link ? `Tự lấy theo ${viaLabel(LINE_VIAS, f.link.via)}` : f.help || ''}>{f.label}{f.required && <b className="req"> *</b>}{f.link ? ' ↳' : ''}</th>)}
                   {order && <th className="num">{cfg.done}</th>}{order && sto && <th className="num">{cfg.received}</th>}<th></th></tr>
               </thead>
               <tbody>
