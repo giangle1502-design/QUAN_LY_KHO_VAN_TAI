@@ -299,7 +299,7 @@ function Form({ type }) {
       if (type === 'status' && l.toStatus === 'HTC' && !l.toPledgee) return setErr(no + 'chọn bên nhận thế chấp.');
       out.push({
         ...(l.orderLine != null ? { orderLine: l.orderLine } : {}),
-        item: r.item, itemName: r.itemName, lot: r.lot, mfgDate: r.mfgDate, expDate: r.expDate, inDate: r.inDate,
+        item: r.item, itemName: r.itemName || '', lot: r.lot || '', mfgDate: r.mfgDate || '', expDate: r.expDate || '', inDate: r.inDate || '',
         location: r.location, goodsStatus: r.goodsStatus, pledgee: r.pledgee || '', company: r.company || '',
         bags: sign * num(l.bags), pallets: sign * num(l.pallets), kg: sign * num(l.kg),
         ...(type === 'move' ? { toLocation: l.toLocation } : {}),
@@ -367,7 +367,7 @@ function Form({ type }) {
               {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
             </select>
           </Field>
-          <Field label="Công ty chủ hàng" required={type === 'in'} help={type === 'in' ? 'Hàng nhập thuộc công ty nào' : 'Chỉ hiện tồn của công ty này'}>
+          <Field label="Công ty chủ hàng" required={type === 'in'} help={type === 'in' ? 'Hàng nhập thuộc công ty nào' : 'Chỉ hiện tồn của công ty này; bỏ trống = mọi công ty'}>
             <CompanyPicker value={head.company} allowAll={false} required={type === 'in'}
               onChange={(v) => { setOpCo(v); setHead((h) => ({ ...h, company: v })); if (type !== 'in') setLines([stockLine()]); }} />
           </Field>
@@ -480,7 +480,9 @@ function Form({ type }) {
           </div>
         )}
         {picking && (
-          <StockPicker rows={stockRows} blocked={blocked} whName={wh ? `${wh.code} – ${wh.name}` : whCode} filter={filter} setFilter={setFilter}
+          <StockPicker rows={stockRows} blocked={blocked} loading={stockLoading} total={stock.length} company={head.company} filtered={!!filter.trim()}
+            otherCo={head.company ? stock.filter((r) => (r.company || '') !== head.company).length : 0}
+            onAllCo={() => { setHead((h) => ({ ...h, company: '' })); setOpCo(''); }} whName={wh ? `${wh.code} – ${wh.name}` : whCode} filter={filter} setFilter={setFilter}
             chosen={new Set(lines.map((l) => l.stockId).filter(Boolean))}
             onClose={() => setPicking(false)}
             onPick={(picked) => {
@@ -636,7 +638,7 @@ export function InLine({ l, set, itemMap, locations, statuses, pledgees, locRequ
 
 const STATUS_COLS = ['HTC', 'KTC', 'DGC'];
 // Bảng tồn kho dạng cột để tick chọn nhiều dòng; dòng bị khóa xuất (HTC khi xuất bán) không chọn được
-function StockPicker({ rows, blocked, whName, filter, setFilter, chosen, onClose, onPick }) {
+function StockPicker({ rows, blocked, whName, filter, setFilter, chosen, onClose, onPick, loading, total, company, otherCo, onAllCo, filtered }) {
   const [sel, setSel] = useState(() => new Set());
   const others = [...new Set(rows.map((r) => r.goodsStatus))].filter((c) => !STATUS_COLS.includes(c));
   const cols = [...STATUS_COLS, ...others];
@@ -662,13 +664,18 @@ function StockPicker({ rows, blocked, whName, filter, setFilter, chosen, onClose
                 </tr>
               );
             })}
-            {!rows.length && <tr><td colSpan={10 + cols.length} className="small">Không có hàng tồn phù hợp.</td></tr>}
+            {!rows.length && <tr><td colSpan={10 + cols.length} className="small">
+              {loading ? 'Đang tải tồn kho…'
+                : !total ? `Kho ${whName} chưa có tồn kho nào (chưa có phiếu nhập được thủ kho xác nhận, hoặc chưa nhập tồn đầu kỳ).`
+                : otherCo && rows.length === 0 && !filtered ? <>Kho có {otherCo} dòng tồn nhưng không thuộc công ty <b>{company}</b> đang chọn. <button type="button" className="btn sm" onClick={onAllCo}>Xem tồn của mọi công ty</button></>
+                : <>Không có hàng tồn khớp bộ lọc{company ? ` (công ty ${company})` : ''}.{company && otherCo ? <> <button type="button" className="btn sm" onClick={onAllCo}>Xem tồn của mọi công ty</button></> : null}</>}
+            </td></tr>}
           </tbody>
           <tfoot><tr><td colSpan={8}>Cộng</td>{cols.map((c) => <td key={c} className="num">{fmtNum(sumBy(c) / 1000, 3, 3)}</td>)}<td colSpan={2}></td></tr></tfoot>
         </table>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, gap: 8, flexWrap: 'wrap' }}>
-        <small className="small">🔒 = hàng bị khóa xuất (HTC khi xuất bán). Có thể chọn nhiều dòng, kể cả KTC và DGC trong cùng một phiếu.</small>
+        <small className="small">🔒 = hàng bị khóa xuất (chỉ HTC khi xuất bán; chuyển vị trí, chuyển kho, điều chỉnh, đổi tình trạng không khóa). Có thể chọn nhiều dòng, kể cả KTC và DGC trong cùng một phiếu.</small>
         <button type="button" className="btn primary" disabled={!sel.size} onClick={() => onPick(rows.filter((r) => sel.has(r._id)))}>Thêm {sel.size} dòng vào phiếu</button>
       </div>
     </Modal>
