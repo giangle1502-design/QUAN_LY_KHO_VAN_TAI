@@ -79,31 +79,31 @@ export default function PrintMovement({ pick = false }) {
       </tbody></table>
       {summary ? (
       <table className="print-lines">
-        <thead><tr><th>STT</th><th>Mã hàng</th><th>Tên hàng</th><th className="num">Số lượng (tấn)</th><th className="num">Số bao</th></tr></thead>
-        <tbody>{groups.map((g, i) => <tr key={g.item}><td>{i + 1}</td><td>{g.item}</td><td>{g.itemName}</td><td className="num">{fmtNum(g.kg / 1000, 3, 3)}</td><td className="num">{fmtNum(g.bags)}</td></tr>)}</tbody>
-        <tfoot><tr><td colSpan={3}>Cộng</td><td className="num">{fmtNum(tot('kg') / 1000, 3, 3)}</td><td className="num">{fmtNum(tot('bags'))}</td></tr></tfoot>
+        <thead><tr><th>STT</th><th>Mã hàng</th><th>Tên hàng</th><th className="num">Số lượng (kg)</th><th className="num">Số bao</th></tr></thead>
+        <tbody>{groups.map((g, i) => <tr key={g.item}><td>{i + 1}</td><td>{g.item}</td><td>{g.itemName}</td><td className="num">{fmtNum(g.kg, 2)}</td><td className="num">{fmtNum(g.bags)}</td></tr>)}</tbody>
+        <tfoot><tr><td colSpan={3}>Cộng</td><td className="num">{fmtNum(tot('kg'), 2)}<div className="small">= {fmtNum(tot('kg') / 1000, 3, 3)} tấn</div></td><td className="num">{fmtNum(tot('bags'))}</td></tr></tfoot>
       </table>
       ) : pick ? (
       <table className="print-lines">
-        <thead><tr><th>STT</th><th>Vị trí</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th>{hasDates && <><th>NSX</th><th>HSD</th></>}<th>Tình trạng</th><th className="num">Số tấn</th><th className="num">Pallet</th><th className="num">Số bao</th><th>Đã soạn</th></tr></thead>
+        <thead><tr><th>STT</th><th>Vị trí</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th>{hasDates && <><th>NSX</th><th>HSD</th></>}<th>Tình trạng</th><th className="num">Số kg</th><th className="num">Pallet</th><th className="num">Số bao</th><th>Đã soạn</th></tr></thead>
         <tbody>{pickLines.map((l, i) => (
           <tr key={i}><td>{i + 1}</td><td><b>{l.location}</b></td><td>{l.item}</td><td>{l.itemName}</td><td>{l.lot}</td>{hasDates && <><td>{fmtDate(l.mfgDate)}</td><td>{fmtDate(l.expDate)}</td></>}
-            <td>{l.goodsStatus}{l.pledgee ? ` (${l.pledgee})` : ''}</td><td className="num">{fmtNum(l.kg / 1000, 3, 3)}</td><td className="num">{fmtNum(l.pallets, 2)}</td><td className="num">{fmtNum(l.bags)}</td><td style={{ textAlign: 'center' }}>☐</td></tr>
+            <td>{l.goodsStatus}{l.pledgee ? ` (${l.pledgee})` : ''}</td><td className="num">{fmtNum(l.kg, 2)}</td><td className="num">{fmtNum(l.pallets, 2)}</td><td className="num">{fmtNum(l.bags)}</td><td style={{ textAlign: 'center' }}>☐</td></tr>
         ))}</tbody>
-        <tfoot><tr><td colSpan={hasDates ? 8 : 6}>Cộng</td><td className="num">{fmtNum(tot('kg') / 1000, 3, 3)}</td><td className="num">{fmtNum(tot('pallets'), 2)}</td><td className="num">{fmtNum(tot('bags'))}</td><td></td></tr></tfoot>
+        <tfoot><tr><td colSpan={hasDates ? 8 : 6}>Cộng</td><td className="num">{fmtNum(tot('kg'), 2)}<div className="small">= {fmtNum(tot('kg') / 1000, 3, 3)} tấn</div></td><td className="num">{fmtNum(tot('pallets'), 2)}</td><td className="num">{fmtNum(tot('bags'))}</td><td></td></tr></tfoot>
       </table>
       ) : (
       <table className="print-lines">
         <thead><tr><th>STT</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th><th>Vị trí</th>{m.type === 'move' && <th>Đến vị trí</th>}
-          <th>Tình trạng</th>{m.type === 'status' && <th>Tình trạng mới</th>}<th className="num">{pend ? 'Dự kiến (tấn)' : 'Số tấn'}</th><th className="num">Pallet</th><th className="num">Số bao</th>{pend && <><th>Thực nhận (tấn)</th><th>Vị trí thực</th></>}</tr></thead>
+          <th>Tình trạng</th>{m.type === 'status' && <th>Tình trạng mới</th>}<th className="num">{pend ? 'Dự kiến (kg)' : 'Số kg'}</th><th className="num">Pallet</th><th className="num">Số bao</th>{pend && <><th>Thực nhận (kg)</th><th>Vị trí thực</th></>}</tr></thead>
         <tbody>
           {m.lines.map((l, i) => (
             <tr key={i}><td>{i + 1}</td><td>{l.item}</td><td>{l.itemName}</td><td>{l.lot}</td><td>{l.location}</td>{m.type === 'move' && <td>{l.toLocation}</td>}
               <td>{l.goodsStatus}</td>{m.type === 'status' && <td>{l.toStatus}{l.toPledgee ? ` (${l.toPledgee})` : ''}</td>}
-              <td className="num">{fmtNum(l.kg / 1000, 3, 3)}</td><td className="num">{fmtNum(l.pallets, 2)}</td><td className="num">{fmtNum(l.bags)}</td>{pend && <><td style={{ minWidth: 90 }}></td><td style={{ minWidth: 70 }}></td></>}</tr>
+              <td className="num">{fmtNum(l.kg, 2)}</td><td className="num">{fmtNum(l.pallets, 2)}</td><td className="num">{fmtNum(l.bags)}</td>{pend && <><td style={{ minWidth: 90 }}></td><td style={{ minWidth: 70 }}></td></>}</tr>
           ))}
         </tbody>
-        <tfoot><tr><td colSpan={m.type === 'move' || m.type === 'status' ? 7 : 6}>Cộng</td><td className="num">{fmtNum(tot('kg') / 1000, 3, 3)}</td><td className="num">{fmtNum(tot('pallets'), 2)}</td><td className="num">{fmtNum(tot('bags'))}</td>{pend && <><td></td><td></td></>}</tr></tfoot>
+        <tfoot><tr><td colSpan={m.type === 'move' || m.type === 'status' ? 7 : 6}>Cộng</td><td className="num">{fmtNum(tot('kg'), 2)}<div className="small">= {fmtNum(tot('kg') / 1000, 3, 3)} tấn</div></td><td className="num">{fmtNum(tot('pallets'), 2)}</td><td className="num">{fmtNum(tot('bags'))}</td>{pend && <><td></td><td></td></>}</tr></tfoot>
       </table>
       )}
       <div className="print-signs">

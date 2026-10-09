@@ -9,7 +9,7 @@ import { fmtNum, norm } from '../../lib/utils';
 import { CompanyPicker, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox } from '../../components/ui';
 
-const t = (kg) => fmtNum((Number(kg) || 0) / 1000, 3);
+const t = (kg) => fmtNum(Number(kg) || 0, 2);
 
 // Cân đối theo mã hàng: tồn được xuất + hàng mua chưa về − hàng bán chưa giao
 export default function Balance() {
@@ -75,8 +75,8 @@ export default function Balance() {
 
   const exportExcel = () => exportSheets(`Can_doi_ma_hang_${vnDate()}`, {
     'Cân đối': list.map((r) => ({
-      'Mã hàng': r.item, 'Tên hàng': r.name, 'Tồn được xuất (tấn)': r.usable / 1000, 'Tồn bị khóa xuất - HTC (tấn)': r.locked / 1000,
-      'SO còn phải giao (tấn)': r.so / 1000, 'PO còn chưa về (tấn)': r.po / 1000, 'Đang đi đường - STO (tấn)': r.transit / 1000, 'Thiếu/dư ngay (tấn)': r.now / 1000, 'Dự kiến sau khi PO về (tấn)': r.plan / 1000,
+      'Mã hàng': r.item, 'Tên hàng': r.name, 'Tồn được xuất (kg)': r.usable, 'Tồn bị khóa xuất - HTC (kg)': r.locked,
+      'SO còn phải giao (kg)': r.so, 'PO còn chưa về (kg)': r.po, 'Đang đi đường - STO (kg)': r.transit, 'Thiếu/dư ngay (kg)': r.now, 'Dự kiến sau khi PO về (kg)': r.plan,
       'Đơn bán': [...r.soOrders].join(', '), 'Đơn mua': [...r.poOrders].join(', '),
     })),
   });
@@ -118,7 +118,7 @@ export default function Balance() {
           </table>
         )}
       </div>
-      <p className="small" style={{ marginTop: 6 }}>Đơn vị: tấn.</p>
+      <p className="small" style={{ marginTop: 6 }}>Đơn vị: kg.</p>
     </div>
   );
 }

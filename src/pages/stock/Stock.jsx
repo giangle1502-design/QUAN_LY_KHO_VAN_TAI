@@ -76,13 +76,13 @@ export default function Stock() {
         </div>
       </div>
       <div className="stats">
-        <div className="stat"><div className="stat-label">Tổng tồn</div><div className="stat-value">{fmtNum(sum(rows, 'kg') / 1000, 2)} tấn</div>
+        <div className="stat"><div className="stat-label">Tổng tồn</div><div className="stat-value">{fmtNum(sum(rows, 'kg'), 2)} kg</div><div className="stat-sub">= {fmtNum(sum(rows, 'kg') / 1000, 2)} tấn</div>
           <div className="stat-sub">{fmtNum(sum(rows, 'bags'))} bao · {fmtNum(sum(rows, 'pallets'), 1)} pallet</div></div>
         {totals.map(([c, kg]) => (
           <div key={c} className={'stat ' + (c === 'HTC' ? 'red' : c === 'DGC' ? 'green' : '')} style={{ cursor: 'pointer', outline: st === c ? '2px solid var(--primary)' : 'none' }}
             onClick={() => setSt(st === c ? '' : c)}>
             <div className="stat-label">{c} – {statuses.find((s) => s.code === c)?.name || ''}</div>
-            <div className="stat-value">{fmtNum(kg / 1000, 2)} tấn</div>
+            <div className="stat-value">{fmtNum(kg, 2)} kg</div>
           </div>
         ))}
       </div>

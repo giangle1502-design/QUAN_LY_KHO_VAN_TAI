@@ -133,16 +133,16 @@ export function applyOrder(order, m, sign) {
   }
   if (sto && !receiving && sign < 0) {
     const bad = lines.find((l) => n(l.receivedKg) > n(l.doneKg) + EPS);
-    if (bad) throw new Error(`Kho ${lineTo(order, bad)} đã nhận ${n(bad.receivedKg) / 1000} tấn ${bad.item} theo ${order.id}: hủy phiếu nhập ở kho đến trước.`);
+    if (bad) throw new Error(`Kho ${lineTo(order, bad)} đã nhận ${n(bad.receivedKg)} kg ${bad.item} theo ${order.id}: hủy phiếu nhập ở kho đến trước.`);
   }
   if (!sto && !returning && sign < 0) {
     const bad = lines.find((l) => n(l.returnedKg) > n(l.doneKg) + EPS);
-    if (bad) throw new Error(`Khách đã trả về ${n(bad.returnedKg) / 1000} tấn ${bad.item} theo ${order.id}: hủy phiếu nhập hàng trả về trước.`);
+    if (bad) throw new Error(`Khách đã trả về ${n(bad.returnedKg)} kg ${bad.item} theo ${order.id}: hủy phiếu nhập hàng trả về trước.`);
   }
   if (returning) {
     if (sign > 0 && order.status === 'cancelled') throw new Error(`Đơn ${order.id} đã hủy.`);
     const over = lines.find((l) => n(l.returnedKg) > n(l.doneKg) + EPS);
-    if (sign > 0 && over) throw new Error(`Trả về vượt hàng đã giao theo ${order.id}: ${over.item} mới giao ${n(over.doneKg) / 1000} tấn, tổng trả về sẽ là ${n(over.returnedKg) / 1000} tấn.`);
+    if (sign > 0 && over) throw new Error(`Trả về vượt hàng đã giao theo ${order.id}: ${over.item} mới giao ${n(over.doneKg)} kg, tổng trả về sẽ là ${n(over.returnedKg)} kg.`);
     return { lines, status: order.status };
   }
   if (sign > 0) {
@@ -150,11 +150,11 @@ export function applyOrder(order, m, sign) {
     if (!okStatus.includes(order.status)) throw new Error(`Đơn ${order.id} đang ở trạng thái "${ORDER_STATUS[order.status]?.label}", không giao/nhận thêm được.`);
     if (receiving) {
       const over = lines.find((l) => n(l.receivedKg) > n(l.doneKg) + EPS);
-      if (over) throw new Error(`Nhận vượt hàng đã xuất theo ${order.id}: ${over.item} mới xuất ${n(over.doneKg) / 1000} tấn, tổng nhận sẽ là ${n(over.receivedKg) / 1000} tấn.`);
+      if (over) throw new Error(`Nhận vượt hàng đã xuất theo ${order.id}: ${over.item} mới xuất ${n(over.doneKg)} kg, tổng nhận sẽ là ${n(over.receivedKg)} kg.`);
     } else {
       const tol = 1 + n(order.tolerancePct) / 100;
       const over = lines.find((l) => n(l.doneKg) > n(l.qtyKg) * tol + EPS);
-      if (over) throw new Error(`Vượt số lượng đơn ${order.id}: ${over.item} đặt ${n(over.qtyKg) / 1000} tấn, tổng ${sto ? 'xuất' : 'giao/nhận'} sẽ là ${n(over.doneKg) / 1000} tấn.`);
+      if (over) throw new Error(`Vượt số lượng đơn ${order.id}: ${over.item} đặt ${n(over.qtyKg)} kg, tổng ${sto ? 'xuất' : 'giao/nhận'} sẽ là ${n(over.doneKg)} kg.`);
     }
   }
   return { lines, status: statusOf(order, lines) };
@@ -188,8 +188,8 @@ export async function saveOrder(id, patch, user, secrets) {
     const lines = patch.lines.map((l) => {
       const o = l.no != null ? old.get(l.no) : null;
       const done = o ? n(o.doneKg) : 0;
-      if (o && l.item !== o.item && done > EPS) throw new Error(`Dòng ${o.item} đã giao/nhận ${done / 1000} tấn, không đổi mã hàng được.`);
-      if (n(l.qtyKg) < done - EPS) throw new Error(`Dòng ${l.item}: số lượng đặt không được nhỏ hơn phần đã giao/nhận (${done / 1000} tấn).`);
+      if (o && l.item !== o.item && done > EPS) throw new Error(`Dòng ${o.item} đã giao/nhận ${done} kg, không đổi mã hàng được.`);
+      if (n(l.qtyKg) < done - EPS) throw new Error(`Dòng ${l.item}: số lượng đặt không được nhỏ hơn phần đã giao/nhận (${done} kg).`);
       return { ...l, no: o ? o.no : next++, doneKg: done, ...(cur.type === 'STO' ? { receivedKg: o ? n(o.receivedKg) : 0 } : {}),
         ...(o && n(o.returnedKg) ? { returnedKg: n(o.returnedKg) } : {}),
         // Đơn vị vận tải admin đã giao cho dòng (form đơn không sửa trường này)

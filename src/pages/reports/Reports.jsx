@@ -12,7 +12,7 @@ import { Empty, ErrorBox } from '../../components/ui';
 
 // ============================================================================
 // Báo cáo: mỗi báo cáo = bộ lọc + 1 hoặc nhiều bảng; bảng nào cũng xuất Excel và in được.
-// Số lượng hiển thị theo tấn (lưu kg).
+// Số lượng hiển thị theo kg (đơn vị chính, lưu kg).
 // ============================================================================
 
 export const REPORTS = [
@@ -25,8 +25,8 @@ export const REPORTS = [
 ];
 
 const n = (v) => Number(v) || 0;
-const T = (kg) => n(kg) / 1000;
-const t3 = (kg) => fmtNum(T(kg), 3);
+const T = (kg) => n(kg);
+const t3 = (kg) => fmtNum(T(kg), 2);
 const STATUS_ORDER = ['KTC', 'HTC', 'DGC'];
 const rankSt = (c) => (STATUS_ORDER.includes(c) ? STATUS_ORDER.indexOf(c) : 99);
 
@@ -58,10 +58,10 @@ function ReportTable({ cols, rows, empty = 'Không có dữ liệu.', rowStyle }
     </div>
   );
 }
-// Dòng Excel theo đúng cột trên màn hình (số tấn xuất dạng số)
+// Dòng Excel theo đúng cột trên màn hình (số kg xuất dạng số)
 const toSheet = (cols, rows) => (rows.length ? rows : [{}]).map((r, i) => ({
   STT: rows.length ? i + 1 : '',
-  ...Object.fromEntries(cols.filter((c) => !c.noExcel).map((c) => [c.label + (c.ton ? ' (tấn)' : ''),
+  ...Object.fromEntries(cols.filter((c) => !c.noExcel).map((c) => [c.label + (c.ton ? ' (kg)' : ''),
     !rows.length ? '' : c.excel ? c.excel(r) : c.ton ? Math.round(T(r[c.key]) * 1000) / 1000 : r[c.key] ?? ''])),
 }));
 
@@ -140,7 +140,7 @@ function ByWarehouse({ wh, co, q }) {
   });
   const whCols = [
     { key: 'code', label: 'Kho' }, { key: 'name', label: 'Tên kho' },
-    { key: 'kg', label: 'Tồn (tấn)', ton: true, sum: true },
+    { key: 'kg', label: 'Tồn (kg)', ton: true, sum: true },
     ...statusCodes.map((c) => ({ key: `st_${c}`, label: c, ton: true, sum: true })),
     { key: 'bags', label: 'Số bao', num: true, sum: true }, { key: 'pallets', label: 'Pallet', num: true, digits: 1, sum: true },
     { key: 'items', label: 'Số mã hàng', num: true },
@@ -170,7 +170,7 @@ function ByWarehouse({ wh, co, q }) {
       <Actions onExcel={excel} />
       <div className="section-head">Tổng theo kho</div>
       <ReportTable cols={whCols} rows={whRows} />
-      <div className="section-head" style={{ marginTop: 16 }}>Theo mã hàng và kho (tấn)</div>
+      <div className="section-head" style={{ marginTop: 16 }}>Theo mã hàng và kho (kg)</div>
       <ReportTable cols={pivotCols} rows={pivot} empty="Chưa có tồn kho." />
     </>
   );
@@ -214,7 +214,7 @@ function ByLocation({ wh, co, q }) {
     { key: 'state', label: 'Trạng thái', render: (r) => (r.locked ? <span className="badge red">Khóa</span> : r.empty ? <span className="badge green">Empty bin</span> : ''),
       excel: (r) => (r.locked ? 'Khóa' : r.empty ? 'Empty bin' : '') },
     { key: 'items', label: 'Mã hàng' }, { key: 'lots', label: 'Lot' }, { key: 'status', label: 'Tình trạng' },
-    { key: 'bags', label: 'Số bao', num: true, sum: true }, { key: 'kg', label: 'Tồn (tấn)', ton: true, sum: true },
+    { key: 'bags', label: 'Số bao', num: true, sum: true }, { key: 'kg', label: 'Tồn (kg)', ton: true, sum: true },
     { key: 'oldest', label: 'Nhập sớm nhất', render: (r) => fmtDate(r.oldest), nowrap: true },
   ];
   const excel = () => exportSheets(`BC_ton_theo_vi_tri_${vnDate()}`, { 'Theo vị trí': toSheet(cols, rows) });
@@ -251,7 +251,7 @@ function ByStatus({ wh, co, q }) {
       bags: rs.reduce((s, r) => s + n(r.bags), 0), pallets: rs.reduce((s, r) => s + n(r.pallets), 0), pct: total ? Math.round((kg / total) * 1000) / 10 : 0 };
   });
   const sumCols = [{ key: 'code', label: 'Trạng thái' }, { key: 'name', label: 'Diễn giải' }, { key: 'outbound', label: 'Xuất kho' },
-    { key: 'kg', label: 'Tồn (tấn)', ton: true, sum: true }, { key: 'bags', label: 'Số bao', num: true, sum: true },
+    { key: 'kg', label: 'Tồn (kg)', ton: true, sum: true }, { key: 'bags', label: 'Số bao', num: true, sum: true },
     { key: 'pallets', label: 'Pallet', num: true, digits: 1, sum: true }, { key: 'pct', label: '% tổng tồn', num: true, digits: 1 }];
 
   const byItem = useMemo(() => {
@@ -284,7 +284,7 @@ function ByStatus({ wh, co, q }) {
   }, [list, pledgees]);
   const pledgeCols = [{ key: 'pledgee', label: 'Bên nhận thế chấp' }, { key: 'pledgeeName', label: 'Tên' }, { key: 'contract', label: 'Số hợp đồng' },
     { key: 'warehouse', label: 'Kho' }, { key: 'item', label: 'Mã hàng', nowrap: true }, { key: 'itemName', label: 'Tên hàng' }, { key: 'lots', label: 'Lot' },
-    { key: 'bags', label: 'Số bao', num: true, sum: true }, { key: 'kg', label: 'Tồn (tấn)', ton: true, sum: true }];
+    { key: 'bags', label: 'Số bao', num: true, sum: true }, { key: 'kg', label: 'Tồn (kg)', ton: true, sum: true }];
 
   const excel = () => exportSheets(`BC_ton_theo_trang_thai_${vnDate()}`, {
     'Tổng theo trạng thái': toSheet(sumCols, sumRows), 'Theo mã hàng': toSheet(itemCols, byItem), 'Hàng thế chấp': toSheet(pledgeCols, pledged) });
@@ -294,7 +294,7 @@ function ByStatus({ wh, co, q }) {
       <Actions onExcel={excel} />
       <div className="section-head">Tổng theo trạng thái</div>
       <ReportTable cols={sumCols} rows={sumRows} />
-      <div className="section-head" style={{ marginTop: 16 }}>Theo mã hàng (tấn)</div>
+      <div className="section-head" style={{ marginTop: 16 }}>Theo mã hàng (kg)</div>
       <ReportTable cols={itemCols} rows={byItem} empty="Chưa có tồn kho." />
       <div className="section-head" style={{ marginTop: 16 }}>Hàng thế chấp (HTC) theo bên nhận thế chấp</div>
       <ReportTable cols={pledgeCols} rows={pledged} empty="Không có hàng thế chấp." />
@@ -374,7 +374,7 @@ function ForSales({ wh, co, q }) {
     <>
       <p className="hint">
         <b>Tồn được bán</b> = tồn kho − hàng thế chấp (HTC). <b>Có thể bán ngay</b> = tồn được bán − hàng chưa giao.
-        <b> Có thể bán (gồm hàng sắp về)</b> = có thể bán ngay + PO còn chưa về{wh ? ' + STO đang chuyển về kho này' : ' + hàng chuyển kho đang đi đường'}. Đơn vị: tấn.
+        <b> Có thể bán (gồm hàng sắp về)</b> = có thể bán ngay + PO còn chưa về{wh ? ' + STO đang chuyển về kho này' : ' + hàng chuyển kho đang đi đường'}. Đơn vị: kg.
       </p>
       <ErrorBox error={error} />
       <Actions onExcel={excel} />
@@ -444,9 +444,9 @@ function OpenSO({ wh, co, q }) {
         <label className="small"><input type="checkbox" checked={onlyLate} onChange={(e) => setOnlyLate(e.target.checked)} /> Chỉ đơn quá hạn giao</label>
         <span style={{ marginLeft: 'auto' }}><Actions onExcel={excel} /></span>
       </div>
-      <div className="section-head">Theo khách hàng (tấn)</div>
+      <div className="section-head">Theo khách hàng (kg)</div>
       <ReportTable cols={custCols} rows={byCustomer} empty="Không có đơn chưa giao." />
-      <div className="section-head" style={{ marginTop: 16 }}>Chi tiết từng dòng đơn (tấn)</div>
+      <div className="section-head" style={{ marginTop: 16 }}>Chi tiết từng dòng đơn (kg)</div>
       <ReportTable cols={cols} rows={list} empty="Không có đơn chưa giao." />
     </>
   );
@@ -486,9 +486,9 @@ function OpenPO({ wh, co, q }) {
         <label className="small"><input type="checkbox" checked={onlyLate} onChange={(e) => setOnlyLate(e.target.checked)} /> Chỉ PO quá ETA</label>
         <span style={{ marginLeft: 'auto' }}><Actions onExcel={excel} /></span>
       </div>
-      <div className="section-head">Theo nhà cung cấp và mã hàng (tấn)</div>
+      <div className="section-head">Theo nhà cung cấp và mã hàng (kg)</div>
       <ReportTable cols={supCols} rows={bySupplier} empty="Không có PO chưa nhập." />
-      <div className="section-head" style={{ marginTop: 16 }}>Chi tiết từng dòng PO (tấn)</div>
+      <div className="section-head" style={{ marginTop: 16 }}>Chi tiết từng dòng PO (kg)</div>
       <ReportTable cols={cols} rows={rows} empty="Không có PO chưa nhập." />
     </>
   );

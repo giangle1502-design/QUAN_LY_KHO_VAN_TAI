@@ -21,7 +21,9 @@ import { useCollection, usePendingIn } from '../../lib/hooks';
 import { useShortfall } from '../../lib/shortfall';
 import { dragHeadProps, orderCols } from '../../lib/colOrder';
 
-const t = (kg) => fmtNum((Number(kg) || 0) / 1000, 3);
+// Đơn vị chính là kg; tấn chỉ là quy đổi (dòng phụ)
+const t = (kg) => fmtNum(Number(kg) || 0, 2);
+const tn = (kg) => `= ${fmtNum((Number(kg) || 0) / 1000, 3)} tấn`;
 const pct = (o) => { const x = orderTotals(o); return x.qty ? Math.min(100, (x.done / x.qty) * 100) : 0; };
 // SO/PO: kinh doanh, kế toán. STO: thêm thủ kho (kho đi)
 export const canManageOrders = (hasRole, type) => (type === 'STO' ? hasRole('kinh_doanh', 'ke_toan', 'thu_kho') : hasRole('kinh_doanh', 'ke_toan'));
@@ -37,8 +39,8 @@ function ShortBanner({ co }) {
   const ids = [...new Set(rows.flatMap((r) => r.orders))];
   return (
     <div className="error-box" style={{ marginBottom: 10 }}>
-      ⚠ Tồn KTC + DGC không đủ cho đơn bán (đơn vẫn lập được; lập đề nghị giải chấp là hàng chuyển DGC ngay để xuất): thiếu <b>{t(kg)} tấn</b> ở {rows.length} mã hàng ({rows.slice(0, 4).map((r) => `${r.item}${r.warehouse ? ' @' + r.warehouse : ''} ${t(r.short)}`).join('; ')}{rows.length > 4 ? '; …' : ''}).
-      {need > 0.001 ? <> Còn cần giải chấp {t(need)} tấn.</> : <> Đã có đề nghị giải chấp đủ phần thiếu, chưa đổi DGC.</>}{' '}
+      ⚠ Tồn KTC + DGC không đủ cho đơn bán (đơn vẫn lập được; lập đề nghị giải chấp là hàng chuyển DGC ngay để xuất): thiếu <b>{t(kg)} kg</b> ở {rows.length} mã hàng ({rows.slice(0, 4).map((r) => `${r.item}${r.warehouse ? ' @' + r.warehouse : ''} ${t(r.short)}`).join('; ')}{rows.length > 4 ? '; …' : ''}).
+      {need > 0.001 ? <> Còn cần giải chấp {t(need)} kg.</> : <> Đã có đề nghị giải chấp đủ phần thiếu, chưa đổi DGC.</>}{' '}
       <span className="small">Đơn: {ids.slice(0, 6).join(', ')}{ids.length > 6 ? '…' : ''}.</span>{' '}
       <Link to="/kho/giai-chap?tab=thieu"><b>Xem tổng hợp hàng thiếu →</b></Link>
     </div>
@@ -162,7 +164,7 @@ function OrderList({ type }) {
     ...(so ? [{ key: 'ship', label: 'Mã giao', render: (o) => uniqText(o, lineShip) }] : []),
     { key: 'items', label: 'Mã hàng', render: (o) => [...new Set(o.lines.map((l) => l.item))].join(', ') },
     { key: 'itemNames', label: 'Tên hàng', render: (o) => [...new Set(o.lines.map((l) => l.itemName).filter(Boolean))].join(', ') },
-    { key: 'qty', label: 'Đặt (tấn)', num: true, render: (o, c) => t(c.x.qty) },
+    { key: 'qty', label: 'Đặt (kg)', num: true, render: (o, c) => t(c.x.qty) },
     { key: 'done', label: meta.done, num: true, render: (o, c) => t(c.x.done) },
     ...(sto ? [{ key: 'transit', label: meta.transit, num: true, render: (o, c) => t(c.x.transit) }] : []),
     { key: 'left', label: meta.left, num: true, render: (o, c) => <b>{OPEN_STATUSES.includes(o.status) ? t(c.x.left) : '–'}</b> },
@@ -197,9 +199,9 @@ function OrderList({ type }) {
       ...Object.fromEntries(customHead.map((f) => [f.label, displayValue(f, o[f.key], true)])),
       ...(so ? { 'Mã giao hàng': lineShip(o, l) } : {}), TTHH: l.goodsStatus || '', ...(sto ? {} : { Kho: lineWh(o, l) }), [meta.due]: lineDue(o, l),
       ...Object.fromEntries(customLine.map((f) => [f.label, displayValue(f, l[f.key], true)])),
-      'Mã hàng': l.item, 'Tên hàng': l.itemName, 'Đặt (tấn)': l.qtyKg / 1000, [`${meta.done} (tấn)`]: (l.doneKg || 0) / 1000,
-      ...(sto ? { 'Đang đi đường (tấn)': transitKg(l) / 1000, 'Đã nhận (tấn)': (l.receivedKg || 0) / 1000 } : {}),
-      [`${meta.left} (tấn)`]: OPEN_STATUSES.includes(o.status) ? leftKg(l) / 1000 : 0, 'Trạng thái': ORDER_STATUS[o.status]?.label, 'Ghi chú': o.note,
+      'Mã hàng': l.item, 'Tên hàng': l.itemName, 'Đặt (kg)': l.qtyKg, [`${meta.done} (kg)`]: l.doneKg || 0,
+      ...(sto ? { 'Đang đi đường (kg)': transitKg(l), 'Đã nhận (kg)': l.receivedKg || 0 } : {}),
+      [`${meta.left} (kg)`]: OPEN_STATUSES.includes(o.status) ? leftKg(l) : 0, 'Trạng thái': ORDER_STATUS[o.status]?.label, 'Ghi chú': o.note,
     })));
     exportSheets(`${type}_${today}`, { [meta.label]: out.length ? out : [{ 'Số đơn': '' }] });
   };
@@ -208,10 +210,10 @@ function OrderList({ type }) {
     <div>
       <div className="stats">
         <div className="stat"><div className="stat-label">Số đơn đang hiển thị</div><div className="stat-value">{list.length}</div></div>
-        <div className="stat"><div className="stat-label">Tổng đặt</div><div className="stat-value">{t(sum.qty)} tấn</div></div>
-        <div className="stat green"><div className="stat-label">{meta.done}</div><div className="stat-value">{t(sum.done)} tấn</div></div>
-        {sto && <div className="stat"><div className="stat-label">{meta.transit}</div><div className="stat-value">{t(sum.transit)} tấn</div></div>}
-        <div className="stat amber"><div className="stat-label">{meta.left}</div><div className="stat-value">{t(sum.left)} tấn</div></div>
+        <div className="stat"><div className="stat-label">Tổng đặt</div><div className="stat-value">{t(sum.qty)} kg</div><div className="stat-sub">{tn(sum.qty)}</div></div>
+        <div className="stat green"><div className="stat-label">{meta.done}</div><div className="stat-value">{t(sum.done)} kg</div><div className="stat-sub">{tn(sum.done)}</div></div>
+        {sto && <div className="stat"><div className="stat-label">{meta.transit}</div><div className="stat-value">{t(sum.transit)} kg</div><div className="stat-sub">{tn(sum.transit)}</div></div>}
+        <div className="stat amber"><div className="stat-label">{meta.left}</div><div className="stat-value">{t(sum.left)} kg</div><div className="stat-sub">{tn(sum.left)}</div></div>
         <div className="stat red"><div className="stat-label">{type === 'SO' ? 'Quá hạn giao' : type === 'PO' ? 'Quá ngày hàng về' : 'Quá ngày chuyển'}</div><div className="stat-value">{late.length} đơn</div></div>
       </div>
       <div className="filters">
@@ -300,15 +302,15 @@ function OrderDetail({ o, onClose, onEdit }) {
       {o.note && <p className="small">Ghi chú: {o.note}</p>}
       {o.closeReason && <p className="small">Lý do {o.status === 'cancelled' ? 'hủy' : 'đóng'}: {o.closeReason}</p>}
       <div className="stats">
-        <div className="stat"><div className="stat-label">Đặt</div><div className="stat-value">{t(x.qty)} tấn</div></div>
-        <div className="stat green"><div className="stat-label">{meta.done}</div><div className="stat-value">{t(x.done)} tấn</div></div>
-        {sto && <div className="stat"><div className="stat-label">{meta.transit}</div><div className="stat-value">{t(x.transit)} tấn</div></div>}
-        {sto && <div className="stat green"><div className="stat-label">{meta.received}</div><div className="stat-value">{t(x.received)} tấn</div></div>}
-        <div className="stat amber"><div className="stat-label">{meta.left}</div><div className="stat-value">{isOpen ? t(x.left) : '0'} tấn</div>{!isOpen && x.left > 0 && <div className="stat-sub">{t(x.left)} tấn không thực hiện ({ORDER_STATUS[o.status].label.toLowerCase()})</div>}</div>
+        <div className="stat"><div className="stat-label">Đặt</div><div className="stat-value">{t(x.qty)} kg</div><div className="stat-sub">{tn(x.qty)}</div></div>
+        <div className="stat green"><div className="stat-label">{meta.done}</div><div className="stat-value">{t(x.done)} kg</div><div className="stat-sub">{tn(x.done)}</div></div>
+        {sto && <div className="stat"><div className="stat-label">{meta.transit}</div><div className="stat-value">{t(x.transit)} kg</div><div className="stat-sub">{tn(x.transit)}</div></div>}
+        {sto && <div className="stat green"><div className="stat-label">{meta.received}</div><div className="stat-value">{t(x.received)} kg</div><div className="stat-sub">{tn(x.received)}</div></div>}
+        <div className="stat amber"><div className="stat-label">{meta.left}</div><div className="stat-value">{isOpen ? t(x.left) : '0'} kg</div>{!isOpen && x.left > 0 && <div className="stat-sub">{t(x.left)} kg không thực hiện ({ORDER_STATUS[o.status].label.toLowerCase()})</div>}</div>
       </div>
       <div className="table-wrap" style={{ marginBottom: 12 }}>
         <table>
-          <thead><tr><th>#</th><th>{meta.due}</th>{sto ? <><th>Kho xuất</th><th>Kho nhập</th></> : <th>{so ? 'Kho xuất' : 'Kho nhập'}</th>}<th>Mã hàng</th><th>Tên hàng</th>{so && <th>Mã giao</th>}<th>TTHH</th>{lineCustom.map((f) => <th key={f.key}>{f.label}</th>)}<th className="num">Đặt (tấn)</th><th className="num">{meta.done}</th>{hasRet && <th className="num">Khách trả về</th>}
+          <thead><tr><th>#</th><th>{meta.due}</th>{sto ? <><th>Kho xuất</th><th>Kho nhập</th></> : <th>{so ? 'Kho xuất' : 'Kho nhập'}</th>}<th>Mã hàng</th><th>Tên hàng</th>{so && <th>Mã giao</th>}<th>TTHH</th>{lineCustom.map((f) => <th key={f.key}>{f.label}</th>)}<th className="num">Đặt (kg)</th><th className="num">{meta.done}</th>{hasRet && <th className="num">Khách trả về</th>}
             {sto && <><th className="num">{meta.transit}</th><th className="num">{meta.received}</th></>}<th className="num">{meta.left}</th>{o.type !== 'PO' && <th>Vận tải</th>}<th>Ghi chú</th></tr></thead>
           <tbody>{o.lines.map((l) => (
             <tr key={l.no}><td>{l.no}</td><td className="nowrap">{fmtDate(lineDue(o, l))}</td>{sto ? <><td>{lineFrom(o, l)}</td><td>{lineTo(o, l)}</td></> : <td>{lineWh(o, l) || 'Kho nào cũng được'}</td>}<td>{l.item}</td><td>{l.itemName}</td>
@@ -329,7 +331,7 @@ function OrderDetail({ o, onClose, onEdit }) {
             <tr key={m.id} style={{ opacity: m.status === 'cancelled' ? 0.5 : 1 }}>
               <td className="mono"><Link to={`/kho/phieu/${m.id}/in`} target="_blank">{m.id}</Link></td><td>{MOVE_TYPES[m.type]?.icon} {MOVE_TYPES[m.type]?.label}</td><td>{fmtDate(m.date)}</td><td>Kho {m.warehouse}</td>
               <td className="mono">{m.tripId}</td>
-              <td className="num">{t(m.lines.reduce((s, l) => s + Math.abs(Number(l.kg) || 0), 0))} tấn</td>
+              <td className="num">{t(m.lines.reduce((s, l) => s + Math.abs(Number(l.kg) || 0), 0))} kg</td>
               <td>{m.status === 'cancelled' ? <span className="badge red">Đã hủy</span>
                 : m.type === 'in' ? <Link className="btn sm" to={`/kho/phieu/${m.id}/nhan`} target="_blank">🏷️ In nhãn</Link> : ''}</td>
             </tr>
@@ -342,7 +344,7 @@ function OrderDetail({ o, onClose, onEdit }) {
           {trips.map((tr) => (
             <tr key={tr.id}><td className="mono">{tr.id}</td><td><span className="plate">{tr.plate}</span></td><td>{tr.warehouse}</td>
               <td>{fmtDate(tr.arrivalDate)}</td>
-              <td className="num">{fmtNum(tr.lines.filter((l) => l.orderId === o.id).reduce((s, l) => s + (Number(l.payload) || 0), 0), 3)} tấn dự kiến</td>
+              <td className="num">{t(tr.lines.filter((l) => l.orderId === o.id).reduce((s, l) => s + (Number(l.payload) || 0), 0) * 1000)} kg dự kiến</td>
               <td><span className={'badge ' + (STATUS_META[tr.status]?.tone || '')}>{STATUS_META[tr.status]?.label}</span></td></tr>
           ))}
         </tbody></table>
@@ -382,7 +384,7 @@ const HEAD = {
   tolerancePct: ['dung sai (%)', 'dung sai'],
   note: ['ghi chu'],
 };
-const TEMPLATE = ['Công ty', 'Số đơn Ecount', 'Ngày đơn', 'Mã KH/NCC', 'Tên KH/NCC', 'Mã giao hàng', 'Kho', 'Hạn giao/ETA', 'Mã hàng', 'Số lượng (tấn)', 'Dung sai (%)', 'Ghi chú'];
+const TEMPLATE = ['Công ty', 'Số đơn Ecount', 'Ngày đơn', 'Mã KH/NCC', 'Tên KH/NCC', 'Mã giao hàng', 'Kho', 'Hạn giao/ETA', 'Mã hàng', 'Số lượng (kg)', 'Dung sai (%)', 'Ghi chú'];
 
 function ImportOrders({ type, existing, onDone }) {
   const { email, name } = useApp();
@@ -399,7 +401,7 @@ function ImportOrders({ type, existing, onDone }) {
       const heads = (rows[0] || []).map((x) => norm(x));
       const col = (k) => heads.findIndex((x) => HEAD[k].includes(x));
       const c = Object.fromEntries(Object.keys(HEAD).map((k) => [k, col(k)]));
-      if (c.refNo < 0 || c.item < 0 || (c.qtyT < 0 && c.qtyKg < 0)) throw new Error('File cần có cột Số đơn Ecount, Mã hàng, Số lượng (tấn). Bấm "Tải file mẫu".');
+      if (c.refNo < 0 || c.item < 0 || (c.qtyT < 0 && c.qtyKg < 0)) throw new Error('File cần có cột Số đơn Ecount, Mã hàng, Số lượng (kg) hoặc Số lượng (tấn). Bấm "Tải file mẫu".');
       const v = (r, k) => (c[k] >= 0 ? r[c[k]] : '');
       const groups = new Map();
       rows.slice(1).forEach((r, i) => {
@@ -407,7 +409,7 @@ function ImportOrders({ type, existing, onDone }) {
         if (!refNo && !String(v(r, 'item') ?? '').trim()) return;
         const no = `Dòng ${i + 2}: `;
         const item = String(v(r, 'item') ?? '').trim();
-        const kg = c.qtyT >= 0 ? (toNumber(v(r, 'qtyT')) || 0) * 1000 : toNumber(v(r, 'qtyKg')) || 0;
+        const kg = c.qtyKg >= 0 ? toNumber(v(r, 'qtyKg')) || 0 : (toNumber(v(r, 'qtyT')) || 0) * 1000;
         if (!refNo) return errs.push(no + 'thiếu số đơn.');
         if (!itemMap.has(item)) return errs.push(no + `mã hàng "${item}" chưa có trong danh mục.`);
         if (!(kg > 0)) return errs.push(no + 'thiếu số lượng.');
@@ -478,7 +480,7 @@ function AssignCarrier({ o: view, onClose }) {
       <div className="filters">Áp cho tất cả dòng:
         <select value={all} onChange={(e) => { setAll(e.target.value); setMap(Object.fromEntries(o.lines.map((l) => [l.no, e.target.value]))); }}><option value="">-- Chọn --</option>{opts}</select></div>
       <div className="table-wrap"><table>
-        <thead><tr><th>#</th><th>Kho xuất</th><th>Mã hàng</th><th>Giao đến</th><th className="num">Còn lại (tấn)</th><th>Đơn vị vận tải</th></tr></thead>
+        <thead><tr><th>#</th><th>Kho xuất</th><th>Mã hàng</th><th>Giao đến</th><th className="num">Còn lại (kg)</th><th>Đơn vị vận tải</th></tr></thead>
         <tbody>{o.lines.map((l) => (
           <tr key={l.no}><td>{l.no}</td><td>{lineWh(o, l, 'out')}</td><td>{l.item} {l.itemName}</td><td>{o.type === 'STO' ? `Kho ${lineTo(o, l)}` : lineShip(o, l) || o.partyName}</td>
             <td className="num">{t(leftKg(l))}</td>

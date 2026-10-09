@@ -58,13 +58,13 @@ export default function Dashboard() {
           return (
             <Link key={ty} to={`/don-hang?tab=${ty}`} className={'stat ' + (x.late ? 'red' : 'amber')} style={{ textDecoration: 'none', color: 'inherit' }}>
               <div className="stat-label">{label}</div>
-              <div className="stat-value">{fmtNum(x.left / 1000, 2)} tấn</div>
+              <div className="stat-value">{fmtNum(x.left, 0)} kg</div>
               <div className="stat-sub">{x.count} đơn{x.late ? ` · ${x.late} đơn quá hạn` : ''}</div>
             </Link>
           );
         })}
         <Link to="/don-hang?tab=STO" className="stat" style={{ textDecoration: 'none', color: 'inherit' }}>
-          <div className="stat-label">Chuyển kho (STO): đang đi đường</div><div className="stat-value">{fmtNum(stoTransit / 1000, 2)} tấn</div><div className="stat-sub">{stoHere.length} lệnh đang mở</div>
+          <div className="stat-label">Chuyển kho (STO): đang đi đường</div><div className="stat-value">{fmtNum(stoTransit, 0)} kg</div><div className="stat-sub">{stoHere.length} lệnh đang mở</div>
         </Link>
         <Link to="/don-hang?tab=can-doi" className="stat" style={{ textDecoration: 'none', color: 'inherit' }}>
           <div className="stat-label">Cân đối theo mã hàng</div><div className="stat-value">Xem →</div><div className="stat-sub">Tồn + PO − SO</div>
@@ -97,10 +97,10 @@ export default function Dashboard() {
           )}
         </div>
         <div className="card">
-          <div className="section-head">Tồn kho: {fmtNum(sumKg(stock) / 1000, 2)} tấn</div>
+          <div className="section-head">Tồn kho: {fmtNum(sumKg(stock), 0)} kg</div>
           <table><tbody>
             {byStatus.map(([c, kg]) => (
-              <tr key={c}><td><span className={'badge ' + (c === 'HTC' ? 'red' : c === 'DGC' ? 'green' : '')}>{c}</span></td><td className="num">{fmtNum(kg / 1000, 2)} tấn</td></tr>
+              <tr key={c}><td><span className={'badge ' + (c === 'HTC' ? 'red' : c === 'DGC' ? 'green' : '')}>{c}</span></td><td className="num">{fmtNum(kg, 0)} kg</td></tr>
             ))}
           </tbody></table>
           <p className="small" style={{ marginTop: 8 }}>{locations.length} vị trí · {empty} vị trí trống · {full.length} vị trí ≥ 85%</p>
@@ -140,7 +140,7 @@ export default function Dashboard() {
           {Object.entries(MOVE_TYPES).map(([k, m]) => {
             const list = todayMoves.filter((x) => x.type === k);
             const kg = list.reduce((s, x) => s + x.lines.reduce((a, l) => a + Math.abs(Number(l.kg) || 0), 0), 0);
-            return <span key={k} className="tag" style={{ padding: '4px 10px' }}>{m.icon} {m.label}: <b>{list.length}</b> phiếu · {fmtNum(kg / 1000, 2)} tấn</span>;
+            return <span key={k} className="tag" style={{ padding: '4px 10px' }}>{m.icon} {m.label}: <b>{list.length}</b> phiếu · {fmtNum(kg, 0)} kg</span>;
           })}
         </div>
         <p style={{ marginTop: 8 }}><Link to="/kho/phieu">Xem phiếu kho →</Link></p>

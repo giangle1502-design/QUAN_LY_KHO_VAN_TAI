@@ -25,9 +25,9 @@ export const RELEASE_STATUS = {
 };
 const num = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? 0 : Number(v));
 const r3 = (x) => Math.round(x * 1000) / 1000;
-// Lưu kg, lên form đổi ra tấn, luôn 3 số lẻ: 25 tấn → 25.000; 1250.5 tấn → 1,250.500
-const ton3 = (kg) => fmtNum(num(kg) / 1000, 3, 3);
-const tonPrint = ton3;
+// Màn hình dùng kg (đơn vị chính); bản in gửi ngân hàng theo mẫu ĐVT TẤN, luôn 3 số lẻ: 25 tấn → 25.000
+const ton3 = (kg) => fmtNum(num(kg), 2);
+const tonPrint = (kg) => fmtNum(num(kg) / 1000, 3, 3);
 const totKg = (r) => (r.lines || []).reduce((s, l) => s + num(l.kg), 0);
 
 async function createRelease(data, user) {
@@ -118,11 +118,11 @@ export default function Release() {
     .sort((a, b) => String(b.id).localeCompare(String(a.id)));
 
   const release = async (r) => {
-    if (!window.confirm(`Đổi ${ton3(totKg(r))} tấn trong ${r.id} từ HTC sang ${await releaseStatusOf(r.warehouse)}?`)) return;
+    if (!window.confirm(`Đổi ${ton3(totKg(r))} kg trong ${r.id} từ HTC sang ${await releaseStatusOf(r.warehouse)}?`)) return;
     setBusy(r.id); setMsg('');
     try {
       const { mid, to } = await postRelease(r, { email, name });
-      setMsg(`Đã đổi ${r.id}: phiếu ${mid} chuyển ${ton3(totKg(r))} tấn sang ${to}.`);
+      setMsg(`Đã đổi ${r.id}: phiếu ${mid} chuyển ${ton3(totKg(r))} kg sang ${to}.`);
     } catch (e) {
       setMsg('Lỗi: ' + (e.code === 'permission-denied' ? 'Bạn không có quyền giải chấp hàng ở kho này.' : e.message));
     }
@@ -141,10 +141,10 @@ export default function Release() {
     'Đề nghị giải chấp': list.flatMap((r) => groupLines(r.lines).map((l, i) => ({
       'Số đề nghị': r.id, Ngày: r.date, 'Công ty': r.company, 'Ngân hàng': r.pledgee, Kho: r.warehouse, 'Trạng thái': RELEASE_STATUS[r.status]?.label,
       STT: i + 1, 'Số CT (BCT)': l.docNo, 'Mã hàng': l.item, 'Tên hàng': l.itemName, 'Vị trí hàng hóa': l.place,
-      'Số lượng (tấn)': num(l.kg) / 1000, 'Đổi sang': r.toStatus || (r.status === 'released' ? 'DGC' : ''), 'Phiếu giải chấp': r.movementId || '',
+      'Số lượng (kg)': num(l.kg), 'Đổi sang': r.toStatus || (r.status === 'released' ? 'DGC' : ''), 'Phiếu giải chấp': r.movementId || '',
     }))),
     'Chi tiết theo lot': list.flatMap((r) => r.lines.map((l) => ({
-      'Số đề nghị': r.id, Kho: r.warehouse, 'Mã hàng': l.item, Lot: l.lot, 'Vị trí': l.location, 'Số lượng (tấn)': num(l.kg) / 1000,
+      'Số đề nghị': r.id, Kho: r.warehouse, 'Mã hàng': l.item, Lot: l.lot, 'Vị trí': l.location, 'Số lượng (kg)': num(l.kg),
     }))),
   });
 
@@ -179,7 +179,7 @@ export default function Release() {
         {!list.length ? <Empty /> : (
           <table>
             <thead><tr><th>Số đề nghị</th><th>Ngày</th><th>Công ty</th><th>Ngân hàng</th><th>Kho</th><th>Mặt hàng</th>
-              <th className="num">Số lượng (tấn)</th><th>Trạng thái</th><th>Phiếu TC</th><th></th></tr></thead>
+              <th className="num">Số lượng (kg)</th><th>Trạng thái</th><th>Phiếu TC</th><th></th></tr></thead>
             <tbody>
               {list.map((r) => (
                 <tr key={r.id}>
@@ -232,9 +232,9 @@ function Shortfall({ co, setCo, canEdit, onPlan }) {
   const exportExcel = () => exportSheets(`Hang_thieu_don_ban_${today()}`, {
     'Hàng thiếu': rows.map((r) => ({
       'Công ty': r.company, Kho: r.warehouse || '(chưa ghi kho)', 'Mã hàng': r.item, 'Tên hàng': r.itemName,
-      'SO còn phải giao (tấn)': r.so / 1000, 'Tồn KTC + DGC (tấn)': r.usable / 1000, 'Thiếu (tấn)': r.short / 1000,
-      'Tồn HTC (tấn)': r.htc / 1000, 'Đang đề nghị giải chấp (tấn)': r.held / 1000, 'Còn cần giải chấp (tấn)': r.need / 1000,
-      'HTC không đủ bù (tấn)': r.uncovered / 1000, 'Đơn bán': r.orders.join(', '),
+      'SO còn phải giao (kg)': r.so, 'Tồn KTC + DGC (kg)': r.usable, 'Thiếu (kg)': r.short,
+      'Tồn HTC (kg)': r.htc, 'Đang đề nghị giải chấp (kg)': r.held, 'Còn cần giải chấp (kg)': r.need,
+      'HTC không đủ bù (kg)': r.uncovered, 'Đơn bán': r.orders.join(', '),
     })),
   });
 
@@ -247,7 +247,7 @@ function Shortfall({ co, setCo, canEdit, onPlan }) {
       </p>
       <div className="toolbar">
         <CompanyPicker value={co} onChange={setCo} />
-        <span className="small">{rows.length ? <b style={{ color: 'var(--red)' }}>{rows.length} mã hàng thiếu · {ton3(tot('short'))} tấn · còn cần giải chấp {ton3(tot('need'))} tấn</b> : ''}</span>
+        <span className="small">{rows.length ? <b style={{ color: 'var(--red)' }}>{rows.length} mã hàng thiếu · {ton3(tot('short'))} kg · còn cần giải chấp {ton3(tot('need'))} kg</b> : ''}</span>
         <button className="btn" style={{ marginLeft: 'auto' }} onClick={exportExcel}>⬇ Excel</button>
       </div>
       <div className="table-wrap">
@@ -276,10 +276,10 @@ function Shortfall({ co, setCo, canEdit, onPlan }) {
         <h3 style={{ margin: '16px 0 6px' }}>Gợi ý đề nghị giải chấp</h3>
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Công ty</th><th>Kho</th><th>Ngân hàng</th><th>Mặt hàng (tấn)</th><th className="num">Tổng giải chấp (tấn)</th><th></th></tr></thead>
+            <thead><tr><th>Công ty</th><th>Kho</th><th>Ngân hàng</th><th>Mặt hàng (kg)</th><th className="num">Tổng giải chấp (kg)</th><th></th></tr></thead>
             <tbody>
               {groups.map((g) => {
-                const note = [...g.items].map(([it, kg]) => `${it} ${ton3(kg)} tấn`).join(', ');
+                const note = [...g.items].map(([it, kg]) => `${it} ${ton3(kg)} kg`).join(', ');
                 return (
                   <tr key={`${g.company}|${g.warehouse}|${g.pledgee}`}>
                     <td>{g.company}</td><td>{g.warehouse}</td><td>{bankName(g.pledgee)}</td><td className="small">{note}</td><td className="num"><b>{ton3(g.kg)}</b></td>
@@ -291,7 +291,7 @@ function Shortfall({ co, setCo, canEdit, onPlan }) {
           </table>
         </div>
       </>}
-      <p className="small" style={{ marginTop: 6 }}>Đơn vị: tấn. Đơn chưa ghi kho được so với tồn của công ty ở mọi kho, cần ghi kho vào đơn để lập đề nghị.</p>
+      <p className="small" style={{ marginTop: 6 }}>Đơn vị: kg. Đơn chưa ghi kho được so với tồn của công ty ở mọi kho, cần ghi kho vào đơn để lập đề nghị.</p>
     </div>
   );
 }
@@ -306,7 +306,7 @@ function ReleaseForm({ onClose, preset }) {
   const pledgees = useCollection('pledgees').rows;
   const companies = useCollection('companies').rows;
   // stockId → { on, ton, docNo, place }; lập từ Hàng thiếu thì tích sẵn các dòng HTC đủ bù phần thiếu
-  const [pick, setPick] = useState(() => Object.fromEntries(Object.entries(preset?.picks || {}).map(([id, kg]) => [id, { on: true, ton: r3(kg / 1000) }])));
+  const [pick, setPick] = useState(() => Object.fromEntries(Object.entries(preset?.picks || {}).map(([id, kg]) => [id, { on: true, ton: r3(kg) }])));
   const pending = usePendingRelease(); // stockId → kg đang nằm trong đề nghị chờ duyệt
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -320,7 +320,7 @@ function ReleaseForm({ onClose, preset }) {
   const set = (k, v) => { setH((x) => ({ ...x, [k]: v })); if (!['date', 'note', 'bct'].includes(k)) setPick({}); };
   // Đổi số bộ chứng từ chung → áp cho mọi dòng đang chọn
   const setBct = (v) => { set('bct', v); setPick((x) => Object.fromEntries(Object.entries(x).map(([k, p]) => [k, { ...p, docNo: v }]))); };
-  const cur = (r) => ({ on: false, ton: r3(r.free / 1000), docNo: h.bct || '', place: whName, ...pick[r._id] });
+  const cur = (r) => ({ on: false, ton: r3(r.free), docNo: h.bct || '', place: whName, ...pick[r._id] });
   const setP = (r, p) => setPick((x) => ({ ...x, [r._id]: { ...cur(r), ...p } }));
   const chosen = htc.filter((r) => cur(r).on);
   const total = chosen.reduce((s, r) => s + num(cur(r).ton), 0);
@@ -332,9 +332,9 @@ function ReleaseForm({ onClose, preset }) {
     const lines = [];
     for (const r of chosen) {
       const p = cur(r);
-      const kg = r3(num(p.ton) * 1000);
+      const kg = r3(num(p.ton));
       if (!String(p.docNo || '').trim()) return setErr(`${r.item} lot ${r.lot || '-'}: nhập số bộ chứng từ (BCT).`);
-      if (kg <= 0 || kg > r.free + 0.001) return setErr(`${r.item} lot ${r.lot || '-'}: số lượng phải từ 0 đến ${ton3(r.free)} tấn${r.held ? ' (phần còn lại đang nằm trong đề nghị khác chưa đổi DGC)' : ''}.`);
+      if (kg <= 0 || kg > r.free + 0.001) return setErr(`${r.item} lot ${r.lot || '-'}: số lượng phải từ 0 đến ${ton3(r.free)} kg${r.held ? ' (phần còn lại đang nằm trong đề nghị khác chưa đổi DGC)' : ''}.`);
       lines.push({ stockId: r._id, item: r.item, itemName: r.itemName || '', lot: r.lot || '', location: r.location, docNo: String(p.docNo || '').trim(),
         place: String(p.place || '').trim(), unit: 'TẤN', kg });
     }
@@ -347,7 +347,7 @@ function ReleaseForm({ onClose, preset }) {
       // Lưu đề nghị là đổi ngay HTC → DGC; đề nghị chỉ còn để in PDF, ký số, gửi ngân hàng
       try {
         const { mid, to } = await postRelease({ ...data, id, history: [{ at: new Date().toISOString(), by: email, byName: name, action: 'Lập đề nghị' }] }, { email, name });
-        onClose(id, `Đã lập đề nghị ${id} và đổi ${fmtNum(total, 3, 3)} tấn sang ${to} (phiếu ${mid}). Bấm 🖨 In → Lưu PDF để ký số gửi ngân hàng.`);
+        onClose(id, `Đã lập đề nghị ${id} và đổi ${fmtNum(total, 2)} kg sang ${to} (phiếu ${mid}). Bấm 🖨 In → Lưu PDF để ký số gửi ngân hàng.`);
       } catch (e3) {
         onClose(id, `Lỗi: đã lập đề nghị ${id} nhưng chưa đổi được sang DGC (${e3.message}). Bấm ✅ Đổi DGC ở dòng đề nghị để thử lại.`);
       }
@@ -385,8 +385,8 @@ function ReleaseForm({ onClose, preset }) {
           {!h.company || !h.pledgee || !h.warehouse ? <Empty text="Chọn công ty, ngân hàng và kho để hiện hàng HTC." />
             : loading ? <Empty text="Đang tải…" /> : !htc.length ? <Empty text="Không có hàng HTC của công ty này tại ngân hàng này trong kho." /> : (
               <table>
-                <thead><tr><th></th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th><th>Vị trí</th><th className="num">Tồn HTC (tấn)</th><th className="num">Đang đề nghị</th>
-                  <th className="num">Giải chấp (tấn)</th><th>Số CT (BCT)</th><th>Vị trí hàng hóa (in)</th></tr></thead>
+                <thead><tr><th></th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th><th>Vị trí</th><th className="num">Tồn HTC (kg)</th><th className="num">Đang đề nghị</th>
+                  <th className="num">Giải chấp (kg)</th><th>Số CT (BCT)</th><th>Vị trí hàng hóa (in)</th></tr></thead>
                 <tbody>
                   {htc.map((r) => {
                     const p = cur(r);
@@ -404,7 +404,7 @@ function ReleaseForm({ onClose, preset }) {
               </table>
             )}
         </div>
-        <p className="small">Đã chọn {chosen.length} dòng · <b>{fmtNum(total, 3, 3)} tấn</b>. Bản in gộp theo mã hàng (cùng số CT, vị trí hàng hóa).{h.warehouse ? <> Khi lưu, hàng chuyển ngay sang <b>{releaseStatusOfWh(myWh.find((w) => w.code === h.warehouse))}</b>.</> : null} Vị trí hàng hóa mặc định là tên kho, sửa được trước khi lưu.</p>
+        <p className="small">Đã chọn {chosen.length} dòng · <b>{fmtNum(total, 2)} kg</b> (= {fmtNum(total / 1000, 3)} tấn trên bản in). Bản in gộp theo mã hàng (cùng số CT, vị trí hàng hóa).{h.warehouse ? <> Khi lưu, hàng chuyển ngay sang <b>{releaseStatusOfWh(myWh.find((w) => w.code === h.warehouse))}</b>.</> : null} Vị trí hàng hóa mặc định là tên kho, sửa được trước khi lưu.</p>
         {err && <div className="error-box">{err}</div>}
         <div className="form-actions"><button className="btn primary" disabled={busy}>{busy ? 'Đang lưu…' : 'Lập đề nghị'}</button></div>
       </form>

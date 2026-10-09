@@ -143,7 +143,7 @@ export default function OpeningImport() {
       {checked.length > 0 && (
         <>
           <div className="toolbar">
-            <b>{checked.length} dòng · {fmtNum(checked.reduce((s, r) => s + r.kg, 0) / 1000, 2)} tấn</b>
+            <b>{checked.length} dòng · {fmtNum(checked.reduce((s, r) => s + r.kg, 0), 2)} kg</b>
             {bad.length ? <span className="badge red">{bad.length} dòng lỗi, sửa file rồi chọn lại</span> : <span className="badge green">Hợp lệ</span>}
             <button className="btn primary" disabled={!!bad.length || busy || !wh} onClick={post}>{busy ? 'Đang ghi…' : 'Ghi tồn đầu kỳ'}</button>
           </div>

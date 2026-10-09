@@ -13,7 +13,7 @@ import { InLine, newLine } from './MovementForm';
 // Nhận hàng: quản trị lập và in phiếu nhập trước; thủ kho nhận hàng ngoài hiện trường,
 // nhập số thực nhận, lot, vị trí rồi xác nhận → tồn kho cập nhật (nhập trực tiếp: lập PO theo số thực nhận)
 const num = (v) => (v === '' || v == null ? 0 : Number(v));
-const t = (kg) => fmtNum(num(kg) / 1000, 3);
+const t = (kg) => fmtNum(num(kg), 2);
 
 export default function Receive() {
   const { id } = useParams();
@@ -36,7 +36,7 @@ function ReceiveList() {
       <div className="table-wrap">
         {!list.length ? <Empty text="Không có phiếu nhập nào đang chờ nhận hàng." /> : (
           <table>
-            <thead><tr><th>Số phiếu</th><th>Ngày</th><th>Kho</th><th>Nguồn nhập</th><th>Nhà cung cấp / khách</th><th>Đơn</th><th>Mặt hàng</th><th className="num">Dự kiến (tấn)</th><th>Người lập</th><th></th></tr></thead>
+            <thead><tr><th>Số phiếu</th><th>Ngày</th><th>Kho</th><th>Nguồn nhập</th><th>Nhà cung cấp / khách</th><th>Đơn</th><th>Mặt hàng</th><th className="num">Dự kiến (kg)</th><th>Người lập</th><th></th></tr></thead>
             <tbody>
               {list.map((m) => (
                 <tr key={m.id}>
@@ -135,11 +135,11 @@ function ReceiveForm({ id }) {
       </div>
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="section-head">Hàng thực nhận ({lines.length})</div>
-        <p className="small">Sửa số tấn / pallet / bao theo thực tế, lot (NSX, HSD nếu mã hàng có quản lý hạn dùng) và chọn vị trí. Dòng để trống số lượng = không nhận. Hàng về nhiều lot thì thêm dòng.</p>
+        <p className="small">Sửa số kg / pallet / bao theo thực tế, lot (NSX, HSD nếu mã hàng có quản lý hạn dùng) và chọn vị trí. Dòng để trống số lượng = không nhận. Hàng về nhiều lot thì thêm dòng.</p>
         {lines.map((l, i) => (
           <div key={i} className="mv-line">
             <div style={{ flex: 1 }}>
-              {l.plannedKg != null && <div className="small">Dự kiến trên phiếu: <b>{t(l.plannedKg)} tấn</b></div>}
+              {l.plannedKg != null && <div className="small">Dự kiến trên phiếu: <b>{t(l.plannedKg)} kg</b></div>}
               <InLine l={l} set={(p) => setLine(i, p)} itemMap={itemMap} locations={locations} statuses={statuses} pledgees={pledgees} />
             </div>
             <button type="button" className="btn ghost" disabled={lines.length === 1} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>✕</button>

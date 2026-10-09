@@ -21,7 +21,7 @@ export function mergeFields(catKey, stored = []) {
       out.push({
         ...base,
         label: s.label || base.label,
-        required: keys.includes(base.key) || base.required ? true : !!s.required,
+        required: keys.includes(base.key) || base.required ? true : base.system ? false : !!s.required,
         hidden: keys.includes(base.key) ? false : !!s.hidden,
         options: CHOICE_TYPES.includes(base.type) && !base.labels && !base.computed && !base.system && s.options?.length ? s.options : base.options,
         // default '' = admin bỏ giá trị mặc định có sẵn trong code
@@ -35,7 +35,14 @@ export function mergeFields(catKey, stored = []) {
       seen.add(s.key);
     }
   }
-  for (const f of cat.fields) if (!seen.has(f.key)) out.push({ ...f, builtin: true });
+  // Trường có sẵn mới thêm (chưa có trong cấu hình đã lưu): chèn ngay trước trường có sẵn đứng sau nó trong code
+  cat.fields.forEach((f, i) => {
+    if (seen.has(f.key)) return;
+    const next = cat.fields.slice(i + 1).find((x) => seen.has(x.key));
+    const at = next ? out.findIndex((x) => x.key === next.key) : -1;
+    out.splice(at < 0 ? out.length : at, 0, { ...f, builtin: true });
+    seen.add(f.key);
+  });
   // Trường công thức trong danh mục: tự tính khi lưu như trường hệ thống
   for (const f of out) if (f.type === 'formula' && f.formula) f.computed = (r) => computeFormulas(out, r)[f.key];
   return out;
