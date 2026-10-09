@@ -42,6 +42,7 @@ export default function PrintMovement({ pick = false }) {
     }
     groups.push(...g.values());
   }
+  const hasDates = (m.lines || []).some((l) => l.mfgDate || l.expDate);
   const pickLines = pick ? [...m.lines].sort((a, b) => String(a.location).localeCompare(String(b.location)) || String(a.item).localeCompare(String(b.item))) : [];
   const signs = pick ? ['Người soạn hàng', 'Thủ kho', 'Người kiểm tra']
     : m.type === 'out'
@@ -84,12 +85,12 @@ export default function PrintMovement({ pick = false }) {
       </table>
       ) : pick ? (
       <table className="print-lines">
-        <thead><tr><th>STT</th><th>Vị trí</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th><th>NSX</th><th>HSD</th><th>Tình trạng</th><th className="num">Số tấn</th><th className="num">Pallet</th><th className="num">Số bao</th><th>Đã soạn</th></tr></thead>
+        <thead><tr><th>STT</th><th>Vị trí</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th>{hasDates && <><th>NSX</th><th>HSD</th></>}<th>Tình trạng</th><th className="num">Số tấn</th><th className="num">Pallet</th><th className="num">Số bao</th><th>Đã soạn</th></tr></thead>
         <tbody>{pickLines.map((l, i) => (
-          <tr key={i}><td>{i + 1}</td><td><b>{l.location}</b></td><td>{l.item}</td><td>{l.itemName}</td><td>{l.lot}</td><td>{fmtDate(l.mfgDate)}</td><td>{fmtDate(l.expDate)}</td>
+          <tr key={i}><td>{i + 1}</td><td><b>{l.location}</b></td><td>{l.item}</td><td>{l.itemName}</td><td>{l.lot}</td>{hasDates && <><td>{fmtDate(l.mfgDate)}</td><td>{fmtDate(l.expDate)}</td></>}
             <td>{l.goodsStatus}{l.pledgee ? ` (${l.pledgee})` : ''}</td><td className="num">{fmtNum(l.kg / 1000, 3, 3)}</td><td className="num">{fmtNum(l.pallets, 2)}</td><td className="num">{fmtNum(l.bags)}</td><td style={{ textAlign: 'center' }}>☐</td></tr>
         ))}</tbody>
-        <tfoot><tr><td colSpan={8}>Cộng</td><td className="num">{fmtNum(tot('kg') / 1000, 3, 3)}</td><td className="num">{fmtNum(tot('pallets'), 2)}</td><td className="num">{fmtNum(tot('bags'))}</td><td></td></tr></tfoot>
+        <tfoot><tr><td colSpan={hasDates ? 8 : 6}>Cộng</td><td className="num">{fmtNum(tot('kg') / 1000, 3, 3)}</td><td className="num">{fmtNum(tot('pallets'), 2)}</td><td className="num">{fmtNum(tot('bags'))}</td><td></td></tr></tfoot>
       </table>
       ) : (
       <table className="print-lines">

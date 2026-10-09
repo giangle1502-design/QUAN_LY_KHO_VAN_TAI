@@ -614,8 +614,11 @@ export function InLine({ l, set, itemMap, locations, statuses, pledgees, locRequ
         {it && <small className="small">{it.name}</small>}
       </Field>
       <Field label="Lot"><input value={l.lot} onChange={(e) => set({ lot: e.target.value })} /></Field>
-      <Field label="NSX"><input type="date" value={l.mfgDate} onChange={(e) => set({ mfgDate: e.target.value })} /></Field>
-      <Field label="HSD"><input type="date" value={l.expDate} onChange={(e) => set({ expDate: e.target.value })} /></Field>
+      {/* NSX, HSD chỉ hiện với mã hàng có tích "Quản lý NSX / HSD" (hạt nhựa không cần) */}
+      {(it?.trackDates || l.mfgDate || l.expDate) && <>
+        <Field label="NSX"><input type="date" value={l.mfgDate} onChange={(e) => set({ mfgDate: e.target.value })} /></Field>
+        <Field label="HSD"><input type="date" value={l.expDate} onChange={(e) => set({ expDate: e.target.value })} /></Field>
+      </>}
       <Field label="Vị trí" required={locRequired} help={locRequired ? '' : 'Thủ kho chọn khi nhận hàng'}><LocationSelect value={l.location} onChange={(v) => set({ location: v })} locations={locations} /></Field>
       <Field label="Tình trạng">
         <select value={l.goodsStatus} onChange={(e) => set({ goodsStatus: e.target.value })}>

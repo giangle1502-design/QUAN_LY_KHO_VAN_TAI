@@ -135,7 +135,7 @@ function ReceiveForm({ id }) {
       </div>
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="section-head">Hàng thực nhận ({lines.length})</div>
-        <p className="small">Sửa số tấn / pallet / bao theo thực tế, lot, NSX, HSD và chọn vị trí. Dòng để trống số lượng = không nhận. Hàng về nhiều lot thì thêm dòng.</p>
+        <p className="small">Sửa số tấn / pallet / bao theo thực tế, lot (NSX, HSD nếu mã hàng có quản lý hạn dùng) và chọn vị trí. Dòng để trống số lượng = không nhận. Hàng về nhiều lot thì thêm dòng.</p>
         {lines.map((l, i) => (
           <div key={i} className="mv-line">
             <div style={{ flex: 1 }}>

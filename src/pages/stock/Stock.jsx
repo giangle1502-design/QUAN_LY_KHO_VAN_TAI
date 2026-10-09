@@ -31,6 +31,8 @@ export default function Stock() {
       .filter((r) => (!st || r.goodsStatus === st) && (!f || [r.item, r.itemName, r.lot, r.location, r.pledgee].join(' ').toLowerCase().includes(f)))
       .sort((a, b) => String(a.warehouse).localeCompare(b.warehouse) || String(a.item).localeCompare(b.item) || String(a.inDate).localeCompare(b.inDate));
   }, [rows, q, st]);
+  // Cột NSX / HSD chỉ hiện khi có hàng ghi hạn dùng (hạt nhựa không có)
+  const hasDates = list.some((r) => r.mfgDate || r.expDate);
 
   // Tổng hợp theo mã hàng
   const byItem = useMemo(() => {
@@ -51,7 +53,7 @@ export default function Stock() {
   const exportExcel = () => exportSheets(`Ton_kho_${today()}`, {
     'Chi tiết': list.map((r, i) => ({
       STT: i + 1, Kho: r.warehouse, 'Công ty': r.company || '', 'Vị trí': r.location, 'Mã hàng': r.item, 'Tên hàng': r.itemName, Lot: r.lot,
-      NSX: r.mfgDate, HSD: r.expDate, 'Tình trạng': r.goodsStatus, 'Bên nhận thế chấp': r.pledgee,
+      ...(hasDates ? { NSX: r.mfgDate, HSD: r.expDate } : {}), 'Tình trạng': r.goodsStatus, 'Bên nhận thế chấp': r.pledgee,
       'Số bao': r.bags, Pallet: r.pallets, Kg: r.kg, 'Ngày nhập': r.inDate, 'Tuổi tồn (ngày)': ageDays(r.inDate),
     })),
     'Theo mã hàng': byItem.map((x, i) => ({
@@ -97,13 +99,13 @@ export default function Stock() {
       <div className="table-wrap">
         {loading ? <Empty text="Đang tải…" /> : !list.length ? <Empty text="Chưa có tồn kho." /> : view === 'detail' ? (
           <table>
-            <thead><tr><th className="stt">STT</th><th>Kho</th><th>Công ty</th><th>Vị trí</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th><th>HSD</th><th>Tình trạng</th>
+            <thead><tr><th className="stt">STT</th><th>Kho</th><th>Công ty</th><th>Vị trí</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th>{hasDates && <th>HSD</th>}<th>Tình trạng</th>
               <th className="num">Số bao</th><th className="num">Pallet</th><th className="num">Kg</th><th>Ngày nhập</th><th className="num">Tuổi tồn</th></tr></thead>
             <tbody>
               {list.map((r, i) => (
                 <tr key={r._id}>
                   <td className="stt">{i + 1}</td><td>{r.warehouse}</td><td>{r.company}</td><td className="nowrap">{r.location}</td><td className="nowrap">{r.item}</td><td>{r.itemName}</td>
-                  <td className="nowrap">{r.lot}</td><td className="nowrap">{fmtDate(r.expDate)}</td>
+                  <td className="nowrap">{r.lot}</td>{hasDates && <td className="nowrap">{fmtDate(r.expDate)}</td>}
                   <td><span className={'badge ' + (r.goodsStatus === 'HTC' ? 'red' : r.goodsStatus === 'DGC' ? 'green' : '')}>{r.goodsStatus}{r.pledgee ? ` · ${r.pledgee}` : ''}</span></td>
                   <td className="num">{fmtNum(r.bags)}</td><td className="num">{fmtNum(r.pallets, 2)}</td><td className="num">{fmtNum(r.kg)}</td>
                   <td className="nowrap">{fmtDate(r.inDate)}</td><td className="num">{ageDays(r.inDate)}</td>

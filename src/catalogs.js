@@ -128,6 +128,8 @@ export const CATALOGS = [
           const b = num(r.bagsPerLayer) * num(r.layersPerPallet) * num(r.bagWeight);
           return b ? b : null;
         } },
+      { key: 'trackDates', label: 'Quản lý NSX / HSD', type: 'checkbox', default: false,
+        help: 'Chỉ tích với hàng có hạn dùng (vd. hóa chất). Không tích (vd. hạt nhựa): phiếu nhập, nhận hàng không hiện ô NSX, HSD' },
       { key: 'note', label: 'Ghi chú', type: 'textarea' },
       { key: 'active', label: 'Đang sử dụng', type: 'checkbox', default: true },
     ],
