@@ -351,3 +351,6 @@ td.fh textarea, td.fh input:not([type=checkbox]), td.fh select { min-height: var
 .field textarea { width: 100%; }
 .cell-add > textarea, .cell-add > .readonly-val { flex: 1; }
 table.so-lines textarea { width: 100%; min-width: 90px; padding: 5px 6px; }
+
+/* Nút lưu phiếu luôn thấy ở đáy màn hình */
+.sticky-actions { position: sticky; bottom: 0; z-index: 20; background: var(--card, #fff); border-top: 1px solid var(--line); margin: 12px -4px 0; padding: 10px 4px; align-items: center; box-shadow: 0 -4px 10px rgba(0,0,0,.06); }

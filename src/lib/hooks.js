@@ -124,3 +124,23 @@ export function useOrders(type, onlyOpen = false) {
   }, [type, onlyOpen, salesOnly, email]);
   return state;
 }
+
+// Phiếu nhập đã lập, chờ thủ kho nhận hàng (chưa cập nhật đơn): Map số đơn → { ids: [số phiếu], byLine: { dòng đơn: kg } }
+// Dùng để trừ vào phần còn phải nhập của PO / STO, tránh lập trùng phiếu
+export function usePendingIn() {
+  const [map, setMap] = useState(new Map());
+  useEffect(() => onSnapshot(query(collection(db, 'movements'), where('type', '==', 'in'), where('status', '==', 'pending')), (s) => {
+    const m = new Map();
+    for (const d of s.docs) {
+      const x = d.data();
+      if (!x.orderId) continue;
+      if (!m.has(x.orderId)) m.set(x.orderId, { ids: [], byLine: {} });
+      const e = m.get(x.orderId);
+      e.ids.push(x.id || d.id);
+      for (const l of x.lines || []) if (l.orderLine != null) e.byLine[l.orderLine] = (e.byLine[l.orderLine] || 0) + Math.abs(Number(l.kg) || 0);
+    }
+    m.loaded = true;
+    setMap(m);
+  }, () => { const m = new Map(); m.loaded = true; setMap(m); }), []);
+  return map;
+}

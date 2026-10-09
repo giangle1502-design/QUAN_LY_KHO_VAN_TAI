@@ -96,6 +96,10 @@ Menu *Kho → Đề nghị giải chấp* (kế toán, quản trị):
 
 Đơn bán chỉ xuất được hàng KTC và DGC. Tab **⚠ Hàng thiếu cho đơn bán** (`/kho/giai-chap?tab=thieu`) tổng hợp theo công ty + kho + mã hàng: SO còn phải giao, tồn KTC + DGC, **Thiếu**, tồn HTC, phần đang nằm trong đề nghị chờ duyệt và **Còn cần giải chấp**. Phần *Gợi ý đề nghị giải chấp* gom phần còn thiếu theo công ty + kho + ngân hàng; **+ Lập đề nghị** mở form đề nghị đã tích sẵn các dòng HTC nhập trước để bù đủ phần thiếu. Danh sách Đơn bán (SO) hiện cảnh báo đỏ khi có hàng thiếu, kèm link sang tab này; Cân đối theo mã hàng có nút sang tab này.
 
+### Phiếu nhập chờ thủ kho nhận
+
+Phiếu nhập đã lập theo PO / STO nhưng thủ kho chưa xác nhận vẫn được trừ vào phần còn phải nhập của đơn: nút **📥 Lập phiếu nhập kho** mờ đi thành *Đã lập đủ phiếu · chờ thủ kho nhận* khi các phiếu đã lập đủ số đơn; mở form theo đơn thì chỉ điền sẵn phần còn lại, ghi rõ các phiếu đang chờ, và không cho lập vượt. Nút lưu phiếu kho được ghim ở đáy màn hình.
+
 ## Đơn hàng (SO / PO)
 
 Đơn là kế hoạch, phiếu kho là thực hiện. Ví dụ: SO 100 tấn, xuất 20 tấn → đơn hiện *Đã giao 20, Còn phải giao 80*. PO 100 tấn, về 20 tấn → *Đã nhận 20, Còn chưa về 80*.
