@@ -5,7 +5,7 @@ import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
 import { CATALOGS, FIELD_TYPES, RESULT_TYPES, catalogByKey } from '../catalogs';
 import { checkFormula, formulaToKeys, formulaToLabels } from '../lib/formula';
-import { CHOICE_TYPES, DATE_DEFAULTS, HEIGHT_OPTS, WIDTH_OPTS, parseChoices, toStored } from '../lib/fields';
+import { CHOICE_TYPES, DATE_DEFAULTS, HEIGHT_OPTS, WIDTH_OPTS, badChoices, parseChoices, toStored } from '../lib/fields';
 
 const REF_TARGETS = CATALOGS.filter((c) => !['codeRules', 'users'].includes(c.key));
 import { norm } from '../lib/utils';
@@ -107,6 +107,8 @@ export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường'
     if (f.type === 'ref' && !f.ref) return setErr('Chọn danh mục để lấy dữ liệu.');
     if (f.type === 'formula' && !f.formula.trim()) return setErr('Nhập công thức.');
     if (fErr) return setErr(fErr);
+    const bad = badChoices(f.options, f.type);
+    if (bad.length) return setErr(`Kiểu "${FIELD_TYPES.find((x) => x[0] === f.type)?.[1]}" chỉ nhận số, không lưu được: ${bad.join(', ')}. Muốn chọn chữ (vd. VNĐ, USD) hãy đổi Kiểu dữ liệu sang "Danh sách chọn".`);
     const choices = parseChoices(f.options, f.type);
     const defVal = f.type === 'checkbox' ? (f.def ? true : '') : f.def === '' ? '' : ['number', 'percent', 'currency'].includes(f.type) ? Number(String(f.def).replace(/%$/, '')) : f.def;
     if (defVal !== '' && ['number', 'percent', 'currency'].includes(f.type) && !Number.isFinite(defVal)) return setErr('Giá trị mặc định phải là số.');
@@ -200,7 +202,9 @@ export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường'
             )}
             {CHOICE_TYPES.includes(f.type) && (
               <Field label={f.type === 'select' ? 'Danh sách chọn' : 'Danh sách giá trị chọn sẵn (tùy chọn)'} help="Cách nhau dấu phẩy; để trống = nhập tự do">
-                <input value={f.options} onChange={(e) => set('options', e.target.value)} placeholder={f.type === 'percent' ? 'VD: 0, 5, 8, 10' : f.type === 'select' ? 'VD: 30 ngày, 45 ngày, Trả trước' : 'VD: 1, 2, 3'} /></Field>
+                <input value={f.options} onChange={(e) => set('options', e.target.value)} placeholder={f.type === 'percent' ? 'VD: 0, 5, 8, 10' : f.type === 'select' ? 'VD: VNĐ, USD hoặc 30 ngày, 45 ngày' : 'VD: 1, 2, 3'} />
+                {badChoices(f.options, f.type).length > 0 && <small className="req">Kiểu số chỉ nhận số: {badChoices(f.options, f.type).join(', ')} sẽ bị bỏ.{' '}
+                  <button type="button" className="btn sm" onClick={() => set('type', 'select')}>Đổi sang Danh sách chọn</button></small>}</Field>
             )}
             {f.type === 'formula' && (
               <Field label="Công thức" required full help="Bấm tên trường để chèn. Dùng + − * / ( ); phần trăm tính như Excel (8% = 0,08). Ở phần chung dùng SUM([trường dòng hàng]) để cộng mọi dòng.">

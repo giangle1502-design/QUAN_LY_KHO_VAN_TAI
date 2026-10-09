@@ -13,7 +13,7 @@ export const FIELD_TYPES = [
   ['text', 'Văn bản (1 dòng)'],
   ['textarea', 'Đoạn văn (nhiều dòng)'],
   ['number', 'Số'],
-  ['currency', 'Tiền tệ (VNĐ)'],
+  ['currency', 'Số tiền (VNĐ)'],
   ['percent', 'Phần trăm (%)'],
   ['date', 'Ngày'],
   ['datetime', 'Ngày giờ'],

@@ -7,7 +7,7 @@ import { CATALOGS, FIELD_TYPES, FORM_DEFS, GROUPS, RESULT_TYPES, ROLES, catalogB
 import { checkFormula, formulaToKeys, formulaToLabels } from '../lib/formula';
 import { syncFieldPrivacy } from '../lib/orderSecrets';
 import { useCollection } from '../lib/hooks';
-import { DATE_DEFAULTS, HEIGHT_OPTS, WIDTH_OPTS, canChoose, canDefault, keyFieldsOf, parseChoices } from '../lib/fields';
+import { DATE_DEFAULTS, HEIGHT_OPTS, WIDTH_OPTS, badChoices, canChoose, canDefault, keyFieldsOf, parseChoices } from '../lib/fields';
 import { norm } from '../lib/utils';
 import { ErrorBox, Modal } from '../components/ui';
 
@@ -78,6 +78,8 @@ export default function FieldManager() {
       const e = checkFormula(f.formulaText, [list, other], catKey.endsWith('Head') ? other : []);
       if (e) return setErr(`Công thức "${f.label}": ${e}`);
     }
+    const badF = list.find((f) => canChoose(f) && badChoices(f.optionsText, f.type).length);
+    if (badF) return setErr(`Trường "${badF.label}" kiểu số chỉ nhận số, không lưu được: ${badChoices(badF.optionsText, badF.type).join(', ')}. Muốn chọn chữ (vd. VNĐ, USD) hãy đổi Kiểu dữ liệu sang "Danh sách chọn".`);
     const out = list.map((f) => {
       const o = { key: f.key, label: f.label.trim(), required: !!f.required, hidden: !!f.hidden,
         ...(Number(f.width) ? { width: Number(f.width) } : {}), ...(Number(f.height) ? { height: Number(f.height) } : {}) };
@@ -176,7 +178,9 @@ export default function FieldManager() {
                         {f.formulaText && checkFormula(f.formulaText, [list, other], catKey.endsWith('Head') ? other : []) && <div className="req small">{checkFormula(f.formulaText, [list, other], catKey.endsWith('Head') ? other : [])}</div>}
                       </>
                     ) : canChoose(f)
-                      ? <input type="text" value={f.optionsText} onChange={(e) => upd(i, { optionsText: e.target.value })} placeholder={f.type === 'percent' ? 'VD: 0, 5, 8, 10' : 'VD: Bao, Kg, Tấn'} />
+                      ? <><input type="text" value={f.optionsText} onChange={(e) => upd(i, { optionsText: e.target.value })} placeholder={f.type === 'percent' ? 'VD: 0, 5, 8, 10' : 'VD: VNĐ, USD'} />
+                        {badChoices(f.optionsText, f.type).length > 0 && <div className="req small">Kiểu số chỉ nhận số: {badChoices(f.optionsText, f.type).join(', ')} sẽ bị bỏ.
+                          {f.custom && <> <button type="button" className="btn sm" onClick={() => upd(i, { type: 'select' })}>Đổi sang Danh sách chọn</button></>}</div>}</>
                       : <span className="small">—</span>}
                   </td>
                   <td>

@@ -97,6 +97,11 @@ export function parseChoices(text, type) {
   const list = String(text || '').split(',').map((s) => s.trim().replace(/%$/, '').trim()).filter(Boolean);
   return ['number', 'percent', 'currency'].includes(type) ? list.map(Number).filter((x) => Number.isFinite(x)) : list;
 }
+// Giá trị chữ (vd. VNĐ, USD) gõ vào danh sách chọn của trường kiểu số → bị bỏ; trả về để báo người dùng
+export function badChoices(text, type) {
+  if (!['number', 'percent', 'currency'].includes(type)) return [];
+  return String(text || '').split(',').map((s) => s.trim().replace(/%$/, '').trim()).filter((s) => s && !Number.isFinite(Number(s)));
+}
 export function toStored(list) {
   return list.map((f) => {
     const o = { key: f.key, label: String(f.label || '').trim(), required: !!f.required, hidden: !!f.hidden };
