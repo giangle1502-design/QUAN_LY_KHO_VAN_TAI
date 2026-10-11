@@ -57,6 +57,8 @@ function OpenPoLines({ pos, allocated, co, setCo, canManage, user }) {
   const [q, setQ] = useState('');
   const [all, setAll] = useState(false);
   const [split, setSplit] = useState(null);
+  const [pick, setPick] = useState({}); // dòng PO tick chọn để gom vào 1 cont nhiều mã
+  const [cont, setCont] = useState(null);
   const rows = useMemo(() => {
     const f = norm(q);
     return pos.filter((o) => !co || o.company === co).flatMap((o) => o.lines.map((l) => {
@@ -68,8 +70,18 @@ function OpenPoLines({ pos, allocated, co, setCo, canManage, user }) {
       .sort((a, b) => String(a.l.dueDate || a.o.dueDate || '9999').localeCompare(String(b.l.dueDate || b.o.dueDate || '9999')));
   }, [pos, allocated, co, q, all]);
   const sum = rows.reduce((s, r) => s + r.left, 0);
+  const picked = rows.filter((r) => pick[poKey(r.o.id, r.l.no)] && r.left > 0.001);
+  const togglePick = (k) => setPick((m) => ({ ...m, [k]: !m[k] }));
   return (
     <div>
+      {canManage && (
+        <div className="cont-callout">
+          <b>📦 1 cont có nhiều mã hàng?</b> Tick các dòng PO đi chung cont ở cột đầu bảng rồi bấm <b>Gom vào 1 cont</b> (sửa số kg từng mã nếu chỉ lấy một phần).
+          Cont chỉ 1 mã hàng thì bấm <b>Phân bổ</b> ở cuối dòng.
+          <button className="btn primary" disabled={!picked.length} onClick={() => setCont(Object.fromEntries(picked.map((r) => [poKey(r.o.id, r.l.no), String(r.left)])))}>
+            📦 Gom {picked.length || ''} dòng đã chọn vào 1 cont</button>
+        </div>
+      )}
       <div className="filters">
         <CompanyPicker value={co} onChange={setCo} />
         <input type="search" placeholder="Tìm số PO, BCT, nhà cung cấp, mã hàng, kho…" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -79,10 +91,11 @@ function OpenPoLines({ pos, allocated, co, setCo, canManage, user }) {
       <div className="table-wrap">
         {!rows.length ? <Empty text="Không có dòng PO nào còn chưa phân bổ." /> : (
           <table>
-            <thead><tr><th>Số PO</th><th>Số Ecount / BCT</th><th>Công ty</th><th>Nhà cung cấp</th><th>ETA</th><th>Nơi nhận (kho nhập)</th><th>Mã hàng</th><th>Tên hàng</th>
+            <thead><tr><th title="Chọn để gom vào 1 cont nhiều mã">📦</th><th>Số PO</th><th>Số Ecount / BCT</th><th>Công ty</th><th>Nhà cung cấp</th><th>ETA</th><th>Nơi nhận (kho nhập)</th><th>Mã hàng</th><th>Tên hàng</th>
               <th className="num">Đặt (kg)</th><th className="num">Đã nhận (kg)</th><th className="num">Đã phân bổ (kg)</th><th className="num">Chưa phân bổ (kg)</th><th></th></tr></thead>
             <tbody>{rows.map(({ o, l, done, left }) => (
-              <tr key={poKey(o.id, l.no)}>
+              <tr key={poKey(o.id, l.no)} className={pick[poKey(o.id, l.no)] ? 'picked' : ''}>
+                <td>{canManage && left > 0.001 && <input type="checkbox" checked={!!pick[poKey(o.id, l.no)]} onChange={() => togglePick(poKey(o.id, l.no))} />}</td>
                 <td className="mono nowrap">{o.id}</td><td className="mono">{o.refNo}</td><td><b>{o.company}</b></td><td>{o.partyName || o.partyCode}</td>
                 <td className="nowrap">{fmtDate(l.dueDate || o.dueDate)}</td><td>{lineWh(o, l, 'in') || <span className="req">chưa ghi kho nhập</span>}</td>
                 <td>{l.item}</td><td>{l.itemName}</td><td className="num">{kg(l.qtyKg)}</td><td className="num">{kg(l.doneKg)}</td>
@@ -94,6 +107,7 @@ function OpenPoLines({ pos, allocated, co, setCo, canManage, user }) {
         )}
       </div>
       {split && <SplitModal {...split} user={user} onClose={() => setSplit(null)} />}
+      {cont && <ContModal preset={cont} pos={pos} allocated={allocated} user={user} onClose={(ok) => { setCont(null); if (ok) setPick({}); }} />}
     </div>
   );
 }
@@ -240,7 +254,7 @@ function Plan({ allocs, orderMap, orders, allocated, pos, cats, co, setCo, canMa
         <input type="search" placeholder="Tìm PO, BCT, mã hàng, số cont, khách, kho, số đơn…" value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="actions" style={{ marginLeft: 'auto' }}>
           <button className="btn" onClick={exportExcel}>⬇ Excel</button>
-          {canManage && <button className="btn" onClick={() => setContAdd('new')} title="1 cont gồm nhiều mã hàng / nhiều dòng PO">＋ Cont nhiều mã hàng</button>}
+          {canManage && <button className="btn cont-btn" onClick={() => setContAdd('new')} title="1 cont gồm nhiều mã hàng / nhiều dòng PO">📦 Lập cont nhiều mã hàng</button>}
           {canManage && <button className="btn primary" disabled={!picked.length} onClick={() => setCreating(true)}>Tạo đơn từ {picked.length} dòng đã chọn</button>}
         </div>
       </div>
@@ -396,19 +410,20 @@ function AllocRow({ a, sub, edit, canManage, cats, whs, checked, onCheck, save, 
 }
 
 // Lập cont nhiều mã hàng (hoặc thêm mã vào cont có sẵn): chọn các dòng PO còn chưa phân bổ, nhập số kg đưa vào cont
-function ContModal({ base, pos, allocated, user, onClose }) {
+function ContModal({ base, preset, pos, allocated, user, onClose }) {
   const first = base?.rows[0];
   const [contNo, setContNo] = useState(first?.contNo || '');
   const [date, setDate] = useState(first?.date || '');
   const [q, setQ] = useState('');
-  const [qty, setQtyMap] = useState({});
+  const [qty, setQtyMap] = useState(() => preset || {});
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const inCont = new Set((base?.rows || []).map((a) => poKey(a.poId, a.poLine)));
   const f = norm(q);
   const lines = pos.filter((o) => !first || o.company === first.company).flatMap((o) => o.lines.map((l) => ({ o, l, key: poKey(o.id, l.no), left: Math.max(0, n(l.qtyKg) - (allocated.get(poKey(o.id, l.no)) || 0)) })))
     .filter((r) => r.left > 0.001 && !inCont.has(r.key))
-    .filter((r) => !f || norm([r.o.id, r.o.refNo, r.o.partyName, r.l.item, r.l.itemName, lineWh(r.o, r.l, 'in')].join(' ')).includes(f));
+    .sort((x, y) => (n(qty[y.key]) > 0) - (n(qty[x.key]) > 0))
+    .filter((r) => n(qty[r.key]) > 0 || !f || norm([r.o.id, r.o.refNo, r.o.partyName, r.l.item, r.l.itemName, lineWh(r.o, r.l, 'in')].join(' ')).includes(f));
   const chosen = pos.flatMap((o) => o.lines.map((l) => ({ o, l, key: poKey(o.id, l.no), left: Math.max(0, n(l.qtyKg) - (allocated.get(poKey(o.id, l.no)) || 0)) }))).filter((r) => n(qty[r.key]) > 0);
   const total = chosen.reduce((s, r) => s + n(qty[r.key]), 0);
   const go = async () => {
@@ -423,7 +438,7 @@ function ContModal({ base, pos, allocated, user, onClose }) {
     setBusy(true);
     try {
       await addRows(chosen.map((r) => ({ po: r.o, line: r.l, ...shared, qtyKg: Math.round(n(qty[r.key]) * 1000) / 1000, date: shared.date || '' })), user);
-      onClose();
+      onClose(true);
     } catch (e) { setErr(e.code === 'permission-denied' ? 'Bạn không có quyền lập kế hoạch phân bổ.' : e.message); setBusy(false); }
   };
   return (

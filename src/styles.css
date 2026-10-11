@@ -412,3 +412,7 @@ table.picker tr.sub td:nth-child(2) { padding-left: 14px; }
 /* Kế hoạch phân bổ: cont nhiều mã hàng */
 .alloc-table tr.cont-head td { background: var(--primary-soft); border-top: 2px solid var(--primary); }
 .alloc-table tr.cont-item td { background: #fafbfd; }
+.cont-callout { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; background: #fff8e1; border: 1px solid #f3d27a; border-radius: var(--radius); padding: 10px 12px; margin-bottom: 12px; font-size: 13px; }
+.cont-callout .btn { margin-left: auto; }
+tr.picked td { background: var(--primary-soft); }
+.btn.cont-btn { border-color: var(--primary); color: var(--primary); font-weight: 600; }
