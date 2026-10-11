@@ -514,7 +514,10 @@ function Form({ type }) {
     <form onSubmit={submit}>
       <div className="page-head">
         <h1>{meta.icon} {meta.label}</h1>
-        <Link className="btn" to="/kho/phieu">Danh sách phiếu</Link>
+        <div className="actions">
+          {type === 'adjust' && <Link className="btn" to="/kho/dieu-chinh-excel">⬆ Nhập từ Excel</Link>}
+          <Link className="btn" to="/kho/phieu">Danh sách phiếu</Link>
+        </div>
       </div>
       {done && <div className="ok-box" style={{ marginBottom: 10 }}>Đã lập phiếu <b className="mono">{done}</b>{donePO && <> và đơn mua <Link className="mono" to="/don-hang?tab=PO">{donePO}</Link> (nhập trực tiếp)</>}.{type === 'in' ? <> <b>Chờ thủ kho nhận hàng</b> và xác nhận số thực nhận, vị trí (tồn kho cập nhật khi thủ kho xác nhận{source === 'direct' ? ', đơn mua PO lập theo số thực nhận' : ''}).</> : doneRel ? '' : ' Tồn kho đã cập nhật.'} <Link to={`/kho/phieu/${done}/in`} target="_blank">🖨 In phiếu</Link>
 

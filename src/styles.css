@@ -416,3 +416,34 @@ table.picker tr.sub td:nth-child(2) { padding-left: 14px; }
 .cont-callout .btn { margin-left: auto; }
 tr.picked td { background: var(--primary-soft); }
 .btn.cont-btn { border-color: var(--primary); color: var(--primary); font-weight: 600; }
+
+/* Kiểm kê / cycle count */
+.count-table tr.cnt-ok td { background: #f3faf3; }
+.count-table tr.cnt-diff td { background: #fff4f4; }
+.cnt-cell { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-width: 120px; }
+.cnt-cell .cnt-in { width: 56px; padding: 4px 6px; }
+.cnt-cell .small { width: 100%; }
+.cnt-mobile { max-width: 560px; margin: 0 auto; }
+.cnt-top { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+.cnt-loc { font-size: 28px; font-weight: 800; color: #c77e00; line-height: 1.1; }
+.cnt-progress { height: 8px; background: #e6eaef; border-radius: 99px; overflow: hidden; margin: 6px 0; }
+.cnt-progress > div { height: 100%; background: var(--green); }
+.cnt-search { width: 100%; font-size: 18px; padding: 10px 12px; }
+.cnt-locbtn { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 14px; margin-bottom: 8px; border: 1px solid var(--line); border-radius: 10px; background: #fff; font: inherit; font-size: 16px; cursor: pointer; text-align: left; }
+.cnt-locbtn span { font-size: 13px; color: var(--muted); }
+.cnt-locbtn.ok { border-left: 5px solid var(--green); }
+.cnt-locbtn.diff { border-left: 5px solid var(--red); }
+.cnt-card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 6px; }
+.cnt-card.ok { border-left: 5px solid var(--green); }
+.cnt-card.diff { border-left: 5px solid var(--red); }
+.cnt-item b { font-size: 17px; }
+.cnt-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cnt-big { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--muted); }
+.cnt-big input { font-size: 24px; padding: 8px 10px; text-align: center; width: 100%; }
+.cnt-res { font-weight: 700; padding: 8px 10px; border-radius: 8px; }
+.cnt-res.ok { background: var(--green-soft); color: var(--green); }
+.cnt-res.diff { background: var(--red-soft); color: var(--red); }
+.cnt-next { width: 100%; margin-top: 12px; padding: 14px; font-size: 16px; }
+.count-print { max-width: 1120px; }
+.count-print .print-lines td, .count-print .print-lines th { font-size: 12px; padding: 4px 5px; }
+@media print { .count-print { max-width: none; } }

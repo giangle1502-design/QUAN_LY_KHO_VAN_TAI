@@ -315,5 +315,16 @@ Thay cột "Điểm giao" của sheet COST CONT: mỗi dòng PO (hàng về cả
 - Dòng nháp hủy được (quay lại phần chưa phân bổ); dòng đã có đơn thì sửa / hủy ở đơn. Chi tiết PO có bảng "Kế hoạch phân bổ".
 - Quyền: kinh doanh, kế toán, quản trị (collection `allocations`, nhớ dán lại firestore.rules).
 
+## Kiểm kê, cycle count (/kho/kiem-ke) và điều chỉnh tồn từ Excel
+
+- **Điều chỉnh tồn từ Excel** (/kho/dieu-chinh-excel, nút "⬆ Nhập từ Excel" ở trang Điều chỉnh tồn): cột Công ty, Vị trí, Mã hàng, Lot, Tình trạng, Tăng/Giảm (+/−, hoặc số âm), Số bao, Pallet, Kg. Pallet, kg trống thì tự tính theo quy cách. Dòng giảm phải khớp 1 dòng tồn và không vượt tồn. Ghi thành phiếu DC (150 dòng/phiếu).
+- **Phiếu kiểm kê / cycle count** (`stockCounts/{KKyymmddNN}` + dòng con `lines/{00001}`): công ty, kho, ngày kiểm kê, phạm vi (từ vị trí → đến vị trí, khu vực = đầu mã vị trí, danh sách mã, hoặc mã có phiếu kho trong 1 ngày). Lập phiếu chụp số tồn hệ thống.
+- Nhập số đếm: pallet chẵn + bao lẻ (mã có quy cách bao/pallet, kg/bao) hoặc kg. Lần 1 = thực kiểm; lệch thì đếm lại lần 2; final = lần 2 nếu có. Lệch dưới 0,5 kg coi như khớp. "Đếm mù": nhân viên không thấy số hệ thống trước khi lưu.
+- Điện thoại: /kho/kiem-ke/:id/dem (chọn / quét vị trí → nhập → báo khớp / lệch ngay, thêm hàng không có trên hệ thống). Máy tính: /kho/kiem-ke/:id nhập số từ biểu mẫu giấy.
+- In biểu mẫu /kho/kiem-ke/:id/in (A4 ngang): lọc từ vị trí → đến vị trí, in trống hoặc kèm số đã đếm, ẩn/hiện SL hệ thống.
+- Chốt số → "Điều chỉnh tồn theo kiểm kê": lập phiếu DC = final − tồn hiện tại (cảnh báo dòng có nhập/xuất sau khi đếm).
+- Báo cáo cycle count (tab Báo cáo): theo khoảng ngày, kho; % chính xác (dòng khớp / đã đếm), thừa / thiếu kg, danh sách dòng lệch, xuất Excel.
+- Quyền: thủ kho và quản trị của kho đó lập phiếu, nhập số đếm; dòng đếm chỉ sửa được khi phiếu đang đếm (firestore.rules → `stockCounts`).
+
 ## Sửa lỗi
 - Đề nghị giải chấp (và các thao tác theo kho) bị chặn quyền với tài khoản quản trị gốc chưa có hồ sơ trong *Phân quyền*: rules nay cho quản trị thao tác mọi kho.

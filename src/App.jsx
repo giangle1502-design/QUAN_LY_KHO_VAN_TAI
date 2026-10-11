@@ -14,6 +14,9 @@ import Stock from './pages/stock/Stock';
 import Movements from './pages/stock/Movements';
 import MovementForm from './pages/stock/MovementForm';
 import OpeningImport from './pages/stock/OpeningImport';
+import AdjustImport from './pages/stock/AdjustImport';
+import Counts from './pages/stock/Counts';
+import CountDetail, { CountMobile, PrintCount } from './pages/stock/CountDetail';
 import PrintMovement from './pages/stock/PrintMovement';
 import Receive from './pages/stock/Receive';
 import PrintLabels from './pages/stock/PrintLabels';
@@ -48,6 +51,7 @@ export default function App() {
       <Route path="kho/phieu/:id/in" element={<PrintMovement />} />
       <Route path="kho/phieu/:id/soan" element={<PrintMovement pick />} />
       <Route path="kho/phieu/:id/nhan" element={<PrintLabels />} />
+      <Route path="kho/kiem-ke/:id/in" element={<PrintCount />} />
       <Route path="kho/giai-chap/:id/in" element={<PrintRelease />} />
       <Route element={<Layout />}>
         <Route index element={role === 'van_tai' ? <Navigate to="/van-tai" /> : role === 'tai_xe' ? <Navigate to="/tai-xe" /> : <Dashboard />} />
@@ -68,6 +72,10 @@ export default function App() {
         <Route path="kho/phieu" element={<Movements />} />
         <Route path="kho/giai-chap" element={<Release />} />
         {hasRole('thu_kho') && <Route path="kho/ton-dau-ky" element={<OpeningImport />} />}
+        {hasRole('thu_kho') && <Route path="kho/dieu-chinh-excel" element={<AdjustImport />} />}
+        <Route path="kho/kiem-ke" element={<Counts />} />
+        <Route path="kho/kiem-ke/:id" element={<CountDetail />} />
+        <Route path="kho/kiem-ke/:id/dem" element={<CountMobile />} />
         <Route path="kho/nhan-hang" element={<Receive />} />
         <Route path="kho/nhan-hang/:id" element={<Receive />} />
         <Route path="kho/:type" element={<MovementForm />} />
