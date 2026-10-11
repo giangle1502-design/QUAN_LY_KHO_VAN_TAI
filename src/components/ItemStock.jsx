@@ -108,7 +108,7 @@ export function ItemStockModal({ item, itemName, whCode, warehouses, company, bl
         </table>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, gap: 8, flexWrap: 'wrap' }}>
-        <small className="small">🔒 = hàng bị khóa xuất (HTC khi xuất bán). Xuất được = tồn trừ hàng bị khóa.{pickRows ? ' Mỗi phiếu xuất từ một kho, nên chỉ tick được dòng của cùng một kho.' : ''}</small>
+        <small className="small">🔒 = hàng bị khóa xuất. Xuất được = tồn trừ hàng bị khóa; hàng HTC xuất bán được, khi lập phiếu tự vào đề nghị giải chấp và đổi tình trạng.{pickRows ? ' Mỗi phiếu xuất từ một kho, nên chỉ tick được dòng của cùng một kho.' : ''}</small>
         {pickRows && <button type="button" className="btn primary" disabled={!sel.size} onClick={() => onPick(selWh, list.filter((r) => sel.has(r._id)))}>
           {sel.size ? `Chọn kho ${selWh} & thêm ${sel.size} dòng (${fmtNum(selKg, 2)} kg)` : 'Tick dòng tồn để thêm vào phiếu'}</button>}
       </div>

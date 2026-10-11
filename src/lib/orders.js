@@ -171,7 +171,8 @@ export function matchOrderLine(order, item, usedKg = {}, moveType = 'out', opts 
   for (const l of order?.lines || []) {
     if (l.item !== item) continue;
     if (opts.warehouse && !isReturn(order, moveType) && lineWh(order, l, moveType) && lineWh(order, l, moveType) !== opts.warehouse) continue;
-    if (opts.status && l.goodsStatus && l.goodsStatus !== opts.status) continue;
+    // opts.status: 1 tình trạng hoặc danh sách (hàng HTC tự giải chấp khi xuất khớp cả dòng HTC lẫn DGC/KTC)
+    if (opts.status && l.goodsStatus && ![].concat(opts.status).includes(l.goodsStatus)) continue;
     const left = openKg(order, l, moveType) - (usedKg[l.no] || 0);
     if (left > bestLeft) { best = l.no; bestLeft = left; }
   }

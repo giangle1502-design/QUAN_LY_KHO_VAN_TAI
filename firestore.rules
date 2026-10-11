@@ -154,16 +154,16 @@ service cloud.firestore {
     // Số thứ tự theo ngày (vd. đề nghị giải chấp HSGC + yymmdd + NN): chỉ tăng dần
     match /counters/{id} {
       allow read: if isStaff();
-      allow create: if (isAdmin() || hasRole('ke_toan')) && request.resource.data.next == 2;
-      allow update: if (isAdmin() || hasRole('ke_toan')) && request.resource.data.next == resource.data.next + 1;
+      allow create: if (isAdmin() || hasRole('ke_toan') || hasRole('thu_kho')) && request.resource.data.next == 2;
+      allow update: if (isAdmin() || hasRole('ke_toan') || hasRole('thu_kho')) && request.resource.data.next == resource.data.next + 1;
     }
 
-    // ==== Đề nghị giải chấp (kế toán lập, in gửi ngân hàng; ngân hàng duyệt thì giải chấp HTC → DGC) ====
+    // ==== Đề nghị giải chấp (kế toán lập, hoặc tự lập khi thủ kho xuất bán hàng HTC; lưu là đổi HTC → DGC) ====
     match /releaseRequests/{id} {
       allow read: if isStaff();
-      allow create: if (isAdmin() || hasRole('ke_toan')) && inMyWarehouse(request.resource.data.warehouse)
+      allow create: if (isAdmin() || hasRole('ke_toan') || hasRole('thu_kho')) && inMyWarehouse(request.resource.data.warehouse)
         && request.resource.data.id == id && request.resource.data.createdBy == me() && request.resource.data.status == 'sent';
-      allow update: if (isAdmin() || hasRole('ke_toan')) && inMyWarehouse(resource.data.warehouse)
+      allow update: if (isAdmin() || hasRole('ke_toan') || hasRole('thu_kho')) && inMyWarehouse(resource.data.warehouse)
         && request.resource.data.id == resource.data.id && request.resource.data.warehouse == resource.data.warehouse;
     }
 
@@ -188,7 +188,9 @@ service cloud.firestore {
         && request.resource.data.id == id
         && (isAdmin() || (inMyWarehouse(request.resource.data.warehouse)
           && ((hasRole('thu_kho') && request.resource.data.type in ['in', 'out', 'move', 'adjust'])
-            || (hasRole('ke_toan') && request.resource.data.type == 'status'))));
+            || (hasRole('ke_toan') && request.resource.data.type == 'status')
+            // Thủ kho xuất bán hàng HTC: phiếu TC giải chấp theo đề nghị
+            || (hasRole('thu_kho') && request.resource.data.type == 'status' && request.resource.data.get('releaseId', '') != ''))));
       allow update: if isAdmin()
         || (hasRole('thu_kho') && resource.data.status == 'pending' && request.resource.data.status == 'posted'
           && resource.data.type == 'in' && request.resource.data.type == 'in' && inMyWarehouse(resource.data.warehouse)

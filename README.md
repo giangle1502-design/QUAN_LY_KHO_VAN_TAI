@@ -94,6 +94,9 @@ Menu *Kho → Đề nghị giải chấp* (kế toán, quản trị):
 
 ### Hàng thiếu cho đơn bán
 
+**Xuất bán hàng HTC (tự giải chấp)**: phiếu xuất theo SO (hoặc xuất lẻ) chọn được cả hàng HTC; thiếu KTC/DGC thì FIFO tự lấy tiếp HTC nhập trước. Khi bấm *Lập phiếu*, hệ thống hỏi xác nhận rồi tự đưa phần HTC vào **đề nghị giải chấp** (nhãn *Tự lập*; gộp chung một đề nghị cho cùng ngày + công ty + ngân hàng + kho, chưa đánh dấu *Đã gửi*) và đổi sang DGC/KTC ngay bằng phiếu TC, sau đó mới ghi phiếu xuất (in phiếu xuất, phiếu soạn hàng như thường). Thủ kho làm được việc này (rules cho thủ kho lập phiếu TC có gắn số đề nghị).
+Cuối ngày: **🖨 In** đề nghị (tổng hợp theo mã hàng mọi đơn) → Lưu PDF, ký số, gửi email ngân hàng → bấm **📧 Đã gửi** (phiếu xuất HTC sau đó sang đề nghị mới). **✏️ Sửa** (kế toán, thủ kho) theo từng mã hàng: nhập số CT (BCT), vị trí hàng hóa, **số lượng**: tăng = giải chấp thêm HTC cùng mã (nhập trước trước); giảm chỉ phần không gắn phiếu xuất của đơn, hàng trả lại HTC.
+
 Đơn bán chỉ xuất được hàng KTC và DGC. Tab **⚠ Hàng thiếu cho đơn bán** (`/kho/giai-chap?tab=thieu`) tổng hợp theo công ty + kho + mã hàng: SO còn phải giao, tồn KTC + DGC, **Thiếu**, tồn HTC, phần đang nằm trong đề nghị chờ duyệt và **Còn cần giải chấp**. Phần *Gợi ý đề nghị giải chấp* gom phần còn thiếu theo công ty + kho + ngân hàng; **+ Lập đề nghị** mở form đề nghị đã tích sẵn các dòng HTC nhập trước để bù đủ phần thiếu. Danh sách Đơn bán (SO) hiện cảnh báo đỏ khi có hàng thiếu, kèm link sang tab này; Cân đối theo mã hàng có nút sang tab này.
 
 ### Phiếu nhập chờ thủ kho nhận

@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { collection, doc, getDoc, onSnapshot, runTransaction, updateDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useMyWarehouses, useOpCompany, useStock } from '../../lib/hooks';
-import { postMovement } from '../../lib/stock';
+import { createRelease, editRelease, groupLines, postRelease, releaseStatusOf, releaseStatusOfWh } from '../../lib/release';
 import { usePendingRelease, useShortfall } from '../../lib/shortfall';
 import { exportSheets } from '../../lib/excel';
-import { fmtDate, fmtNum, norm, today } from '../../lib/utils';
+import { fmtDate, fmtNum, today } from '../../lib/utils';
 import { CompanyPicker } from '../../components/TripBits';
 import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
 import { loadReleaseData } from '../../lib/printData';
@@ -27,78 +27,11 @@ export const RELEASE_STATUS = {
 };
 const num = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? 0 : Number(v));
 const r3 = (x) => Math.round(x * 1000) / 1000;
+export { groupLines, releaseStatusOf, releaseStatusOfWh };
 // Màn hình dùng kg (đơn vị chính); bản in gửi ngân hàng theo mẫu ĐVT TẤN, luôn 3 số lẻ: 25 tấn → 25.000
 const ton3 = (kg) => fmtNum(num(kg), 2);
 const tonPrint = (kg) => fmtNum(num(kg) / 1000, 3, 3);
 const totKg = (r) => (r.lines || []).reduce((s, l) => s + num(l.kg), 0);
-
-async function createRelease(data, user) {
-  const ymd = data.date.replace(/-/g, '').slice(2);
-  const ruleSnap = await getDoc(doc(db, 'codeRules', 'HSGC')).catch(() => null);
-  const prefix = ruleSnap?.exists() ? ruleSnap.data().prefix ?? 'HSGC' : 'HSGC';
-  const digits = num(ruleSnap?.exists() && ruleSnap.data().digits) || 2;
-  const cRef = doc(db, 'counters', `HSGC-${ymd}`);
-  return runTransaction(db, async (tx) => {
-    const c = await tx.get(cRef);
-    const n = c.exists() ? num(c.data().next) || 1 : 1;
-    const id = `${prefix}${ymd}${String(n).padStart(digits, '0')}`;
-    const at = new Date().toISOString();
-    tx.set(cRef, { next: n + 1 });
-    tx.set(doc(db, 'releaseRequests', id), {
-      ...data, id, status: 'sent', createdAt: at, createdBy: user.email, createdByName: user.name,
-      history: [{ at, by: user.email, byName: user.name, action: 'Lập đề nghị' }],
-    });
-    return id;
-  });
-}
-
-// Tình trạng sau giải chấp theo danh mục kho (TTHH khi giải chấp); bỏ trống: cảng → KTC, kho khác → DGC
-export const releaseStatusOfWh = (w) => (['KTC', 'DGC'].includes(w?.releaseStatus) ? w.releaseStatus
-  : /\b(cang|port)\b/.test(norm(`${w?.name || ''} ${w?.code || ''}`)) ? 'KTC' : 'DGC');
-export async function releaseStatusOf(whCode) {
-  const w = await getDoc(doc(db, 'warehouses', whCode)).then((x) => (x.exists() ? x.data() : null)).catch(() => null);
-  return releaseStatusOfWh(w);
-}
-// Gộp dòng đề nghị theo mã hàng (+ số CT, vị trí hàng hóa) để in / gửi ngân hàng
-export function groupLines(lines) {
-  const m = new Map();
-  for (const l of lines || []) {
-    const k = [l.item, l.docNo, l.place].join('|');
-    if (!m.has(k)) m.set(k, { ...l, kg: 0 });
-    m.get(k).kg += num(l.kg);
-  }
-  return [...m.values()];
-}
-
-// Đổi tình trạng HTC → DGC (cảng: KTC) cho đúng các dòng tồn trong đề nghị (phiếu TC), đánh dấu đề nghị đã giải chấp
-async function postRelease(r, { email, name }) {
-  const to = await releaseStatusOf(r.warehouse);
-  const lines = [];
-  for (const [i, l] of r.lines.entries()) {
-    const s = await getDoc(doc(db, 'stock', l.stockId));
-    const x = s.exists() ? s.data() : null;
-    if (!x || x.goodsStatus !== 'HTC' || num(x.kg) < num(l.kg) - 0.001) {
-      throw new Error(`Dòng ${i + 1} (${l.item} lot ${l.lot || '-'}, ${l.location}): tồn HTC hiện chỉ còn ${fmtNum(x?.kg || 0)} kg, không đủ ${fmtNum(l.kg)} kg. Hàng đã bị xuất/chuyển sau khi lập đề nghị; hủy đề nghị và lập lại.`);
-    }
-    const k = num(x.kg) ? Math.min(1, num(l.kg) / num(x.kg)) : 1;
-    lines.push({
-      item: x.item, itemName: x.itemName || '', lot: x.lot || '', mfgDate: x.mfgDate || '', expDate: x.expDate || '', inDate: x.inDate || '',
-      location: x.location, goodsStatus: 'HTC', pledgee: x.pledgee || '', company: x.company || '',
-      bags: k === 1 ? num(x.bags) : Math.round(num(x.bags) * k), pallets: k === 1 ? num(x.pallets) : r3(num(x.pallets) * k), kg: num(l.kg),
-      toStatus: to, toPledgee: '',
-    });
-  }
-  const mid = await postMovement({
-    type: 'status', warehouse: r.warehouse, company: r.company, date: today(), tripId: '', orderId: '', orderRef: '',
-    partyCode: r.pledgee, partyName: r.pledgeeName, shipCode: '', reason: '', note: `Giải chấp theo đề nghị ${r.id}`, releaseId: r.id, lines,
-  }, { email, name });
-  const at = new Date().toISOString();
-  await updateDoc(doc(db, 'releaseRequests', r.id), {
-    status: 'released', movementId: mid, releasedAt: at, releasedBy: email, toStatus: to,
-    history: [...(r.history || []), { at, by: email, byName: name, action: `Đổi HTC → ${to}, phiếu ${mid}` }],
-  });
-  return { mid, to };
-}
 
 // Danh sách đề nghị giải chấp
 export default function Release() {
@@ -113,6 +46,9 @@ export default function Release() {
   const tab = sp.get('tab') === 'thieu' ? 'thieu' : 'de-nghi';
   const [busy, setBusy] = useState('');
   const canEdit = hasRole('ke_toan');
+  // Sửa số lượng / số CT, đánh dấu đã gửi ngân hàng: kế toán và thủ kho
+  const canFix = hasRole('ke_toan', 'thu_kho');
+  const [edit, setEdit] = useState(null);
 
   useEffect(() => onSnapshot(collection(db, 'releaseRequests'),
     (s) => setRows(s.docs.map((d) => d.data())), (e) => setError(e.message)), []);
@@ -138,11 +74,20 @@ export default function Release() {
       status: 'cancelled', cancelReason: why, history: [...(r.history || []), { at, by: email, byName: name, action: `Hủy: ${why}` }],
     }).catch((e) => setMsg('Lỗi: ' + e.message));
   };
+  // Đã in PDF, ký số, gửi email ngân hàng: đề nghị tự lập sau đó sẽ sang số mới
+  const markSent = async (r) => {
+    const at = new Date().toISOString();
+    const on = !r.bankSentAt;
+    await updateDoc(doc(db, 'releaseRequests', r.id), {
+      bankSentAt: on ? at : null, bankSentBy: on ? email : null,
+      history: [...(r.history || []), { at, by: email, byName: name, action: on ? 'Đánh dấu đã gửi ngân hàng' : 'Bỏ đánh dấu đã gửi ngân hàng' }],
+    }).catch((e) => setMsg('Lỗi: ' + e.message));
+  };
 
   const exportExcel = () => exportSheets(`De_nghi_giai_chap_${today()}`, {
     'Đề nghị giải chấp': list.flatMap((r) => groupLines(r.lines).map((l, i) => ({
       'Số đề nghị': r.id, Ngày: r.date, 'Công ty': r.company, 'Ngân hàng': r.pledgee, Kho: r.warehouse, 'Trạng thái': RELEASE_STATUS[r.status]?.label,
-      STT: i + 1, 'Số CT (BCT)': l.docNo, 'Mã hàng': l.item, 'Tên hàng': l.itemName, 'Vị trí hàng hóa': l.place,
+      STT: i + 1, 'Số CT (BCT)': l.docNo, 'Đơn bán': (l.orders || []).join(', '), 'Mã hàng': l.item, 'Tên hàng': l.itemName, 'Vị trí hàng hóa': l.place,
       'Số lượng (kg)': num(l.kg), 'Đổi sang': r.toStatus || (r.status === 'released' ? 'DGC' : ''), 'Phiếu giải chấp': r.movementId || '',
     }))),
     'Chi tiết theo lot': list.flatMap((r) => r.lines.map((l) => ({
@@ -166,8 +111,10 @@ export default function Release() {
       {msg && <div className={msg.startsWith('Lỗi') ? 'error-box' : 'ok-box'}>{msg}</div>}
       {tab === 'thieu' ? <Shortfall co={co} setCo={setCo} canEdit={canEdit} onPlan={(preset) => setForm({ preset })} /> : <>
       <p className="hint">
-        Lập đề nghị từ hàng đang thế chấp (HTC): khi lưu, hệ thống <b>đổi ngay</b> các dòng hàng trong đề nghị sang tình trạng đặt ở <i>Danh sách kho → TTHH khi giải chấp</i> (mặc định: cảng → <b>KTC</b>, kho → <b>DGC</b>) bằng phiếu TC,
-        xuất kho được luôn. Bấm <b>🖨 In</b> → Lưu PDF, chèn chữ ký số và gửi ngân hàng.
+        Phiếu xuất bán lấy hàng HTC sẽ <b>tự đưa vào đề nghị</b> (gộp theo ngày, công ty, ngân hàng, kho; nhãn <i>Tự lập</i>) và đổi tình trạng ngay.
+        Lập tay từ hàng đang thế chấp (HTC): khi lưu, hệ thống <b>đổi ngay</b> các dòng hàng trong đề nghị sang tình trạng đặt ở <i>Danh sách kho → TTHH khi giải chấp</i> (mặc định: cảng → <b>KTC</b>, kho → <b>DGC</b>) bằng phiếu TC,
+        xuất kho được luôn. Bấm <b>🖨 In</b> (tổng hợp theo mã hàng mọi đơn) → Lưu PDF, chèn chữ ký số, gửi email ngân hàng rồi bấm <b>📧 Đã gửi</b>.
+        Bấm <b>✏️ Sửa</b> để nhập số CT hoặc tăng số lượng giải chấp (lấy thêm HTC nhập trước).
       </p>
       <div className="toolbar">
         <CompanyPicker value={co} onChange={setCo} />
@@ -181,19 +128,25 @@ export default function Release() {
         {!list.length ? <Empty /> : (
           <table>
             <thead><tr><th>Số đề nghị</th><th>Ngày</th><th>Công ty</th><th>Ngân hàng</th><th>Kho</th><th>Mặt hàng</th>
-              <th className="num">Số lượng (kg)</th><th>Trạng thái</th><th>Phiếu TC</th><th></th></tr></thead>
+              <th className="num">Số lượng (kg)</th><th>Trạng thái</th><th>Đơn bán</th><th>Phiếu TC</th><th></th></tr></thead>
             <tbody>
               {list.map((r) => (
                 <tr key={r.id}>
-                  <td className="mono nowrap">{r.id}</td><td className="nowrap">{fmtDate(r.date)}</td><td>{r.company}</td><td>{r.pledgee}</td><td>{r.warehouse}</td>
+                  <td className="mono nowrap">{r.id}{r.auto ? <div><span className="badge">Tự lập</span></div> : null}</td><td className="nowrap">{fmtDate(r.date)}</td><td>{r.company}</td><td>{r.pledgee}</td><td>{r.warehouse}</td>
                   <td>{[...new Set(r.lines.map((l) => l.item))].join(', ')}</td><td className="num">{ton3(totKg(r))}</td>
-                  <td><span className={'badge ' + (RELEASE_STATUS[r.status]?.cls || '')}>{RELEASE_STATUS[r.status]?.label}</span>{r.cancelReason ? <span className="small"> {r.cancelReason}</span> : null}</td>
-                  <td className="mono">{r.movementId ? <Link to={`/kho/phieu/${r.movementId}/in`}>{r.movementId}</Link> : ''}</td>
+                  <td><span className={'badge ' + (RELEASE_STATUS[r.status]?.cls || '')}>{RELEASE_STATUS[r.status]?.label}</span>{r.cancelReason ? <span className="small"> {r.cancelReason}</span> : null}
+                    {r.bankSentAt ? <div className="small">📧 đã gửi NH {fmtDate(r.bankSentAt.slice(0, 10))}</div> : null}</td>
+                  <td className="small">{[...new Set(r.lines.map((l) => l.orderId).filter(Boolean))].join(', ')}</td>
+                  <td className="mono">{(r.movementIds || [r.movementId].filter(Boolean)).map((m, i) => <span key={m}>{i ? ', ' : ''}<Link to={`/kho/phieu/${m}/in`}>{m}</Link></span>)}</td>
                   <td className="nowrap">
                     <Link className="btn sm" to={`/kho/giai-chap/${r.id}/in`}>🖨 In</Link>{' '}
                     {canEdit && r.status === 'sent' && <>
                       <button className="btn sm primary" disabled={!!busy} onClick={() => release(r)}>{busy === r.id ? 'Đang ghi…' : '✅ Đổi DGC'}</button>{' '}
                       <button className="btn sm" onClick={() => cancel(r)}>Hủy</button>
+                    </>}
+                    {canFix && r.status === 'released' && <>
+                      <button className="btn sm" onClick={() => setEdit(r)}>✏️ Sửa</button>{' '}
+                      <button className="btn sm" title="Đã lưu PDF, ký số và gửi email ngân hàng" onClick={() => markSent(r)}>{r.bankSentAt ? '↩ Chưa gửi' : '📧 Đã gửi'}</button>
                     </>}
                   </td>
                 </tr>
@@ -203,6 +156,7 @@ export default function Release() {
         )}
       </div>
       </>}
+      {edit && <EditRelease r={edit} onClose={(m) => { setEdit(null); if (m) setMsg(m); }} />}
       {form && <ReleaseForm preset={form.preset} onClose={(id, m) => { setForm(false); if (id) { setSp({}); setSt(''); setMsg(m || `Đã lập đề nghị ${id}.`); } }} />}
     </div>
   );
@@ -409,6 +363,65 @@ function ReleaseForm({ onClose, preset }) {
         <p className="small">Đã chọn {chosen.length} dòng · <b>{fmtNum(total, 2)} kg</b> (= {fmtNum(total / 1000, 3)} tấn trên bản in). Bản in gộp theo mã hàng (cùng số CT, vị trí hàng hóa).{h.warehouse ? <> Khi lưu, hàng chuyển ngay sang <b>{releaseStatusOfWh(myWh.find((w) => w.code === h.warehouse))}</b>.</> : null} Vị trí hàng hóa mặc định là tên kho, sửa được trước khi lưu.</p>
         {err && <div className="error-box">{err}</div>}
         <div className="form-actions"><button className="btn primary" disabled={busy}>{busy ? 'Đang lưu…' : 'Lập đề nghị'}</button></div>
+      </form>
+    </Modal>
+  );
+}
+
+// Sửa đề nghị đã giải chấp: theo dòng gộp mã hàng (như bản in) sửa số CT, vị trí hàng hóa, số lượng.
+// Tăng số lượng = giải chấp thêm hàng HTC (nhập trước trước); phần đã gắn phiếu xuất của đơn không giảm được.
+function EditRelease({ r, onClose }) {
+  const { email, name } = useApp();
+  const groups = groupLines(r.lines);
+  const [v, setV] = useState(() => Object.fromEntries(groups.map((g) => [g.key, { kg: r3(g.kg), docNo: g.docNo || '', place: g.place || '' }])));
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const minOf = (g) => r.lines.filter((l) => l.orderId && [l.item, l.docNo || '', l.place || ''].join('|') === g.key).reduce((s, l) => s + num(l.kg), 0);
+  const set = (k, p) => setV((x) => ({ ...x, [k]: { ...x[k], ...p } }));
+  const total = groups.reduce((s, g) => s + num(v[g.key]?.kg), 0);
+  const submit = async (e) => {
+    e.preventDefault(); setErr('');
+    const edits = {};
+    for (const g of groups) {
+      const x = v[g.key];
+      if (num(x.kg) < minOf(g) - 0.001) return setErr(`${g.item}: tối thiểu ${ton3(minOf(g))} kg (đã xuất theo đơn ${g.orders.join(', ')}).`);
+      if (Math.abs(num(x.kg) - g.kg) > 0.001 || x.docNo !== (g.docNo || '') || x.place !== (g.place || '')) edits[g.key] = { kg: num(x.kg), docNo: x.docNo, place: x.place };
+    }
+    if (!Object.keys(edits).length) return onClose();
+    setBusy(true);
+    try {
+      const { mids, notes } = await editRelease(r, edits, { email, name });
+      onClose(`Đã sửa ${r.id}${notes.length ? `: ${notes.join(', ')}` : ''}${mids.length ? ` (phiếu ${mids.join(', ')})` : ''}.`);
+    } catch (e2) {
+      setErr(e2.code === 'permission-denied' ? 'Bạn không có quyền đổi tình trạng hàng ở kho này.' : e2.message);
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title={`Sửa đề nghị ${r.id}`} onClose={() => onClose()} wide>
+      <form onSubmit={submit}>
+        <p className="hint">Số lượng theo mã hàng như bản in. <b>Tăng</b> = giải chấp thêm hàng HTC cùng mã tại {r.pledgee} (nhập trước giải chấp trước), đổi sang {r.toStatus || 'DGC'} ngay.
+          <b> Giảm</b> chỉ được phần không gắn phiếu xuất của đơn, hàng trả lại HTC. Số CT (BCT) áp cho cả dòng.</p>
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Mã hàng</th><th>Tên hàng</th><th>Đơn bán</th><th>Số CT (BCT)</th><th>Vị trí hàng hóa (in)</th><th className="num">Hiện tại (kg)</th><th className="num">Số lượng (kg)</th></tr></thead>
+            <tbody>
+              {groups.map((g) => (
+                <tr key={g.key}>
+                  <td className="nowrap">{g.item}</td><td>{g.itemName}</td><td className="small">{g.orders.join(', ')}</td>
+                  <td><input style={{ width: 100 }} value={v[g.key].docNo} onChange={(e) => set(g.key, { docNo: e.target.value })} /></td>
+                  <td><input style={{ width: 150 }} value={v[g.key].place} onChange={(e) => set(g.key, { place: e.target.value })} /></td>
+                  <td className="num">{ton3(g.kg)}</td>
+                  <td><input type="number" step="0.001" min="0" style={{ width: 120 }} value={v[g.key].kg} onChange={(e) => set(g.key, { kg: e.target.value })} />
+                    {num(v[g.key].kg) !== r3(g.kg) && <div className="small">{num(v[g.key].kg) > g.kg ? '+' : ''}{ton3(num(v[g.key].kg) - g.kg)} kg</div>}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot><tr><td colSpan={5}><b>Tổng</b></td><td className="num">{ton3(totKg(r))}</td><td className="num"><b>{ton3(total)}</b> <span className="small">= {fmtNum(total / 1000, 3)} tấn</span></td></tr></tfoot>
+          </table>
+        </div>
+        {err && <div className="error-box">{err}</div>}
+        <div className="form-actions"><button className="btn primary" disabled={busy}>{busy ? 'Đang lưu…' : 'Lưu'}</button></div>
       </form>
     </Modal>
   );

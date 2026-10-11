@@ -6,7 +6,8 @@ import { useApp } from '../../context/AppContext';
 import { useCollection, useMyWarehouses, useOpCompany, useOpWarehouse, useOrders, usePendingIn, useStock, useTrips } from '../../lib/hooks';
 import { CompanyPicker } from '../../components/TripBits';
 import { IN_SOURCES, OPEN_STATUSES, ORDER_FOR_MOVE, ORDER_TYPES, isReturn, lineFrom, lineShip, lineTo, lineWh, matchOrderLine, openKg, orderInWarehouse, orderWarehouse, stoRoute } from '../../lib/orders';
-import { MOVE_TYPES, ageDays, createPendingIn, kgOf, postMovement, suggestPallets } from '../../lib/stock';
+import { MOVE_TYPES, ageDays, createPendingIn, kgOf, postMovement, stockId, suggestPallets } from '../../lib/stock';
+import { autoReleaseForSlip, releaseStatusOfWh } from '../../lib/release';
 import { ST, vnDate } from '../../lib/trips';
 import { fmtDate, fmtNum } from '../../lib/utils';
 import { ErrorBox, Field, Modal } from '../../components/ui';
@@ -45,6 +46,8 @@ function Form({ type }) {
   const [opWh, setOpWh] = useOpWarehouse();
   const wh = warehouses.find((w) => w.code === opWh) || (warehouses.length === 1 ? warehouses[0] : null);
   const whCode = wh?.code || '';
+  // Tình trạng hàng HTC sau khi giải chấp ở kho này (DGC; cảng: KTC)
+  const relTo = releaseStatusOfWh(wh);
   const items = useCollection('items').rows;
   const locations = useCollection('locations').rows.filter((l) => l.warehouse === whCode);
   const statuses = useCollection('goodsStatus').rows;
@@ -79,6 +82,7 @@ function Form({ type }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState('');
   const [donePO, setDonePO] = useState('');
+  const [doneRel, setDoneRel] = useState(null);
   const [filter, setFilter] = useState('');
   const [picking, setPicking] = useState(false);
   // Chưa biết hàng nằm kho nào: bấm mã hàng → Xem tồn kho → chọn kho (và dòng tồn) từ bảng
@@ -205,10 +209,15 @@ function Form({ type }) {
     if (stockLoading) return;
     const ow = orderWarehouse(order, 'out');
     if (ow && ow !== whCode) return;
-    const fifo = [...stock].filter((r) => r.warehouse === whCode && (order.type === 'STO' || statusMap.get(r.goodsStatus)?.allowOutbound !== false) && (!order.company || (r.company || '') === order.company))
-      .sort((a, b) => String(a.inDate).localeCompare(String(b.inDate)) || String(a.location).localeCompare(String(b.location)));
+    const fifoSort = (a, b) => String(a.inDate).localeCompare(String(b.inDate)) || String(a.location).localeCompare(String(b.location));
+    const mine = [...stock].filter((r) => r.warehouse === whCode && (!order.company || (r.company || '') === order.company));
+    const fifo = mine.filter((r) => order.type === 'STO' || statusMap.get(r.goodsStatus)?.allowOutbound !== false).sort(fifoSort);
+    // Xuất bán thiếu KTC/DGC: lấy tiếp hàng HTC (nhập trước trước), khi lưu phiếu tự đưa vào đề nghị giải chấp và đổi tình trạng
+    const htcRows = order.type === 'STO' ? [] : mine.filter((r) => r.goodsStatus === 'HTC').sort(fifoSort);
+    const used = new Map();
     const next = [];
     const short = [];
+    let htcKg = 0;
     let anyNeed = false;
     for (const ol of order.lines) {
       // Dòng SO của kho khác thì để phiếu ở kho đó làm
@@ -217,20 +226,26 @@ function Form({ type }) {
       if (plan && !(plan[ol.no] > 0)) continue;
       let need = plan ? Math.min(plan[ol.no], openKg(order, ol, 'out') * (1 + num(order.tolerancePct) / 100)) : openKg(order, ol, 'out');
       if (need > 0.001) anyNeed = true;
-      for (const r of fifo.filter((x) => x.item === ol.item && (!ol.goodsStatus || x.goodsStatus === ol.goodsStatus))) {
+      const htcOk = !ol.goodsStatus || ol.goodsStatus === 'HTC' || ol.goodsStatus === relTo;
+      const cands = [...fifo.filter((x) => x.item === ol.item && (!ol.goodsStatus || x.goodsStatus === ol.goodsStatus)),
+        ...(htcOk ? htcRows.filter((x) => x.item === ol.item) : [])];
+      for (const r of cands) {
         if (need <= 0.001) break;
+        const leftBags = num(r.bags) - (used.get(r._id) || 0);
         const kgPerBag = num(r.bags) ? num(r.kg) / num(r.bags) : 0;
-        if (!kgPerBag) continue;
-        const bags = Math.min(num(r.bags), Math.ceil(need / kgPerBag - 1e-9));
+        if (!kgPerBag || leftBags <= 0) continue;
+        const bags = Math.min(leftBags, Math.ceil(need / kgPerBag - 1e-9));
         const k = bags / num(r.bags);
+        used.set(r._id, (used.get(r._id) || 0) + bags);
         next.push({ ...stockLine(), stockId: r._id, orderLine: ol.no, bags, pallets: r3(num(r.pallets) * k), kg: r3(num(r.kg) * k) });
+        if (r.goodsStatus === 'HTC') htcKg += num(r.kg) * k;
         need -= num(r.kg) * k;
       }
       if (need > 0.001) short.push(`${ol.item} thiếu ${fmtNum(need, 2)} kg`);
     }
     if (next.length) setLines(next);
     if (!anyNeed) { setFillNote(`${order.id} không còn dòng nào cần xuất từ kho ${whCode} (dòng còn lại thuộc kho khác hoặc đã giao đủ).`); setAutoFill(''); return; }
-    setFillNote(`${next.length ? `Đã chọn sẵn ${next.length} dòng tồn theo FIFO cho ${order.id}. Sửa số bao nếu xe chở ít hơn.` : `Kho ${whCode} không còn tồn được xuất cho ${order.id}.`}${short.length ? ` Không đủ tồn: ${short.join(', ')}.` : ''}`);
+    setFillNote(`${next.length ? `Đã chọn sẵn ${next.length} dòng tồn theo FIFO cho ${order.id}. Sửa số bao nếu xe chở ít hơn.` : `Kho ${whCode} không còn tồn được xuất cho ${order.id}.`}${htcKg > 0.001 ? ` Trong đó ${fmtNum(htcKg, 2)} kg là hàng HTC: khi lập phiếu sẽ tự đưa vào đề nghị giải chấp và đổi sang ${relTo} ngay.` : ''}${short.length ? ` Không đủ tồn: ${short.join(', ')}.` : ''}`);
     setAutoFill(''); setPlan(null);
   }, [autoFill, order, stock, stockLoading, whCode]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -290,7 +305,9 @@ function Form({ type }) {
   const stockById = useMemo(() => new Map(stock.map((r) => [r._id, r])), [stock]);
   // Xuất theo SO / xuất lẻ: chỉ KTC, DGC (tình trạng cho phép xuất). Xuất theo STO (chuyển kho): mọi tình trạng, kể cả HTC
   const isSTO = order?.type === 'STO';
-  const blocked = (r) => type === 'out' && !isSTO && statusMap.get(r.goodsStatus)?.allowOutbound === false;
+  // Hàng HTC xuất bán không bị khóa: khi lưu phiếu, phần HTC tự vào đề nghị giải chấp và đổi tình trạng ngay
+  const releasable = (r) => type === 'out' && !isSTO && r?.goodsStatus === 'HTC';
+  const blocked = (r) => type === 'out' && !isSTO && !releasable(r) && statusMap.get(r.goodsStatus)?.allowOutbound === false;
   const pickPlate = (v) => {
     const veh = vehicles.find((x) => x.plate === v.trim().toUpperCase());
     const car = veh && carriers.find((c) => c.code === veh.carrier);
@@ -344,6 +361,7 @@ function Form({ type }) {
       if (type === 'status' && l.toStatus === 'HTC' && !l.toPledgee) return setErr(no + 'chọn bên nhận thế chấp.');
       out.push({
         ...(l.orderLine != null ? { orderLine: l.orderLine } : {}),
+        ...(releasable(r) ? { _rel: r } : {}),
         item: r.item, itemName: r.itemName || '', lot: r.lot || '', mfgDate: r.mfgDate || '', expDate: r.expDate || '', inDate: r.inDate || '',
         location: r.location, goodsStatus: r.goodsStatus, pledgee: r.pledgee || '', company: r.company || '',
         bags: sign * num(l.bags), pallets: sign * num(l.pallets), kg: sign * num(l.kg),
@@ -358,7 +376,7 @@ function Form({ type }) {
       const used = {};
       for (const [i, l] of out.entries()) {
         const keep = order.lines.find((x) => x.no === l.orderLine && x.item === l.item);
-        l.orderLine = keep ? keep.no : matchOrderLine(order, l.item, used, type, { warehouse: whCode, status: type === 'out' ? l.goodsStatus : '' });
+        l.orderLine = keep ? keep.no : matchOrderLine(order, l.item, used, type, { warehouse: whCode, status: type === 'out' ? (l._rel ? [relTo, 'HTC'] : l.goodsStatus) : '' });
         if (l.orderLine == null) return setErr(`Dòng ${i + 1}: mã hàng ${l.item}${type === 'out' ? ` (${l.goodsStatus})` : ''} không có trong đơn ${order.id} cho kho ${whCode} (kiểm tra kho xuất, TTHH của dòng đơn).`);
         used[l.orderLine] = (used[l.orderLine] || 0) + Math.abs(num(l.kg));
       }
@@ -372,8 +390,22 @@ function Form({ type }) {
         }
       }
     }
+    // Hàng HTC trong phiếu xuất bán: đưa vào đề nghị giải chấp và đổi tình trạng trước, rồi mới ghi phiếu xuất
+    const rel = out.filter((l) => l._rel);
+    if (rel.length && !window.confirm(`Phiếu có ${rel.length} dòng hàng HTC (${fmtNum(rel.reduce((a, l) => a + num(l.kg), 0), 2)} kg).\n`
+      + `Khi lập phiếu, hệ thống tự đưa phần này vào Đề nghị giải chấp và đổi sang ${relTo} ngay (bắt buộc giải chấp). Tiếp tục?`)) return;
     setBusy(true);
+    let relDone = null;
     try {
+      if (rel.length) {
+        relDone = await autoReleaseForSlip({ warehouse: wh.code, whName: wh.name, company: head.company, date: head.date, order,
+          picks: rel.map((l) => ({ stock: l._rel, kg: num(l.kg), bags: num(l.bags), pallets: num(l.pallets) })) }, { email, name });
+      }
+      for (const l of out) {
+        if (!l._rel) continue;
+        l.goodsStatus = relDone.to; l.pledgee = '';
+        delete l._rel;
+      }
       const direct = type === 'in' && source === 'direct';
       const mk = type === 'in' ? (m) => createPendingIn({ ...m, ...(direct ? { directPO: {
         company: head.company, date: head.date, partyCode: head.partyCode.trim(), partyName: head.partyName.trim(), refNo: head.refNo.trim(),
@@ -382,15 +414,24 @@ function Form({ type }) {
         type, warehouse: wh.code, company: head.company || '', date: head.date, tripId: head.tripId || '', orderId: direct ? '' : head.orderId || '', orderRef: order?.refNo || '',
         ...(type === 'in' ? { source } : {}),
         partyCode: head.partyCode.trim(), partyName: head.partyName.trim(), shipCode: head.shipCode,
-        reason: head.reason, note: head.note.trim(), lines: out,
+        reason: head.reason, note: head.note.trim(), lines: out, ...(relDone ? { releaseIds: relDone.ids } : {}),
         ...(type === 'out' ? Object.fromEntries(Object.keys(EMPTY_TRANSPORT).map((k) => [k, String(head[k] || '').trim()])) : {}),
       });
       setDone(typeof res === 'string' ? res : res.id);
       setDonePO(typeof res === 'string' ? '' : res.orderId);
+      setDoneRel(relDone);
       setLines([type === 'in' ? newLine() : stockLine()]);
       setHead((h) => ({ ...h, tripId: '', orderId: '', partyCode: '', partyName: '', shipCode: '', refNo: '', note: '', ...EMPTY_TRANSPORT }));
     } catch (e2) {
-      setErr(e2.code === 'permission-denied' ? 'Bạn không có quyền lập phiếu cho kho này.' : e2.message);
+      const why = e2.code === 'permission-denied' ? 'Bạn không có quyền lập phiếu cho kho này.' : e2.message;
+      if (relDone) {
+        // Đã giải chấp xong nhưng phiếu xuất lỗi: các dòng HTC giờ là hàng đã đổi tình trạng, trỏ lại cho đúng để lập lại
+        setLines((ls) => ls.map((l) => {
+          const r = stockById.get(l.stockId);
+          return releasable(r) ? { ...l, stockId: stockId({ ...r, goodsStatus: relDone.to, pledgee: '' }) } : l;
+        }));
+        setErr(`Đã giải chấp theo đề nghị ${relDone.ids.join(', ')} (hàng đã là ${relDone.to}) nhưng chưa lập được phiếu xuất: ${why} Kiểm tra lại rồi bấm Lập phiếu lần nữa.`);
+      } else setErr(e2.code === 'permission-denied' ? (rel.length ? 'Bạn không có quyền lập phiếu hoặc giải chấp hàng HTC ở kho này.' : why) : why);
     }
     setBusy(false);
   };
@@ -403,7 +444,8 @@ function Form({ type }) {
       </div>
       {done && <div className="ok-box" style={{ marginBottom: 10 }}>Đã lập phiếu <b className="mono">{done}</b>{donePO && <> và đơn mua <Link className="mono" to="/don-hang?tab=PO">{donePO}</Link> (nhập trực tiếp)</>}.{type === 'in' ? <> <b>Chờ thủ kho nhận hàng</b> và xác nhận số thực nhận, vị trí (tồn kho cập nhật khi thủ kho xác nhận{source === 'direct' ? ', đơn mua PO lập theo số thực nhận' : ''}).</> : ' Tồn kho đã cập nhật.'} <Link to={`/kho/phieu/${done}/in`} target="_blank">🖨 In phiếu</Link>
 
-        {type === 'out' && <> · <Link className="btn primary" to={`/kho/phieu/${done}/soan`} target="_blank">📋 In phiếu soạn hàng</Link></>}</div>}
+        {type === 'out' && <> · <Link className="btn primary" to={`/kho/phieu/${done}/soan`} target="_blank">📋 In phiếu soạn hàng</Link></>}
+        {doneRel && <div style={{ marginTop: 6 }}>🔓 Hàng HTC đã đưa vào đề nghị giải chấp {doneRel.ids.map((id, i) => <span key={id}>{i ? ', ' : ''}<Link className="mono" to={`/kho/giai-chap/${id}/in`} target="_blank">{id}</Link></span>)} và đổi sang {doneRel.to}. Cuối ngày vào <Link to="/kho/giai-chap">Đề nghị giải chấp</Link> in bản tổng hợp theo mã hàng, ký số, gửi ngân hàng.</div>}</div>}
       {type === 'in' && !done && <p className="hint">Quản trị lập và in phiếu nhập. Thủ kho nhận hàng ngoài hiện trường, vào <b>Nhận hàng</b> nhập số thực nhận, lot, vị trí rồi xác nhận: lúc đó tồn kho mới cập nhật và in được nhãn pallet.</p>}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="form-grid">
@@ -555,7 +597,7 @@ function Form({ type }) {
               <InLine l={l} set={(p) => setLine(i, p)} itemMap={itemMap} items={items} locations={locations} statuses={statuses} pledgees={pledgees} locRequired={false}
                 cap={caps[i]} onSplit={() => setLines((ls) => splitLineAt(ls, i, caps[i]))} />
             ) : (
-              <StockLine type={type} l={l} set={(p) => setLine(i, p)} rows={stockRows} byId={stockById} blocked={blocked} onStock={setStockItem}
+              <StockLine type={type} l={l} set={(p) => setLine(i, p)} rows={stockRows} byId={stockById} blocked={blocked} releasable={releasable} onStock={setStockItem}
                 locations={locations} statuses={statuses} pledgees={pledgees} />
             )}
             <button type="button" className="btn ghost" disabled={lines.length === 1} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>✕</button>
@@ -764,14 +806,14 @@ function StockPicker({ rows, blocked, whName, filter, setFilter, chosen, onClose
         </table>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, gap: 8, flexWrap: 'wrap' }}>
-        <small className="small">🔒 = hàng bị khóa xuất (chỉ HTC khi xuất bán; chuyển vị trí, chuyển kho, điều chỉnh, đổi tình trạng không khóa). Có thể chọn nhiều dòng, kể cả KTC và DGC trong cùng một phiếu.</small>
+        <small className="small">🔒 = hàng bị khóa xuất. Xuất bán chọn được cả hàng HTC: khi lập phiếu, phần HTC tự vào đề nghị giải chấp và đổi tình trạng ngay. Có thể chọn nhiều dòng, kể cả KTC, DGC, HTC trong cùng một phiếu.</small>
         <button type="button" className="btn primary" disabled={!sel.size} onClick={() => onPick(rows.filter((r) => sel.has(r._id)))}>Thêm {sel.size} dòng vào phiếu</button>
       </div>
     </Modal>
   );
 }
 
-function StockLine({ type, l, set, rows, byId, blocked, locations, statuses, pledgees, onStock }) {
+function StockLine({ type, l, set, rows, byId, blocked, releasable, locations, statuses, pledgees, onStock }) {
   const r = byId.get(l.stockId);
   // Số lượng xuất/chuyển → pallet, kg chia theo tỷ lệ tồn
   const setBags = (v) => {
@@ -804,7 +846,7 @@ function StockLine({ type, l, set, rows, byId, blocked, locations, statuses, ple
           <div className="stock-pick">
             <span><small>Công ty</small>{r.company || '-'}</span><span><small>Kho</small>{r.warehouse}</span><span><small>Mã hàng</small><ItemCode code={r.item} onStock={onStock} /></span>
             <span className="grow"><small>Tên hàng</small>{r.itemName}</span><span><small>Lot</small>{r.lot || '-'}</span><span><small>Vị trí</small>{r.location}</span>
-            <span><small>Tình trạng</small>{r.goodsStatus}{r.pledgee ? ` (${r.pledgee})` : ''}{blocked(r) ? ' 🔒' : ''}</span>
+            <span><small>Tình trạng</small>{r.goodsStatus}{r.pledgee ? ` (${r.pledgee})` : ''}{blocked(r) ? ' 🔒' : ''}{releasable?.(r) ? <b style={{ color: 'var(--amber)' }}> 🔓 tự giải chấp khi lập phiếu</b> : ''}</span>
             <span><small>Còn</small>{fmtNum(num(r.kg), 2)} kg · {fmtNum(r.pallets, 2)} pl · {fmtNum(r.bags)} bao</span>
             <button type="button" className="btn sm ghost" onClick={() => set({ stockId: '', bags: '', pallets: '', kg: '', kgTxt: undefined })}>Đổi</button>
           </div>
@@ -815,7 +857,7 @@ function StockLine({ type, l, set, rows, byId, blocked, locations, statuses, ple
           <option value="">-- Chọn hàng trong kho --</option>
           {rows.map((x) => (
             <option key={x._id} value={x._id} disabled={blocked(x)}>
-              {x.company ? `[${x.company}] ` : ''}{x.item} · lot {x.lot || '-'} · {x.location} · {x.goodsStatus}{x.pledgee ? `(${x.pledgee})` : ''} · {fmtNum(x.bags)} bao / {fmtNum(x.pallets, 2)} pl · nhập {fmtDate(x.inDate)} ({ageDays(x.inDate)} ngày){blocked(x) ? ' · KHÓA XUẤT' : ''}
+              {x.company ? `[${x.company}] ` : ''}{x.item} · lot {x.lot || '-'} · {x.location} · {x.goodsStatus}{x.pledgee ? `(${x.pledgee})` : ''} · {fmtNum(x.bags)} bao / {fmtNum(x.pallets, 2)} pl · nhập {fmtDate(x.inDate)} ({ageDays(x.inDate)} ngày){blocked(x) ? ' · KHÓA XUẤT' : releasable?.(x) ? ' · tự giải chấp' : ''}
             </option>
           ))}
         </select>
