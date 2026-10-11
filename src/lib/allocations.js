@@ -1,7 +1,7 @@
 import { collection, doc, runTransaction, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { createOrder, summarizeLines } from './orders';
-import { today } from './utils';
+import { norm, today } from './utils';
 
 // ============================================================================
 // Kế hoạch phân bổ hàng mua: chia từng dòng PO (theo cont hoặc theo kg) cho nơi đến.
@@ -70,7 +70,15 @@ export function missingForOrder(a) {
 }
 
 // Trường điểm giao dùng chung cho cả cont (sửa ở dòng cont thì áp cho mọi mã hàng trong cont)
-export const CONT_KEYS = ['date', 'contNo', 'fromWarehouse', 'destType', 'partyCode', 'partyName', 'shipCode', 'toWarehouse', 'carrier'];
+export const CONT_KEYS = ['date', 'contNo', 'fromWarehouse', 'fromLocation', 'destType', 'partyCode', 'partyName', 'shipCode', 'toWarehouse', 'toLocation', 'carrier'];
+
+// Kho có ghi vị trí trong kế hoạch phân bổ không: mặc định có (kho cảng, kho mua nội địa…),
+// trừ kho tích "Kế hoạch phân bổ chỉ cần kho" hoặc kho tên Đức Hòa (nhiều vị trí nhỏ)
+export function planNeedsLocation(wh) {
+  if (!wh) return false;
+  if (wh.planNoLocation === true) return false;
+  return !norm(`${wh.code} ${wh.name}`).replace(/\s/g, '').includes('duchoa');
+}
 
 // Thêm dòng kế hoạch: mỗi phần tử { po, line, qtyKg, contNo?, date?, ...trường điểm giao chung của cont }
 export async function addRows(parts, user) {
@@ -81,7 +89,7 @@ export async function addRows(parts, user) {
     b.set(ref, {
       id: ref.id, poId: po.id, poLine: line.no, company: po.company || '', supplier: po.partyCode || '', supplierName: po.partyName || '',
       bct: po.refNo || '', item: line.item, itemName: line.itemName || '', qtyKg: p.qtyKg, date: p.date || line.dueDate || po.dueDate || '',
-      contNo: p.contNo || '', fromWarehouse: p.fromWarehouse || line.warehouse || po.warehouse || '', destType: p.destType || 'pending',
+      contNo: p.contNo || '', fromWarehouse: p.fromWarehouse || line.warehouse || po.warehouse || '', fromLocation: p.fromLocation || '', toLocation: p.toLocation || '', destType: p.destType || 'pending',
       partyCode: p.partyCode || '', partyName: p.partyName || '', shipCode: p.shipCode || '', toWarehouse: p.toWarehouse || '', carrier: p.carrier || '', note: '',
       orderId: '', orderType: '', orderLine: null, status: 'draft',
       createdAt: at, createdBy: user.email, updatedAt: at, updatedBy: user.email,
@@ -121,7 +129,7 @@ export async function createOrderFromGroup(g, { sales, whName }, user) {
   const lines = g.rows.map((a) => ({
     item: a.item, itemName: a.itemName, qtyKg: n(a.qtyKg), dueDate: a.date || '', goodsStatus: '',
     note: [a.contNo ? `Cont ${a.contNo}` : '', `${a.poId}${a.bct ? ` / BCT ${a.bct}` : ''}`, a.note].filter(Boolean).join(' · '),
-    ...(sto ? { fromWarehouse: a.fromWarehouse, toWarehouse: a.toWarehouse } : { warehouse: a.fromWarehouse, shipCode: a.shipCode || '' }),
+    ...(sto ? { fromWarehouse: a.fromWarehouse, toWarehouse: a.toWarehouse, ...(a.toLocation ? { toLocation: a.toLocation } : {}) } : { warehouse: a.fromWarehouse, shipCode: a.shipCode || '' }),
     ...(a.carrier ? { carrier: a.carrier } : {}),
     allocId: a._id, poId: a.poId, poLine: a.poLine, contNo: a.contNo || '',
   }));

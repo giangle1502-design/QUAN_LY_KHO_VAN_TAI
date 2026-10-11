@@ -9,7 +9,7 @@ import { fmtDate, fmtNum, norm, today } from '../../lib/utils';
 import { OPEN_STATUSES, leftKg, lineShip, lineWh } from '../../lib/orders';
 import { deleteOrRequest } from '../../lib/deletes';
 import {
-  ALLOC_STATUS, CONT_KEYS, DEST_TYPES, addAllocations, addRows, updateRows, allocStatus, allocatedByPoLine, attachToOrder, cancelAllocation, createOrderFromGroup,
+  ALLOC_STATUS, CONT_KEYS, DEST_TYPES, planNeedsLocation, addAllocations, addRows, updateRows, allocStatus, allocatedByPoLine, attachToOrder, cancelAllocation, createOrderFromGroup,
   detachFromOrder, groupForOrders, setCarrier, missingForOrder, poKey, updateAllocation,
 } from '../../lib/allocations';
 
@@ -25,7 +25,7 @@ export default function Allocation() {
   const canManage = hasRole('kinh_doanh', 'ke_toan');
   const allocState = useCollection('allocations');
   const { rows: orders, error: oErr } = useOrders('');
-  const cats = useCollections(['soldto', 'shipto', 'warehouses', 'carriers']);
+  const cats = useCollections(['soldto', 'shipto', 'warehouses', 'carriers', 'locations']);
   const [co, setCo] = useOpCompany();
   const user = { email, name };
   const orderMap = useMemo(() => new Map(orders.map((o) => [o.id, o])), [orders]);
@@ -229,8 +229,8 @@ function Plan({ allocs, orderMap, orders, allocated, pos, cats, co, setCo, canMa
   const exportExcel = () => exportSheets(`Ke_hoach_phan_bo_${today()}`, {
     'Kế hoạch phân bổ': (rows.length ? rows : [{}]).map((a) => ({
       'Ngày giao dự kiến': a.date || '', 'Số PO': a.poId || '', 'BCT / Số Ecount': a.bct || '', 'Công ty': a.company || '', 'Nhà cung cấp': a.supplierName || a.supplier || '',
-      'Mã hàng': a.item || '', 'Tên hàng': a.itemName || '', 'Số lượng (kg)': n(a.qtyKg), 'Số cont': a.contNo || '', 'Nơi nhận': a.fromWarehouse || '',
-      'Điểm giao': DEST_TYPES[a.destType] || '', 'Khách hàng': a.partyName || a.partyCode || '', 'Mã giao': a.shipCode || '', 'Kho đến': a.toWarehouse || '',
+      'Mã hàng': a.item || '', 'Tên hàng': a.itemName || '', 'Số lượng (kg)': n(a.qtyKg), 'Số cont': a.contNo || '', 'Nơi nhận': a.fromWarehouse || '', 'Vị trí nhận': a.fromLocation || '',
+      'Điểm giao': DEST_TYPES[a.destType] || '', 'Khách hàng': a.partyName || a.partyCode || '', 'Mã giao': a.shipCode || '', 'Kho đến': a.toWarehouse || '', 'Vị trí kho đến': a.toLocation || '',
       'Nhà vận chuyển': a.carrier || '', 'Số đơn': a.orderId || '', 'Trạng thái': ALLOC_STATUS[a.st]?.label || '', 'Ghi chú': a.note || '',
     })),
   });
@@ -266,7 +266,7 @@ function Plan({ allocs, orderMap, orders, allocated, pos, cats, co, setCo, canMa
           <table className="alloc-table">
             <thead><tr>
               <th>{canManage && ready.length > 0 && <input type="checkbox" checked={allOn} title="Chọn mọi dòng đủ thông tin" onChange={() => setSel(allOn ? new Set() : new Set(ready.map((a) => a._id)))} />}</th>
-              <th>Số cont</th><th>Ngày giao</th><th>Nơi nhận</th><th>Điểm giao</th><th>Khách hàng / Kho đến</th><th>Mã giao</th><th>Nhà vận chuyển</th>
+              <th>Số cont</th><th>Ngày giao</th><th>Nơi nhận / vị trí</th><th>Điểm giao</th><th>Khách hàng / Kho đến</th><th>Mã giao</th><th>Nhà vận chuyển</th>
               <th>PO / BCT</th><th>Công ty</th><th>Mã hàng</th><th className="num">Số lượng (kg)</th><th>Ghi chú</th><th>Trạng thái</th><th></th>
             </tr></thead>
             <tbody>{groups.map((g) => {
@@ -310,6 +310,9 @@ function contView(rows) {
 
 // Các ô điểm giao dùng chung (số cont, ngày giao, nơi nhận, điểm giao, khách / kho đến, mã giao, nhà vận chuyển)
 function SharedCells({ v, edit, editCarrier = edit, save, cats, whs }) {
+  const [chgFrom, setChgFrom] = useState(false);
+  const locs = cats.locations || [];
+  const whOf = (c) => whs.find((w) => w.code === c);
   const mixed = (k) => (v.mixed?.[k] ? <div className="small" style={{ color: 'var(--amber)' }}>khác nhau giữa các mã</div> : null);
   const blur = (k, conv = (x) => x.trim()) => (e) => { const x = conv(e.target.value); if (x !== (v[k] ?? '')) save({ [k]: x }); };
   const ships = (cats.shipto || []).filter((sh) => sh.customerCode === v.partyCode);
@@ -325,10 +328,12 @@ function SharedCells({ v, edit, editCarrier = edit, save, cats, whs }) {
     <>
       <td>{edit ? <input style={{ width: 125 }} placeholder="Số cont" defaultValue={v.contNo} key={'c' + v.contNo} onBlur={blur('contNo', (x) => x.trim().toUpperCase())} /> : <span className="mono">{v.contNo}</span>}{mixed('contNo')}</td>
       <td>{edit ? <input type="date" style={{ width: 140 }} defaultValue={v.date} key={'d' + v.date} onBlur={blur('date')} /> : <span className="nowrap">{fmtDate(v.date)}</span>}{mixed('date')}</td>
-      <td>{edit ? (
-        <select value={v.fromWarehouse || ''} onChange={(e) => save({ fromWarehouse: e.target.value })}>
+      <td>{edit && (!v.fromWarehouse || chgFrom) ? (
+        <select value={v.fromWarehouse || ''} onChange={(e) => { setChgFrom(false); save({ fromWarehouse: e.target.value, fromLocation: '' }); }}>
           <option value="">-- Kho --</option>{whs.map((w) => <option key={w.code} value={w.code}>{w.code}</option>)}
-        </select>) : v.fromWarehouse}{mixed('fromWarehouse')}</td>
+        </select>) : <span title="Lấy từ kho nhập của dòng PO">{v.fromWarehouse}{edit && <button type="button" className="btn ghost sm" title="Đổi nơi nhận" onClick={() => setChgFrom(true)}>✎</button>}</span>}
+        {mixed('fromWarehouse')}
+        <LocCell wh={whOf(v.fromWarehouse)} value={v.fromLocation} edit={edit} locs={locs} onChange={(x) => save({ fromLocation: x })} mixed={v.mixed?.fromLocation} /></td>
       <td>{edit ? (
         <select value={v.destType || ''} onChange={(e) => e.target.value && save({ destType: e.target.value })}>
           {!v.destType && <option value="">-- Khác nhau --</option>}
@@ -338,11 +343,12 @@ function SharedCells({ v, edit, editCarrier = edit, save, cats, whs }) {
         <><input list="dl-alloc-soldto" style={{ width: 130 }} placeholder="Mã khách" defaultValue={v.partyCode} key={'p' + v.partyCode} onBlur={pickCustomer} />
           {v.partyName && <div className="small">{v.partyName}</div>}</>
       ) : edit && v.destType === 'warehouse' ? (
-        <select value={v.toWarehouse || ''} onChange={(e) => save({ toWarehouse: e.target.value })}>
+        <select value={v.toWarehouse || ''} onChange={(e) => save({ toWarehouse: e.target.value, toLocation: '' })}>
           <option value="">-- Kho đến --</option>{whs.filter((w) => w.code !== v.fromWarehouse).map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
         </select>
       ) : v.destType === 'customer' ? <>{v.partyCode}{v.partyName ? <div className="small">{v.partyName}</div> : null}</> : v.destType === 'warehouse' ? v.toWarehouse : <span className="small">–</span>}
-        {mixed(v.destType === 'warehouse' ? 'toWarehouse' : 'partyCode')}</td>
+        {mixed(v.destType === 'warehouse' ? 'toWarehouse' : 'partyCode')}
+        {v.destType === 'warehouse' && <LocCell wh={whOf(v.toWarehouse)} value={v.toLocation} edit={edit} locs={locs} onChange={(x) => save({ toLocation: x })} mixed={v.mixed?.toLocation} />}</td>
       <td>{edit && v.destType === 'customer' && v.partyCode ? (
         <select value={v.shipCode || ''} onChange={(e) => save({ shipCode: e.target.value })}>
           <option value="">-- Mã giao --</option>{ships.map((sh) => <option key={sh.shipCode} value={sh.shipCode} title={sh.address}>{sh.shipCode}</option>)}
@@ -352,6 +358,22 @@ function SharedCells({ v, edit, editCarrier = edit, save, cats, whs }) {
           <option value="">--</option>{(cats.carriers || []).filter((c) => c.active !== false).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
         </select>) : v.carrier}{mixed('carrier')}</td>
     </>
+  );
+}
+
+// Vị trí trong kho (kho cảng, kho mua nội địa…); kho chỉ cần kho (Đức Hòa) thì không hiện
+function LocCell({ wh, value, edit, locs, onChange, mixed }) {
+  if (!planNeedsLocation(wh)) return null;
+  const list = locs.filter((l) => l.warehouse === wh.code && !l.locked).sort((a, b) => String(a.code).localeCompare(String(b.code)));
+  if (!edit) return value ? <div className="small">Vị trí {value}</div> : null;
+  return (
+    <div style={{ marginTop: 4 }}>
+      <select value={value || ''} title="Vị trí nhận hàng, chuyển sang phiếu nhập kho" onChange={(e) => onChange(e.target.value)}>
+        <option value="">{mixed ? '-- Khác nhau --' : '-- Vị trí --'}</option>
+        {list.map((l) => <option key={l.code} value={l.code}>{l.code}{n(l.capacity) ? ` · trống ${fmtNum(Math.max(0, n(l.capacity) - n(l.currentPallets)), 1)} pl` : ''}</option>)}
+        {value && !list.some((l) => l.code === value) && <option value={value}>{value}</option>}
+      </select>
+    </div>
   );
 }
 

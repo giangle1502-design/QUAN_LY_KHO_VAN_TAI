@@ -308,6 +308,7 @@ Thay cột "Điểm giao" của sheet COST CONT: mỗi dòng PO (hàng về cả
 - Nơi nhận = kho nhập của dòng PO (kho cảng / KNQ khai trong danh mục kho). Hàng về thì lập phiếu nhập vào kho cảng như PO thường.
 - Chọn dòng → **Tạo đơn**: dòng giao khách gom thành SO theo công ty + khách (kho xuất = nơi nhận), dòng về kho mình gom thành STO theo công ty (kho đi = nơi nhận). Số cont, số PO ghi vào ghi chú dòng đơn; dòng kế hoạch nhớ số đơn + dòng đơn, trạng thái tự cập nhật (Đã tạo đơn → Đang giao → Đã giao).
 - **Cont nhiều mã hàng**: các dòng cùng số cont (cùng công ty) được gom thành 1 cont; ngày giao, nơi nhận, điểm giao, khách / kho đến, mã giao, nhà vận chuyển sửa 1 lần ở dòng cont. Nút "＋ Cont nhiều mã hàng" lập cont từ nhiều dòng PO (nhập kg từng dòng), "＋ Mã" thêm mã vào cont có sẵn.
+- Nơi nhận lấy sẵn từ kho nhập của dòng PO (bấm ✎ nếu cần đổi). Kho cảng / kho mua nội địa chọn thêm **vị trí** (nơi nhận và kho đến); kho tên Đức Hòa hoặc kho tích "Kế hoạch phân bổ chỉ cần kho" chỉ cần kho. Lập phiếu nhập theo PO: dòng hàng tự chia theo vị trí nhận trong kế hoạch; nhận hàng theo STO: vị trí kho đến điền sẵn.
 - Nhà vận chuyển chọn trong kế hoạch ghi vào dòng SO/STO; lập phiếu xuất kho theo đơn tự điền Đơn vị vận tải (khi các dòng xuất ở kho đó cùng 1 đơn vị).
 - **Gắn SO**: gắn dòng kế hoạch vào dòng đơn bán sale đã lập (cùng công ty, mã hàng, khách); không đổi đơn.
 - Dòng nháp hủy được (quay lại phần chưa phân bổ); dòng đã có đơn thì sửa / hủy ở đơn. Chi tiết PO có bảng "Kế hoạch phân bổ".

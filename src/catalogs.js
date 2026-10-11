@@ -187,6 +187,8 @@ export const CATALOGS = [
         help: 'Kho không có bảo vệ: luồng xe bỏ qua bước Chờ vào cửa và Chờ ra cổng' },
       { key: 'releaseStatus', label: 'TTHH khi giải chấp', type: 'select', options: ['DGC', 'KTC'],
         help: 'Hàng HTC ở kho này khi giải chấp chuyển sang tình trạng nào. Bỏ trống: kho có chữ "Cảng" → KTC, kho khác → DGC' },
+      { key: 'planNoLocation', label: 'Kế hoạch phân bổ chỉ cần kho', type: 'checkbox',
+        help: 'Tích: kế hoạch phân bổ không chọn vị trí ở kho này (kho nhiều vị trí nhỏ). Kho tên có chữ Đức Hòa luôn chỉ cần kho; kho khác (cảng, mua nội địa…) chọn vị trí' },
       { key: 'address', label: 'Địa chỉ', type: 'textarea' },
       { key: 'manager', label: 'Người phụ trách', type: 'text' },
       { key: 'phone', label: 'Điện thoại', type: 'text' },

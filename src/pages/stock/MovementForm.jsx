@@ -166,6 +166,31 @@ function Form({ type }) {
       return { ...newLine(), item: l.item, orderLine: l.no, bags, pallets: suggestPallets(it, bags), kg, ...(l.goodsStatus ? { goodsStatus: l.goodsStatus } : {}) };
     });
     if (next.length) setLines(next);
+    // Kế hoạch phân bổ đã ghi vị trí nhận (kho cảng, kho mua nội địa): chia dòng theo vị trí, điền sẵn vị trí
+    if (next.length && o.type === 'PO') getDocs(query(collection(db, 'allocations'), where('poId', '==', o.id))).then((snap) => {
+      const plans = snap.docs.map((d) => d.data()).filter((a) => a.status !== 'cancelled' && a.fromLocation && (!tw || !a.fromWarehouse || a.fromWarehouse === tw));
+      if (!plans.length) return;
+      const mk = (l, kg, location) => {
+        const it = itemMap.get(l.item);
+        const bags = num(it?.bagWeight) ? Math.round(kg / num(it.bagWeight)) : '';
+        return { ...l, kg: r3(kg), bags, pallets: suggestPallets(it, bags), location };
+      };
+      const out = [];
+      for (const l of next) {
+        const byLoc = {};
+        plans.filter((a) => a.poLine === l.orderLine).forEach((a) => { byLoc[a.fromLocation] = (byLoc[a.fromLocation] || 0) + num(a.qtyKg); });
+        let rest = num(l.kg);
+        for (const [loc, kg0] of Object.entries(byLoc)) {
+          if (rest <= 0.001) break;
+          const kg = Math.min(rest, kg0);
+          rest -= kg;
+          out.push(mk(l, kg, loc));
+        }
+        if (rest > 0.001) out.push(Object.keys(byLoc).length ? mk(l, rest, '') : l);
+      }
+      setLines(out);
+      setFillNote(`Vị trí nhận điền sẵn theo kế hoạch phân bổ của ${o.id}.`);
+    }).catch(() => {});
   };
 
   // Nhập kho theo STO: lấy đúng lot, NSX, HSD, tình trạng thế chấp từ các phiếu xuất ở kho đi, trừ phần đã nhận
@@ -198,6 +223,15 @@ function Form({ type }) {
       }
     }
     const next = [...m.values()].filter((l) => l.kg > 0.001 || l.bags > 0.001);
+    // Kế hoạch phân bổ đã ghi vị trí ở kho đến: điền sẵn vị trí cho dòng lệnh chuyển kho tương ứng
+    if (!ret && next.length) {
+      try {
+        const ps = await getDocs(query(collection(db, 'allocations'), where('orderId', '==', o.id)));
+        const locOf = new Map(ps.docs.map((d) => d.data()).filter((a) => a.toLocation && a.status !== 'cancelled').map((a) => [a.orderLine, a.toLocation]));
+        const lineLoc = new Map(o.lines.filter((l) => l.toLocation).map((l) => [l.no, l.toLocation]));
+        next.forEach((l) => { if (!l.location) l.location = locOf.get(l.orderLine) || lineLoc.get(l.orderLine) || ''; });
+      } catch { /* không đọc được kế hoạch: thủ kho tự chọn vị trí */ }
+    }
     if (next.length) setLines(next);
     if (ret) {
       setFillNote(next.length
