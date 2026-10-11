@@ -380,3 +380,32 @@ th.col-drop, .col-picker-row.col-drop { box-shadow: inset 3px 0 0 var(--primary)
 table.picker tr.wh-row td { background: #f3f6fa; border-top: 2px solid var(--line); }
 table.picker tr.wh-row.cur td { background: #e8f1fd; }
 table.picker tr.sub td:nth-child(2) { padding-left: 14px; }
+
+/* Mẫu in tự thiết kế */
+.tpl-screen { background: #eef1f5; min-height: 100vh; }
+.tpl-pages { padding: 16px; overflow-x: auto; }
+.tpl-choice { display: inline-flex; gap: 6px; align-items: center; }
+.tpl-choice select { padding: 5px 8px; }
+.designer-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.designer-right { position: sticky; top: 8px; }
+.tpl-preview { background: #dde2e8; border-radius: 8px; padding: 8px; max-height: calc(100vh - 80px); overflow: auto; }
+.tpl-preview .tpl-sheet { margin-bottom: 10px; }
+@media (max-width: 1100px) { .designer-grid { grid-template-columns: 1fr; } .designer-right { position: static; } }
+.rte { border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.rte-bar { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; border-bottom: 1px solid var(--line); background: #f7f9fb; align-items: center; }
+.rte-bar .btn.sm { padding: 3px 8px; }
+.rte-bar select { padding: 4px 6px; font-size: 13px; }
+.rte-cell { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; padding-left: 6px; border-left: 2px solid var(--primary); font-size: 12px; }
+.rte-area { padding: 12px; outline: none; font-family: 'Times New Roman', Times, serif; font-size: 14px; line-height: 1.35; overflow: auto; }
+.rte-area table { border-collapse: collapse; }
+.rte-area td, .rte-area th { border: 1px dashed #b8c2cc; padding: 3px 5px; min-width: 24px; position: static; background: none; color: inherit; }
+.rte-area table.tpl-grid td, .rte-area table.tpl-grid th { border: 1px solid #000; }
+.rte-area p { margin: 0 0 3px; }
+.rte-area img { max-width: 100%; cursor: pointer; }
+.rte-src { width: 100%; font-family: ui-monospace, Menlo, monospace; font-size: 12px; border: none; padding: 10px; resize: vertical; }
+.code-picker { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 5px; background: #fff; }
+.code-picker input { flex: 1; min-width: 200px; border: none; outline: none; padding: 4px; }
+.cols-edit td { vertical-align: top; }
+.cols-edit input, .cols-edit select { padding: 4px 6px; font-size: 13px; }
+.cols-edit td:nth-child(2) select, .cols-edit td:nth-child(2) input { width: 100%; min-width: 170px; margin-bottom: 2px; }
+@media print { .tpl-screen .tpl-pages { padding: 0; overflow: visible; } }

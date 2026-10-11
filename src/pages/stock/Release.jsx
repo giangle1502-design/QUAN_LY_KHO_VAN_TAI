@@ -10,6 +10,8 @@ import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum, norm, today } from '../../lib/utils';
 import { CompanyPicker } from '../../components/TripBits';
 import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
+import { loadReleaseData } from '../../lib/printData';
+import { TemplatePage, useTemplateChoice } from '../../components/PrintTemplate';
 
 // ============================================================================
 // Đề nghị giải chấp: kế toán chọn hàng HTC (1 công ty, 1 ngân hàng, 1 kho), in đề nghị
@@ -427,19 +429,25 @@ export function PrintRelease() {
       getDoc(doc(db, 'pledgees', d.pledgee)).then((x) => setBank(x.exists() ? x.data() : {})).catch(() => setBank({}));
     }).catch(() => setR(null));
   }, [id]);
-  if (r === undefined || (r && (!co || !bank))) return <div className="center">Đang tải…</div>;
+  const choice = useTemplateChoice(r ? 'giaichap' : null, { company: r?.company, party: r?.pledgee });
+  if (r === undefined || (r && (!co || !bank)) || choice.loading) return <div className="center">Đang tải…</div>;
   if (!r) return <div className="center">Không tìm thấy đề nghị {id}.</div>;
+  const toolbar = (
+    <>
+      <Link className="btn" to="/kho/giai-chap">← Đề nghị giải chấp</Link>
+      <button className="btn primary" onClick={() => window.print()}>🖨 In / Lưu PDF</button>
+      {r.status !== 'sent' && <span className="badge">{RELEASE_STATUS[r.status]?.label}</span>}
+      {choice.select}
+    </>
+  );
+  if (choice.tpl) return <TemplatePage key={choice.tpl.id} tpl={choice.tpl} toolbar={toolbar} load={() => loadReleaseData(r)} deps={[r.id]} />;
   const [y, m, d] = r.date.split('-');
   const dots = (v, n) => v || '.'.repeat(n);
   const bankShort = bank.shortName || bank.name || r.pledgee;
 
   return (
     <div className="print-page gc">
-      <div className="no-print toolbar">
-        <Link className="btn" to="/kho/giai-chap">← Đề nghị giải chấp</Link>
-        <button className="btn primary" onClick={() => window.print()}>🖨 In / Lưu PDF</button>
-        {r.status !== 'sent' && <span className="badge">{RELEASE_STATUS[r.status]?.label}</span>}
-      </div>
+      <div className="no-print toolbar">{toolbar}</div>
       <div className="gc-nation">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM<br /><span>Độc lập - Tự do - Hạnh phúc</span><br /><span className="gc-dash">--------o0o---------</span></div>
       <div className="gc-dateline">
         <i>{co.place || 'HCM'}, ngày {d} tháng {m} năm {y}</i>

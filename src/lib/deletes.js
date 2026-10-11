@@ -6,7 +6,7 @@ const nowISO = () => new Date().toISOString();
 // quản trị gốc xem lại ở "Duyệt xóa" rồi mới xóa hẳn.
 export const COLL_LABEL = {
   trips: 'Chuyến xe', orders: 'Đơn hàng', movements: 'Phiếu kho', stock: 'Tồn kho', releaseRequests: 'Đề nghị giải chấp', allocations: 'Kế hoạch phân bổ',
-  counters: 'Bộ đếm số', deleteRequests: 'Lịch sử xóa',
+  counters: 'Bộ đếm số', deleteRequests: 'Lịch sử xóa', printTemplates: 'Mẫu in',
 };
 
 // Bỏ các giá trị Firestore không lưu lại được trong bản chụp (hàm, undefined)

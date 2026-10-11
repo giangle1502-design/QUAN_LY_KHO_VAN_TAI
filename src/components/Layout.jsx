@@ -111,6 +111,7 @@ export default function Layout() {
           <div className="nav-group">Danh mục</div>
           <NavLink to="/dm" onClick={close}><span className="ico">🏠</span>Tổng quan danh mục</NavLink>
           {canDesign && <NavLink to="/hang-muc" onClick={close}><span className="ico">🧩</span>Quản lý trường (hạng mục)</NavLink>}
+          {canDesign && <NavLink to="/mau-in" onClick={close}><span className="ico">🖨️</span>Thiết kế mẫu in</NavLink>}
           <div className="nav-group">Quản trị dữ liệu</div>
           <NavLink to="/quan-tri/xoa" onClick={close}><span className="ico">🗑️</span>{isSuper ? 'Duyệt xóa & lịch sử' : 'Yêu cầu xóa của tôi'}{nDel ? <span className="badge red" style={{ marginLeft: 6 }}>{nDel}</span> : null}</NavLink>
           {isSuper && <NavLink to="/quan-tri/du-lieu" onClick={close}><span className="ico">🧹</span>Xóa dữ liệu chạy thử</NavLink>}

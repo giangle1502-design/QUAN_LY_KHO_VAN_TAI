@@ -5,37 +5,11 @@ import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { fmtDate, fmtNum } from '../../lib/utils';
 import { fmtTime } from '../../lib/trips';
+import { fullPalletKg, labelLines, loadMovementData, splitPallets } from '../../lib/printData';
+import { TemplatePage, useTemplateChoice } from '../../components/PrintTemplate';
 
 const num = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? 0 : Number(v));
-const r3 = (x) => Math.round(x * 1000) / 1000;
-
-
-// Kg của 1 pallet full theo quy cách mã hàng
-export function fullPalletKg(item) {
-  if (!item) return 0;
-  return num(item.palletWeight) || num(item.bagsPerLayer) * num(item.layersPerPallet) * num(item.bagWeight);
-}
-
-// Chia 1 dòng phiếu nhập thành các pallet: mỗi pallet full 1 nhãn, phần lẻ 1 nhãn riêng
-export function splitPallets(line, item) {
-  const kg = Math.abs(num(line.kg));
-  const bags = Math.abs(num(line.bags));
-  const per = fullPalletKg(item);
-  const bagW = num(item?.bagWeight) || (bags ? kg / bags : 0);
-  if (per > 0 && kg > 0) {
-    const out = [];
-    let left = kg;
-    while (left > 0.001) {
-      const k = Math.min(per, left);
-      out.push({ kg: r3(k), bags: bagW ? Math.round(k / bagW) : '', full: k >= per - 0.001 });
-      left -= k;
-    }
-    return out;
-  }
-  // Mã hàng chưa khai quy cách pallet: chia đều theo số pallet trên phiếu
-  const n = Math.max(1, Math.ceil(Math.abs(num(line.pallets)) - 1e-9));
-  return Array.from({ length: n }, () => ({ kg: r3(kg / n), bags: bags ? r3(bags / n) : '', full: true }));
-}
+export { fullPalletKg, splitPallets };
 
 // In nhãn nhập kho theo mẫu "In nhãn pallet": nhãn nhiệt 10,2 × 15 cm, mỗi pallet 1 nhãn
 export default function PrintLabels() {
@@ -74,17 +48,17 @@ export default function PrintLabels() {
   }, [m, items]);
   const chosen = labels.filter((x) => !pick || pick.includes(x.line));
 
-  if (m === undefined || !items) return <div className="center">Đang tải…</div>;
+  const choice = useTemplateChoice(m?.type === 'in' ? 'nhan' : null, { company: m?.company || m?.lines?.find((l) => l.company)?.company, party: m?.partyCode });
+
+  if (m === undefined || !items || choice.loading) return <div className="center">Đang tải…</div>;
   if (!m) return <div className="center">Không tìm thấy phiếu {id}.</div>;
   if (m.type !== 'in') return <div className="center">Chỉ in nhãn pallet cho phiếu nhập kho.</div>;
   const printedAt = fmtTime(new Date().toISOString());
   // Ưu tiên: tên gõ tay > công ty chủ hàng của phiếu > tên công ty trong Cài đặt
   const co = company || owner || settings.companyName;
 
-  return (
-    <div className="label-screen">
-      <style>{'@page { size: 10.2cm 15cm; margin: 0; }'}</style>
-      <div className="no-print toolbar label-toolbar">
+  const toolbar = (
+    <>
         <Link className="btn" to="/kho/phieu">← Phiếu kho</Link>
         <b>Nhãn nhập kho phiếu {m.id}: {chosen.length} nhãn (10,2 × 15 cm)</b>
         <label className="small">Công ty trên nhãn <input value={company} placeholder={owner || settings.companyName} onChange={(e) => setCompany(e.target.value)} /></label>
@@ -105,7 +79,18 @@ export default function PrintLabels() {
           })}
           {labels.some((x) => !x.full) && <span> · Pallet lẻ (không đủ pallet chẵn) ghi đúng số kg thực trên nhãn.</span>}
         </div>
-      </div>
+        {choice.select}
+    </>
+  );
+  if (choice.tpl) {
+    const map = (d) => ({ ...d, labelCompany: co, labels: labelLines(m, d.items).filter((x) => !pick || pick.includes(x._line)) });
+    return <TemplatePage key={choice.tpl.id} tpl={choice.tpl} toolbar={toolbar} load={() => loadMovementData(m)} map={map} deps={[m.id]} />;
+  }
+
+  return (
+    <div className="label-screen">
+      <style>{'@page { size: 10.2cm 15cm; margin: 0; }'}</style>
+      <div className="no-print toolbar label-toolbar">{toolbar}</div>
       <div className="label-list">
         {chosen.map((x) => (
           <div key={x.key} className="ptag">

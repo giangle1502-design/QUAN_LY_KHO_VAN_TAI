@@ -342,7 +342,7 @@ export const CATALOGS = [
       { key: 'carrier', label: 'Thuộc đơn vị vận tải', type: 'ref', ref: 'carriers', help: 'Bắt buộc với vai trò Điều phối vận tải / Tài xế: chỉ thấy dữ liệu của đơn vị này' },
       { key: 'idCard', label: 'CCCD (tài xế)', type: 'text', help: 'Vai trò Tài xế: số CCCD để nhận chuyến' },
       { key: 'seeAllOrders', label: 'Kinh doanh: xem đơn của mọi sale', type: 'checkbox', default: false, help: 'Không tích: vai trò Kinh doanh chỉ thấy đơn SO/PO có Sale phụ trách là mình' },
-      { key: 'formDesigner', label: 'Được thiết lập biểu mẫu', type: 'checkbox', default: false, help: 'Tự thêm / sửa / ẩn trường của danh mục và biểu mẫu đơn hàng (Quản lý trường, nút + Thêm trường)' },
+      { key: 'formDesigner', label: 'Được thiết lập biểu mẫu', type: 'checkbox', default: false, help: 'Tự thêm / sửa / ẩn trường của danh mục và biểu mẫu đơn hàng (Quản lý trường, nút + Thêm trường) và tự thiết kế mẫu in (phiếu xuất, phiếu nhập, nhãn, đề nghị giải chấp…)' },
       { key: 'active', label: 'Đang hoạt động', type: 'checkbox', default: true },
     ],
   },

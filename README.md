@@ -243,6 +243,14 @@ Phiếu nhập kho chọn **Nguồn nhập** ở đầu phiếu:
 ## Quyền thiết lập biểu mẫu
 - Danh mục *Phân quyền* có ô **Được thiết lập biểu mẫu**: người được tích sẽ thấy *Quản lý trường* và nút *+ Thêm trường* trên đơn hàng để tự thêm / đổi tên / ẩn / sắp xếp trường (cần publish lại firestore.rules).
 
+## Thiết kế mẫu in (/mau-in)
+Quản trị và người có quyền **Được thiết lập biểu mẫu** tự thiết kế mẫu in cho: phiếu xuất kho, phiếu soạn hàng, phiếu nhập kho, phiếu kho khác, nhãn pallet, đề nghị giải chấp. Mỗi loại có nhiều mẫu (collection `printTemplates`).
+- **Nội dung**: soạn như Word (đậm, cỡ chữ, màu, căn lề, bảng bố cục, hình/logo). Ô *Chèn trường dữ liệu* thêm `{{Tên trường}}` (thông tin phiếu, công ty chủ hàng, kho, khách hàng, địa chỉ giao, đơn hàng kể cả trường tự thêm, xe, tổng). `{{BẢNG HÀNG}}` = bảng dòng hàng, `{{CHỮ KÝ}}` = các ô ký, `{{#nếu X}}…{{/nếu}}` = chỉ in khi X có giá trị.
+- **Bảng hàng**: chọn cột, tiêu đề, độ rộng, căn lề, số lẻ, cộng tổng, cột công thức (`[Số kg] / 1000`), gộp theo mã hàng, sắp xếp, số dòng tối thiểu.
+- **Khổ giấy**: A4/A5/Letter/nhãn 10,2×15/tùy chỉnh, dọc/ngang, lề, phông, cỡ chữ.
+- **Áp dụng**: chọn công ty chủ hàng và/hoặc khách hàng (giải chấp: ngân hàng). Khi in tự chọn mẫu đúng khách hàng → đúng công ty → mẫu mặc định → mẫu gốc của hệ thống. Trang in có ô *Mẫu in* để đổi tay.
+- Mẫu gốc (bản in có sẵn) giữ nguyên; xóa mẫu đi qua Duyệt xóa.
+
 ## Xuất kho: chọn đơn dạng bảng, vận tải bổ sung sau
 - Trên phiếu xuất bấm **🔎 Tìm & chọn đơn (bảng)**: tìm theo số đơn, mã hàng, tên hàng, khách hàng, kho, mã giao; lọc theo kho và loại (SO / STO).
 - Tích các dòng của **một** đơn, một kho xuất, nhập **SL xuất (tấn)** rồi bấm **Chọn hàng theo FIFO →**: app tự lấy lot/vị trí theo FIFO trong kho đó.

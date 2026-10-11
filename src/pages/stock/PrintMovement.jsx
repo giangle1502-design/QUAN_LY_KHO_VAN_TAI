@@ -5,6 +5,9 @@ import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { MOVE_TYPES } from '../../lib/stock';
 import { fmtDate, fmtNum } from '../../lib/utils';
+import { docTypeOfMovement } from '../../lib/printTemplates';
+import { loadMovementData } from '../../lib/printData';
+import { TemplatePage, useTemplateChoice } from '../../components/PrintTemplate';
 
 // Bản in phiếu kho (In → Lưu PDF hoặc in giấy A4)
 export default function PrintMovement({ pick = false }) {
@@ -26,8 +29,20 @@ export default function PrintMovement({ pick = false }) {
     }).catch(() => setM(null));
   }, [id]);
 
-  if (m === undefined) return <div className="center">Đang tải…</div>;
+  const choice = useTemplateChoice(m ? docTypeOfMovement(m, pick) : null, { company: m?.company || m?.lines?.find((l) => l.company)?.company, party: m?.partyCode });
+
+  if (m === undefined || choice.loading) return <div className="center">Đang tải…</div>;
   if (!m) return <div className="center">Không tìm thấy phiếu {id}.</div>;
+  const toolbar = (
+    <>
+      <Link className="btn" to="/kho/phieu">← Phiếu kho</Link>
+      <button className="btn primary" onClick={() => window.print()}>🖨 In / Lưu PDF</button>
+      {m.type === 'in' && m.status === 'posted' && <Link className="btn" to={`/kho/phieu/${m.id}/nhan`}>🏷️ In nhãn pallet</Link>}
+      {m.type === 'out' && (pick ? <Link className="btn" to={`/kho/phieu/${m.id}/in`}>📄 Phiếu xuất kho</Link> : <Link className="btn" to={`/kho/phieu/${m.id}/soan`}>📋 Phiếu soạn hàng</Link>)}
+      {choice.select}
+    </>
+  );
+  if (choice.tpl) return <TemplatePage key={choice.tpl.id} tpl={choice.tpl} toolbar={toolbar} load={() => loadMovementData(m)} deps={[m.id]} />;
   const meta = MOVE_TYPES[m.type];
   const tot = (k) => m.lines.reduce((s, l) => s + (Number(l[k]) || 0), 0);
   const pend = m.status === 'pending';
@@ -51,12 +66,7 @@ export default function PrintMovement({ pick = false }) {
 
   return (
     <div className="print-page">
-      <div className="no-print toolbar">
-        <Link className="btn" to="/kho/phieu">← Phiếu kho</Link>
-        <button className="btn primary" onClick={() => window.print()}>🖨 In / Lưu PDF</button>
-        {m.type === 'in' && m.status === 'posted' && <Link className="btn" to={`/kho/phieu/${m.id}/nhan`}>🏷️ In nhãn pallet</Link>}
-        {m.type === 'out' && (pick ? <Link className="btn" to={`/kho/phieu/${m.id}/in`}>📄 Phiếu xuất kho</Link> : <Link className="btn" to={`/kho/phieu/${m.id}/soan`}>📋 Phiếu soạn hàng</Link>)}
-      </div>
+      <div className="no-print toolbar">{toolbar}</div>
       <div className="print-head">
         <div><b>{co?.name || settings.companyName}</b>{(co ? co.address : settings.companyAddress) ? <><br /><span className="small">{co ? co.address : settings.companyAddress}</span></> : null}{co?.taxCode ? <><br /><span className="small">MST {co.taxCode}</span></> : null}<br /><span className="small">{wh ? `${wh.name}${wh.address ? ' – ' + wh.address : ''}` : `Kho ${m.warehouse}`}</span></div>
         <div style={{ textAlign: 'right' }}>Số: <b>{m.id}</b><br /><span className="small">Ngày {fmtDate(m.date)}</span></div>

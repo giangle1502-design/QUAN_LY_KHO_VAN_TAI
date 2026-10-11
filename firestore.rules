@@ -46,6 +46,14 @@ service cloud.firestore {
       allow create, update: if id == 'fields' && isActive() && profile().formDesigner == true;
     }
 
+    // Mẫu in tự thiết kế: mọi người đọc để in; quản trị và người được thiết lập biểu mẫu tạo / sửa; xóa qua Duyệt xóa (quản trị gốc)
+    match /printTemplates/{id} {
+      allow read: if isStaff();
+      allow create, update: if (isAdmin() || (isActive() && profile().get('formDesigner', false) == true))
+        && request.resource.data.id == id && request.resource.data.docType is string;
+      allow delete: if isSuper();
+    }
+
     // ==== Chuyến xe ====
     // Chuyển trạng thái hợp lệ theo vai trò (quản trị được làm mọi bước)
     function st(from, to) { return resource.data.status == from && request.resource.data.status == to; }

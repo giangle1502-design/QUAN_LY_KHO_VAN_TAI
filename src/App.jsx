@@ -26,6 +26,7 @@ import Deletes from './pages/admin/Deletes';
 import Hauling from './pages/transport/Hauling';
 import Driver from './pages/transport/Driver';
 import ResetData from './pages/admin/ResetData';
+import PrintDesigner from './pages/PrintDesigner';
 
 export default function App() {
   const { user, allowed, isAdmin, isSuper, role, canDesign, hasRole, loading, logout, email } = useApp();
@@ -71,6 +72,8 @@ export default function App() {
         <Route path="kho/nhan-hang/:id" element={<Receive />} />
         <Route path="kho/:type" element={<MovementForm />} />
         {canDesign && <Route path="hang-muc" element={<FieldManager />} />}
+        {canDesign && <Route path="mau-in" element={<PrintDesigner />} />}
+        {canDesign && <Route path="mau-in/:id" element={<PrintDesigner />} />}
         <Route path="quan-tri/xoa" element={<Deletes />} />
         {isSuper && <Route path="quan-tri/du-lieu" element={<ResetData />} />}
         <Route path="*" element={<Navigate to="/" />} />
