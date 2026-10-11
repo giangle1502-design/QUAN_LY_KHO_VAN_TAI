@@ -4,6 +4,8 @@ import { useCollection, useOrders } from '../../lib/hooks';
 import { useOrderSecrets, viewOrder } from '../../lib/orderSecrets';
 import { lineWh } from '../../lib/orders';
 import { usePref } from '../../lib/prefs';
+import { useOrderMoney } from '../../lib/orderMoney';
+import MoneyConfig, { NoMoneyNote } from './MoneyConfig';
 import { vnDate } from '../../lib/trips';
 import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum, norm } from '../../lib/utils';
@@ -24,18 +26,6 @@ const money = (v) => fmtNum(Math.round(n(v)), 0);
 const pct = (a, b) => (b ? Math.round(((a - b) / Math.abs(b)) * 100) : null);
 const monthLabel = (m) => (m ? `Tháng ${m.slice(5)}/${m.slice(0, 4)}` : '');
 const prevMonth = (m) => { const [y, mo] = m.split('-').map(Number); return mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, '0')}`; };
-const isMoney = (f) => f.type === 'currency' || (f.type === 'formula' && f.resultType === 'currency');
-
-// Đoán trường tiền: Thành tiền (công thức / tiền) và Đơn giá / Giá bán (tiền)
-function guessFields(fields) {
-  const m = fields.filter(isMoney);
-  const amount = m.find((f) => norm(f.label).includes('thanh tien')) || m.find((f) => f.type === 'formula');
-  const price = m.find((f) => f.type === 'currency' && norm(f.label).includes('gia ban'))
-    || m.find((f) => f.type === 'currency' && norm(f.label).includes('don gia'))
-    || m.find((f) => f.type === 'currency' && norm(f.label).includes('gia'));
-  return { amount: amount?.key || '', price: price?.key || '' };
-}
-
 function Chg({ cur, prev }) {
   if (prev == null) return null;
   const p = pct(cur, prev);
@@ -102,22 +92,15 @@ function groupBy(rows, key) {
 }
 
 export default function SalesAnalysis({ wh, co, q }) {
-  const { seenFieldsOf, fieldsOf, inMyWarehouses } = useApp();
-  const headSeen = useMemo(() => seenFieldsOf('soHead', fieldsOf('soLine')), [seenFieldsOf, fieldsOf]);
-  const lineSeen = useMemo(() => seenFieldsOf('soLine', fieldsOf('soHead')), [seenFieldsOf, fieldsOf]);
-  const moneyFields = lineSeen.filter(isMoney);
-  const guess = useMemo(() => guessFields(lineSeen), [lineSeen]);
+  const { inMyWarehouses } = useApp();
+  const money$ = useOrderMoney('SO');
+  const { headSeen, lineSeen, amountKey, priceKey, perUnit, unitLabel, lineMoney } = money$;
   const { rows: raw, error, loading } = useOrders('SO');
   const secMap = useOrderSecrets('SO');
   const users = useCollection('users').rows;
   const saleName = useMemo(() => new Map(users.map((u) => [u.email, u.name || u.email])), [users]);
 
   const [basis, setBasis] = usePref('salesAnalysis:basis', 'order'); // order = số lượng đặt, done = đã giao (trừ hàng trả về)
-  const [cfg, setCfg] = usePref('salesAnalysis:fields', { amount: null, price: null, unit: 'tan' });
-  const amountKey = cfg.amount ?? guess.amount;
-  const priceKey = cfg.price ?? guess.price;
-  const unit = cfg.unit || 'tan';
-  const perUnit = unit === 'tan' ? 1000 : 1;
   const [showCfg, setShowCfg] = useState(false);
 
   // Mỗi dòng đơn → 1 dòng bán hàng
@@ -126,18 +109,17 @@ export default function SalesAnalysis({ wh, co, q }) {
     return (o.lines || []).map((l) => {
       const ordered = n(l.qtyKg);
       const q2 = basis === 'done' ? Math.max(0, n(l.doneKg) - n(l.returnedKg)) : ordered;
-      const price = priceKey ? n(l[priceKey]) : 0;
-      const amtFull = amountKey && n(l[amountKey]) ? n(l[amountKey]) : (price * ordered) / perUnit;
+      const { full: amtFull, price } = lineMoney(l);
       const a = ordered ? amtFull * (q2 / ordered) : 0;
       return {
         d: o.date, m: o.date.slice(0, 7), so: o.id, co: o.company || '', st: o.status, cc: o.partyCode || o.partyName || '', cn: o.partyName || o.partyCode || '',
         sp: o.sales || '', wh: lineWh(o, l), ic: l.item || '', in: l.itemName || '', q: q2, a,
-        p: price || (ordered ? (amtFull / ordered) * perUnit : 0),
+        p: price, full: amtFull, _l: l,
       };
     });
   }).filter((r) => (!r.wh || inMyWarehouses(r.wh)) && (!wh || r.wh === wh) && (!co || r.co === co)
     && (!q || norm([r.so, r.cc, r.cn, r.ic, r.in, r.sp].join(' ')).includes(q))),
-  [raw, secMap, headSeen, lineSeen, basis, priceKey, amountKey, perUnit, inMyWarehouses, wh, co, q]);
+  [raw, secMap, headSeen, lineSeen, basis, priceKey, amountKey, perUnit, inMyWarehouses, wh, co, q]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const months = useMemo(() => [...new Set(all.map((r) => r.m))].sort(), [all]);
   const [month, setMonth] = useState('');
@@ -160,7 +142,7 @@ export default function SalesAnalysis({ wh, co, q }) {
     const K = k(cur); const KP = k(prev);
     const prevCust = new Set((prev || []).map((r) => r.cc));
     const curCust = new Set(cur.map((r) => r.cc));
-    const hasMoney = all.some((r) => r.a);
+    const hasMoney = all.some((r) => r.full);
 
     const salesP = prev ? groupBy(prev, sp) : new Map();
     const bySale = [...groupBy(cur, sp).values()].map((x) => ({
@@ -213,7 +195,6 @@ export default function SalesAnalysis({ wh, co, q }) {
   if (loading) return <Empty text="Đang tải…" />;
   const M = A.hasMoney;
   const cmpOn = !!A.KP;
-  const unitLabel = unit === 'tan' ? 'đ/tấn' : 'đ/kg';
   const qLabel = basis === 'done' ? 'Đã giao (kg)' : 'Đặt (kg)';
   const chgCol = (cur, prev, label = 'So kỳ trước') => (cmpOn ? [{ key: '_chg' + label, label, render: (r) => <Chg cur={r[cur]} prev={r[prev]} />, excel: (r) => { const p = pct(r[cur], r[prev]); return r[prev] == null ? '' : p == null ? 'mới' : `${p}%`; } }] : []);
   const mainKey = M ? 'a' : 'q'; const prevKey = M ? 'prevA' : 'prevQ';
@@ -276,38 +257,16 @@ export default function SalesAnalysis({ wh, co, q }) {
           <option value="order">Theo số lượng đặt</option>
           <option value="done">Theo số lượng đã giao</option>
         </select>
-        {moneyFields.length > 0 && <button className="btn ghost" onClick={() => setShowCfg((x) => !x)}>⚙ Cách tính doanh thu</button>}
+        <button className="btn ghost" onClick={() => setShowCfg((x) => !x)}>⚙ Cách tính doanh thu</button>
         <div style={{ flex: 1 }} />
         <button className="btn" onClick={excel} disabled={!months.length}>⬇ Excel</button>
         <button className="btn" onClick={() => window.print()}>🖨 In</button>
       </div>
-      {showCfg && (
-        <div className="card no-print" style={{ marginBottom: 12, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end' }}>
-          <label className="field"><span>Doanh thu lấy từ trường</span>
-            <select value={amountKey} onChange={(e) => setCfg({ ...cfg, amount: e.target.value })}>
-              <option value="">(không — tính Đơn giá × số lượng)</option>
-              {moneyFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
-            </select>
-          </label>
-          <label className="field"><span>Đơn giá</span>
-            <select value={priceKey} onChange={(e) => setCfg({ ...cfg, price: e.target.value })}>
-              <option value="">(không có)</option>
-              {moneyFields.filter((f) => f.type === 'currency').map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
-            </select>
-          </label>
-          <label className="field"><span>Đơn giá tính theo</span>
-            <select value={unit} onChange={(e) => setCfg({ ...cfg, unit: e.target.value })}>
-              <option value="tan">đ / tấn</option>
-              <option value="kg">đ / kg</option>
-            </select>
-          </label>
-          <button className="btn ghost" onClick={() => setCfg({ amount: null, price: null, unit: 'tan' })}>Tự nhận</button>
-        </div>
-      )}
+      {showCfg && <MoneyConfig m={money$} what="doanh thu" />}
       <p className="print-only small">{monthLabel(month)}{cmpOn ? ` so với ${monthLabel(cmpM).toLowerCase()}` : ''} · {basis === 'done' ? 'theo số lượng đã giao' : 'theo số lượng đặt'}</p>
       {!months.length ? <Empty text="Chưa có đơn bán (SO) nào phù hợp bộ lọc." /> : (
         <>
-          {!M && <div className="small" style={{ marginBottom: 10 }}>ℹ Không có giá bán bạn được xem trong các đơn này nên báo cáo chỉ tính sản lượng. Doanh thu lấy từ trường tiền của dòng đơn (vd. Thành tiền / Đơn giá).</div>}
+          {!M && <NoMoneyNote m={money$} rows={all} what="doanh thu" onConfig={() => setShowCfg(true)} />}
           <div className="stats">
             {M && <div className="stat green"><div className="stat-label">Doanh thu (trước thuế)</div><div className="stat-value">{money(A.K.a)} đ</div>
               {cmpOn && <div className="stat-sub"><Chg cur={A.K.a} prev={A.KP.a} /> ({monthLabel(cmpM)}: {money(A.KP.a)})</div>}</div>}
