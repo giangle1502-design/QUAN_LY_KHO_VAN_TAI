@@ -329,9 +329,57 @@ function Form({ type }) {
     if (code !== whCode) {
       setOpWh(code);
       setLines(add.length ? add.slice(0, 30) : [stockLine()]);
-    } else if (add.length) setLines([...kept, ...add].slice(0, 30));
+    } else if (add.length) setTopped([...kept, ...add]);
   };
   const setLine = (i, patch) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  // Xuất theo đơn: phần đơn còn phải xuất của 1 mã hàng ở kho này, trừ các dòng phiếu đã có
+  const needFor = (item, ls) => (!order || type !== 'out' ? Infinity
+    : order.lines.filter((l) => l.item === item && (!lineWh(order, l, 'out') || lineWh(order, l, 'out') === whCode)).reduce((a, l) => a + openK(order, l, 'out'), 0)
+      - ls.filter((l) => stockById.get(l.stockId)?.item === item).reduce((a, l) => a + Math.abs(num(l.kg)), 0));
+  // Lấy tối đa `need` kg từ 1 dòng tồn (làm tròn lên theo bao)
+  const takeFrom = (x, need) => {
+    const kgPerBag = num(x.bags) ? num(x.kg) / num(x.bags) : 0;
+    const bags = !kgPerBag ? num(x.bags) : Math.min(num(x.bags), Math.ceil(need / kgPerBag - 1e-9));
+    const k = num(x.bags) ? bags / num(x.bags) : 1;
+    return { ...stockLine(), stockId: x._id, bags, pallets: r3(num(x.pallets) * k), kg: r3(num(x.kg) * k) };
+  };
+  // Vị trí chọn không đủ số lượng đơn: lấy hết vị trí đó và gợi ý thêm vị trí kế tiếp theo ngày nhập (FIFO), người dùng đổi được
+  const setTopped = (ls0) => {
+    let ls = ls0.slice(0, 30);
+    const added = [];
+    if (type === 'out' && order) {
+      const used = new Set(ls.map((l) => l.stockId).filter(Boolean));
+      const items = [...new Set(ls.map((l) => stockById.get(l.stockId)?.item).filter(Boolean))];
+      const htcLast = (r) => (r.goodsStatus === 'HTC' ? 1 : 0);
+      for (const item of items) {
+        let need = needFor(item, ls);
+        if (need <= 0.001) continue;
+        const want = order.lines.find((l) => l.item === item)?.goodsStatus;
+        const cands = stock.filter((r) => r.item === item && r.warehouse === whCode && !used.has(r._id) && num(r.bags) > 0 && !blocked(r)
+          && (!order.company || (r.company || '') === order.company) && (!want || r.goodsStatus === want || r.goodsStatus === 'HTC'))
+          .sort((a, b) => htcLast(a) - htcLast(b) || String(a.inDate).localeCompare(String(b.inDate)) || String(a.location).localeCompare(String(b.location)));
+        for (const r of cands) {
+          if (need <= 0.001 || ls.length >= 30) break;
+          const nl = takeFrom(r, need);
+          // Chèn ngay sau dòng cuối cùng của mã hàng này
+          const at = ls.map((l) => stockById.get(l.stockId)?.item).lastIndexOf(item) + 1;
+          ls = [...ls.slice(0, at), nl, ...ls.slice(at)];
+          used.add(r._id);
+          need -= num(nl.kg);
+          added.push(`${item} ở ${r.location} (nhập ${fmtDate(r.inDate)}, ${fmtNum(nl.kg, 2)} kg)`);
+        }
+      }
+    }
+    setLines(ls);
+    if (added.length) setFillNote(`Vị trí đã chọn không đủ số lượng đơn: đã lấy hết vị trí đó và gợi ý thêm theo ngày nhập: ${added.join('; ')}. Bấm "Đổi" ở dòng gợi ý nếu muốn lấy vị trí khác.`);
+  };
+  // Chọn dòng tồn ở ô chọn của 1 dòng phiếu xuất theo đơn
+  const pickOutStock = (i, x) => {
+    const others = lines.filter((_, j) => j !== i);
+    const need = needFor(x.item, others);
+    if (need === Infinity) return setLine(i, { stockId: x._id, bags: '', pallets: '', kg: '', kgTxt: undefined });
+    setTopped(lines.map((l, j) => (j === i ? (need > 0.001 ? takeFrom(x, need) : { ...stockLine(), stockId: x._id }) : l)));
+  };
   // Sức chứa vị trí (phiếu nhập): dòng vượt chỗ trống phải chia dòng hoặc tích xác nhận
   const caps = type === 'in' ? capacityCheck(lines, locations) : [];
   const [overOk, setOverOk] = useState(false);
@@ -613,7 +661,8 @@ function Form({ type }) {
             onPick={(picked) => {
               const all = type === 'move' || type === 'status' || type === 'out';
               const add = picked.map((x) => ({ ...stockLine(), stockId: x._id, bags: all ? x.bags : '', pallets: all ? x.pallets : '', kg: all ? x.kg : '' }));
-              setLines((ls) => [...ls.filter((l) => l.stockId), ...add].slice(0, 30));
+              if (type === 'out' && order) setTopped([...lines.filter((l) => l.stockId), ...add]);
+              else setLines((ls) => [...ls.filter((l) => l.stockId), ...add].slice(0, 30));
               setPicking(false);
             }} />
         )}
@@ -623,7 +672,7 @@ function Form({ type }) {
               <InLine l={l} set={(p) => setLine(i, p)} itemMap={itemMap} items={items} locations={locations} statuses={statuses} pledgees={pledgees} locRequired={false}
                 cap={caps[i]} onSplit={() => setLines((ls) => splitLineAt(ls, i, caps[i]))} />
             ) : (
-              <StockLine type={type} l={l} set={(p) => setLine(i, p)} rows={stockRows} byId={stockById} blocked={blocked} releasable={releasable} onStock={setStockItem}
+              <StockLine type={type} l={l} set={(p) => setLine(i, p)} onPickOut={type === 'out' && order ? (x) => pickOutStock(i, x) : null} rows={stockRows} byId={stockById} blocked={blocked} releasable={releasable} onStock={setStockItem}
                 locations={locations} statuses={statuses} pledgees={pledgees} />
             )}
             <button type="button" className="btn ghost" disabled={lines.length === 1} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>✕</button>
@@ -839,7 +888,7 @@ function StockPicker({ rows, blocked, whName, filter, setFilter, chosen, onClose
   );
 }
 
-function StockLine({ type, l, set, rows, byId, blocked, releasable, locations, statuses, pledgees, onStock }) {
+function StockLine({ type, l, set, onPickOut, rows, byId, blocked, releasable, locations, statuses, pledgees, onStock }) {
   const r = byId.get(l.stockId);
   // Số lượng xuất/chuyển → pallet, kg chia theo tỷ lệ tồn
   const setBags = (v) => {
@@ -861,6 +910,7 @@ function StockLine({ type, l, set, rows, byId, blocked, releasable, locations, s
   const pick = (id) => {
     const x = byId.get(id);
     if (!x) return set({ stockId: id });
+    if (onPickOut) return onPickOut(x);
     const all = type === 'move' || type === 'status';
     set({ stockId: id, bags: all ? x.bags : '', pallets: all ? x.pallets : '', kg: all ? x.kg : '', kgTxt: undefined });
   };
