@@ -105,6 +105,27 @@ export function useStock(wh) {
   return { error: state.error, loading: state.loading || stale, rows };
 }
 
+// Tồn của một mã hàng ở mọi kho mình được xem (để chọn kho xuất khi chưa biết hàng nằm ở đâu)
+export function useItemStock(item) {
+  const [state, setState] = useState({ rows: [], loading: true, for: undefined });
+  const { inMyWarehouses } = useApp();
+  useEffect(() => {
+    if (!item) return setState({ rows: [], loading: false, for: item });
+    setState({ rows: [], loading: true, for: item });
+    return onSnapshot(
+      query(collection(db, 'stock'), where('item', '==', item)),
+      (snap) => setState({ rows: snap.docs.map((d) => ({ _id: d.id, ...d.data() })), loading: false, for: item }),
+      () => setState({ rows: [], loading: false, for: item })
+    );
+  }, [item]);
+  const stale = state.for !== item;
+  const rows = useMemo(
+    () => (stale ? [] : state.rows.filter((r) => inMyWarehouses(r.warehouse) && (Number(r.bags) > 0 || Number(r.pallets) > 0 || Number(r.kg) > 0))),
+    [state.rows, inMyWarehouses, stale]
+  );
+  return { loading: state.loading || stale, rows };
+}
+
 // Đơn bán / đơn mua (realtime). type: 'SO' | 'PO' | '' (cả hai); onlyOpen: chỉ đơn chưa xong
 export function useOrders(type, onlyOpen = false) {
   const [state, setState] = useState({ rows: [], loading: true, error: '' });

@@ -3,7 +3,7 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
-import { useCollection, useMyWarehouses, useOpCompany, useOpWarehouse, useOrders, usePendingIn, useStock, useTrips } from '../../lib/hooks';
+import { useCollection, useItemStock, useMyWarehouses, useOpCompany, useOpWarehouse, useOrders, usePendingIn, useStock, useTrips } from '../../lib/hooks';
 import { CompanyPicker } from '../../components/TripBits';
 import { IN_SOURCES, OPEN_STATUSES, ORDER_FOR_MOVE, ORDER_TYPES, isReturn, lineFrom, lineShip, lineTo, lineWh, matchOrderLine, openKg, orderInWarehouse, orderWarehouse, stoRoute } from '../../lib/orders';
 import { MOVE_TYPES, ageDays, createPendingIn, kgOf, postMovement, suggestPallets } from '../../lib/stock';
@@ -79,6 +79,9 @@ function Form({ type }) {
   const [donePO, setDonePO] = useState('');
   const [filter, setFilter] = useState('');
   const [picking, setPicking] = useState(false);
+  // Chưa biết hàng nằm kho nào: bấm mã hàng → Xem tồn kho → chọn kho (và dòng tồn) từ bảng
+  const [stockItem, setStockItem] = useState('');
+  const [findItem, setFindItem] = useState('');
 
   const tripOpts = trips.filter((t) => (type === 'in' ? t.purpose === 'import' : t.purpose === 'export'));
   // Chọn chuyến xe → tự điền kho, khách / nhà cung cấp
@@ -238,6 +241,33 @@ function Form({ type }) {
   }, [ordersLoading, orders, items.length, pendIn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setH = (k, v) => setHead((h) => ({ ...h, [k]: v }));
+  // Chọn kho từ bảng tồn của một mã hàng; đổi kho thì bỏ các dòng của kho cũ
+  const pickFromItemStock = (code, picked) => {
+    setStockItem('');
+    const all = type !== 'adjust';
+    // Xuất theo đơn: chỉ lấy đủ phần đơn còn phải xuất của mã này (theo thứ tự dòng đã tick)
+    const item = picked[0]?.item;
+    const kept = code === whCode ? lines.filter((l) => l.stockId) : [];
+    let need = order && item ? order.lines.filter((l) => l.item === item && (!lineWh(order, l, type) || lineWh(order, l, type) === code)).reduce((a, l) => a + openK(order, l, type), 0)
+      - kept.filter((l) => stockById.get(l.stockId)?.item === item).reduce((a, l) => a + Math.abs(num(l.kg)), 0) : Infinity;
+    const add = [];
+    for (const x of picked) {
+      if (!all) { add.push({ ...stockLine(), stockId: x._id }); continue; }
+      if (need <= 0.001) break;
+      const kgPerBag = num(x.bags) ? num(x.kg) / num(x.bags) : 0;
+      const bags = need === Infinity || !kgPerBag ? num(x.bags) : Math.min(num(x.bags), Math.ceil(need / kgPerBag - 1e-9));
+      const k = num(x.bags) ? bags / num(x.bags) : 1;
+      add.push({ ...stockLine(), stockId: x._id, bags, pallets: r3(num(x.pallets) * k), kg: r3(num(x.kg) * k) });
+      need -= num(x.kg) * k;
+    }
+    if (add.length) { setAutoFill(''); setFillNote(''); }
+    // Đổi kho mà chưa tick dòng nào: đang xuất theo đơn thì chọn lại tồn FIFO ở kho mới
+    else if (code !== whCode && order && type === 'out') setAutoFill(order.id);
+    if (code !== whCode) {
+      setOpWh(code);
+      setLines(add.length ? add.slice(0, 30) : [stockLine()]);
+    } else if (add.length) setLines([...kept, ...add].slice(0, 30));
+  };
   const setLine = (i, patch) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
 
   // Dòng tồn sắp xếp FIFO (nhập trước xuất trước)
@@ -468,16 +498,27 @@ function Form({ type }) {
         </div>
       </div>
 
-      {order && <OrderBox order={order} lines={lines} type={type} stockById={stockById} wh={whCode} pend={type === 'in' && !isReturn(order, type) ? pendIn.get(order.id) : null}
+      {order && <OrderBox order={order} lines={lines} type={type} stockById={stockById} wh={whCode} onStock={type === 'in' ? null : setStockItem} pend={type === 'in' && !isReturn(order, type) ? pendIn.get(order.id) : null}
         onRefill={type === 'in' && ['STO', 'SO'].includes(order.type) ? () => fillFromTransfer(order, order.type === 'SO' ? '' : whCode) : null} />}
       {fillNote && <div className="hint" style={{ marginBottom: 10 }}>{fillNote}</div>}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="section-head">Hàng hóa ({lines.length})</div>
         {type !== 'in' && (
           <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+            <span className="cell-add" style={{ minWidth: 260 }}>
+              <input list="dl-mv-item" placeholder="Mã hàng cần xuất…" value={findItem} onChange={(e) => setFindItem(e.target.value.trim())}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (itemMap.has(findItem)) setStockItem(findItem); } }} />
+              <button type="button" className="btn" disabled={!itemMap.has(findItem)} onClick={() => setStockItem(findItem)} title="Xem mã hàng này đang tồn ở kho nào">📦 Xem tồn kho</button>
+            </span>
             <button type="button" className="btn primary" disabled={!whCode} onClick={() => setPicking(true)}>📋 Xem tồn kho & chọn hàng</button>
             <input type="search" placeholder="Lọc tồn theo mã hàng, lot, vị trí…" value={filter} onChange={(e) => setFilter(e.target.value)} style={{ flex: 1, minWidth: 220 }} />
           </div>
+        )}
+        {type !== 'in' && !whCode && <div className="hint" style={{ marginBottom: 8 }}>Chưa biết hàng nằm ở kho nào? Gõ mã hàng rồi bấm <b>📦 Xem tồn kho</b> (hoặc bấm vào mã hàng trong đơn ở trên) để xem tồn theo từng kho và chọn kho xuất.</div>}
+        {stockItem && (
+          <ItemStockModal item={stockItem} itemName={itemMap.get(stockItem)?.name || ''} whCode={whCode} warehouses={warehouses} company={head.company}
+            blocked={blocked} chosen={new Set(lines.map((l) => l.stockId).filter(Boolean))} need={order ? order.lines.filter((l) => l.item === stockItem).reduce((a, l) => a + openK(order, l, type), 0) : 0}
+            onClose={() => setStockItem('')} onPick={pickFromItemStock} />
         )}
         {picking && (
           <StockPicker rows={stockRows} blocked={blocked} loading={stockLoading} total={stock.length} company={head.company} filtered={!!filter.trim()}
@@ -497,7 +538,7 @@ function Form({ type }) {
             {type === 'in' ? (
               <InLine l={l} set={(p) => setLine(i, p)} itemMap={itemMap} items={items} locations={locations} statuses={statuses} pledgees={pledgees} locRequired={false} />
             ) : (
-              <StockLine type={type} l={l} set={(p) => setLine(i, p)} rows={stockRows} byId={stockById} blocked={blocked}
+              <StockLine type={type} l={l} set={(p) => setLine(i, p)} rows={stockRows} byId={stockById} blocked={blocked} onStock={setStockItem}
                 locations={locations} statuses={statuses} pledgees={pledgees} />
             )}
             <button type="button" className="btn ghost" disabled={lines.length === 1} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>✕</button>
@@ -518,7 +559,7 @@ function Form({ type }) {
 }
 
 // Đơn đang chọn: đặt / đã giao-nhận / còn lại, và còn lại sau phiếu này
-function OrderBox({ order, lines, type, stockById, onRefill, wh, pend }) {
+function OrderBox({ order, lines, type, stockById, onRefill, wh, pend, onStock }) {
   const meta = ORDER_TYPES[order.type];
   const receiving = order.type === 'STO' && type === 'in';
   const returning = isReturn(order, type);
@@ -553,7 +594,7 @@ function OrderBox({ order, lines, type, stockById, onRefill, wh, pend }) {
             const open = Math.max(0, openKg(order, l, type) - pk);
             const after = open - share;
             return (
-              <tr key={l.no} style={here(l) ? undefined : { opacity: 0.45 }} title={here(l) ? '' : `Dòng này ${type === 'in' ? 'nhập về' : 'xuất từ'} kho ${lineWh(order, l, type)}`}><td>{l.item}</td><td>{l.itemName}</td>
+              <tr key={l.no} style={here(l) ? undefined : { opacity: 0.45 }} title={here(l) ? '' : `Dòng này ${type === 'in' ? 'nhập về' : 'xuất từ'} kho ${lineWh(order, l, type)}`}><td>{onStock ? <ItemCode code={l.item} onStock={onStock} /> : l.item}</td><td>{l.itemName}</td>
                 {perLine && <>{sto ? <><td>{lineFrom(order, l)}</td><td>{lineTo(order, l)}</td></> : <td>{lineWh(order, l)}</td>}{order.type === 'SO' && <td>{lineShip(order, l)}</td>}<td>{l.goodsStatus || (order.type === 'SO' ? 'KTC/DGC' : '')}</td><td>{fmtDate(l.dueDate)}</td></>}<td className="num">{t(l.qtyKg)}</td>{(receiving || returning) && <td className="num">{t(num(l.doneKg))}</td>}
                 <td className="num">{t(doneOf(l))}</td><td className="num">{t(open)}{pk ? <div className="small" style={{ color: 'var(--amber)' }}>đã trừ {t(pk)} phiếu chờ nhận</div> : null}</td><td className="num">{share ? t(share) : ''}</td>
                 <td className="num" style={after < 0 ? { color: 'var(--red)', fontWeight: 600 } : { fontWeight: 600 }}>{t(after)}{after < 0 ? ' (vượt đơn)' : ''}</td></tr>
@@ -684,7 +725,112 @@ function StockPicker({ rows, blocked, whName, filter, setFilter, chosen, onClose
   );
 }
 
-function StockLine({ type, l, set, rows, byId, blocked, locations, statuses, pledgees }) {
+// Mã hàng bấm được: mở menu → "Xem tồn kho" (tồn của mã này ở mọi kho)
+function ItemCode({ code, onStock }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef();
+  useEffect(() => {
+    if (!open) return undefined;
+    const h = (e) => !ref.current?.contains(e.target) && setOpen(false);
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+  return (
+    <span ref={ref} className="item-code">
+      <button type="button" className="link-btn" onClick={() => setOpen((o) => !o)} title="Bấm để xem tồn kho của mã hàng này">{code} ▾</button>
+      {open && <div className="item-menu"><button type="button" onClick={() => { setOpen(false); onStock(code); }}>📦 Xem tồn kho</button></div>}
+    </span>
+  );
+}
+
+// Tồn của một mã hàng theo từng kho → mở kho xem chi tiết lot / vị trí / tình trạng → chọn kho (và tick dòng tồn) để điền vào phiếu
+function ItemStockModal({ item, itemName, whCode, warehouses, company, blocked, chosen, need, onClose, onPick }) {
+  const { rows, loading } = useItemStock(item);
+  const [onlyCo, setOnlyCo] = useState(!!company);
+  const [openWh, setOpenWh] = useState(whCode);
+  const [sel, setSel] = useState(() => new Set());
+  const list = rows.filter((r) => !onlyCo || !company || (r.company || '') === company);
+  const others = [...new Set(list.map((r) => r.goodsStatus))].filter((c) => !STATUS_COLS.includes(c));
+  const cols = [...STATUS_COLS, ...others];
+  const whName = new Map(warehouses.map((w) => [w.code, w.name]));
+  const groups = [...list.reduce((m, r) => { (m.get(r.warehouse) || m.set(r.warehouse, []).get(r.warehouse)).push(r); return m; }, new Map())]
+    .map(([code, rs]) => {
+      rs.sort((a, b) => String(a.inDate).localeCompare(String(b.inDate)) || String(a.location).localeCompare(String(b.location)));
+      const by = {};
+      for (const r of rs) by[r.goodsStatus] = (by[r.goodsStatus] || 0) + num(r.kg);
+      const free = rs.filter((r) => !blocked(r)).reduce((a, r) => a + num(r.kg), 0);
+      return { code, rs, by, free, total: rs.reduce((a, r) => a + num(r.kg), 0), ok: whName.has(code) };
+    })
+    .sort((a, b) => b.free - a.free || a.code.localeCompare(b.code));
+  const selWh = list.find((r) => sel.has(r._id))?.warehouse || '';
+  const toggle = (r) => setSel((s) => {
+    const n = new Set(r.warehouse === selWh ? s : []);
+    n.has(r._id) ? n.delete(r._id) : n.add(r._id);
+    return n;
+  });
+  const selKg = list.filter((r) => sel.has(r._id)).reduce((a, r) => a + num(r.kg), 0);
+  const sum = (k) => groups.reduce((a, g) => a + (k === 'free' ? g.free : k === 'total' ? g.total : g.by[k] || 0), 0);
+  const otherCo = company ? rows.filter((r) => (r.company || '') !== company).length : 0;
+  return (
+    <Modal title={`Tồn kho mã ${item}${itemName ? ` – ${itemName}` : ''}`} onClose={onClose} wide>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+        <span className="small">Bấm vào một kho để xem chi tiết lot, vị trí, tình trạng. <b>Chọn kho này</b> để xuất từ kho đó, hoặc tick dòng tồn rồi thêm vào phiếu.</span>
+        {need > 0 && <span className="small" style={{ marginLeft: 'auto' }}>Đơn còn cần xuất: <b>{fmtNum(need, 2)} kg</b></span>}
+        {company && <label className="small" style={{ display: 'flex', gap: 4, alignItems: 'center' }}><input type="checkbox" checked={onlyCo} onChange={(e) => { setOnlyCo(e.target.checked); setSel(new Set()); }} /> Chỉ công ty {company}{otherCo ? ` (ẩn ${otherCo} dòng công ty khác)` : ''}</label>}
+      </div>
+      <div className="table-wrap" style={{ maxHeight: '60vh', overflow: 'auto' }}>
+        <table className="picker">
+          <thead><tr><th></th><th>Kho</th><th>Lot</th><th>Vị trí</th><th>Ngày nhập</th><th>Công ty</th>
+            {cols.map((c) => <th key={c} className="num">{c} (kg)</th>)}<th className="num">Tổng (kg)</th><th className="num">Xuất được (kg)</th><th className="num">Pallet</th><th className="num">Số bao</th><th></th></tr></thead>
+          <tbody>
+            {groups.map((g) => {
+              const isOpen = openWh === g.code;
+              return [
+                <tr key={g.code} className={'wh-row' + (g.code === whCode ? ' cur' : '')} onClick={() => setOpenWh(isOpen ? '' : g.code)} style={{ cursor: 'pointer' }}>
+                  <td>{isOpen ? '▾' : '▸'}</td>
+                  <td colSpan={5}><b>{g.code}</b> {whName.get(g.code) || ''} <small className="small">· {g.rs.length} dòng tồn{g.code === whCode ? ' · kho đang chọn' : ''}</small></td>
+                  {cols.map((c) => <td key={c} className="num">{g.by[c] ? fmtNum(g.by[c], 2) : ''}</td>)}
+                  <td className="num"><b>{fmtNum(g.total, 2)}</b></td>
+                  <td className="num" style={{ color: g.free > 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>{fmtNum(g.free, 2)}</td>
+                  <td className="num">{fmtNum(g.rs.reduce((a, r) => a + num(r.pallets), 0), 2)}</td><td className="num">{fmtNum(g.rs.reduce((a, r) => a + num(r.bags), 0))}</td>
+                  <td>{g.ok
+                    ? <button type="button" className="btn sm primary" onClick={(e) => { e.stopPropagation(); onPick(g.code, []); }}>{g.code === whCode ? 'Giữ kho này' : 'Chọn kho này'}</button>
+                    : <small className="small">không có quyền</small>}</td>
+                </tr>,
+                ...(isOpen ? g.rs.map((r) => {
+                  const lock = blocked(r); const had = g.code === whCode && chosen.has(r._id);
+                  const can = g.ok && !lock && !had;
+                  return (
+                    <tr key={r._id} className={'sub' + (lock ? ' locked' : sel.has(r._id) ? ' picked' : '')} onClick={() => can && toggle(r)} style={{ cursor: can ? 'pointer' : 'not-allowed' }}>
+                      <td></td>
+                      <td>{lock ? '🔒' : <input type="checkbox" checked={had || sel.has(r._id)} disabled={!can} onChange={() => toggle(r)} onClick={(e) => e.stopPropagation()} />}</td>
+                      <td>{r.lot || '-'}</td><td>{r.location}</td><td>{fmtDate(r.inDate)} <small className="small">({ageDays(r.inDate)} ngày)</small></td><td>{r.company || ''}</td>
+                      {cols.map((c) => <td key={c} className="num">{r.goodsStatus === c ? fmtNum(num(r.kg), 2) : ''}{r.goodsStatus === c && r.pledgee ? <small className="small"> {r.pledgee}</small> : ''}</td>)}
+                      <td className="num">{fmtNum(num(r.kg), 2)}</td><td className="num">{lock ? '' : fmtNum(num(r.kg), 2)}</td>
+                      <td className="num">{fmtNum(r.pallets, 2)}</td><td className="num">{fmtNum(r.bags)}</td><td>{had ? <small className="small">đã có trong phiếu</small> : ''}</td>
+                    </tr>
+                  );
+                }) : []),
+              ];
+            })}
+            {!groups.length && <tr><td colSpan={11 + cols.length} className="small">
+              {loading ? 'Đang tải tồn kho…' : otherCo && onlyCo ? <>Mã {item} có tồn nhưng không thuộc công ty <b>{company}</b>. <button type="button" className="btn sm" onClick={() => setOnlyCo(false)}>Xem tồn của mọi công ty</button></> : `Mã ${item} không còn tồn ở kho nào bạn được xem.`}
+            </td></tr>}
+          </tbody>
+          {groups.length > 1 && <tfoot><tr><td colSpan={6}>Cộng {groups.length} kho</td>{cols.map((c) => <td key={c} className="num">{fmtNum(sum(c), 2)}</td>)}
+            <td className="num">{fmtNum(sum('total'), 2)}</td><td className="num">{fmtNum(sum('free'), 2)}</td><td colSpan={3}></td></tr></tfoot>}
+        </table>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, gap: 8, flexWrap: 'wrap' }}>
+        <small className="small">🔒 = hàng bị khóa xuất (HTC khi xuất bán). Xuất được = tồn trừ hàng bị khóa. Mỗi phiếu xuất từ một kho, nên chỉ tick được dòng của cùng một kho.</small>
+        <button type="button" className="btn primary" disabled={!sel.size} onClick={() => onPick(selWh, list.filter((r) => sel.has(r._id)))}>
+          {sel.size ? `Chọn kho ${selWh} & thêm ${sel.size} dòng (${fmtNum(selKg, 2)} kg)` : 'Tick dòng tồn để thêm vào phiếu'}</button>
+      </div>
+    </Modal>
+  );
+}
+
+function StockLine({ type, l, set, rows, byId, blocked, locations, statuses, pledgees, onStock }) {
   const r = byId.get(l.stockId);
   // Số lượng xuất/chuyển → pallet, kg chia theo tỷ lệ tồn
   const setBags = (v) => {
@@ -715,7 +861,7 @@ function StockLine({ type, l, set, rows, byId, blocked, locations, statuses, ple
         <div className="field full">
           <span>Hàng chọn từ tồn kho</span>
           <div className="stock-pick">
-            <span><small>Công ty</small>{r.company || '-'}</span><span><small>Kho</small>{r.warehouse}</span><span><small>Mã hàng</small>{r.item}</span>
+            <span><small>Công ty</small>{r.company || '-'}</span><span><small>Kho</small>{r.warehouse}</span><span><small>Mã hàng</small><ItemCode code={r.item} onStock={onStock} /></span>
             <span className="grow"><small>Tên hàng</small>{r.itemName}</span><span><small>Lot</small>{r.lot || '-'}</span><span><small>Vị trí</small>{r.location}</span>
             <span><small>Tình trạng</small>{r.goodsStatus}{r.pledgee ? ` (${r.pledgee})` : ''}{blocked(r) ? ' 🔒' : ''}</span>
             <span><small>Còn</small>{fmtNum(num(r.kg), 2)} kg · {fmtNum(r.pallets, 2)} pl · {fmtNum(r.bags)} bao</span>
