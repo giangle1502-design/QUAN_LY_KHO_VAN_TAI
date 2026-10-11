@@ -14,8 +14,9 @@ export const COUNT_KINDS = { full: 'Kiểm kê', cycle: 'Cycle count' };
 export const COUNT_STATUS = {
   preparing: { label: 'Đang lập', cls: 'gray' },
   open: { label: 'Đang đếm', cls: 'amber' },
-  done: { label: 'Đã chốt số', cls: 'blue' },
-  adjusted: { label: 'Đã điều chỉnh tồn', cls: 'green' },
+  done: { label: 'Chờ duyệt điều chỉnh', cls: 'blue' },
+  adjusted: { label: 'Đã duyệt, điều chỉnh tồn', cls: 'green' },
+  closed: { label: 'Đã duyệt, không điều chỉnh', cls: 'gray' },
   cancelled: { label: 'Đã hủy', cls: 'red' },
 };
 export const MATCH_KG = 0.5; // lệch dưới 0,5 kg coi như khớp
@@ -202,7 +203,7 @@ export async function postAdjust(count, plan, reason, user) {
   const at = new Date().toISOString();
   await updateDoc(doc(db, 'stockCounts', count.id), {
     status: 'adjusted', adjustIds: ids, updatedAt: at, updatedBy: user.email,
-    history: [...(count.history || []), { at, by: user.email, byName: user.name, action: ids.length ? `Điều chỉnh tồn: ${ids.join(', ')}` : 'Chốt: không có chênh lệch cần điều chỉnh' }],
+    history: [...(count.history || []), { at, by: user.email, byName: user.name, action: ids.length ? `Duyệt, điều chỉnh tồn: ${ids.join(', ')}` : 'Duyệt: không có chênh lệch cần điều chỉnh' }],
   });
   return ids;
 }

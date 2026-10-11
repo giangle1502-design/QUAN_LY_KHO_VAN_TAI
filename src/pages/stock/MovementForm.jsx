@@ -13,6 +13,8 @@ import { fmtDate, fmtNum } from '../../lib/utils';
 import { ErrorBox, Field, Modal } from '../../components/ui';
 import { QuickAdd } from '../../components/FormTools';
 import { ItemCode, ItemStockModal } from '../../components/ItemStock';
+import PalletChoice from '../../components/PalletChoice';
+import { cleanPallets, palletError } from '../../lib/pallets';
 import { OVER_CAP_CONFIRM, OVER_CAP_MSG, capacityCheck, splitByCapacity } from '../../lib/capacity';
 
 // Thông tin vận tải gắn trên phiếu xuất (SO và STO). Phiếu nhập không cần.
@@ -86,6 +88,8 @@ function Form({ type }) {
   const carriers = useCollection('carriers').rows;
   const drivers = useCollection('drivers').rows;
   const [lines, setLines] = useState(() => [type === 'in' ? newLine() : stockLine()]);
+  // Hình thức xuất: xuất xá / kèm pallet (khách giữ hoặc vận tải mượn)
+  const [pal, setPal] = useState({ palletMode: '', pallets: [] });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState('');
@@ -427,6 +431,7 @@ function Form({ type }) {
     if (type === 'in' && source === 'direct' && !head.partyCode.trim()) return setErr('Chọn nhà cung cấp (bấm + để thêm nhà cung cấp mới).');
     if (type === 'in' && source !== 'direct' && !head.orderId) return setErr(`Chọn ${{ PO: 'đơn mua (PO)', STO: 'lệnh chuyển kho (STO)', SO: 'đơn bán (SO) của hàng trả về' }[source]}.`);
     if (type === 'adjust' && !head.reason) return setErr('Chọn lý do điều chỉnh.');
+    if (type === 'out') { const pe = palletError(pal, head); if (pe) return setErr(pe); }
     // Thông tin vận tải không bắt buộc: bổ sung sau ở Phiếu kho → mở phiếu → Sửa thông tin vận tải
     const out = [];
     for (const [i, l] of lines.entries()) {
@@ -498,11 +503,13 @@ function Form({ type }) {
         partyCode: head.partyCode.trim(), partyName: head.partyName.trim(), shipCode: head.shipCode,
         reason: head.reason, note: head.note.trim(), lines: out,
         ...(type === 'out' ? Object.fromEntries(Object.keys(EMPTY_TRANSPORT).map((k) => [k, String(head[k] || '').trim()])) : {}),
+        ...(type === 'out' ? cleanPallets(pal, head) : {}),
       });
       setDone(typeof res === 'string' ? res : res.id);
       setDonePO(typeof res === 'string' ? '' : res.orderId);
       setDoneRel(rel.length ? { wait: true } : null);
       setLines([type === 'in' ? newLine() : stockLine()]);
+      setPal({ palletMode: '', pallets: [] });
       setHead((h) => ({ ...h, tripId: '', orderId: '', partyCode: '', partyName: '', shipCode: '', refNo: '', note: '', ...EMPTY_TRANSPORT }));
     } catch (e2) {
       setErr(e2.code === 'permission-denied' ? 'Bạn không có quyền lập phiếu cho kho này.' : e2.message);
@@ -615,6 +622,13 @@ function Form({ type }) {
               <datalist id="dl-mv-plate">{vehicles.map((v) => <option key={v.plate} value={v.plate}>{v.carrier}</option>)}</datalist>
               <datalist id="dl-mv-carrier">{carriers.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</datalist>
               <datalist id="dl-mv-driver">{drivers.map((d) => <option key={d.idCard} value={d.idCard}>{d.name}</option>)}</datalist>
+            </div>
+          )}
+          {type === 'out' && (
+            <div className="full transport-box">
+              <div className="section-head">🪵 Hình thức xuất <span className="req">*</span></div>
+              <PalletChoice value={pal} onChange={setPal} carrier={head.carrier} carrierName={head.carrierName}
+                suggestQty={Math.ceil(lines.reduce((a, l) => a + (Number(l.pallets) || 0), 0)) || ''} />
             </div>
           )}
           {(type === 'adjust' || type === 'in' || type === 'out') && (

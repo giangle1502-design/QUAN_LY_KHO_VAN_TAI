@@ -322,9 +322,16 @@ Thay cột "Điểm giao" của sheet COST CONT: mỗi dòng PO (hàng về cả
 - Nhập số đếm: pallet chẵn + bao lẻ (mã có quy cách bao/pallet, kg/bao) hoặc kg. Lần 1 = thực kiểm; lệch thì đếm lại lần 2; final = lần 2 nếu có. Lệch dưới 0,5 kg coi như khớp. "Đếm mù": nhân viên không thấy số hệ thống trước khi lưu.
 - Điện thoại: /kho/kiem-ke/:id/dem (chọn / quét vị trí → nhập → báo khớp / lệch ngay, thêm hàng không có trên hệ thống). Máy tính: /kho/kiem-ke/:id nhập số từ biểu mẫu giấy.
 - In biểu mẫu /kho/kiem-ke/:id/in (A4 ngang): lọc từ vị trí → đến vị trí, in trống hoặc kèm số đã đếm, ẩn/hiện SL hệ thống.
-- Chốt số → "Điều chỉnh tồn theo kiểm kê": lập phiếu DC = final − tồn hiện tại (cảnh báo dòng có nhập/xuất sau khi đếm).
+- Thủ kho chỉ nhập số đếm và "Chốt số, gửi duyệt" (số đếm ra báo cáo). Chỉ quản trị gốc bấm "Duyệt & điều chỉnh tồn" (lập phiếu DC = final − tồn hiện tại, cảnh báo dòng có nhập/xuất sau khi đếm) hoặc "Không điều chỉnh". firestore.rules chặn phiếu DC có countId và trạng thái duyệt nếu không phải quản trị gốc.
 - Báo cáo cycle count (tab Báo cáo): theo khoảng ngày, kho; % chính xác (dòng khớp / đã đếm), thừa / thiếu kg, danh sách dòng lệch, xuất Excel.
 - Quyền: thủ kho và quản trị của kho đó lập phiếu, nhập số đếm; dòng đếm chỉ sửa được khi phiếu đang đếm (firestore.rules → `stockCounts`).
+
+## Pallet xuất kèm hàng và phiếu giao hàng 3 liên (/kho/pallet)
+
+- Danh mục **Mã pallet** (`pallets`): mã, tên, loại Pallet nhựa / Pallet gỗ.
+- Phiếu xuất bắt buộc chọn **Hình thức xuất**: xuất xá, hoặc xuất kèm pallet → nhựa / gỗ → mã, số lượng → xuất cho khách hàng (trừ tồn pallet kho) hoặc cho vận tải mượn (trừ tồn kho, ghi số đang mượn cho đơn vị vận tải). Lưu trên phiếu (`movements.palletMode`, `pallets`), ghi tồn trong cùng giao dịch; hủy phiếu thì đảo lại. Trang in phiếu cho chọn / đổi hình thức xuất (`setSlipPallets`).
+- Phiếu giao hàng (phiếu xuất) in mặc định **3 liên**: Liên 1 lưu kho, Liên 2 giao đơn vị vận tải (có dòng pallet), Liên 3 giao khách hàng (không có dòng pallet vận tải mượn; pallet khách giữ thì có). Chọn 1–3 liên ở thanh in (?lien=). Mẫu in tự thiết kế cũng in 3 liên, thêm trường {{Liên}}, {{Hình thức xuất}}, {{Pallet xuất kèm}} và dòng pallet trong {{BẢNG HÀNG}}.
+- Trang Quản lý pallet: vận tải đang mượn (nút Nhận trả), tồn pallet theo kho, sổ pallet (phiếu xuất + nhập / trả / điều chỉnh tay, xuất Excel). Dữ liệu: `palletStock/{kho__mã}`, `palletCarrier/{vận tải__mã}`, `palletMoves`.
 
 ## Sửa lỗi
 - Đề nghị giải chấp (và các thao tác theo kho) bị chặn quyền với tài khoản quản trị gốc chưa có hồ sơ trong *Phân quyền*: rules nay cho quản trị thao tác mọi kho.

@@ -105,6 +105,7 @@ export default function Layout() {
           {hasRole('ke_toan') && <NavLink to="/kho/giai-chap" onClick={close}><span className="ico">🔓</span>Đề nghị giải chấp</NavLink>}
           {hasRole('thu_kho') && <NavLink to="/kho/adjust" onClick={close}><span className="ico">⚖️</span>Điều chỉnh tồn</NavLink>}
           <NavLink to="/kho/kiem-ke" onClick={close}><span className="ico">🧮</span>Kiểm kê & cycle count</NavLink>
+          <NavLink to="/kho/pallet" onClick={close}><span className="ico">🪵</span>Quản lý pallet</NavLink>
           <NavLink to="/kho/phieu" onClick={close}><span className="ico">🧾</span>Phiếu kho</NavLink>
           {hasRole('thu_kho') && <NavLink to="/kho/ton-dau-ky" onClick={close}><span className="ico">📋</span>Nhập tồn đầu kỳ</NavLink>}
           <div className="nav-group">Báo cáo</div>

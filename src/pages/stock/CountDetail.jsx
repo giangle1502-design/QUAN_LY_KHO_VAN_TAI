@@ -40,7 +40,7 @@ function Progress({ lines }) {
 // ============================================================================
 export default function CountDetail() {
   const { id } = useParams();
-  const { hasRole, email, name } = useApp();
+  const { hasRole, email, name, isSuper } = useApp();
   const { count, lines, error } = useCount(id);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -98,6 +98,7 @@ export default function CountDetail() {
           <div className="stat-sub">{signKg(lines.reduce((s, l) => { const r = lineResult(l); return s + (r.counted ? r.diffKg : 0); }, 0))}</div></div>
       </div>
       <ErrorBox error={error || err} />
+      {count.status === 'done' && !isSuper && <div className="hint" style={{ color: 'var(--amber)' }}>Số đếm đã chốt, chờ quản trị duyệt. Tồn kho chỉ thay đổi khi được duyệt.</div>}
       {count.adjustIds?.length ? <div className="ok-box" style={{ marginBottom: 10 }}>Đã điều chỉnh tồn bằng phiếu {count.adjustIds.map((x, i) => <span key={x}>{i ? ', ' : ''}<Link className="mono" to={`/kho/phieu/${x}/in`} target="_blank">{x}</Link></span>)}.</div> : null}
       <div className="filters">
         <label className="small">Từ vị trí <select value={from} onChange={(e) => setFrom(e.target.value)}><option value="">(đầu)</option>{locs.map((l) => <option key={l}>{l}</option>)}</select></label>
@@ -107,10 +108,12 @@ export default function CountDetail() {
         </select>
         <input placeholder="Tìm vị trí, mã, lot…" value={q} onChange={(e) => setQ(e.target.value)} />
         <span style={{ flex: 1 }} />
-        {canManage && open && <button className="btn primary" disabled={!p.counted} onClick={() => act(() => setCountStatus(count, 'done', user, `Chốt số đếm (${p.counted}/${p.total} dòng)`))}>✔ Chốt số đếm</button>}
+        {canManage && open && <button className="btn primary" disabled={!p.counted} onClick={() => act(() => setCountStatus(count, 'done', user, `Chốt số đếm, gửi duyệt (${p.counted}/${p.total} dòng)`))}>✔ Chốt số, gửi duyệt</button>}
         {canManage && count.status === 'done' && <button className="btn" onClick={() => act(() => setCountStatus(count, 'open', user, 'Mở lại để đếm tiếp'))}>Mở lại</button>}
-        {canManage && count.status === 'done' && <button className="btn primary" onClick={() => setAdjusting(true)}>⚖️ Điều chỉnh tồn theo kiểm kê</button>}
-        {canManage && ['open', 'done'].includes(count.status) && <button className="btn danger" onClick={() => { const r = window.prompt('Lý do hủy phiếu kiểm kê?'); if (r) act(() => setCountStatus(count, 'cancelled', user, `Hủy phiếu: ${r}`)); }}>Hủy phiếu</button>}
+        {/* Chỉ quản trị gốc duyệt mới điều chỉnh tồn; thủ kho chỉ nhập số đếm (ra báo cáo) */}
+        {isSuper && count.status === 'done' && <button className="btn primary" onClick={() => setAdjusting(true)}>✅ Duyệt & điều chỉnh tồn</button>}
+        {isSuper && count.status === 'done' && <button className="btn" onClick={() => { const r = window.prompt('Đóng phiếu, KHÔNG điều chỉnh tồn. Ghi chú?', 'Chỉ ghi nhận báo cáo'); if (r != null) act(() => setCountStatus(count, 'closed', user, `Duyệt, không điều chỉnh tồn: ${r}`)); }}>Không điều chỉnh</button>}
+        {((canManage && open) || (isSuper && count.status === 'done')) && <button className="btn danger" onClick={() => { const r = window.prompt('Lý do hủy phiếu kiểm kê?'); if (r) act(() => setCountStatus(count, 'cancelled', user, `Hủy phiếu: ${r}`)); }}>Hủy phiếu</button>}
       </div>
       {!rows.length ? <Empty text="Không có dòng nào" /> : (
         <div className="table-wrap">
@@ -213,7 +216,7 @@ function AdjustModal({ count, lines, user, onClose }) {
       <ErrorBox error={err} />
       <div className="form-actions">
         <button className="btn" onClick={onClose}>Đóng</button>
-        <button className="btn primary" disabled={!plan || busy} onClick={go}>{busy ? 'Đang ghi…' : plan?.length ? `Lập phiếu điều chỉnh (${plan.length} dòng)` : 'Xác nhận'}</button>
+        <button className="btn primary" disabled={!plan || busy} onClick={go}>{busy ? 'Đang ghi…' : plan?.length ? `Duyệt, lập phiếu điều chỉnh (${plan.length} dòng)` : 'Duyệt'}</button>
       </div>
     </Modal>
   );

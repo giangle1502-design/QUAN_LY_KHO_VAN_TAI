@@ -167,6 +167,22 @@ service cloud.firestore {
         && request.resource.data.id == resource.data.id && request.resource.data.warehouse == resource.data.warehouse;
     }
 
+    // ==== Pallet gỗ / nhựa: tồn theo kho, đang cho vận tải mượn, sổ nhập / trả / điều chỉnh ====
+    match /palletStock/{id} {
+      allow read: if isStaff();
+      allow create, update: if isAdmin() || (hasRole('thu_kho') && inMyWarehouse(request.resource.data.warehouse)
+        && (resource == null || resource.data.warehouse == request.resource.data.warehouse));
+    }
+    match /palletCarrier/{id} {
+      allow read: if isStaff();
+      allow create, update: if isAdmin() || hasRole('thu_kho');
+    }
+    match /palletMoves/{id} {
+      allow read: if isStaff();
+      allow create: if (isAdmin() || (hasRole('thu_kho') && inMyWarehouse(request.resource.data.warehouse)))
+        && request.resource.data.createdBy == me() && request.resource.data.id == id;
+    }
+
     // ==== Kiểm kê / cycle count: đầu phiếu + dòng đếm (thủ kho, quản trị của kho đó) ====
     function countPath(cid) { return /databases/$(database)/documents/stockCounts/$(cid); }
     match /stockCounts/{cid} {
@@ -175,7 +191,10 @@ service cloud.firestore {
         && request.resource.data.id == cid && request.resource.data.createdBy == me() && request.resource.data.status == 'preparing';
       allow update: if (isAdmin() || hasRole('thu_kho')) && inMyWarehouse(resource.data.warehouse)
         && request.resource.data.id == resource.data.id && request.resource.data.warehouse == resource.data.warehouse
-        && request.resource.data.createdBy == resource.data.createdBy;
+        && request.resource.data.createdBy == resource.data.createdBy
+        // Duyệt (điều chỉnh / không điều chỉnh) và hủy phiếu đã chốt: chỉ quản trị gốc
+        && (isSuper() || (!(request.resource.data.status in ['adjusted', 'closed']) && !(resource.data.status in ['adjusted', 'closed'])
+          && !(resource.data.status == 'done' && request.resource.data.status == 'cancelled')));
       match /lines/{lid} {
         allow read: if isStaff();
         allow create, update: if (isAdmin() || hasRole('thu_kho')) && inMyWarehouse(get(countPath(cid)).data.warehouse)
@@ -206,6 +225,8 @@ service cloud.firestore {
         && (request.resource.data.status == 'posted' || (request.resource.data.status == 'pending' && request.resource.data.type == 'in')
           || (request.resource.data.status == 'wait_release' && request.resource.data.type == 'out'))
         && request.resource.data.id == id
+        // Phiếu điều chỉnh theo kiểm kê: chỉ quản trị gốc (người duyệt)
+        && (request.resource.data.get('countId', '') == '' || isSuper())
         && (isAdmin() || (inMyWarehouse(request.resource.data.warehouse)
           && ((hasRole('thu_kho') && request.resource.data.type in ['in', 'out', 'move', 'adjust'])
             || (hasRole('ke_toan') && request.resource.data.type == 'status')
@@ -225,7 +246,7 @@ service cloud.firestore {
         // Thủ kho bổ sung / sửa thông tin vận tải của phiếu xuất sau khi lập
         || (hasRole('thu_kho') && resource.data.type == 'out' && resource.data.status != 'cancelled' && inMyWarehouse(resource.data.warehouse)
           && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['plate', 'carrier', 'carrierName', 'idCard', 'driverName', 'driverPhone', 'history', 'updatedAt', 'updatedBy']));
+            .hasOnly(['plate', 'carrier', 'carrierName', 'idCard', 'driverName', 'driverPhone', 'palletMode', 'pallets', 'history', 'updatedAt', 'updatedBy']));
     }
     match /stock/{id} {
       allow read: if isStaff();
@@ -321,10 +342,10 @@ service cloud.firestore {
     match /{coll}/{id} {
       allow read: if isStaff() && coll in [
         'companies', 'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses',
-        'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'codeRules', 'freightRates'];
+        'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'codeRules', 'freightRates', 'pallets'];
       allow create, update: if isAdmin() && coll in [
         'companies', 'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses',
-        'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'codeRules', 'freightRates'];
+        'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'codeRules', 'freightRates', 'pallets'];
       // Kinh doanh, kế toán thêm/sửa nhanh khách hàng, địa chỉ giao, mã hàng ngay khi lập đơn (không xóa)
       allow create, update: if coll in ['soldto', 'shipto', 'items', 'suppliers'] && (hasRole('kinh_doanh') || hasRole('ke_toan'));
       // Kế toán quản lý bảng giá cước

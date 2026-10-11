@@ -16,6 +16,7 @@ import MovementForm from './pages/stock/MovementForm';
 import OpeningImport from './pages/stock/OpeningImport';
 import AdjustImport from './pages/stock/AdjustImport';
 import Counts from './pages/stock/Counts';
+import Pallets from './pages/stock/Pallets';
 import CountDetail, { CountMobile, PrintCount } from './pages/stock/CountDetail';
 import PrintMovement from './pages/stock/PrintMovement';
 import Receive from './pages/stock/Receive';
@@ -74,6 +75,7 @@ export default function App() {
         {hasRole('thu_kho') && <Route path="kho/ton-dau-ky" element={<OpeningImport />} />}
         {hasRole('thu_kho') && <Route path="kho/dieu-chinh-excel" element={<AdjustImport />} />}
         <Route path="kho/kiem-ke" element={<Counts />} />
+        <Route path="kho/pallet" element={<Pallets />} />
         <Route path="kho/kiem-ke/:id" element={<CountDetail />} />
         <Route path="kho/kiem-ke/:id/dem" element={<CountMobile />} />
         <Route path="kho/nhan-hang" element={<Receive />} />

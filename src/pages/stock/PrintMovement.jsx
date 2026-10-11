@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
@@ -7,12 +7,26 @@ import { MOVE_TYPES } from '../../lib/stock';
 import { fmtDate, fmtNum } from '../../lib/utils';
 import { docTypeOfMovement } from '../../lib/printTemplates';
 import { loadMovementData } from '../../lib/printData';
-import { TemplatePage, useTemplateChoice } from '../../components/PrintTemplate';
+import { TemplatePage, TemplateSheets, useTemplateChoice } from '../../components/PrintTemplate';
+import PalletChoice from '../../components/PalletChoice';
+import { ErrorBox } from '../../components/ui';
+import { palletError, palletText, setSlipPallets } from '../../lib/pallets';
+
+// 3 liên phiếu giao hàng: liên kho, liên vận tải (có dòng pallet), liên khách hàng (không có pallet vận tải mượn)
+const COPIES = [
+  { key: 'kho', label: 'Liên 1: Lưu kho' },
+  { key: 'carrier', label: 'Liên 2: Giao đơn vị vận tải' },
+  { key: 'customer', label: 'Liên 3: Giao khách hàng' },
+];
 
 // Bản in phiếu kho (In → Lưu PDF hoặc in giấy A4)
 export default function PrintMovement({ pick = false }) {
   const { id } = useParams();
   const { settings } = useApp();
+  const [params, setParams] = useSearchParams();
+  const nCopies = Math.min(3, Math.max(1, Number(params.get('lien') || 3)));
+  const [ver, setVer] = useState(0);
+  const reload = () => setVer((x) => x + 1);
   const [m, setM] = useState(undefined);
   const [trip, setTrip] = useState(null);
   const [wh, setWh] = useState(null);
@@ -27,7 +41,7 @@ export default function PrintMovement({ pick = false }) {
       if (c) getDoc(doc(db, 'companies', c)).then((x) => setCo(x.exists() ? x.data() : { code: c, name: c })).catch(() => setCo({ code: c, name: c }));
       if (d?.warehouse) getDoc(doc(db, 'warehouses', d.warehouse)).then((w) => w.exists() && setWh(w.data())).catch(() => {});
     }).catch(() => setM(null));
-  }, [id]);
+  }, [id, ver]);
 
   const choice = useTemplateChoice(m ? docTypeOfMovement(m, pick) : null, { company: m?.company || m?.lines?.find((l) => l.company)?.company, party: m?.partyCode });
 
@@ -39,9 +53,25 @@ export default function PrintMovement({ pick = false }) {
       <button className="btn primary" onClick={() => window.print()}>🖨 In / Lưu PDF</button>
       {m.type === 'in' && m.status === 'posted' && <Link className="btn" to={`/kho/phieu/${m.id}/nhan`}>🏷️ In nhãn pallet</Link>}
       {m.type === 'out' && (pick ? <Link className="btn" to={`/kho/phieu/${m.id}/in`}>📄 Phiếu xuất kho</Link> : <Link className="btn" to={`/kho/phieu/${m.id}/soan`}>📋 Phiếu soạn hàng</Link>)}
+      {m.type === 'out' && !pick && (
+        <label className="small">Số liên <select value={nCopies} onChange={(e) => { const p = new URLSearchParams(params); p.set('lien', e.target.value); setParams(p, { replace: true }); }}>
+          <option value="3">3 liên (mặc định)</option><option value="2">2 liên</option><option value="1">1 liên</option>
+        </select></label>
+      )}
       {choice.select}
     </>
   );
+  // Mẫu in tự thiết kế: phiếu giao hàng cũng in 3 liên; dòng pallet thêm vào bảng hàng, trường {{Liên}}, {{Pallet xuất kèm}}
+  if (choice.tpl && m.type === 'out' && !pick) {
+    const pals = (c) => (m.palletMode !== 'pallet' ? [] : (m.pallets || []).filter((p) => c.key !== 'customer' || p.to !== 'carrier'));
+    return (
+      <div className="tpl-screen">
+        <div className="no-print toolbar label-toolbar">{toolbar}</div>
+        <div className="no-print" style={{ padding: '0 16px' }}><SlipPallet m={m} onSaved={reload} /></div>
+        <TplCopies key={`${choice.tpl.id}-${ver}`} tpl={choice.tpl} m={m} copies={COPIES.slice(0, nCopies)} pals={pals} />
+      </div>
+    );
+  }
   if (choice.tpl) return <TemplatePage key={choice.tpl.id} tpl={choice.tpl} toolbar={toolbar} load={() => loadMovementData(m)} deps={[m.id]} />;
   const meta = MOVE_TYPES[m.type];
   const tot = (k) => m.lines.reduce((s, l) => s + (Number(l[k]) || 0), 0);
@@ -64,14 +94,17 @@ export default function PrintMovement({ pick = false }) {
     ? ['Người lập phiếu', 'Thủ kho', 'Tài xế / Người nhận', 'Bảo vệ']
     : m.type === 'in' ? ['Người lập phiếu', 'Thủ kho', 'Người giao hàng', 'Bảo vệ'] : ['Người lập phiếu', 'Thủ kho', 'Kế toán', 'Người duyệt'];
 
-  return (
-    <div className="print-page">
-      <div className="no-print toolbar">{toolbar}</div>
+  // Phiếu giao hàng (phiếu xuất) mặc định in 3 liên; liên khách hàng chỉ có dòng pallet khách giữ
+  const copies = summary ? COPIES.slice(0, nCopies) : [null];
+  const palRows = (copy) => (!copy || m.palletMode !== 'pallet' ? [] : (m.pallets || []).filter((p) => copy.key !== 'customer' || p.to !== 'carrier'));
+  const Body = ({ copy }) => (
+    <>
       <div className="print-head">
         <div><b>{co?.name || settings.companyName}</b>{(co ? co.address : settings.companyAddress) ? <><br /><span className="small">{co ? co.address : settings.companyAddress}</span></> : null}{co?.taxCode ? <><br /><span className="small">MST {co.taxCode}</span></> : null}<br /><span className="small">{wh ? `${wh.name}${wh.address ? ' – ' + wh.address : ''}` : `Kho ${m.warehouse}`}</span></div>
         <div style={{ textAlign: 'right' }}>Số: <b>{m.id}</b><br /><span className="small">Ngày {fmtDate(m.date)}</span></div>
       </div>
       <h2 className="print-title">{pick ? 'PHIẾU SOẠN HÀNG' : `PHIẾU ${meta.label.toUpperCase()}`}</h2>
+      {copy && <p className="print-copy-label">{copy.label}</p>}
       {pick && <p className="small" style={{ textAlign: 'center', marginTop: -6 }}>Theo phiếu xuất kho {m.id} · sắp theo vị trí để đi lấy hàng</p>}
       {m.status === 'cancelled' && <div className="error-box">PHIẾU ĐÃ HỦY: {m.cancelReason}</div>}
       {m.status === 'wait_release' && <p className="small" style={{ textAlign: 'center' }}>Phiếu chờ giải chấp hàng HTC: soạn hàng được, chỉ giao hàng khi đã lập lệnh giải chấp.</p>}
@@ -91,7 +124,11 @@ export default function PrintMovement({ pick = false }) {
       {summary ? (
       <table className="print-lines">
         <thead><tr><th>STT</th><th>Mã hàng</th><th>Tên hàng</th><th className="num">Số lượng (kg)</th><th className="num">Số bao</th></tr></thead>
-        <tbody>{groups.map((g, i) => <tr key={g.item}><td>{i + 1}</td><td>{g.item}</td><td>{g.itemName}</td><td className="num">{fmtNum(g.kg, 2)}</td><td className="num">{fmtNum(g.bags)}</td></tr>)}</tbody>
+        <tbody>{groups.map((g, i) => <tr key={g.item}><td>{i + 1}</td><td>{g.item}</td><td>{g.itemName}</td><td className="num">{fmtNum(g.kg, 2)}</td><td className="num">{fmtNum(g.bags)}</td></tr>)}
+          {palRows(copy).map((p, i) => (
+            <tr key={`p${i}`} className="print-pallet"><td>{groups.length + i + 1}</td><td>{p.code}</td>
+              <td>{p.name || p.material} · <b>{fmtNum(p.qty)} cái</b> · {p.to === 'carrier' ? `vận tải ${p.carrierName || p.carrier || ''} mượn, trả lại kho` : 'khách hàng giữ'}</td><td className="num"></td><td className="num"></td></tr>
+          ))}</tbody>
         <tfoot><tr><td colSpan={3}>Cộng</td><td className="num">{fmtNum(tot('kg'), 2)}<div className="small">= {fmtNum(tot('kg') / 1000, 3, 3)} tấn</div></td><td className="num">{fmtNum(tot('bags'))}</td></tr></tfoot>
       </table>
       ) : pick ? (
@@ -120,6 +157,69 @@ export default function PrintMovement({ pick = false }) {
       <div className="print-signs">
         {signs.map((s) => <div key={s}><b>{s}</b><br /><span className="small">(Ký, ghi rõ họ tên)</span><div className="sign-space" />{s === 'Người lập phiếu' ? m.createdByName : ''}</div>)}
       </div>
+    </>
+  );
+
+  return (
+    <div className="print-page">
+      <div className="no-print toolbar">{toolbar}</div>
+      {summary && <SlipPallet m={m} onSaved={reload} />}
+      {copies.map((c, i) => <div key={i} className={copies.length > 1 ? 'print-copy' : ''}><Body copy={c} /></div>)}
+    </div>
+  );
+}
+
+function TplCopies({ tpl, m, copies, pals }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState('');
+  useEffect(() => { loadMovementData(m).then(setData).catch((e) => setErr(e.message)); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  if (err) return <div className="error-box">{err}</div>;
+  if (!data) return <div className="center">Đang tải…</div>;
+  return (
+    <div className="tpl-pages">
+      {copies.map((c) => {
+        const ps = pals(c);
+        const lines = [...data.lines, ...ps.map((p) => ({ item: p.code, itemName: `${p.name || p.material} (${p.to === 'carrier' ? `vận tải ${p.carrierName || p.carrier || ''} mượn` : 'khách hàng giữ'})`, kg: '', bags: '', pallets: p.qty, note: `${p.qty} cái` }))];
+        return <TemplateSheets key={c.key} tpl={tpl} data={{ ...data, lines, copyLabel: c.label, palletText: palletText({ palletMode: m.palletMode, pallets: ps }) }} />;
+      })}
+    </div>
+  );
+}
+
+// Chọn / đổi hình thức xuất ngay lúc in phiếu giao hàng (không hiện khi in)
+function SlipPallet({ m, onSaved }) {
+  const { email, name } = useApp();
+  const [v, setV] = useState({ palletMode: m.palletMode || '', pallets: (m.pallets || []).map((p) => ({ ...p })) });
+  const [open, setOpen] = useState(!m.palletMode);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  if (m.status === 'cancelled') return null;
+  const save = async () => {
+    const e = palletError(v, m);
+    if (e) return setErr(e);
+    setBusy(true); setErr('');
+    try { await setSlipPallets(m.id, v, { email, name }); setOpen(false); onSaved(); } catch (x) { setErr(x.code === 'permission-denied' ? 'Bạn không có quyền sửa phiếu này.' : x.message); }
+    setBusy(false);
+  };
+  return (
+    <div className="no-print slip-pallet">
+      {!open ? (
+        <div className="toolbar">
+          <span>Hình thức xuất: <b>{m.palletMode === 'pallet' ? `Kèm pallet: ${palletText(m)}` : 'Xuất xá'}</b></span>
+          <button className="btn sm" onClick={() => setOpen(true)}>Đổi</button>
+        </div>
+      ) : (
+        <>
+          <b>{m.palletMode ? 'Đổi hình thức xuất' : 'Chọn hình thức xuất trước khi in phiếu giao hàng'}</b>
+          <PalletChoice value={v} onChange={setV} carrier={m.carrier} carrierName={m.carrierName}
+            suggestQty={Math.ceil((m.lines || []).reduce((a, l) => a + (Number(l.pallets) || 0), 0)) || ''} />
+          <ErrorBox error={err} />
+          <div className="toolbar">
+            <button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Đang lưu…' : 'Lưu hình thức xuất'}</button>
+            {m.palletMode && <button className="btn" onClick={() => setOpen(false)}>Đóng</button>}
+          </div>
+        </>
+      )}
     </div>
   );
 }

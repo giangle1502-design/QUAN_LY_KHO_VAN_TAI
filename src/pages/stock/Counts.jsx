@@ -54,7 +54,7 @@ function List({ counts, loading }) {
     <>
       <p className="hint">
         <b>Kiểm kê</b>: đếm toàn kho hoặc theo dãy vị trí, in biểu mẫu để đếm trên giấy rồi nhập lại, hoặc đếm trên điện thoại.
-        <b> Cycle count</b>: quản trị chỉ định khu vực / vị trí / mã hàng có giao dịch trong ngày; nhân viên mở trên điện thoại, đến từng vị trí nhập số pallet chẵn và số bao lẻ, hệ thống báo ngay khớp hay lệch.
+        <b> Cycle count</b>: quản trị chỉ định khu vực / vị trí / mã hàng có giao dịch trong ngày; nhân viên mở trên điện thoại, đến từng vị trí nhập số pallet chẵn và số bao lẻ, hệ thống báo ngay khớp hay lệch. Thủ kho chỉ nhập số đếm và chốt gửi duyệt; tồn kho chỉ điều chỉnh khi quản trị duyệt.
       </p>
       <div className="filters">
         <select value={kind} onChange={(e) => setKind(e.target.value)}>
@@ -63,7 +63,9 @@ function List({ counts, loading }) {
         </select>
         <select value={st} onChange={(e) => setSt(e.target.value)}>
           <option value="active">Đang đếm / chưa điều chỉnh</option>
+          <option value="done">Chờ duyệt</option>
           <option value="adjusted">Đã điều chỉnh tồn</option>
+          <option value="closed">Duyệt, không điều chỉnh</option>
           <option value="cancelled">Đã hủy</option>
           <option value="all">Tất cả</option>
         </select>

@@ -225,6 +225,17 @@ export const CATALOGS = [
     ],
   },
   {
+    key: 'pallets', group: 'Kho', icon: '🪵', title: 'Mã pallet (gỗ / nhựa)', short: 'Mã pallet', idField: 'code',
+    fields: [
+      { key: 'code', label: 'Mã pallet', type: 'text', required: true },
+      { key: 'name', label: 'Tên pallet', type: 'text', required: true },
+      { key: 'material', label: 'Loại', type: 'select', options: ['Pallet nhựa', 'Pallet gỗ'], required: true, default: 'Pallet nhựa' },
+      { key: 'size', label: 'Kích thước', type: 'text' },
+      { key: 'note', label: 'Ghi chú', type: 'textarea' },
+      { key: 'active', label: 'Đang dùng', type: 'checkbox', default: true },
+    ],
+  },
+  {
     key: 'reasons', group: 'Kho', icon: '📝', title: 'Lý do', short: 'Lý do', idField: 'code', editRoles: ['thu_kho', 'ke_toan', 'kinh_doanh'],
     fields: [
       { key: 'code', label: 'Mã lý do', type: 'text', required: true },

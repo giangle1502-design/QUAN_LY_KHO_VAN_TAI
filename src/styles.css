@@ -447,3 +447,14 @@ tr.picked td { background: var(--primary-soft); }
 .count-print { max-width: 1120px; }
 .count-print .print-lines td, .count-print .print-lines th { font-size: 12px; padding: 4px 5px; }
 @media print { .count-print { max-width: none; } }
+
+/* Pallet xuất kèm, phiếu giao hàng nhiều liên */
+.pallet-choice { display: flex; flex-direction: column; gap: 8px; }
+.pallet-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.slip-pallet { border: 2px solid var(--amber); background: var(--amber-soft); border-radius: 10px; padding: 10px 12px; margin: 10px 0; display: flex; flex-direction: column; gap: 8px; }
+.print-copy-label { text-align: center; margin: -8px 0 8px; font-weight: 700; font-style: italic; }
+.print-lines tr.print-pallet td { background: #fafafa; }
+@media print {
+  .print-copy { break-after: page; page-break-after: always; }
+  .print-copy:last-child { break-after: auto; page-break-after: auto; }
+}
