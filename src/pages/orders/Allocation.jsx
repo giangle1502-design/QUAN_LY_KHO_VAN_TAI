@@ -9,7 +9,7 @@ import { fmtDate, fmtNum, norm, today } from '../../lib/utils';
 import { OPEN_STATUSES, leftKg, lineShip, lineWh } from '../../lib/orders';
 import { deleteOrRequest } from '../../lib/deletes';
 import {
-  ALLOC_STATUS, DEST_TYPES, addAllocations, allocStatus, allocatedByPoLine, attachToOrder, cancelAllocation, createOrderFromGroup,
+  ALLOC_STATUS, CONT_KEYS, DEST_TYPES, addAllocations, addRows, updateRows, allocStatus, allocatedByPoLine, attachToOrder, cancelAllocation, createOrderFromGroup,
   detachFromOrder, groupForOrders, missingForOrder, poKey, updateAllocation,
 } from '../../lib/allocations';
 
@@ -44,9 +44,9 @@ export default function Allocation() {
           <button type="button" className={tab === 'chua' ? 'on' : ''} onClick={() => setParams({ tab: 'chua' })}>Hàng mua chưa phân bổ{nOpenPo ? ` (${nOpenPo})` : ''}</button>
         </div>
       </div>
-      <p className="hint">Mỗi dòng PO được chia thành các dòng kế hoạch (thường 1 dòng = 1 cont). Dòng <b>giao khách</b> sẽ thành đơn bán (SO) xuất từ nơi nhận hàng, dòng <b>về kho mình</b> thành lệnh chuyển kho (STO) từ nơi nhận hàng tới kho đó. Nơi nhận = kho nhập trên dòng PO (kho cảng / KNQ).</p>
+      <p className="hint">Mỗi dòng PO được chia thành các dòng kế hoạch theo cont. 1 cont có thể gồm nhiều mã hàng (nhiều dòng PO): các mã cùng số cont được gom thành 1 cont, sửa điểm giao một lần ở dòng cont. Dòng <b>giao khách</b> sẽ thành đơn bán (SO) xuất từ nơi nhận hàng, dòng <b>về kho mình</b> thành lệnh chuyển kho (STO) từ nơi nhận hàng tới kho đó. Nơi nhận = kho nhập trên dòng PO (kho cảng / KNQ).</p>
       <ErrorBox error={allocState.error || oErr} />
-      {tab === 'chua' ? <OpenPoLines {...ctx} pos={pos} setCo={setCo} /> : <Plan {...ctx} setCo={setCo} />}
+      {tab === 'chua' ? <OpenPoLines {...ctx} pos={pos} setCo={setCo} /> : <Plan {...ctx} pos={pos} setCo={setCo} />}
     </div>
   );
 }
@@ -144,7 +144,7 @@ const FILTERS = {
   '': 'Tất cả (trừ dòng đã hủy)',
   cancelled: 'Dòng đã hủy',
 };
-function Plan({ allocs, orderMap, orders, allocated, cats, co, setCo, canManage, user }) {
+function Plan({ allocs, orderMap, orders, allocated, pos, cats, co, setCo, canManage, user }) {
   const { isSuper } = useApp();
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('draft');
@@ -152,6 +152,7 @@ function Plan({ allocs, orderMap, orders, allocated, cats, co, setCo, canManage,
   const [sel, setSel] = useState(() => new Set());
   const [creating, setCreating] = useState(false);
   const [attach, setAttach] = useState(null);
+  const [contAdd, setContAdd] = useState(null); // 'new' | nhóm cont
   const [err, setErr] = useState('');
   const [msg, setMsg] = useState('');
   const rows = useMemo(() => {
@@ -164,6 +165,20 @@ function Plan({ allocs, orderMap, orders, allocated, cats, co, setCo, canManage,
       .filter((a) => !f || norm([a.poId, a.bct, a.item, a.itemName, a.contNo, a.fromWarehouse, a.partyCode, a.partyName, a.shipCode, a.toWarehouse, a.orderId, a.carrier, a.note].join(' ')).includes(f))
       .sort((x, y) => String(x.date || '9999').localeCompare(String(y.date || '9999')) || String(x.poId).localeCompare(String(y.poId)) || String(x.createdAt).localeCompare(String(y.createdAt)));
   }, [allocs, orderMap, co, dest, filter, q]);
+  // Gom các mã hàng cùng số cont (cùng công ty) thành 1 cont; dòng chưa có số cont đứng riêng
+  const groups = useMemo(() => {
+    const m = new Map();
+    for (const a of rows) {
+      const k = a.contNo ? `${a.company}|${a.contNo}` : `_${a._id}`;
+      if (!m.has(k)) m.set(k, { key: k, rows: [] });
+      m.get(k).rows.push(a);
+    }
+    return [...m.values()];
+  }, [rows]);
+  const saveGroup = async (g, patch) => {
+    setErr('');
+    try { await updateRows(g.rows.filter((a) => a.st === 'draft'), patch, user); } catch (e) { setErr(e.code === 'permission-denied' ? 'Bạn không có quyền sửa kế hoạch phân bổ.' : e.message); }
+  };
   const picked = rows.filter((a) => sel.has(a._id) && !missingForOrder(a));
   const toggle = (id) => setSel((s) => { const x = new Set(s); if (x.has(id)) x.delete(id); else x.add(id); return x; });
   const ready = rows.filter((a) => !missingForOrder(a));
@@ -220,6 +235,7 @@ function Plan({ allocs, orderMap, orders, allocated, cats, co, setCo, canManage,
         <input type="search" placeholder="Tìm PO, BCT, mã hàng, số cont, khách, kho, số đơn…" value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="actions" style={{ marginLeft: 'auto' }}>
           <button className="btn" onClick={exportExcel}>⬇ Excel</button>
+          {canManage && <button className="btn" onClick={() => setContAdd('new')} title="1 cont gồm nhiều mã hàng / nhiều dòng PO">＋ Cont nhiều mã hàng</button>}
           {canManage && <button className="btn primary" disabled={!picked.length} onClick={() => setCreating(true)}>Tạo đơn từ {picked.length} dòng đã chọn</button>}
         </div>
       </div>
@@ -227,76 +243,136 @@ function Plan({ allocs, orderMap, orders, allocated, cats, co, setCo, canManage,
       <ErrorBox error={err} />
       <datalist id="dl-alloc-soldto">{(cats.soldto || []).filter((c) => c.active !== false).map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</datalist>
       <div className="table-wrap">
-        {!rows.length ? <Empty text={filter === 'draft' ? 'Chưa có dòng kế hoạch nháp. Vào tab "Hàng mua chưa phân bổ" để chia dòng PO.' : 'Không có dòng nào.'} /> : (
+        {!rows.length ? <Empty text={filter === 'draft' ? 'Chưa có dòng kế hoạch nháp. Vào tab "Hàng mua chưa phân bổ" để chia dòng PO, hoặc bấm "＋ Cont nhiều mã hàng".' : 'Không có dòng nào.'} /> : (
           <table className="alloc-table">
             <thead><tr>
               <th>{canManage && ready.length > 0 && <input type="checkbox" checked={allOn} title="Chọn mọi dòng đủ thông tin" onChange={() => setSel(allOn ? new Set() : new Set(ready.map((a) => a._id)))} />}</th>
-              <th>Ngày giao</th><th>PO / BCT</th><th>Công ty</th><th>Mã hàng</th><th className="num">Số lượng (kg)</th><th>Số cont</th><th>Nơi nhận</th>
-              <th>Điểm giao</th><th>Khách hàng / Kho đến</th><th>Mã giao</th><th>Nhà vận chuyển</th><th>Ghi chú</th><th>Trạng thái</th><th></th>
+              <th>Số cont</th><th>Ngày giao</th><th>Nơi nhận</th><th>Điểm giao</th><th>Khách hàng / Kho đến</th><th>Mã giao</th><th>Nhà vận chuyển</th>
+              <th>PO / BCT</th><th>Công ty</th><th>Mã hàng</th><th className="num">Số lượng (kg)</th><th>Ghi chú</th><th>Trạng thái</th><th></th>
             </tr></thead>
-            <tbody>{rows.map((a) => (
-              <AllocRow key={a._id} a={a} edit={canManage && a.st === 'draft'} canManage={canManage} cats={cats} whs={whs}
-                checked={sel.has(a._id)} onCheck={() => toggle(a._id)} save={(p) => save(a, p)} setQty={(v) => setQty(a, v)}
-                onCancel={() => cancel(a)} onRemove={() => remove(a)} onAttach={() => setAttach(a)}
-                onDetach={() => detachFromOrder(a, user).catch((e) => setErr(e.message))} />
-            ))}</tbody>
+            <tbody>{groups.map((g) => {
+              const rowProps = (a, sub) => ({
+                key: a._id, a, sub, edit: canManage && a.st === 'draft', canManage, cats, whs,
+                checked: sel.has(a._id), onCheck: () => toggle(a._id), save: (p) => save(a, p), setQty: (v) => setQty(a, v),
+                onCancel: () => cancel(a), onRemove: () => remove(a), onAttach: () => setAttach(a),
+                onDetach: () => detachFromOrder(a, user).catch((e) => setErr(e.message)),
+              });
+              if (g.rows.length === 1) return <AllocRow {...rowProps(g.rows[0], false)} />;
+              const okRows = g.rows.filter((a) => !missingForOrder(a));
+              const on = okRows.length > 0 && okRows.every((a) => sel.has(a._id));
+              return [
+                <ContRow key={g.key} g={g} canManage={canManage} cats={cats} whs={whs}
+                  checked={on} onCheck={() => setSel((s0) => { const x = new Set(s0); okRows.forEach((a) => (on ? x.delete(a._id) : x.add(a._id))); return x; })}
+                  save={(p) => saveGroup(g, p)} onAdd={() => setContAdd(g)} />,
+                ...g.rows.map((a) => <AllocRow {...rowProps(a, true)} />),
+              ];
+            })}</tbody>
           </table>
         )}
       </div>
       {creating && <CreateOrders rows={picked} cats={cats} user={user} onClose={(m) => { setCreating(false); if (m) { setMsg(m); setSel(new Set()); } }} />}
       {attach && <AttachModal a={attach} orders={orders} allocs={allocs} user={user} onClose={() => setAttach(null)} />}
+      {contAdd && <ContModal base={contAdd === 'new' ? null : contAdd} pos={pos} allocated={allocated} user={user} onClose={() => setContAdd(null)} />}
     </div>
   );
 }
 
-// 1 dòng kế hoạch. Dòng nháp: sửa trực tiếp (ghi ngay khi rời ô / đổi lựa chọn)
-function AllocRow({ a, edit, canManage, cats, whs, checked, onCheck, save, setQty, onCancel, onRemove, onAttach, onDetach }) {
+// Giá trị chung của cont: giống nhau ở mọi dòng thì lấy, khác nhau thì để trống và đánh dấu
+function contView(rows) {
+  const v = { mixed: {} };
+  for (const k of [...CONT_KEYS, 'partyName']) {
+    const vals = [...new Set(rows.map((a) => a[k] ?? ''))];
+    v[k] = vals.length === 1 ? vals[0] : '';
+    if (vals.length > 1) v.mixed[k] = true;
+  }
+  if (v.mixed.destType) v.destType = '';
+  return v;
+}
+
+// Các ô điểm giao dùng chung (số cont, ngày giao, nơi nhận, điểm giao, khách / kho đến, mã giao, nhà vận chuyển)
+function SharedCells({ v, edit, save, cats, whs }) {
+  const mixed = (k) => (v.mixed?.[k] ? <div className="small" style={{ color: 'var(--amber)' }}>khác nhau giữa các mã</div> : null);
+  const blur = (k, conv = (x) => x.trim()) => (e) => { const x = conv(e.target.value); if (x !== (v[k] ?? '')) save({ [k]: x }); };
+  const ships = (cats.shipto || []).filter((sh) => sh.customerCode === v.partyCode);
+  const pickCustomer = (e) => {
+    const x = e.target.value.trim();
+    if (x === (v.partyCode || '')) return;
+    const c = (cats.soldto || []).find((r) => r.code === x);
+    if (x && !c) { e.target.value = v.partyCode || ''; window.alert(`Mã khách ${x} không có trong danh mục Soldto.`); return; }
+    const sh = (cats.shipto || []).filter((r) => r.customerCode === x);
+    save({ partyCode: x, partyName: c?.name || '', shipCode: sh.length === 1 ? sh[0].shipCode : '' });
+  };
+  return (
+    <>
+      <td>{edit ? <input style={{ width: 125 }} placeholder="Số cont" defaultValue={v.contNo} key={'c' + v.contNo} onBlur={blur('contNo', (x) => x.trim().toUpperCase())} /> : <span className="mono">{v.contNo}</span>}{mixed('contNo')}</td>
+      <td>{edit ? <input type="date" style={{ width: 140 }} defaultValue={v.date} key={'d' + v.date} onBlur={blur('date')} /> : <span className="nowrap">{fmtDate(v.date)}</span>}{mixed('date')}</td>
+      <td>{edit ? (
+        <select value={v.fromWarehouse || ''} onChange={(e) => save({ fromWarehouse: e.target.value })}>
+          <option value="">-- Kho --</option>{whs.map((w) => <option key={w.code} value={w.code}>{w.code}</option>)}
+        </select>) : v.fromWarehouse}{mixed('fromWarehouse')}</td>
+      <td>{edit ? (
+        <select value={v.destType || ''} onChange={(e) => e.target.value && save({ destType: e.target.value })}>
+          {!v.destType && <option value="">-- Khác nhau --</option>}
+          {Object.entries(DEST_TYPES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+        </select>) : DEST_TYPES[v.destType]}</td>
+      <td>{edit && v.destType === 'customer' ? (
+        <><input list="dl-alloc-soldto" style={{ width: 130 }} placeholder="Mã khách" defaultValue={v.partyCode} key={'p' + v.partyCode} onBlur={pickCustomer} />
+          {v.partyName && <div className="small">{v.partyName}</div>}</>
+      ) : edit && v.destType === 'warehouse' ? (
+        <select value={v.toWarehouse || ''} onChange={(e) => save({ toWarehouse: e.target.value })}>
+          <option value="">-- Kho đến --</option>{whs.filter((w) => w.code !== v.fromWarehouse).map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
+        </select>
+      ) : v.destType === 'customer' ? <>{v.partyCode}{v.partyName ? <div className="small">{v.partyName}</div> : null}</> : v.destType === 'warehouse' ? v.toWarehouse : <span className="small">–</span>}
+        {mixed(v.destType === 'warehouse' ? 'toWarehouse' : 'partyCode')}</td>
+      <td>{edit && v.destType === 'customer' && v.partyCode ? (
+        <select value={v.shipCode || ''} onChange={(e) => save({ shipCode: e.target.value })}>
+          <option value="">-- Mã giao --</option>{ships.map((sh) => <option key={sh.shipCode} value={sh.shipCode} title={sh.address}>{sh.shipCode}</option>)}
+        </select>) : v.destType === 'customer' ? v.shipCode : ''}</td>
+      <td>{edit ? (
+        <select value={v.carrier || ''} onChange={(e) => save({ carrier: e.target.value })}>
+          <option value="">--</option>{(cats.carriers || []).filter((c) => c.active !== false).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
+        </select>) : v.carrier}{mixed('carrier')}</td>
+    </>
+  );
+}
+
+// Dòng tiêu đề của 1 cont nhiều mã hàng: sửa điểm giao một lần cho cả cont
+function ContRow({ g, canManage, cats, whs, checked, onCheck, save, onAdd }) {
+  const v = contView(g.rows);
+  const drafts = g.rows.filter((a) => a.st === 'draft');
+  const edit = canManage && drafts.length === g.rows.length;
+  const total = g.rows.reduce((s, a) => s + n(a.qtyKg), 0);
+  const sts = [...new Set(g.rows.map((a) => a.st))];
+  const pos = [...new Set(g.rows.map((a) => a.poId))];
+  return (
+    <tr className="cont-head">
+      <td>{canManage && g.rows.some((a) => !missingForOrder(a)) && <input type="checkbox" checked={checked} title="Chọn cả cont" onChange={onCheck} />}</td>
+      <SharedCells v={v} edit={edit} save={save} cats={cats} whs={whs} />
+      <td className="mono small">{pos.join(', ')}</td>
+      <td><b>{g.rows[0].company}</b></td>
+      <td><b>📦 Cont {g.rows.length} mã hàng</b><div className="small">{[...new Set(g.rows.map((a) => a.item))].join(', ')}</div></td>
+      <td className="num"><b>{kg(total)}</b><div className="small">{tn(total)}</div></td>
+      <td className="small">{edit ? 'Sửa ở dòng này áp cho mọi mã trong cont' : ''}</td>
+      <td>{sts.map((k) => <span key={k} className={'badge ' + (ALLOC_STATUS[k]?.tone || '')} style={{ marginRight: 4 }}>{ALLOC_STATUS[k]?.label}</span>)}</td>
+      <td className="nowrap">{canManage && drafts.length > 0 && <button className="btn sm" title="Thêm mã hàng (dòng PO khác) vào cont này" onClick={onAdd}>＋ Mã</button>}</td>
+    </tr>
+  );
+}
+
+// 1 dòng kế hoạch (1 mã hàng của 1 dòng PO). sub = mã hàng nằm trong cont nhiều mã (điểm giao sửa ở dòng cont)
+function AllocRow({ a, sub, edit, canManage, cats, whs, checked, onCheck, save, setQty, onCancel, onRemove, onAttach, onDetach }) {
   const miss = missingForOrder(a);
   const st = ALLOC_STATUS[a.st];
   const blur = (k, conv = (v) => v.trim()) => (e) => { const v = conv(e.target.value); if (v !== (a[k] ?? '')) save({ [k]: v }); };
-  const ships = (cats.shipto || []).filter((s) => s.customerCode === a.partyCode);
-  const pickCustomer = (e) => {
-    const v = e.target.value.trim();
-    if (v === (a.partyCode || '')) return;
-    const c = (cats.soldto || []).find((x) => x.code === v);
-    if (v && !c) { e.target.value = a.partyCode || ''; window.alert(`Mã khách ${v} không có trong danh mục Soldto.`); return; }
-    const sh = (cats.shipto || []).filter((s) => s.customerCode === v);
-    save({ partyCode: v, partyName: c?.name || '', shipCode: sh.length === 1 ? sh[0].shipCode : '' });
-  };
   const orderCell = a.orderId ? <Link to={`/don-hang?tab=${a.orderType || 'SO'}`} className="mono" title={`Dòng ${a.orderLine} của ${a.orderId}`}>{a.orderId}</Link> : null;
   return (
-    <tr style={{ opacity: a.st === 'cancelled' ? 0.55 : 1 }}>
-      <td>{canManage && !miss && <input type="checkbox" checked={checked} onChange={onCheck} />}</td>
-      <td>{edit ? <input type="date" style={{ width: 140 }} defaultValue={a.date} key={'d' + a.date} onBlur={blur('date')} /> : <span className="nowrap">{fmtDate(a.date)}</span>}</td>
+    <tr className={sub ? 'cont-item' : ''} style={{ opacity: a.st === 'cancelled' ? 0.55 : 1 }}>
+      <td>{!sub && canManage && !miss && <input type="checkbox" checked={checked} onChange={onCheck} />}</td>
+      {sub ? <td colSpan={7} className="small" style={{ paddingLeft: 24 }}>↳ {a.contNo ? `cont ${a.contNo}` : ''}</td> : <SharedCells v={a} edit={edit} save={save} cats={cats} whs={whs} />}
       <td className="mono nowrap">{a.poId}{a.bct ? <div className="small">BCT {a.bct}</div> : null}</td>
       <td><b>{a.company}</b></td>
       <td>{a.item}<div className="small">{a.itemName}</div></td>
       <td className="num">{edit ? <input type="number" step="any" style={{ width: 100, textAlign: 'right' }} defaultValue={a.qtyKg} key={'q' + a.qtyKg} onBlur={(e) => { if (n(e.target.value) !== n(a.qtyKg) && !setQty(e.target.value)) e.target.value = a.qtyKg; }} /> : kg(a.qtyKg)}<div className="small">{tn(a.qtyKg)}</div></td>
-      <td>{edit ? <input style={{ width: 120 }} defaultValue={a.contNo} key={'c' + a.contNo} onBlur={blur('contNo', (v) => v.trim().toUpperCase())} /> : <span className="mono">{a.contNo}</span>}</td>
-      <td>{edit ? (
-        <select value={a.fromWarehouse || ''} onChange={(e) => save({ fromWarehouse: e.target.value })}>
-          <option value="">-- Kho --</option>{whs.map((w) => <option key={w.code} value={w.code}>{w.code}</option>)}
-        </select>) : a.fromWarehouse}</td>
-      <td>{edit ? (
-        <select value={a.destType || 'pending'} onChange={(e) => save({ destType: e.target.value })}>
-          {Object.entries(DEST_TYPES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-        </select>) : DEST_TYPES[a.destType]}</td>
-      <td>{edit && a.destType === 'customer' ? (
-        <><input list="dl-alloc-soldto" style={{ width: 130 }} placeholder="Mã khách" defaultValue={a.partyCode} key={'p' + a.partyCode} onBlur={pickCustomer} />
-          {a.partyName && <div className="small">{a.partyName}</div>}</>
-      ) : edit && a.destType === 'warehouse' ? (
-        <select value={a.toWarehouse || ''} onChange={(e) => save({ toWarehouse: e.target.value })}>
-          <option value="">-- Kho đến --</option>{whs.filter((w) => w.code !== a.fromWarehouse).map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-        </select>
-      ) : a.destType === 'customer' ? <>{a.partyCode}{a.partyName ? <div className="small">{a.partyName}</div> : null}</> : a.destType === 'warehouse' ? a.toWarehouse : <span className="small">–</span>}</td>
-      <td>{edit && a.destType === 'customer' && a.partyCode ? (
-        <select value={a.shipCode || ''} onChange={(e) => save({ shipCode: e.target.value })}>
-          <option value="">-- Mã giao --</option>{ships.map((s) => <option key={s.shipCode} value={s.shipCode} title={s.address}>{s.shipCode}</option>)}
-        </select>) : a.destType === 'customer' ? a.shipCode : ''}</td>
-      <td>{edit ? (
-        <select value={a.carrier || ''} onChange={(e) => save({ carrier: e.target.value })}>
-          <option value="">--</option>{(cats.carriers || []).filter((c) => c.active !== false).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
-        </select>) : a.carrier}</td>
       <td>{edit ? <input style={{ width: 140 }} defaultValue={a.note} key={'n' + a.note} onBlur={blur('note')} /> : <span className="small">{a.note}</span>}</td>
       <td>
         <span className={'badge ' + (st?.tone || '')}>{st?.label}</span>
@@ -310,6 +386,64 @@ function AllocRow({ a, edit, canManage, cats, whs, checked, onCheck, save, setQt
         {canManage && a.st === 'cancelled' && <button className="btn sm ghost" onClick={onRemove}>🗑</button>}
       </td>
     </tr>
+  );
+}
+
+// Lập cont nhiều mã hàng (hoặc thêm mã vào cont có sẵn): chọn các dòng PO còn chưa phân bổ, nhập số kg đưa vào cont
+function ContModal({ base, pos, allocated, user, onClose }) {
+  const first = base?.rows[0];
+  const [contNo, setContNo] = useState(first?.contNo || '');
+  const [date, setDate] = useState(first?.date || '');
+  const [q, setQ] = useState('');
+  const [qty, setQtyMap] = useState({});
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const inCont = new Set((base?.rows || []).map((a) => poKey(a.poId, a.poLine)));
+  const f = norm(q);
+  const lines = pos.filter((o) => !first || o.company === first.company).flatMap((o) => o.lines.map((l) => ({ o, l, key: poKey(o.id, l.no), left: Math.max(0, n(l.qtyKg) - (allocated.get(poKey(o.id, l.no)) || 0)) })))
+    .filter((r) => r.left > 0.001 && !inCont.has(r.key))
+    .filter((r) => !f || norm([r.o.id, r.o.refNo, r.o.partyName, r.l.item, r.l.itemName, lineWh(r.o, r.l, 'in')].join(' ')).includes(f));
+  const chosen = pos.flatMap((o) => o.lines.map((l) => ({ o, l, key: poKey(o.id, l.no), left: Math.max(0, n(l.qtyKg) - (allocated.get(poKey(o.id, l.no)) || 0)) }))).filter((r) => n(qty[r.key]) > 0);
+  const total = chosen.reduce((s, r) => s + n(qty[r.key]), 0);
+  const go = async () => {
+    setErr('');
+    if (!chosen.length) return setErr('Nhập số kg cho ít nhất 1 dòng PO.');
+    if (!base && !contNo.trim()) return setErr('Nhập số cont.');
+    const cos = [...new Set(chosen.map((r) => r.o.company))];
+    if (cos.length > 1) return setErr(`1 cont chỉ thuộc 1 công ty, đang chọn hàng của ${cos.join(', ')}.`);
+    const over = chosen.find((r) => n(qty[r.key]) > r.left + 0.001);
+    if (over) return setErr(`${over.o.id} ${over.l.item}: chỉ còn ${kg(over.left)} kg chưa phân bổ.`);
+    const shared = base ? Object.fromEntries(CONT_KEYS.map((k) => [k, contView(base.rows)[k]])) : { contNo: contNo.trim().toUpperCase(), date };
+    setBusy(true);
+    try {
+      await addRows(chosen.map((r) => ({ po: r.o, line: r.l, ...shared, qtyKg: Math.round(n(qty[r.key]) * 1000) / 1000, date: shared.date || '' })), user);
+      onClose();
+    } catch (e) { setErr(e.code === 'permission-denied' ? 'Bạn không có quyền lập kế hoạch phân bổ.' : e.message); setBusy(false); }
+  };
+  return (
+    <Modal title={base ? `Thêm mã hàng vào cont ${first.contNo}` : 'Lập cont nhiều mã hàng'} onClose={onClose} wide>
+      {!base && (
+        <div className="form-grid">
+          <label className="field"><span>Số cont *</span><input value={contNo} onChange={(e) => setContNo(e.target.value)} /></label>
+          <label className="field"><span>Ngày giao dự kiến</span><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+        </div>
+      )}
+      <p className="small">Nhập số kg của từng dòng PO đưa vào cont{base ? ` (công ty ${first.company}, điểm giao lấy theo cont)` : ''}. Các mã hàng trong cùng cont có chung ngày giao, nơi nhận, điểm giao và nhà vận chuyển; sửa ở dòng cont.</p>
+      <input type="search" placeholder="Tìm số PO, BCT, mã hàng…" value={q} onChange={(e) => setQ(e.target.value)} style={{ marginBottom: 8, width: '100%' }} />
+      <div className="table-wrap" style={{ maxHeight: 360, overflow: 'auto' }}>
+        {!lines.length ? <Empty text="Không còn dòng PO nào chưa phân bổ." /> : (
+          <table><thead><tr><th>Số PO</th><th>BCT</th><th>Công ty</th><th>ETA</th><th>Nơi nhận</th><th>Mã hàng</th><th className="num">Chưa phân bổ (kg)</th><th className="num">Đưa vào cont (kg)</th></tr></thead>
+            <tbody>{lines.map((r) => (
+              <tr key={r.key}><td className="mono">{r.o.id}</td><td className="mono">{r.o.refNo}</td><td>{r.o.company}</td><td>{fmtDate(r.l.dueDate || r.o.dueDate)}</td><td>{lineWh(r.o, r.l, 'in')}</td>
+                <td>{r.l.item}<div className="small">{r.l.itemName}</div></td><td className="num">{kg(r.left)}</td>
+                <td className="num"><input type="number" step="any" style={{ width: 110, textAlign: 'right' }} value={qty[r.key] ?? ''} onChange={(e) => setQtyMap((m) => ({ ...m, [r.key]: e.target.value }))} /></td></tr>
+            ))}</tbody></table>
+        )}
+      </div>
+      <p>Đã chọn {chosen.length} dòng, tổng <b>{kg(total)} kg</b> ({tn(total)}).</p>
+      <ErrorBox error={err} />
+      <div className="form-actions"><button className="btn" onClick={onClose}>Đóng</button><button className="btn primary" disabled={busy} onClick={go}>{base ? 'Thêm vào cont' : 'Lập cont'}</button></div>
+    </Modal>
   );
 }
 

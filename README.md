@@ -303,6 +303,8 @@ Thay cột "Điểm giao" của sheet COST CONT: mỗi dòng PO (hàng về cả
 - Tab **Kế hoạch phân bổ**: sửa trực tiếp dòng nháp (ngày giao, số kg, số cont, nơi nhận, điểm giao, khách + mã giao hoặc kho đến, nhà vận chuyển, ghi chú). Tổng các dòng không vượt số đặt của dòng PO (+ dung sai).
 - Nơi nhận = kho nhập của dòng PO (kho cảng / KNQ khai trong danh mục kho). Hàng về thì lập phiếu nhập vào kho cảng như PO thường.
 - Chọn dòng → **Tạo đơn**: dòng giao khách gom thành SO theo công ty + khách (kho xuất = nơi nhận), dòng về kho mình gom thành STO theo công ty (kho đi = nơi nhận). Số cont, số PO ghi vào ghi chú dòng đơn; dòng kế hoạch nhớ số đơn + dòng đơn, trạng thái tự cập nhật (Đã tạo đơn → Đang giao → Đã giao).
+- **Cont nhiều mã hàng**: các dòng cùng số cont (cùng công ty) được gom thành 1 cont; ngày giao, nơi nhận, điểm giao, khách / kho đến, mã giao, nhà vận chuyển sửa 1 lần ở dòng cont. Nút "＋ Cont nhiều mã hàng" lập cont từ nhiều dòng PO (nhập kg từng dòng), "＋ Mã" thêm mã vào cont có sẵn.
+- Nhà vận chuyển chọn trong kế hoạch ghi vào dòng SO/STO; lập phiếu xuất kho theo đơn tự điền Đơn vị vận tải (khi các dòng xuất ở kho đó cùng 1 đơn vị).
 - **Gắn SO**: gắn dòng kế hoạch vào dòng đơn bán sale đã lập (cùng công ty, mã hàng, khách); không đổi đơn.
 - Dòng nháp hủy được (quay lại phần chưa phân bổ); dòng đã có đơn thì sửa / hủy ở đơn. Chi tiết PO có bảng "Kế hoạch phân bổ".
 - Quyền: kinh doanh, kế toán, quản trị (collection `allocations`, nhớ dán lại firestore.rules).

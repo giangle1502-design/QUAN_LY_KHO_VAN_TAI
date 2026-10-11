@@ -1,4 +1,4 @@
-import { collection, doc, runTransaction, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, doc, runTransaction, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { createOrder, summarizeLines } from './orders';
 import { today } from './utils';
@@ -69,20 +69,35 @@ export function missingForOrder(a) {
   return 'điểm giao chưa chốt';
 }
 
-// Thêm N dòng kế hoạch cho 1 dòng PO
-export async function addAllocations(po, line, parts, user) {
+// Trường điểm giao dùng chung cho cả cont (sửa ở dòng cont thì áp cho mọi mã hàng trong cont)
+export const CONT_KEYS = ['date', 'contNo', 'fromWarehouse', 'destType', 'partyCode', 'partyName', 'shipCode', 'toWarehouse', 'carrier'];
+
+// Thêm dòng kế hoạch: mỗi phần tử { po, line, qtyKg, contNo?, date?, ...trường điểm giao chung của cont }
+export async function addRows(parts, user) {
   const at = nowISO();
-  for (const p of parts) {
+  const b = writeBatch(db);
+  for (const { po, line, ...p } of parts) {
     const ref = doc(collection(db, 'allocations'));
-    await setDoc(ref, {
+    b.set(ref, {
       id: ref.id, poId: po.id, poLine: line.no, company: po.company || '', supplier: po.partyCode || '', supplierName: po.partyName || '',
       bct: po.refNo || '', item: line.item, itemName: line.itemName || '', qtyKg: p.qtyKg, date: p.date || line.dueDate || po.dueDate || '',
-      contNo: p.contNo || '', fromWarehouse: line.warehouse || po.warehouse || '', destType: 'pending',
-      partyCode: '', partyName: '', shipCode: '', toWarehouse: '', carrier: '', note: '',
+      contNo: p.contNo || '', fromWarehouse: p.fromWarehouse || line.warehouse || po.warehouse || '', destType: p.destType || 'pending',
+      partyCode: p.partyCode || '', partyName: p.partyName || '', shipCode: p.shipCode || '', toWarehouse: p.toWarehouse || '', carrier: p.carrier || '', note: '',
       orderId: '', orderType: '', orderLine: null, status: 'draft',
       createdAt: at, createdBy: user.email, updatedAt: at, updatedBy: user.email,
     });
   }
+  await b.commit();
+}
+// N dòng cho 1 dòng PO (chia đều theo cont)
+export const addAllocations = (po, line, parts, user) => addRows(parts.map((p) => ({ po, line, ...p })), user);
+
+// Sửa cùng lúc nhiều dòng (các mã hàng của 1 cont)
+export async function updateRows(rows, patch, user) {
+  const b = writeBatch(db);
+  const at = nowISO();
+  rows.forEach((a) => b.update(doc(db, 'allocations', a._id), { ...patch, updatedAt: at, updatedBy: user.email }));
+  await b.commit();
 }
 
 export const updateAllocation = (id, patch, user) =>

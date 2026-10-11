@@ -409,3 +409,6 @@ table.picker tr.sub td:nth-child(2) { padding-left: 14px; }
 .cols-edit input, .cols-edit select { padding: 4px 6px; font-size: 13px; }
 .cols-edit td:nth-child(2) select, .cols-edit td:nth-child(2) input { width: 100%; min-width: 170px; margin-bottom: 2px; }
 @media print { .tpl-screen .tpl-pages { padding: 0; overflow: visible; } }
+/* Kế hoạch phân bổ: cont nhiều mã hàng */
+.alloc-table tr.cont-head td { background: var(--primary-soft); border-top: 2px solid var(--primary); }
+.alloc-table tr.cont-item td { background: #fafbfd; }

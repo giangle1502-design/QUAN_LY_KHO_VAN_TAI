@@ -91,7 +91,7 @@ function Form({ type }) {
     if (!t) return;
     if (t.warehouse !== opWh) setOpWh(t.warehouse);
     // Xe xuất hàng: lấy luôn đơn vị vận tải, số xe, tài xế từ chuyến xe đã đăng ký ở cổng
-    if (type === 'out') setHead((h) => ({ ...h, plate: t.plate || '', carrier: t.carrier || '', carrierName: t.carrierName || '', idCard: t.idCard || '', driverName: t.driverName || '', driverPhone: t.driverPhone || '' }));
+    if (type === 'out') setHead((h) => ({ ...h, plate: t.plate || '', carrier: t.carrier || h.carrier, carrierName: t.carrier ? t.carrierName || '' : h.carrierName, idCard: t.idCard || '', driverName: t.driverName || '', driverPhone: t.driverPhone || '' }));
     const l = t.lines?.find((x) => x.orderId) || t.lines?.[0];
     if (l && l.orderId && !head.orderId) pickOrder(l.orderId);
     else if (l && !head.partyCode) setHead((h) => ({ ...h, partyCode: l.partyCode, partyName: l.partyName, shipCode: l.shipCode || '' }));
@@ -133,7 +133,11 @@ function Form({ type }) {
       .map((l) => (type === 'out' ? lineTo(o, l) : lineFrom(o, l))).filter(Boolean))].join(', ');
     const party = o.type !== 'STO' ? { partyCode: o.partyCode, partyName: o.partyName, shipCode: o.shipCode || (myLine ? lineShip(o, myLine) : '') }
       : { partyCode: others, partyName: `Chuyển ${type === 'out' ? 'đến' : 'từ'} kho ${others}`, shipCode: '' };
-    setHead((h) => ({ ...h, orderId: id, ...party, ...(o.company ? { company: o.company } : {}) }));
+    // Xuất kho: lấy đơn vị vận tải đã giao cho các dòng đơn làm ở kho này (kế hoạch phân bổ / Giao đơn vị vận tải), nếu phiếu chưa ghi
+    const cars = type === 'out' ? [...new Set(o.lines.filter((l) => inPlan(l) && openK(o, l, type) > 0 && (!tw || !lineWh(o, l, type) || lineWh(o, l, type) === tw))
+      .map((l) => l.carrier).filter(Boolean))] : [];
+    const car = cars.length === 1 ? { carrier: cars[0], carrierName: carriers.find((c) => c.code === cars[0])?.name || '', carrierAuto: true } : { carrier: '', carrierName: '', carrierAuto: false };
+    setHead((h) => ({ ...h, orderId: id, ...party, ...(o.company ? { company: o.company } : {}), ...(!h.carrier || h.carrierAuto ? car : {}) }));
     // Nhập theo STO: luôn lấy hàng từ phiếu xuất ở kho đi (mã, lot, NSX, HSD, TTHH, số lượng), không phải nhập lại
     if (type === 'in' && o.type === 'STO') { fillFromTransfer(o, tw); return; }
     setPlan(opts.plan || null);
@@ -288,7 +292,13 @@ function Form({ type }) {
     const car = veh && carriers.find((c) => c.code === veh.carrier);
     setHead((h) => ({ ...h, plate: v.toUpperCase(), ...(veh ? { carrier: veh.carrier || h.carrier, carrierName: car?.name || h.carrierName } : {}) }));
   };
-  const pickCarrier = (v) => { const c = carriers.find((x) => x.code === v); setHead((h) => ({ ...h, carrier: v, carrierName: c ? c.name : h.carrierName })); };
+  const pickCarrier = (v) => { const c = carriers.find((x) => x.code === v); setHead((h) => ({ ...h, carrier: v, carrierName: c ? c.name : h.carrierName, carrierAuto: false })); };
+  // Đơn vị vận tải tự lấy từ đơn khi danh mục chưa tải xong: điền tên khi có
+  useEffect(() => {
+    if (!head.carrier || head.carrierName) return;
+    const c = carriers.find((x) => x.code === head.carrier);
+    if (c) setHead((h) => ({ ...h, carrierName: c.name }));
+  }, [head.carrier, head.carrierName, carriers]);
   const pickDriver = (v) => { const d = drivers.find((x) => x.idCard === v); setHead((h) => ({ ...h, idCard: v, ...(d ? { driverName: d.name || '', driverPhone: d.phone || '' } : {}) })); };
 
   const parties = type === 'in' && source !== 'SO' ? suppliers : soldto;
