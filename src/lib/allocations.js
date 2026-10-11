@@ -151,10 +151,36 @@ export async function createOrderFromGroup(g, { sales, whName }, user) {
 }
 
 // Gắn dòng kế hoạch vào dòng SO có sẵn (sale đã lên đơn trước)
-export const attachToOrder = (a, o, l, user) => updateAllocation(a._id, {
-  orderId: o.id, orderType: o.type, orderLine: l.no, status: 'ordered', destType: 'customer', attached: true,
-  partyCode: o.partyCode || '', partyName: o.partyName || '', shipCode: l.shipCode || o.shipCode || a.shipCode || '',
-}, user);
+// Nhà vận chuyển đã chọn trong kế hoạch ghi luôn vào dòng SO (nếu dòng đơn chưa có), để phiếu xuất kho tự lấy
+export async function attachToOrder(a, o, l, user) {
+  await updateAllocation(a._id, {
+    orderId: o.id, orderType: o.type, orderLine: l.no, status: 'ordered', destType: 'customer', attached: true,
+    partyCode: o.partyCode || '', partyName: o.partyName || '', shipCode: l.shipCode || o.shipCode || a.shipCode || '',
+  }, user);
+  if (a.carrier && !l.carrier) await setCarrier([{ ...a, orderId: o.id, orderLine: l.no }], a.carrier, user);
+}
+
+// Đổi nhà vận chuyển cho dòng kế hoạch đã có đơn: ghi cả vào dòng đơn (SO / STO) trong cùng giao dịch
+export async function setCarrier(rows, carrier, user) {
+  const byOrder = new Map();
+  for (const a of rows) if (a.orderId) byOrder.set(a.orderId, [...(byOrder.get(a.orderId) || []), a]);
+  return runTransaction(db, async (tx) => {
+    const snaps = [];
+    for (const id of byOrder.keys()) snaps.push(await tx.get(doc(db, 'orders', id)));
+    const at = nowISO();
+    for (const s of snaps) {
+      if (!s.exists()) continue;
+      const o = s.data();
+      const nos = new Set(byOrder.get(s.id).map((a) => a.orderLine));
+      const lines = o.lines.map((l) => (nos.has(l.no) ? { ...l, carrier } : l));
+      tx.update(s.ref, {
+        lines, carriers: [...new Set(lines.map((l) => l.carrier).filter(Boolean))], updatedAt: at, updatedBy: user.email,
+        history: [...(o.history || []), { at, by: user.email, byName: user.name, action: `Giao vận tải (kế hoạch phân bổ): ${carrier || 'bỏ'} cho dòng ${[...nos].join(', ')}` }],
+      });
+    }
+    rows.forEach((a) => tx.update(doc(db, 'allocations', a._id), { carrier, updatedAt: at, updatedBy: user.email }));
+  });
+}
 // Bỏ gắn (chỉ với đơn có sẵn được gắn vào, không phải đơn lập từ kế hoạch)
 export const detachFromOrder = (a, user) => updateAllocation(a._id, { orderId: '', orderType: '', orderLine: null, status: 'draft', attached: false }, user);
 

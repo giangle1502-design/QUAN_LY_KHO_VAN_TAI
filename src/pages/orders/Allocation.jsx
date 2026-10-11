@@ -10,7 +10,7 @@ import { OPEN_STATUSES, leftKg, lineShip, lineWh } from '../../lib/orders';
 import { deleteOrRequest } from '../../lib/deletes';
 import {
   ALLOC_STATUS, CONT_KEYS, DEST_TYPES, addAllocations, addRows, updateRows, allocStatus, allocatedByPoLine, attachToOrder, cancelAllocation, createOrderFromGroup,
-  detachFromOrder, groupForOrders, missingForOrder, poKey, updateAllocation,
+  detachFromOrder, groupForOrders, setCarrier, missingForOrder, poKey, updateAllocation,
 } from '../../lib/allocations';
 
 const n = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? 0 : Number(v));
@@ -177,7 +177,12 @@ function Plan({ allocs, orderMap, orders, allocated, pos, cats, co, setCo, canMa
   }, [rows]);
   const saveGroup = async (g, patch) => {
     setErr('');
-    try { await updateRows(g.rows.filter((a) => a.st === 'draft'), patch, user); } catch (e) { setErr(e.code === 'permission-denied' ? 'Bạn không có quyền sửa kế hoạch phân bổ.' : e.message); }
+    try {
+      const linked = g.rows.filter((a) => a.orderId && a.st !== 'cancelled');
+      if ('carrier' in patch && linked.length) await setCarrier(linked, patch.carrier, user);
+      const drafts = g.rows.filter((a) => a.st === 'draft');
+      if (drafts.length) await updateRows(drafts, patch, user);
+    } catch (e) { setErr(e.code === 'permission-denied' ? 'Bạn không có quyền sửa kế hoạch phân bổ.' : e.message); }
   };
   const picked = rows.filter((a) => sel.has(a._id) && !missingForOrder(a));
   const toggle = (id) => setSel((s) => { const x = new Set(s); if (x.has(id)) x.delete(id); else x.add(id); return x; });
@@ -186,7 +191,7 @@ function Plan({ allocs, orderMap, orders, allocated, pos, cats, co, setCo, canMa
   const sum = rows.reduce((s, a) => s + n(a.qtyKg), 0);
   const save = async (a, patch) => {
     setErr('');
-    try { await updateAllocation(a._id, patch, user); } catch (e) { setErr(e.code === 'permission-denied' ? 'Bạn không có quyền sửa kế hoạch phân bổ.' : e.message); }
+    try { await (a.orderId && 'carrier' in patch ? setCarrier([a], patch.carrier, user) : updateAllocation(a._id, patch, user)); } catch (e) { setErr(e.code === 'permission-denied' ? 'Bạn không có quyền sửa kế hoạch phân bổ.' : e.message); }
   };
   const setQty = (a, v) => {
     const po = orderMap.get(a.poId);
@@ -290,7 +295,7 @@ function contView(rows) {
 }
 
 // Các ô điểm giao dùng chung (số cont, ngày giao, nơi nhận, điểm giao, khách / kho đến, mã giao, nhà vận chuyển)
-function SharedCells({ v, edit, save, cats, whs }) {
+function SharedCells({ v, edit, editCarrier = edit, save, cats, whs }) {
   const mixed = (k) => (v.mixed?.[k] ? <div className="small" style={{ color: 'var(--amber)' }}>khác nhau giữa các mã</div> : null);
   const blur = (k, conv = (x) => x.trim()) => (e) => { const x = conv(e.target.value); if (x !== (v[k] ?? '')) save({ [k]: x }); };
   const ships = (cats.shipto || []).filter((sh) => sh.customerCode === v.partyCode);
@@ -328,8 +333,8 @@ function SharedCells({ v, edit, save, cats, whs }) {
         <select value={v.shipCode || ''} onChange={(e) => save({ shipCode: e.target.value })}>
           <option value="">-- Mã giao --</option>{ships.map((sh) => <option key={sh.shipCode} value={sh.shipCode} title={sh.address}>{sh.shipCode}</option>)}
         </select>) : v.destType === 'customer' ? v.shipCode : ''}</td>
-      <td>{edit ? (
-        <select value={v.carrier || ''} onChange={(e) => save({ carrier: e.target.value })}>
+      <td>{editCarrier ? (
+        <select value={v.carrier || ''} title={edit ? '' : 'Đổi nhà vận chuyển ghi luôn vào dòng đơn'} onChange={(e) => save({ carrier: e.target.value })}>
           <option value="">--</option>{(cats.carriers || []).filter((c) => c.active !== false).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
         </select>) : v.carrier}{mixed('carrier')}</td>
     </>
@@ -347,7 +352,7 @@ function ContRow({ g, canManage, cats, whs, checked, onCheck, save, onAdd }) {
   return (
     <tr className="cont-head">
       <td>{canManage && g.rows.some((a) => !missingForOrder(a)) && <input type="checkbox" checked={checked} title="Chọn cả cont" onChange={onCheck} />}</td>
-      <SharedCells v={v} edit={edit} save={save} cats={cats} whs={whs} />
+      <SharedCells v={v} edit={edit} editCarrier={canManage && g.rows.some((a) => ['draft', 'ordered', 'partial'].includes(a.st))} save={save} cats={cats} whs={whs} />
       <td className="mono small">{pos.join(', ')}</td>
       <td><b>{g.rows[0].company}</b></td>
       <td><b>📦 Cont {g.rows.length} mã hàng</b><div className="small">{[...new Set(g.rows.map((a) => a.item))].join(', ')}</div></td>
@@ -368,7 +373,8 @@ function AllocRow({ a, sub, edit, canManage, cats, whs, checked, onCheck, save, 
   return (
     <tr className={sub ? 'cont-item' : ''} style={{ opacity: a.st === 'cancelled' ? 0.55 : 1 }}>
       <td>{!sub && canManage && !miss && <input type="checkbox" checked={checked} onChange={onCheck} />}</td>
-      {sub ? <td colSpan={7} className="small" style={{ paddingLeft: 24 }}>↳ {a.contNo ? `cont ${a.contNo}` : ''}</td> : <SharedCells v={a} edit={edit} save={save} cats={cats} whs={whs} />}
+      {sub ? <td colSpan={7} className="small" style={{ paddingLeft: 24 }}>↳ {a.contNo ? `cont ${a.contNo}` : ''}</td>
+        : <SharedCells v={a} edit={edit} editCarrier={canManage && ['draft', 'ordered', 'partial'].includes(a.st)} save={save} cats={cats} whs={whs} />}
       <td className="mono nowrap">{a.poId}{a.bct ? <div className="small">BCT {a.bct}</div> : null}</td>
       <td><b>{a.company}</b></td>
       <td>{a.item}<div className="small">{a.itemName}</div></td>
