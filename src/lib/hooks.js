@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
+import { stockId } from './stock';
 
 // Nghe realtime toàn bộ 1 collection danh mục (danh mục thường nhỏ, vài nghìn dòng)
 export function useCollection(name) {
@@ -148,9 +149,12 @@ export function useOrders(type, onlyOpen = false) {
 
 // Phiếu nhập đã lập, chờ thủ kho nhận hàng (chưa cập nhật đơn): Map số đơn → { ids: [số phiếu], byLine: { dòng đơn: kg } }
 // Dùng để trừ vào phần còn phải nhập của PO / STO, tránh lập trùng phiếu
-export function usePendingIn() {
+export const usePendingIn = () => usePendingMoves('in', 'pending');
+// Phiếu xuất chờ giải chấp (chưa trừ tồn, chưa cập nhật đơn): trừ vào phần còn phải xuất của đơn
+export const useWaitingOut = () => usePendingMoves('out', 'wait_release');
+function usePendingMoves(type, status) {
   const [map, setMap] = useState(new Map());
-  useEffect(() => onSnapshot(query(collection(db, 'movements'), where('type', '==', 'in'), where('status', '==', 'pending')), (s) => {
+  useEffect(() => onSnapshot(query(collection(db, 'movements'), where('type', '==', type), where('status', '==', status)), (s) => {
     const m = new Map();
     for (const d of s.docs) {
       const x = d.data();
@@ -160,8 +164,21 @@ export function usePendingIn() {
       e.ids.push(x.id || d.id);
       for (const l of x.lines || []) if (l.orderLine != null) e.byLine[l.orderLine] = (e.byLine[l.orderLine] || 0) + Math.abs(Number(l.kg) || 0);
     }
+    // Phiếu xuất chờ giải chấp giữ chỗ dòng tồn (chưa trừ tồn): stockId → { kg, bags, pallets }
+    m.byStock = new Map();
+    if (type === 'out') {
+      for (const d of s.docs) {
+        const x = d.data();
+        for (const l of x.lines || []) {
+          const k = stockId({ ...l, warehouse: x.warehouse, company: l.company ?? x.company ?? '' });
+          const c = m.byStock.get(k) || { kg: 0, bags: 0, pallets: 0 };
+          c.kg += Math.abs(Number(l.kg) || 0); c.bags += Math.abs(Number(l.bags) || 0); c.pallets += Math.abs(Number(l.pallets) || 0);
+          m.byStock.set(k, c);
+        }
+      }
+    }
     m.loaded = true;
     setMap(m);
-  }, () => { const m = new Map(); m.loaded = true; setMap(m); }), []);
+  }, () => { const m = new Map(); m.loaded = true; setMap(m); }), [type, status]);
   return map;
 }

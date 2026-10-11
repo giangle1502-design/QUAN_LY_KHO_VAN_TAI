@@ -3,11 +3,11 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
-import { useCollection, useMyWarehouses, useOpCompany, useOpWarehouse, useOrders, usePendingIn, useStock, useTrips } from '../../lib/hooks';
+import { useCollection, useMyWarehouses, useOpCompany, useOpWarehouse, useOrders, usePendingIn, useStock, useTrips, useWaitingOut } from '../../lib/hooks';
 import { CompanyPicker } from '../../components/TripBits';
 import { IN_SOURCES, OPEN_STATUSES, ORDER_FOR_MOVE, ORDER_TYPES, isReturn, lineFrom, lineShip, lineTo, lineWh, matchOrderLine, openKg, orderInWarehouse, orderWarehouse, stoRoute } from '../../lib/orders';
-import { MOVE_TYPES, ageDays, createPendingIn, kgOf, postMovement, stockId, suggestPallets } from '../../lib/stock';
-import { autoReleaseForSlip, releaseStatusOfWh } from '../../lib/release';
+import { MOVE_TYPES, ageDays, createPendingIn, createWaitingOut, kgOf, postMovement, suggestPallets } from '../../lib/stock';
+import { releaseStatusOfWh } from '../../lib/release';
 import { ST, vnDate } from '../../lib/trips';
 import { fmtDate, fmtNum } from '../../lib/utils';
 import { ErrorBox, Field, Modal } from '../../components/ui';
@@ -56,7 +56,13 @@ function Form({ type }) {
   const soldto = useCollection('soldto').rows;
   const shipto = useCollection('shipto').rows;
   const reasons = useCollection('reasons').rows;
-  const { rows: stock, loading: stockLoading } = useStock(whCode || '__none__');
+  const { rows: stockAll, loading: stockLoading } = useStock(whCode || '__none__');
+  // Phiếu xuất chờ giải chấp đã giữ chỗ hàng (chưa trừ tồn): phiếu xuất / chuyển khác chỉ thấy phần còn lại
+  const waitOut = useWaitingOut();
+  const stock = useMemo(() => (type === 'in' || !waitOut.byStock?.size ? stockAll : stockAll.map((r) => {
+    const h = waitOut.byStock.get(r._id);
+    return h ? { ...r, kg: r3(num(r.kg) - h.kg), bags: r3(num(r.bags) - h.bags), pallets: r3(num(r.pallets) - h.pallets), heldKg: h.kg } : r;
+  }).filter((r) => num(r.kg) > 0.001)), [stockAll, waitOut, type]);
   const { rows: trips } = useTrips([ST.PROCESSING], whCode);
   const itemMap = useMemo(() => new Map(items.map((i) => [i.code, i])), [items]);
   const statusMap = useMemo(() => new Map(statuses.map((s) => [s.code, s])), [statuses]);
@@ -66,7 +72,9 @@ function Form({ type }) {
   const { rows: allOrders, loading: ordersLoading } = useOrders(orderTypes.length ? '' : '__none__');
   // Phiếu nhập đã lập theo đơn, chờ thủ kho nhận: trừ vào phần còn phải nhập (không lập trùng)
   const pendIn = usePendingIn();
-  const openK = (o, l, t) => (t === 'in' && !isReturn(o, t) ? Math.max(0, openKg(o, l, t) - (pendIn.get(o.id)?.byLine?.[l.no] || 0)) : openKg(o, l, t));
+  // Phiếu xuất chờ giải chấp chưa cập nhật đơn: trừ vào phần còn phải xuất (không lập trùng)
+  const openK = (o, l, t) => (t === 'in' && !isReturn(o, t) ? Math.max(0, openKg(o, l, t) - (pendIn.get(o.id)?.byLine?.[l.no] || 0))
+    : t === 'out' ? Math.max(0, openKg(o, l, t) - (waitOut.get(o.id)?.byLine?.[l.no] || 0)) : openKg(o, l, t));
   const orders = useMemo(() => allOrders.filter((o) => orderTypes.includes(o.type)
     && o.lines.some((l) => openK(o, l, type) > 0)
     && (OPEN_STATUSES.includes(o.status) || (type === 'in' && o.status === 'closed' && o.type === 'STO') || (isReturn(o, type) && ['done', 'closed'].includes(o.status)))), [allOrders, type, pendIn]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -224,7 +232,7 @@ function Form({ type }) {
       if (lineWh(order, ol, 'out') && lineWh(order, ol, 'out') !== whCode) continue;
       // Chọn từ bảng: chỉ các dòng đã tích, đúng số lượng muốn xuất
       if (plan && !(plan[ol.no] > 0)) continue;
-      let need = plan ? Math.min(plan[ol.no], openKg(order, ol, 'out') * (1 + num(order.tolerancePct) / 100)) : openKg(order, ol, 'out');
+      let need = plan ? Math.min(plan[ol.no], openK(order, ol, 'out') * (1 + num(order.tolerancePct) / 100)) : openK(order, ol, 'out');
       if (need > 0.001) anyNeed = true;
       const htcOk = !ol.goodsStatus || ol.goodsStatus === 'HTC' || ol.goodsStatus === relTo;
       const cands = [...fifo.filter((x) => x.item === ol.item && (!ol.goodsStatus || x.goodsStatus === ol.goodsStatus)),
@@ -245,7 +253,7 @@ function Form({ type }) {
     }
     if (next.length) setLines(next);
     if (!anyNeed) { setFillNote(`${order.id} không còn dòng nào cần xuất từ kho ${whCode} (dòng còn lại thuộc kho khác hoặc đã giao đủ).`); setAutoFill(''); return; }
-    setFillNote(`${next.length ? `Đã chọn sẵn ${next.length} dòng tồn theo FIFO cho ${order.id}. Sửa số bao nếu xe chở ít hơn.` : `Kho ${whCode} không còn tồn được xuất cho ${order.id}.`}${htcKg > 0.001 ? ` Trong đó ${fmtNum(htcKg, 2)} kg là hàng HTC: khi lập phiếu sẽ tự đưa vào đề nghị giải chấp và đổi sang ${relTo} ngay.` : ''}${short.length ? ` Không đủ tồn: ${short.join(', ')}.` : ''}`);
+    setFillNote(`${next.length ? `Đã chọn sẵn ${next.length} dòng tồn theo FIFO cho ${order.id}. Sửa số bao nếu xe chở ít hơn.` : `Kho ${whCode} không còn tồn được xuất cho ${order.id}.`}${htcKg > 0.001 ? ` Trong đó ${fmtNum(htcKg, 2)} kg là hàng HTC: phiếu sẽ ở trạng thái Chờ giải chấp cho đến khi lập lệnh giải chấp (đổi sang ${relTo}).` : ''}${short.length ? ` Không đủ tồn: ${short.join(', ')}.` : ''}`);
     setAutoFill(''); setPlan(null);
   }, [autoFill, order, stock, stockLoading, whCode]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -390,48 +398,32 @@ function Form({ type }) {
         }
       }
     }
-    // Hàng HTC trong phiếu xuất bán: đưa vào đề nghị giải chấp và đổi tình trạng trước, rồi mới ghi phiếu xuất
+    // Hàng HTC trong phiếu xuất bán: phiếu lưu "Chờ giải chấp" (in, soạn hàng được; tồn chưa trừ),
+    // nhân viên lập lệnh giải chấp gộp nhiều đơn ở Kho → Đề nghị giải chấp → Chờ giải chấp, lúc đó phiếu mới ghi xuất kho
     const rel = out.filter((l) => l._rel);
     if (rel.length && !window.confirm(`Phiếu có ${rel.length} dòng hàng HTC (${fmtNum(rel.reduce((a, l) => a + num(l.kg), 0), 2)} kg).\n`
-      + `Khi lập phiếu, hệ thống tự đưa phần này vào Đề nghị giải chấp và đổi sang ${relTo} ngay (bắt buộc giải chấp). Tiếp tục?`)) return;
+      + `Phiếu sẽ lưu ở trạng thái CHỜ GIẢI CHẤP: in phiếu, soạn hàng được nhưng chưa trừ tồn. Vào Đề nghị giải chấp → Chờ giải chấp để tạo lệnh giải chấp (gộp nhiều đơn). Tiếp tục?`)) return;
+    out.forEach((l) => delete l._rel);
     setBusy(true);
-    let relDone = null;
     try {
-      if (rel.length) {
-        relDone = await autoReleaseForSlip({ warehouse: wh.code, whName: wh.name, company: head.company, date: head.date, order,
-          picks: rel.map((l) => ({ stock: l._rel, kg: num(l.kg), bags: num(l.bags), pallets: num(l.pallets) })) }, { email, name });
-      }
-      for (const l of out) {
-        if (!l._rel) continue;
-        l.goodsStatus = relDone.to; l.pledgee = '';
-        delete l._rel;
-      }
       const direct = type === 'in' && source === 'direct';
       const mk = type === 'in' ? (m) => createPendingIn({ ...m, ...(direct ? { directPO: {
         company: head.company, date: head.date, partyCode: head.partyCode.trim(), partyName: head.partyName.trim(), refNo: head.refNo.trim(),
-        tolerancePct: 0, note: head.note.trim() } } : {}) }, { email, name }) : (m) => postMovement(m, { email, name });
+        tolerancePct: 0, note: head.note.trim() } } : {}) }, { email, name }) : rel.length ? (m) => createWaitingOut(m, { email, name }) : (m) => postMovement(m, { email, name });
       const res = await mk({
         type, warehouse: wh.code, company: head.company || '', date: head.date, tripId: head.tripId || '', orderId: direct ? '' : head.orderId || '', orderRef: order?.refNo || '',
         ...(type === 'in' ? { source } : {}),
         partyCode: head.partyCode.trim(), partyName: head.partyName.trim(), shipCode: head.shipCode,
-        reason: head.reason, note: head.note.trim(), lines: out, ...(relDone ? { releaseIds: relDone.ids } : {}),
+        reason: head.reason, note: head.note.trim(), lines: out,
         ...(type === 'out' ? Object.fromEntries(Object.keys(EMPTY_TRANSPORT).map((k) => [k, String(head[k] || '').trim()])) : {}),
       });
       setDone(typeof res === 'string' ? res : res.id);
       setDonePO(typeof res === 'string' ? '' : res.orderId);
-      setDoneRel(relDone);
+      setDoneRel(rel.length ? { wait: true } : null);
       setLines([type === 'in' ? newLine() : stockLine()]);
       setHead((h) => ({ ...h, tripId: '', orderId: '', partyCode: '', partyName: '', shipCode: '', refNo: '', note: '', ...EMPTY_TRANSPORT }));
     } catch (e2) {
-      const why = e2.code === 'permission-denied' ? 'Bạn không có quyền lập phiếu cho kho này.' : e2.message;
-      if (relDone) {
-        // Đã giải chấp xong nhưng phiếu xuất lỗi: các dòng HTC giờ là hàng đã đổi tình trạng, trỏ lại cho đúng để lập lại
-        setLines((ls) => ls.map((l) => {
-          const r = stockById.get(l.stockId);
-          return releasable(r) ? { ...l, stockId: stockId({ ...r, goodsStatus: relDone.to, pledgee: '' }) } : l;
-        }));
-        setErr(`Đã giải chấp theo đề nghị ${relDone.ids.join(', ')} (hàng đã là ${relDone.to}) nhưng chưa lập được phiếu xuất: ${why} Kiểm tra lại rồi bấm Lập phiếu lần nữa.`);
-      } else setErr(e2.code === 'permission-denied' ? (rel.length ? 'Bạn không có quyền lập phiếu hoặc giải chấp hàng HTC ở kho này.' : why) : why);
+      setErr(e2.code === 'permission-denied' ? 'Bạn không có quyền lập phiếu cho kho này.' : e2.message);
     }
     setBusy(false);
   };
@@ -442,10 +434,10 @@ function Form({ type }) {
         <h1>{meta.icon} {meta.label}</h1>
         <Link className="btn" to="/kho/phieu">Danh sách phiếu</Link>
       </div>
-      {done && <div className="ok-box" style={{ marginBottom: 10 }}>Đã lập phiếu <b className="mono">{done}</b>{donePO && <> và đơn mua <Link className="mono" to="/don-hang?tab=PO">{donePO}</Link> (nhập trực tiếp)</>}.{type === 'in' ? <> <b>Chờ thủ kho nhận hàng</b> và xác nhận số thực nhận, vị trí (tồn kho cập nhật khi thủ kho xác nhận{source === 'direct' ? ', đơn mua PO lập theo số thực nhận' : ''}).</> : ' Tồn kho đã cập nhật.'} <Link to={`/kho/phieu/${done}/in`} target="_blank">🖨 In phiếu</Link>
+      {done && <div className="ok-box" style={{ marginBottom: 10 }}>Đã lập phiếu <b className="mono">{done}</b>{donePO && <> và đơn mua <Link className="mono" to="/don-hang?tab=PO">{donePO}</Link> (nhập trực tiếp)</>}.{type === 'in' ? <> <b>Chờ thủ kho nhận hàng</b> và xác nhận số thực nhận, vị trí (tồn kho cập nhật khi thủ kho xác nhận{source === 'direct' ? ', đơn mua PO lập theo số thực nhận' : ''}).</> : doneRel ? '' : ' Tồn kho đã cập nhật.'} <Link to={`/kho/phieu/${done}/in`} target="_blank">🖨 In phiếu</Link>
 
         {type === 'out' && <> · <Link className="btn primary" to={`/kho/phieu/${done}/soan`} target="_blank">📋 In phiếu soạn hàng</Link></>}
-        {doneRel && <div style={{ marginTop: 6 }}>🔓 Hàng HTC đã đưa vào đề nghị giải chấp {doneRel.ids.map((id, i) => <span key={id}>{i ? ', ' : ''}<Link className="mono" to={`/kho/giai-chap/${id}/in`} target="_blank">{id}</Link></span>)} và đổi sang {doneRel.to}. Cuối ngày vào <Link to="/kho/giai-chap">Đề nghị giải chấp</Link> in bản tổng hợp theo mã hàng, ký số, gửi ngân hàng.</div>}</div>}
+        {doneRel && <div style={{ marginTop: 6 }}>⏳ Phiếu có hàng HTC nên đang <b>chờ giải chấp</b> (tồn chưa trừ). In phiếu, soạn hàng được; vào <Link to="/kho/giai-chap">Đề nghị giải chấp → Chờ giải chấp</Link> để tạo lệnh giải chấp, khi đó phiếu mới ghi xuất kho.</div>}</div>}
       {type === 'in' && !done && <p className="hint">Quản trị lập và in phiếu nhập. Thủ kho nhận hàng ngoài hiện trường, vào <b>Nhận hàng</b> nhập số thực nhận, lot, vị trí rồi xác nhận: lúc đó tồn kho mới cập nhật và in được nhãn pallet.</p>}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="form-grid">
@@ -806,7 +798,7 @@ function StockPicker({ rows, blocked, whName, filter, setFilter, chosen, onClose
         </table>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, gap: 8, flexWrap: 'wrap' }}>
-        <small className="small">🔒 = hàng bị khóa xuất. Xuất bán chọn được cả hàng HTC: khi lập phiếu, phần HTC tự vào đề nghị giải chấp và đổi tình trạng ngay. Có thể chọn nhiều dòng, kể cả KTC, DGC, HTC trong cùng một phiếu.</small>
+        <small className="small">🔒 = hàng bị khóa xuất. Xuất bán chọn được cả hàng HTC: phiếu lưu Chờ giải chấp, ghi xuất kho khi lập lệnh giải chấp. Có thể chọn nhiều dòng, kể cả KTC, DGC, HTC trong cùng một phiếu.</small>
         <button type="button" className="btn primary" disabled={!sel.size} onClick={() => onPick(rows.filter((r) => sel.has(r._id)))}>Thêm {sel.size} dòng vào phiếu</button>
       </div>
     </Modal>
@@ -846,7 +838,7 @@ function StockLine({ type, l, set, rows, byId, blocked, releasable, locations, s
           <div className="stock-pick">
             <span><small>Công ty</small>{r.company || '-'}</span><span><small>Kho</small>{r.warehouse}</span><span><small>Mã hàng</small><ItemCode code={r.item} onStock={onStock} /></span>
             <span className="grow"><small>Tên hàng</small>{r.itemName}</span><span><small>Lot</small>{r.lot || '-'}</span><span><small>Vị trí</small>{r.location}</span>
-            <span><small>Tình trạng</small>{r.goodsStatus}{r.pledgee ? ` (${r.pledgee})` : ''}{blocked(r) ? ' 🔒' : ''}{releasable?.(r) ? <b style={{ color: 'var(--amber)' }}> 🔓 tự giải chấp khi lập phiếu</b> : ''}</span>
+            <span><small>Tình trạng</small>{r.goodsStatus}{r.pledgee ? ` (${r.pledgee})` : ''}{blocked(r) ? ' 🔒' : ''}{releasable?.(r) ? <b style={{ color: 'var(--amber)' }}> ⏳ phiếu chờ giải chấp</b> : ''}</span>
             <span><small>Còn</small>{fmtNum(num(r.kg), 2)} kg · {fmtNum(r.pallets, 2)} pl · {fmtNum(r.bags)} bao</span>
             <button type="button" className="btn sm ghost" onClick={() => set({ stockId: '', bags: '', pallets: '', kg: '', kgTxt: undefined })}>Đổi</button>
           </div>
@@ -857,7 +849,7 @@ function StockLine({ type, l, set, rows, byId, blocked, releasable, locations, s
           <option value="">-- Chọn hàng trong kho --</option>
           {rows.map((x) => (
             <option key={x._id} value={x._id} disabled={blocked(x)}>
-              {x.company ? `[${x.company}] ` : ''}{x.item} · lot {x.lot || '-'} · {x.location} · {x.goodsStatus}{x.pledgee ? `(${x.pledgee})` : ''} · {fmtNum(x.bags)} bao / {fmtNum(x.pallets, 2)} pl · nhập {fmtDate(x.inDate)} ({ageDays(x.inDate)} ngày){blocked(x) ? ' · KHÓA XUẤT' : releasable?.(x) ? ' · tự giải chấp' : ''}
+              {x.company ? `[${x.company}] ` : ''}{x.item} · lot {x.lot || '-'} · {x.location} · {x.goodsStatus}{x.pledgee ? `(${x.pledgee})` : ''} · {fmtNum(x.bags)} bao / {fmtNum(x.pallets, 2)} pl · nhập {fmtDate(x.inDate)} ({ageDays(x.inDate)} ngày){blocked(x) ? ' · KHÓA XUẤT' : releasable?.(x) ? ' · chờ giải chấp' : ''}
             </option>
           ))}
         </select>

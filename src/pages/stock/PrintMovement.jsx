@@ -74,6 +74,7 @@ export default function PrintMovement({ pick = false }) {
       <h2 className="print-title">{pick ? 'PHIẾU SOẠN HÀNG' : `PHIẾU ${meta.label.toUpperCase()}`}</h2>
       {pick && <p className="small" style={{ textAlign: 'center', marginTop: -6 }}>Theo phiếu xuất kho {m.id} · sắp theo vị trí để đi lấy hàng</p>}
       {m.status === 'cancelled' && <div className="error-box">PHIẾU ĐÃ HỦY: {m.cancelReason}</div>}
+      {m.status === 'wait_release' && <p className="small" style={{ textAlign: 'center' }}>Phiếu chờ giải chấp hàng HTC: soạn hàng được, chỉ giao hàng khi đã lập lệnh giải chấp.</p>}
       {m.status === 'pending' && <p className="small" style={{ textAlign: 'center' }}>Phiếu chờ nhận hàng: thủ kho ghi số thực nhận, vị trí vào cột trống và xác nhận trên hệ thống.</p>}
       <table className="print-info"><tbody>
         {co && <tr><td>Công ty chủ hàng</td><td>{co.code}{co.name && co.name !== co.code ? ` – ${co.name}` : ''}</td></tr>}

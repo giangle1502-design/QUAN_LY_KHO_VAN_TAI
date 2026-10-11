@@ -1,16 +1,18 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { collection, doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useMyWarehouses, useOpCompany, useStock } from '../../lib/hooks';
-import { createRelease, editRelease, groupLines, postRelease, releaseStatusOf, releaseStatusOfWh } from '../../lib/release';
+import { postWaitingOut } from '../../lib/stock';
+import { createRelease, createReleaseFromSlips, editRelease, groupLines, postRelease, releaseStatusOf, releaseStatusOfWh } from '../../lib/release';
 import { usePendingRelease, useShortfall } from '../../lib/shortfall';
 import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum, today } from '../../lib/utils';
 import { CompanyPicker } from '../../components/TripBits';
 import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
 import { loadReleaseData } from '../../lib/printData';
+import { pageToPdf, savePdf } from '../../lib/pdf';
 import { TemplatePage, useTemplateChoice } from '../../components/PrintTemplate';
 
 // ============================================================================
@@ -43,13 +45,19 @@ export default function Release() {
   const [form, setForm] = useState(false); // false | true | { preset }
   const [msg, setMsg] = useState('');
   const [sp, setSp] = useSearchParams();
-  const tab = sp.get('tab') === 'thieu' ? 'thieu' : 'de-nghi';
+  const tab = ['thieu', 'de-nghi'].includes(sp.get('tab')) ? sp.get('tab') : 'cho';
   const [busy, setBusy] = useState('');
   const canEdit = hasRole('ke_toan');
   // Sửa số lượng / số CT, đánh dấu đã gửi ngân hàng: kế toán và thủ kho
   const canFix = hasRole('ke_toan', 'thu_kho');
   const [edit, setEdit] = useState(null);
 
+  // Phiếu xuất có hàng HTC đang chờ lập lệnh giải chấp
+  const [waitAll, setWaitAll] = useState([]);
+  useEffect(() => onSnapshot(query(collection(db, 'movements'), where('status', '==', 'wait_release')),
+    (s) => setWaitAll(s.docs.map((d) => d.data())), () => {}), []);
+  const waiting = waitAll.filter((m) => inMyWarehouses(m.warehouse));
+  const waitN = waiting.length;
   useEffect(() => onSnapshot(collection(db, 'releaseRequests'),
     (s) => setRows(s.docs.map((d) => d.data())), (e) => setError(e.message)), []);
   const list = rows.filter((r) => inMyWarehouses(r.warehouse) && (!co || r.company === co) && (!st || r.status === st))
@@ -105,11 +113,13 @@ export default function Release() {
         </div>
       </div>
       <div className="seg wrap" style={{ marginBottom: 10 }}>
-        <button type="button" className={tab === 'de-nghi' ? 'on' : ''} onClick={() => setSp({})}>Đề nghị giải chấp</button>
+        <button type="button" className={tab === 'cho' ? 'on' : ''} onClick={() => setSp({})}>⏳ Chờ giải chấp{waitN ? ` (${waitN})` : ''}</button>
+        <button type="button" className={tab === 'de-nghi' ? 'on' : ''} onClick={() => setSp({ tab: 'de-nghi' })}>Đề nghị giải chấp</button>
         <button type="button" className={tab === 'thieu' ? 'on' : ''} onClick={() => setSp({ tab: 'thieu' })}>⚠ Hàng thiếu cho đơn bán</button>
       </div>
       {msg && <div className={msg.startsWith('Lỗi') ? 'error-box' : 'ok-box'}>{msg}</div>}
-      {tab === 'thieu' ? <Shortfall co={co} setCo={setCo} canEdit={canEdit} onPlan={(preset) => setForm({ preset })} /> : <>
+      {tab === 'cho' ? <Waiting co={co} setCo={setCo} canEdit={canFix} slips={waiting} onDone={(m) => { setMsg(m); }} />
+        : tab === 'thieu' ? <Shortfall co={co} setCo={setCo} canEdit={canEdit} onPlan={(preset) => setForm({ preset })} /> : <>
       <p className="hint">
         Phiếu xuất bán lấy hàng HTC sẽ <b>tự đưa vào đề nghị</b> (gộp theo ngày, công ty, ngân hàng, kho; nhãn <i>Tự lập</i>) và đổi tình trạng ngay.
         Lập tay từ hàng đang thế chấp (HTC): khi lưu, hệ thống <b>đổi ngay</b> các dòng hàng trong đề nghị sang tình trạng đặt ở <i>Danh sách kho → TTHH khi giải chấp</i> (mặc định: cảng → <b>KTC</b>, kho → <b>DGC</b>) bằng phiếu TC,
@@ -132,7 +142,7 @@ export default function Release() {
             <tbody>
               {list.map((r) => (
                 <tr key={r.id}>
-                  <td className="mono nowrap">{r.id}{r.auto ? <div><span className="badge">Tự lập</span></div> : null}</td><td className="nowrap">{fmtDate(r.date)}</td><td>{r.company}</td><td>{r.pledgee}</td><td>{r.warehouse}</td>
+                  <td className="mono nowrap">{r.id}{r.auto ? <div><span className="badge">Tự lập</span></div> : null}</td><td className="nowrap">{fmtDate(r.date)}</td><td>{r.company}</td><td>{r.pledgee}</td><td>{(r.warehouses || [r.warehouse]).join(', ')}</td>
                   <td>{[...new Set(r.lines.map((l) => l.item))].join(', ')}</td><td className="num">{ton3(totKg(r))}</td>
                   <td><span className={'badge ' + (RELEASE_STATUS[r.status]?.cls || '')}>{RELEASE_STATUS[r.status]?.label}</span>{r.cancelReason ? <span className="small"> {r.cancelReason}</span> : null}
                     {r.bankSentAt ? <div className="small">📧 đã gửi NH {fmtDate(r.bankSentAt.slice(0, 10))}</div> : null}</td>
@@ -157,7 +167,131 @@ export default function Release() {
       </div>
       </>}
       {edit && <EditRelease r={edit} onClose={(m) => { setEdit(null); if (m) setMsg(m); }} />}
-      {form && <ReleaseForm preset={form.preset} onClose={(id, m) => { setForm(false); if (id) { setSp({}); setSt(''); setMsg(m || `Đã lập đề nghị ${id}.`); } }} />}
+      {form && <ReleaseForm preset={form.preset} onClose={(id, m) => { setForm(false); if (id) { setSp({ tab: 'de-nghi' }); setSt(''); setMsg(m || `Đã lập đề nghị ${id}.`); } }} />}
+    </div>
+  );
+}
+
+// Chờ giải chấp: phiếu xuất bán có hàng HTC (đã in, soạn hàng; chưa trừ tồn). Nhân viên chọn công ty, tick mã hàng
+// (tất cả hoặc từng mã) → Tạo lệnh giải chấp: gộp mọi đơn thành 1 đề nghị cho mỗi ngân hàng, đổi HTC → DGC ngay,
+// ghi xuất kho các phiếu đã hết HTC, rồi mở bản PDF của đề nghị để ký số, gửi ngân hàng
+function Waiting({ co, setCo, canEdit, slips, onDone }) {
+  const { email, name } = useApp();
+  const myWh = useMyWarehouses();
+  const pledgees = useCollection('pledgees').rows;
+  const bankName = (c) => pledgees.find((p) => p.code === c)?.shortName || c || '(chưa ghi ngân hàng)';
+  const [tick, setTick] = useState(() => new Set());
+  const [busy, setBusy] = useState(false);
+  const mine = slips.filter((m) => !co || (m.company || '') === co || m.lines.some((l) => l.goodsStatus === 'HTC' && l.company === co))
+    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  const rows = useMemo(() => {
+    const g = new Map();
+    for (const m of mine) {
+      for (const l of m.lines) {
+        if (l.goodsStatus !== 'HTC') continue;
+        const c = l.company || m.company || '';
+        if (co && c !== co) continue;
+        const key = `${l.pledgee || ''}|${l.item}`;
+        const k = `${c}|${key}`;
+        if (!g.has(k)) g.set(k, { k, key, company: c, pledgee: l.pledgee || '', item: l.item, itemName: l.itemName || '', kg: 0, whs: new Set(), slips: new Set(), orders: new Set() });
+        const x = g.get(k);
+        x.kg += Math.abs(num(l.kg)); x.whs.add(m.warehouse); x.slips.add(m.id); if (m.orderId) x.orders.add(m.orderId);
+      }
+    }
+    return [...g.values()].sort((a, b) => a.company.localeCompare(b.company) || a.pledgee.localeCompare(b.pledgee) || a.item.localeCompare(b.item));
+  }, [mine, co]); // eslint-disable-line react-hooks/exhaustive-deps
+  const all = rows.length > 0 && rows.every((r) => tick.has(r.key));
+  const toggle = (k) => setTick((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const chosen = rows.filter((r) => tick.has(r.key));
+  const total = chosen.reduce((s, r) => s + r.kg, 0);
+  // Phiếu đã giải chấp hết HTC nhưng ghi xuất kho bị lỗi (vd. thiếu tồn KTC): sửa xong bấm ghi lại
+  const stuck = mine.filter((m) => !m.lines.some((l) => l.goodsStatus === 'HTC'));
+  const retry = async (m) => {
+    setBusy(true);
+    try {
+      await postWaitingOut(m.id, { email, name });
+      onDone(`Đã ghi xuất kho phiếu ${m.id}.`);
+    } catch (e) {
+      onDone(`Lỗi: ${m.id}: ${e.message}`);
+    }
+    setBusy(false);
+  };
+
+  const create = async () => {
+    if (!co) return onDone('Lỗi: chọn công ty (bên thế chấp) trước khi tạo lệnh giải chấp.');
+    if (!chosen.length) return onDone('Lỗi: tick ít nhất 1 mã hàng.');
+    const banks = [...new Set(chosen.map((r) => r.pledgee))];
+    if (!window.confirm(`Tạo lệnh giải chấp ${co}: ${chosen.length} mã hàng, ${ton3(total)} kg${banks.length > 1 ? ` (${banks.length} ngân hàng → ${banks.length} đề nghị)` : ''}.\nHàng đổi sang DGC ngay và các phiếu xuất đủ điều kiện được ghi xuất kho. Tiếp tục?`)) return;
+    // Mở sẵn tab (trình duyệt chặn cửa sổ mở sau khi chờ) để hiện file PDF đề nghị
+    const win = window.open('', '_blank');
+    setBusy(true);
+    try {
+      const res = await createReleaseFromSlips({ company: co, date: today(), slips: mine, items: new Set(chosen.map((r) => r.key)),
+        whNames: Object.fromEntries(myWh.map((w) => [w.code, w.name])) }, { email, name });
+      if (win) win.location.href = `/kho/giai-chap/${res.ids[0]}/in?pdf=1`;
+      setTick(new Set());
+      onDone(`${res.errors.length ? 'Lỗi: ' : ''}Đã lập lệnh giải chấp ${res.ids.join(', ')} (đã đổi DGC). ${res.posted.length ? `Đã ghi xuất kho phiếu ${res.posted.join(', ')}.` : ''}`
+        + `${res.waiting.length ? ` Phiếu ${res.waiting.join(', ')} còn mã HTC chưa giải chấp.` : ''}${res.errors.length ? ` Chưa ghi được: ${res.errors.join('; ')}` : ''}`
+        + `${res.ids.length > 1 ? ` Bấm 🖨 In ở tab Đề nghị giải chấp để lưu PDF các đề nghị còn lại.` : ''}`);
+    } catch (e) {
+      if (win) win.close();
+      onDone('Lỗi: ' + (e.code === 'permission-denied' ? 'Bạn không có quyền giải chấp hàng ở kho này.' : e.message));
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div>
+      <p className="hint">
+        Phiếu xuất bán lấy hàng <b>HTC</b> được lưu ở trạng thái <b>Chờ giải chấp</b>: in phiếu, soạn hàng được nhưng chưa trừ tồn.
+        Chọn <b>công ty</b>, tick mã hàng (hoặc <i>Tất cả</i>) rồi bấm <b>Tạo lệnh giải chấp</b>: hệ thống gộp mọi đơn thành 1 đề nghị cho mỗi ngân hàng,
+        đổi sang DGC ngay, ghi xuất kho các phiếu, rồi mở file PDF đề nghị (tổng hợp theo mã hàng) để ký số và gửi email ngân hàng.
+      </p>
+      <div className="toolbar">
+        <CompanyPicker value={co} onChange={(v) => { setCo(v); setTick(new Set()); }} />
+        <span className="small">{rows.length ? <>{mine.length} phiếu chờ · đã tick <b>{chosen.length}</b> mã · <b>{ton3(total)} kg</b> (= {fmtNum(total / 1000, 3)} tấn)</> : ''}</span>
+        {canEdit && <button className="btn primary" style={{ marginLeft: 'auto' }} disabled={busy || !co || !chosen.length} onClick={create}
+          title={!co ? 'Chọn công ty trước' : ''}>{busy ? 'Đang tạo…' : '🔓 Tạo lệnh giải chấp'}</button>}
+      </div>
+      {!co && rows.length > 0 && <div className="hint" style={{ color: 'var(--amber)' }}>Chọn công ty để tạo lệnh giải chấp (mỗi lệnh thuộc 1 công ty).</div>}
+      <div className="table-wrap">
+        {!rows.length ? <Empty text="Không có phiếu xuất nào chờ giải chấp." /> : (
+          <table>
+            <thead><tr><th><label className="nowrap"><input type="checkbox" checked={all} onChange={(e) => setTick(e.target.checked ? new Set(rows.map((r) => r.key)) : new Set())} /> Tất cả</label></th>
+              <th>Công ty</th><th>Ngân hàng</th><th>Mã hàng</th><th>Tên hàng</th><th>Kho</th><th>Đơn bán</th><th>Phiếu xuất</th><th className="num">HTC cần giải chấp (kg)</th></tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.k} className={tick.has(r.key) ? 'picked' : ''} onClick={() => toggle(r.key)} style={{ cursor: 'pointer' }}>
+                  <td><input type="checkbox" checked={tick.has(r.key)} onChange={() => toggle(r.key)} onClick={(e) => e.stopPropagation()} /></td>
+                  <td>{r.company}</td><td>{bankName(r.pledgee)}</td><td className="nowrap"><b>{r.item}</b></td><td>{r.itemName}</td>
+                  <td>{[...r.whs].join(', ')}</td><td className="small">{[...r.orders].join(', ')}</td>
+                  <td className="small mono">{[...r.slips].map((id, i) => <span key={id}>{i ? ', ' : ''}<Link to={`/kho/phieu/${id}/in`} target="_blank" onClick={(e) => e.stopPropagation()}>{id}</Link></span>)}</td>
+                  <td className="num"><b>{ton3(r.kg)}</b></td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot><tr><td colSpan={8}><b>Tổng</b></td><td className="num"><b>{ton3(rows.reduce((s, r) => s + r.kg, 0))}</b></td></tr></tfoot>
+          </table>
+        )}
+      </div>
+      {!!stuck.length && <>
+        <h3 style={{ margin: '16px 0 6px' }}>Đã giải chấp, chưa ghi được xuất kho</h3>
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Phiếu xuất</th><th>Kho</th><th>Đơn bán</th><th>Khách hàng</th><th className="num">Số lượng (kg)</th><th>Đề nghị</th><th></th></tr></thead>
+            <tbody>
+              {stuck.map((m) => (
+                <tr key={m.id}>
+                  <td className="mono"><Link to={`/kho/phieu/${m.id}/in`} target="_blank">{m.id}</Link></td><td>{m.warehouse}</td><td>{m.orderId}</td><td>{m.partyName}</td>
+                  <td className="num">{ton3(m.lines.reduce((s, l) => s + Math.abs(num(l.kg)), 0))}</td><td className="small">{(m.releaseIds || []).join(', ')}</td>
+                  <td>{canEdit && <button className="btn sm primary" disabled={busy} onClick={() => retry(m)}>Ghi xuất kho</button>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="small">Thường do hàng KTC/DGC trong phiếu đã bị phiếu khác xuất trước. Admin hủy phiếu rồi lập lại, hoặc bổ sung tồn rồi bấm Ghi xuất kho.</p>
+      </>}
     </div>
   );
 }
@@ -443,12 +577,39 @@ export function PrintRelease() {
     }).catch(() => setR(null));
   }, [id]);
   const choice = useTemplateChoice(r ? 'giaichap' : null, { company: r?.company, party: r?.pledgee });
+  const [pdfMsg, setPdfMsg] = useState('');
+  // Lưu PDF (tải file về máy) rồi mở bằng trình xem PDF của trình duyệt; ?pdf=1: tự làm khi trang in sẵn sàng
+  const makePdf = async (win, replace) => {
+    setPdfMsg('Đang tạo PDF…');
+    try {
+      for (let i = 0; i < 50 && !document.querySelector('.tpl-sheet, .print-page.gc'); i++) await new Promise((ok) => setTimeout(ok, 200));
+      const el = document.querySelector('.tpl-pages') || document.querySelector('.print-page.gc');
+      const blob = await pageToPdf(el, `De nghi giai chap ${id}`);
+      const url = savePdf(blob, `De_nghi_giai_chap_${id}.pdf`);
+      if (replace) window.location.replace(url);
+      else if (win) win.location.href = url;
+      else window.open(url, '_blank');
+      setPdfMsg('');
+    } catch (e) {
+      if (win) win.close();
+      setPdfMsg('Lỗi tạo PDF: ' + e.message + '. Dùng 🖨 In / Lưu PDF.');
+    }
+  };
+  const auto = useRef(new URLSearchParams(window.location.search).get('pdf') === '1');
+  const ready = r && co && bank && !choice.loading;
+  useEffect(() => {
+    if (!ready || !auto.current) return;
+    auto.current = false;
+    setTimeout(() => makePdf(null, true), 300);
+  }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
   if (r === undefined || (r && (!co || !bank)) || choice.loading) return <div className="center">Đang tải…</div>;
   if (!r) return <div className="center">Không tìm thấy đề nghị {id}.</div>;
   const toolbar = (
     <>
       <Link className="btn" to="/kho/giai-chap">← Đề nghị giải chấp</Link>
-      <button className="btn primary" onClick={() => window.print()}>🖨 In / Lưu PDF</button>
+      <button className="btn primary" onClick={() => makePdf(window.open('', '_blank'))}>📄 Lưu PDF & mở</button>
+      <button className="btn" onClick={() => window.print()}>🖨 In</button>
+      {pdfMsg && <span className="small">{pdfMsg}</span>}
       {r.status !== 'sent' && <span className="badge">{RELEASE_STATUS[r.status]?.label}</span>}
       {choice.select}
     </>

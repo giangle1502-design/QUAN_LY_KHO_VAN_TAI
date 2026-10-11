@@ -175,16 +175,18 @@ service cloud.firestore {
         && getAfter(mvPath(mid)).data.createdBy == me()
         && getAfter(mvPath(mid)).data.warehouse == wh) || confirmingIn(mid, wh);
     }
-    // Thủ kho xác nhận phiếu nhập đang chờ nhận hàng (quản trị lập trước) trong cùng giao dịch
+    // Thủ kho xác nhận phiếu nhập đang chờ nhận hàng (quản trị lập trước), hoặc ghi xuất kho phiếu xuất
+    // chờ giải chấp khi lập lệnh giải chấp, trong cùng giao dịch
     function confirmingIn(mid, wh) {
-      return exists(mvPath(mid)) && get(mvPath(mid)).data.status == 'pending'
+      return exists(mvPath(mid)) && get(mvPath(mid)).data.status in ['pending', 'wait_release']
         && getAfter(mvPath(mid)).data.status == 'posted' && getAfter(mvPath(mid)).data.confirmedBy == me()
         && getAfter(mvPath(mid)).data.warehouse == wh;
     }
     match /movements/{id} {
       allow read: if isStaff();
       allow create: if request.resource.data.createdBy == me()
-        && (request.resource.data.status == 'posted' || (request.resource.data.status == 'pending' && request.resource.data.type == 'in'))
+        && (request.resource.data.status == 'posted' || (request.resource.data.status == 'pending' && request.resource.data.type == 'in')
+          || (request.resource.data.status == 'wait_release' && request.resource.data.type == 'out'))
         && request.resource.data.id == id
         && (isAdmin() || (inMyWarehouse(request.resource.data.warehouse)
           && ((hasRole('thu_kho') && request.resource.data.type in ['in', 'out', 'move', 'adjust'])
@@ -196,6 +198,12 @@ service cloud.firestore {
           && resource.data.type == 'in' && request.resource.data.type == 'in' && inMyWarehouse(resource.data.warehouse)
           && request.resource.data.warehouse == resource.data.warehouse && request.resource.data.id == resource.data.id
           && request.resource.data.createdBy == resource.data.createdBy && request.resource.data.confirmedBy == me())
+        // Lệnh giải chấp: đổi dòng HTC của phiếu xuất chờ giải chấp sang DGC, rồi ghi xuất kho (thủ kho, kế toán)
+        || ((hasRole('thu_kho') || hasRole('ke_toan')) && resource.data.type == 'out' && resource.data.status == 'wait_release'
+          && inMyWarehouse(resource.data.warehouse) && request.resource.data.type == 'out'
+          && request.resource.data.warehouse == resource.data.warehouse && request.resource.data.id == resource.data.id
+          && request.resource.data.createdBy == resource.data.createdBy
+          && (request.resource.data.status == 'wait_release' || (request.resource.data.status == 'posted' && request.resource.data.confirmedBy == me())))
         // Thủ kho bổ sung / sửa thông tin vận tải của phiếu xuất sau khi lập
         || (hasRole('thu_kho') && resource.data.type == 'out' && resource.data.status != 'cancelled' && inMyWarehouse(resource.data.warehouse)
           && request.resource.data.diff(resource.data).affectedKeys()
@@ -224,7 +232,7 @@ service cloud.firestore {
     function mySale(d) { return !salesOnly() || d.get('sales', '') == me(); }
     function movementForOrder(mid, oid) {
       return ((!exists(mvPath(mid)) && existsAfter(mvPath(mid)) && getAfter(mvPath(mid)).data.createdBy == me())
-          || (exists(mvPath(mid)) && get(mvPath(mid)).data.status == 'pending'
+          || (exists(mvPath(mid)) && get(mvPath(mid)).data.status in ['pending', 'wait_release']
             && getAfter(mvPath(mid)).data.status == 'posted' && getAfter(mvPath(mid)).data.confirmedBy == me()))
         && getAfter(mvPath(mid)).data.orderId == oid;
     }

@@ -89,6 +89,32 @@ export async function createPendingIn(m, user) {
     return no.id;
   });
 }
+// Phiếu xuất bán có hàng HTC: lưu "Chờ giải chấp" (chưa trừ tồn) để in phiếu, soạn hàng;
+// khi lập lệnh giải chấp, các dòng HTC đổi sang DGC rồi phiếu mới được ghi tồn (postWaitingOut)
+export async function createWaitingOut(m, user) {
+  return runTransaction(db, async (tx) => {
+    const no = await nextNo(tx, 'PX');
+    const at = new Date().toISOString();
+    no.bump();
+    tx.set(doc(db, 'movements', no.id), { ...m, type: 'out', id: no.id, status: 'wait_release', createdAt: at, createdBy: user.email, createdByName: user.name,
+      history: [{ at, by: user.email, byName: user.name, action: 'Lập phiếu, chờ giải chấp hàng HTC' }] });
+    return no.id;
+  });
+}
+export async function postWaitingOut(id, user) {
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(doc(db, 'movements', id));
+    if (!snap.exists()) throw new Error(`Không tìm thấy phiếu ${id}.`);
+    const cur = snap.data();
+    if (cur.status !== 'wait_release') throw new Error(`Phiếu ${id} không còn chờ giải chấp.`);
+    if (cur.lines.some((l) => l.goodsStatus === 'HTC')) throw new Error(`Phiếu ${id} còn dòng hàng HTC chưa giải chấp.`);
+    const at = new Date().toISOString();
+    const mv = { ...cur, status: 'posted', confirmedBy: user.email, confirmedByName: user.name, confirmedAt: at,
+      history: [...(cur.history || []), { at, by: user.email, byName: user.name, action: 'Đã giải chấp hết hàng HTC: ghi xuất kho' }] };
+    return commit(tx, mv, user, at, null, null);
+  });
+}
+
 // Thủ kho xác nhận: số thực nhận, lot, vị trí… → ghi tồn, cập nhật đơn (nhập trực tiếp: lập PO theo số thực nhận)
 export async function confirmIn(id, lines, user, patch = {}) {
   return runTransaction(db, async (tx) => {
@@ -151,8 +177,8 @@ export async function cancelMovement(m, reason, user) {
     const cur = await tx.get(ref);
     if (!cur.exists() || cur.data().status === 'cancelled') throw new Error('Phiếu đã bị hủy.');
     const at0 = new Date().toISOString();
-    // Phiếu chờ nhận hàng chưa vào tồn: chỉ đánh dấu hủy
-    if (cur.data().status === 'pending') {
+    // Phiếu chờ nhận hàng / chờ giải chấp chưa vào tồn: chỉ đánh dấu hủy
+    if (['pending', 'wait_release'].includes(cur.data().status)) {
       tx.update(ref, { status: 'cancelled', cancelReason: reason, cancelledAt: at0, cancelledBy: user.email,
         history: [...(m.history || []), { at: at0, by: user.email, byName: user.name, action: `Hủy phiếu: ${reason}` }] });
       return;

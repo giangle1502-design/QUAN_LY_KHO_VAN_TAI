@@ -1,6 +1,6 @@
 import { collection, doc, getDoc, getDocs, query, runTransaction, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
-import { postMovement, stockId } from './stock';
+import { postMovement, postWaitingOut, stockId } from './stock';
 import { fmtNum, norm, today } from './utils';
 
 // ============================================================================
@@ -95,85 +95,109 @@ export async function postRelease(r, { email, name }) {
   return { mid, to };
 }
 
-// Phiếu xuất bán lấy hàng HTC: tự đưa vào đề nghị giải chấp và đổi ngay sang DGC (cảng: KTC).
-// Gộp vào đề nghị tự lập trong ngày của cùng công ty + ngân hàng + kho chưa đánh dấu "Đã gửi ngân hàng",
-// để bản in tổng hợp theo mã hàng mọi đơn trong ngày. picks: { stock (dòng tồn HTC), kg, bags, pallets }
-// Trả về { to, ids: [số đề nghị] }
-export async function autoReleaseForSlip({ warehouse, whName, company: co0, date, order, picks }, user) {
-  const to = await releaseStatusOf(warehouse);
-  // Mỗi đề nghị: 1 công ty (bên thế chấp) + 1 ngân hàng
+// Lệnh giải chấp từ các phiếu xuất "Chờ giải chấp": nhân viên chọn công ty, tick mã hàng → gom mọi dòng HTC của các
+// phiếu đó (nhiều đơn, nhiều kho) thành 1 đề nghị cho mỗi ngân hàng, đổi HTC → DGC (cảng: KTC) ngay,
+// rồi ghi xuất kho các phiếu đã hết hàng HTC. slips: phiếu wait_release; items: Set 'ngân hàng|mã hàng' được tick
+export async function createReleaseFromSlips({ company, date, slips, items, whNames = {} }, user) {
   const byBank = new Map();
-  for (const p of picks) {
-    const k = `${p.stock.company || co0 || ''}|${p.stock.pledgee || ''}`;
-    if (!byBank.has(k)) byBank.set(k, []);
-    byBank.get(k).push(p);
-  }
-  const existing = (await getDocs(query(collection(db, 'releaseRequests'), where('warehouse', '==', warehouse)))).docs.map((d) => d.data());
-  const ids = [];
-  for (const [key, ps] of byBank) {
-    const [company, pledgee] = key.split('|');
-    const lines = ps.map((p) => ({
-      stockId: p.stock._id, item: p.stock.item, itemName: p.stock.itemName || '', lot: p.stock.lot || '', location: p.stock.location,
-      docNo: '', place: whName || warehouse, unit: 'TẤN', kg: r3(num(p.kg)), bags: num(p.bags), pallets: num(p.pallets),
-      orderId: order?.id || '', partyName: order?.partyName || '',
-    }));
-    const open = existing.find((r) => r.auto && r.status === 'released' && !r.bankSentAt && r.date === date
-      && (r.company || '') === (company || '') && r.pledgee === pledgee);
-    if (open) {
-      const mid = await postStatus(open, lines, to, user);
-      const at = new Date().toISOString();
-      const fresh = (await getDoc(doc(db, 'releaseRequests', open.id))).data();
-      // Lot đã có trong đề nghị thì cộng thêm kg, không thêm dòng mới
-      const merged = [...(fresh.lines || [])];
-      for (const l of lines) {
-        const same = merged.findIndex((x) => x.stockId === l.stockId && (x.orderId || '') === l.orderId && !x.docNo);
-        if (same >= 0) merged[same] = { ...merged[same], kg: r3(num(merged[same].kg) + l.kg), bags: num(merged[same].bags) + l.bags, pallets: r3(num(merged[same].pallets) + l.pallets) };
-        else merged.push(l);
-      }
-      await updateDoc(doc(db, 'releaseRequests', open.id), {
-        lines: merged, orderIds: [...new Set([...(fresh.orderIds || []), ...(order?.id ? [order.id] : [])])],
-        movementIds: [...(fresh.movementIds || [fresh.movementId].filter(Boolean)), mid],
-        history: [...(fresh.history || []), { at, by: user.email, byName: user.name, action: `Thêm ${fmtNum(lines.reduce((a, l) => a + l.kg, 0), 2)} kg khi xuất hàng HTC${order?.id ? ` (đơn ${order.id})` : ''}, phiếu ${mid}` }],
+  for (const m of slips) {
+    for (const [i, l] of (m.lines || []).entries()) {
+      if (l.goodsStatus !== 'HTC' || !items.has(`${l.pledgee || ''}|${l.item}`) || (l.company || m.company || '') !== company) continue;
+      const k = l.pledgee || '';
+      if (!byBank.has(k)) byBank.set(k, []);
+      byBank.get(k).push({
+        warehouse: m.warehouse, stockId: stockId({ ...l, warehouse: m.warehouse, company: l.company || m.company || '' }),
+        item: l.item, itemName: l.itemName || '', lot: l.lot || '', location: l.location, docNo: '', place: whNames[m.warehouse] || m.warehouse, unit: 'TẤN',
+        kg: r3(Math.abs(num(l.kg))), bags: Math.abs(num(l.bags)), pallets: Math.abs(num(l.pallets)),
+        orderId: m.orderId || '', partyName: m.partyName || '', movementId: m.id, lineIdx: i,
       });
-      ids.push(open.id);
-      continue;
     }
-    const [pl, co] = await Promise.all([
-      pledgee ? getDoc(doc(db, 'pledgees', pledgee)).then((x) => (x.exists() ? x.data() : null)).catch(() => null) : null,
-      company ? getDoc(doc(db, 'companies', company)).then((x) => (x.exists() ? x.data() : null)).catch(() => null) : null,
-    ]);
-    const data = { date, company: company || '', companyName: co?.name || company || '', pledgee, pledgeeName: pl?.name || pledgee,
-      warehouse, bct: '', note: 'Tự lập khi lập phiếu xuất hàng HTC', auto: true, orderIds: order?.id ? [order.id] : [], lines };
-    const id = await createRelease(data, user);
-    await postRelease({ ...data, id, history: [{ at: new Date().toISOString(), by: user.email, byName: user.name, action: 'Tự lập khi xuất hàng HTC' }] }, user);
-    ids.push(id);
   }
-  return { to, ids };
+  if (!byBank.size) throw new Error('Không có dòng hàng HTC nào khớp công ty và mã hàng đã chọn.');
+  const co = company ? await getDoc(doc(db, 'companies', company)).then((x) => (x.exists() ? x.data() : null)).catch(() => null) : null;
+  const ids = [];
+  const done = new Map(); // movementId → [{ lineIdx, to, releaseId }]
+  for (const [pledgee, lines] of byBank) {
+    const pl = pledgee ? await getDoc(doc(db, 'pledgees', pledgee)).then((x) => (x.exists() ? x.data() : null)).catch(() => null) : null;
+    const whs = [...new Set(lines.map((l) => l.warehouse))];
+    const data = { date, company, companyName: co?.name || company, pledgee, pledgeeName: pl?.name || pledgee, warehouse: whs[0], warehouses: whs,
+      bct: '', note: '', fromSlips: true, orderIds: [...new Set(lines.map((l) => l.orderId).filter(Boolean))],
+      movementRefs: [...new Set(lines.map((l) => l.movementId))], lines: lines.map(({ lineIdx, ...l }) => l) };
+    const id = await createRelease(data, user);
+    const r = { ...data, id };
+    const mids = [];
+    const tos = {};
+    for (const w of whs) {
+      tos[w] = await releaseStatusOf(w);
+      mids.push(await postStatus({ ...r, warehouse: w }, lines.filter((l) => l.warehouse === w), tos[w], user));
+    }
+    const at = new Date().toISOString();
+    const toAll = [...new Set(Object.values(tos))];
+    await updateDoc(doc(db, 'releaseRequests', id), {
+      status: 'released', movementId: mids[0], movementIds: mids, releasedAt: at, releasedBy: user.email, toStatus: toAll.length === 1 ? toAll[0] : toAll.join('/'),
+      lines: data.lines.map((l) => ({ ...l, toStatus: tos[l.warehouse] })),
+      history: [{ at, by: user.email, byName: user.name, action: `Lập lệnh giải chấp từ phiếu xuất ${data.movementRefs.join(', ')}; đổi HTC → ${toAll.join('/')}, phiếu ${mids.join(', ')}` }],
+    });
+    ids.push(id);
+    for (const l of lines) {
+      if (!done.has(l.movementId)) done.set(l.movementId, []);
+      done.get(l.movementId).push({ lineIdx: l.lineIdx, to: tos[l.warehouse], releaseId: id });
+    }
+  }
+  // Cập nhật phiếu xuất: dòng đã giải chấp đổi sang DGC; phiếu hết HTC thì ghi xuất kho
+  const posted = [];
+  const waiting = [];
+  const errors = [];
+  for (const m of slips) {
+    const ch = done.get(m.id);
+    if (!ch) continue;
+    const lines = m.lines.map((l, i) => {
+      const c = ch.find((x) => x.lineIdx === i);
+      return c ? { ...l, goodsStatus: c.to, pledgee: '', releaseId: c.releaseId } : l;
+    });
+    const at = new Date().toISOString();
+    try {
+      await updateDoc(doc(db, 'movements', m.id), {
+        lines, releaseIds: [...new Set([...(m.releaseIds || []), ...ch.map((c) => c.releaseId)])], updatedAt: at, updatedBy: user.email,
+        history: [...(m.history || []), { at, by: user.email, byName: user.name, action: `Giải chấp theo ${[...new Set(ch.map((c) => c.releaseId))].join(', ')}` }],
+      });
+      if (lines.some((l) => l.goodsStatus === 'HTC')) waiting.push(m.id);
+      else { await postWaitingOut(m.id, user); posted.push(m.id); }
+    } catch (e) {
+      errors.push(`${m.id}: ${e.message}`);
+    }
+  }
+  return { ids, posted, waiting, errors };
 }
 
 // Sửa đề nghị đã giải chấp: theo từng dòng gộp (mã hàng + số CT + vị trí) đổi số CT, vị trí, số lượng.
-// Tăng kg: lấy thêm hàng HTC cùng mã, công ty, ngân hàng, kho (nhập trước trước) và đổi DGC ngay.
+// Tăng kg: lấy thêm hàng HTC cùng mã, công ty, ngân hàng, kho của dòng (nhập trước trước) và đổi DGC ngay.
 // Giảm kg: chỉ phần không gắn phiếu xuất của đơn, trả lại HTC nếu hàng còn trong kho.
 // edits: { [groupKey]: { kg, docNo, place } }
 export async function editRelease(r, edits, user) {
   if (r.status !== 'released') throw new Error('Chỉ sửa được đề nghị đã đổi DGC. Bấm ✅ Đổi DGC trước.');
-  const to = r.toStatus || await releaseStatusOf(r.warehouse);
-  let lines = (r.lines || []).map((l) => ({ ...l }));
+  const toCache = {};
+  const toOf = async (w) => (toCache[w] ??= await releaseStatusOf(w));
+  let lines = (r.lines || []).map((l) => ({ ...l, warehouse: l.warehouse || r.warehouse }));
   const mids = [];
   const notes = [];
   const add = [];
   const back = [];
+  let held = null;
   for (const g of groupLines(lines)) {
     const e = edits[g.key];
     if (!e) continue;
     const mine = lines.filter((l) => groupKey(l) === g.key);
+    const wh = g.warehouse;
     const delta = r3(num(e.kg) - g.kg);
     if (delta > 0.001) {
       // HTC còn trống của mã này (trừ phần đang nằm trong đề nghị chưa đổi DGC)
-      const snap = await getDocs(query(collection(db, 'stock'), where('warehouse', '==', r.warehouse)));
-      const held = new Map();
-      (await getDocs(query(collection(db, 'releaseRequests'), where('status', '==', 'sent')))).docs
-        .forEach((d) => (d.data().lines || []).forEach((l) => held.set(l.stockId, (held.get(l.stockId) || 0) + num(l.kg))));
+      const snap = await getDocs(query(collection(db, 'stock'), where('warehouse', '==', wh)));
+      if (!held) {
+        held = new Map();
+        (await getDocs(query(collection(db, 'releaseRequests'), where('status', '==', 'sent')))).docs
+          .forEach((d) => (d.data().lines || []).forEach((l) => held.set(l.stockId, (held.get(l.stockId) || 0) + num(l.kg))));
+      }
       const free = snap.docs.map((d) => ({ _id: d.id, ...d.data() }))
         .filter((x) => x.item === g.item && x.goodsStatus === 'HTC' && x.pledgee === r.pledgee && (x.company || '') === (r.company || ''))
         .map((x) => ({ ...x, free: r3(num(x.kg) - (held.get(x._id) || 0) - add.filter((a) => a.stockId === x._id).reduce((s, a) => s + a.kg, 0)) }))
@@ -183,22 +207,23 @@ export async function editRelease(r, edits, user) {
       for (const x of free) {
         if (need <= 0.001) break;
         const kg = r3(Math.min(need, x.free));
-        add.push({ stockId: x._id, item: x.item, itemName: x.itemName || '', lot: x.lot || '', location: x.location,
-          docNo: e.docNo ?? g.docNo ?? '', place: e.place ?? g.place ?? '', unit: 'TẤN', kg, orderId: '', partyName: '', extra: true });
+        add.push({ warehouse: wh, stockId: x._id, item: x.item, itemName: x.itemName || '', lot: x.lot || '', location: x.location,
+          docNo: e.docNo ?? g.docNo ?? '', place: e.place ?? g.place ?? '', unit: 'TẤN', kg, orderId: '', partyName: '', extra: true, toStatus: await toOf(wh) });
         need = r3(need - kg);
       }
-      if (need > 0.001) throw new Error(`${g.item}: kho ${r.warehouse} chỉ còn ${fmtNum(delta - need, 2)} kg HTC của ${r.company} tại ${r.pledgee} để giải chấp thêm (cần thêm ${fmtNum(delta, 2)} kg).`);
+      if (need > 0.001) throw new Error(`${g.item}: kho ${wh} chỉ còn ${fmtNum(delta - need, 2)} kg HTC của ${r.company} tại ${r.pledgee} để giải chấp thêm (cần thêm ${fmtNum(delta, 2)} kg).`);
       notes.push(`${g.item} +${fmtNum(delta, 2)} kg`);
     } else if (delta < -0.001) {
       let cut = -delta;
-      const free = mine.filter((l) => !l.orderId).reduce((s, l) => s + num(l.kg), 0);
-      if (cut > free + 0.001) throw new Error(`${g.item}: chỉ giảm được ${fmtNum(free, 2)} kg; phần còn lại đã gắn với phiếu xuất của đơn ${g.orders.join(', ')}.`);
+      const free = mine.filter((l) => !l.orderId && !l.movementId).reduce((s, l) => s + num(l.kg), 0);
+      if (cut > free + 0.001) throw new Error(`${g.item}: chỉ giảm được ${fmtNum(free, 2)} kg; phần còn lại thuộc phiếu xuất của đơn ${g.orders.join(', ')}.`);
       for (const l of [...mine].reverse()) {
         if (cut <= 0.001) break;
-        if (l.orderId) continue;
+        if (l.orderId || l.movementId) continue;
         const kg = r3(Math.min(cut, num(l.kg)));
+        const to = l.toStatus || await toOf(l.warehouse);
         // Hàng đã đổi DGC nằm ở dòng tồn cùng kho, vị trí, mã, lot, công ty với tình trạng mới
-        back.push({ ...l, kg, stockId: stockId({ warehouse: r.warehouse, location: l.location, item: l.item, lot: l.lot, goodsStatus: to, company: r.company }), _line: l });
+        back.push({ ...l, kg, to, stockId: stockId({ warehouse: l.warehouse, location: l.location, item: l.item, lot: l.lot, goodsStatus: to, company: r.company }) });
         l.kg = r3(num(l.kg) - kg);
         cut = r3(cut - kg);
       }
@@ -209,8 +234,13 @@ export async function editRelease(r, edits, user) {
       if (e.place != null) l.place = String(e.place).trim();
     }
   }
-  if (back.length) mids.push(await postStatus(r, back.map(({ _line, ...l }) => ({ ...l, bags: null, pallets: null })), to, user, { back: true }));
-  if (add.length) mids.push(await postStatus(r, add, to, user));
+  for (const w of [...new Set(back.map((l) => l.warehouse))]) {
+    const bl = back.filter((l) => l.warehouse === w);
+    mids.push(await postStatus({ ...r, warehouse: w }, bl.map(({ to, ...l }) => ({ ...l, bags: null, pallets: null })), bl[0].to, user, { back: true }));
+  }
+  for (const w of [...new Set(add.map((l) => l.warehouse))]) {
+    mids.push(await postStatus({ ...r, warehouse: w }, add.filter((l) => l.warehouse === w), await toOf(w), user));
+  }
   lines = [...lines.filter((l) => num(l.kg) > 0.0005), ...add];
   const at = new Date().toISOString();
   await updateDoc(doc(db, 'releaseRequests', r.id), {
