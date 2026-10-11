@@ -8,7 +8,8 @@ import { IN_SOURCES } from '../../lib/orders';
 import { confirmIn } from '../../lib/stock';
 import { fmtDate, fmtNum } from '../../lib/utils';
 import { Empty, ErrorBox } from '../../components/ui';
-import { InLine, newLine } from './MovementForm';
+import { InLine, OverCapConfirm, newLine, splitLineAt } from './MovementForm';
+import { OVER_CAP_CONFIRM, OVER_CAP_MSG, capacityCheck } from '../../lib/capacity';
 
 // Nhận hàng: quản trị lập và in phiếu nhập trước; thủ kho nhận hàng ngoài hiện trường,
 // nhập số thực nhận, lot, vị trí rồi xác nhận → tồn kho cập nhật (nhập trực tiếp: lập PO theo số thực nhận)
@@ -67,6 +68,7 @@ function ReceiveForm({ id }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
+  const [overOk, setOverOk] = useState(false);
   const items = useCollection('items').rows;
   const itemMap = useMemo(() => new Map(items.map((i) => [i.code, i])), [items]);
   const allLocations = useCollection('locations').rows;
@@ -83,6 +85,8 @@ function ReceiveForm({ id }) {
   if (!mv) return <Empty text={`Không tìm thấy phiếu ${id}.`} />;
   const locations = allLocations.filter((l) => l.warehouse === mv.warehouse);
   const setLine = (i, p) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...p } : l)));
+  // Sức chứa vị trí: dòng vượt chỗ trống phải chia dòng hoặc tích xác nhận nhập vượt
+  const caps = capacityCheck(lines, locations);
 
   const submit = async (e) => {
     e.preventDefault(); setErr('');
@@ -101,6 +105,7 @@ function ReceiveForm({ id }) {
         location: l.location, goodsStatus: l.goodsStatus, pledgee: l.goodsStatus === 'HTC' ? l.pledgee : '', company: l.company || mv.company || '',
         bags: num(l.bags), pallets: num(l.pallets), kg: num(l.kg) });
     }
+    if (caps.some((c) => c?.over) && !overOk) return setErr(`${OVER_CAP_MSG}. Chia thành nhiều dòng hoặc tích "${OVER_CAP_CONFIRM}".`);
     if (!out.length) return setErr('Nhập số thực nhận cho ít nhất 1 dòng (hàng không về thì báo quản trị hủy phiếu).');
     setBusy(true);
     try {
@@ -135,18 +140,20 @@ function ReceiveForm({ id }) {
       </div>
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="section-head">Hàng thực nhận ({lines.length})</div>
-        <p className="small">Sửa số kg / pallet / bao theo thực tế, lot (NSX, HSD nếu mã hàng có quản lý hạn dùng) và chọn vị trí. Dòng để trống số lượng = không nhận. Hàng về nhiều lot thì thêm dòng.</p>
+        <p className="small">Sửa số kg / pallet / bao theo thực tế, lot (NSX, HSD nếu mã hàng có quản lý hạn dùng) và chọn vị trí. Dòng để trống số lượng = không nhận. Hàng về nhiều lot thì thêm dòng. Số pallet vượt chỗ trống của vị trí thì bấm <b>✂ Chia thành nhiều dòng</b> rồi chọn vị trí cho từng dòng.</p>
         {lines.map((l, i) => (
           <div key={i} className="mv-line">
             <div style={{ flex: 1 }}>
               {l.plannedKg != null && <div className="small">Dự kiến trên phiếu: <b>{t(l.plannedKg)} kg</b></div>}
-              <InLine l={l} set={(p) => setLine(i, p)} itemMap={itemMap} locations={locations} statuses={statuses} pledgees={pledgees} />
+              <InLine l={l} set={(p) => setLine(i, p)} itemMap={itemMap} locations={locations} statuses={statuses} pledgees={pledgees}
+                cap={caps[i]} onSplit={() => setLines((ls) => splitLineAt(ls, i, caps[i]))} />
             </div>
             <button type="button" className="btn ghost" disabled={lines.length === 1} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>✕</button>
           </div>
         ))}
         <button type="button" className="btn sm" onClick={() => setLines((ls) => [...ls, { ...newLine(), item: ls[ls.length - 1]?.item || '', goodsStatus: ls[ls.length - 1]?.goodsStatus || 'KTC', pledgee: ls[ls.length - 1]?.pledgee || '' }])}>+ Thêm dòng (lot khác)</button>
       </div>
+      <OverCapConfirm caps={caps} checked={overOk} onChange={setOverOk} />
       <ErrorBox error={err} />
       {pending && <div className="form-actions"><button className="btn primary" disabled={busy}>{busy ? 'Đang ghi…' : '✅ Xác nhận đã nhận hàng'}</button></div>}
       <datalist id="dl-mv-item">{items.filter((x) => x.active !== false).map((x) => <option key={x.code} value={x.code}>{x.name}</option>)}</datalist>

@@ -12,6 +12,7 @@ import { fmtDate, fmtNum } from '../../lib/utils';
 import { ErrorBox, Field, Modal } from '../../components/ui';
 import { QuickAdd } from '../../components/FormTools';
 import { ItemCode, ItemStockModal } from '../../components/ItemStock';
+import { OVER_CAP_CONFIRM, OVER_CAP_MSG, capacityCheck, splitByCapacity } from '../../lib/capacity';
 
 // Thông tin vận tải gắn trên phiếu xuất (SO và STO). Phiếu nhập không cần.
 const EMPTY_TRANSPORT = { plate: '', carrier: '', carrierName: '', idCard: '', driverName: '', driverPhone: '' };
@@ -274,6 +275,9 @@ function Form({ type }) {
     } else if (add.length) setLines([...kept, ...add].slice(0, 30));
   };
   const setLine = (i, patch) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  // Sức chứa vị trí (phiếu nhập): dòng vượt chỗ trống phải chia dòng hoặc tích xác nhận
+  const caps = type === 'in' ? capacityCheck(lines, locations) : [];
+  const [overOk, setOverOk] = useState(false);
 
   // Dòng tồn sắp xếp FIFO (nhập trước xuất trước)
   const stockRows = useMemo(() => {
@@ -347,6 +351,7 @@ function Form({ type }) {
         ...(type === 'status' ? { toStatus: l.toStatus, toPledgee: l.toStatus === 'HTC' ? l.toPledgee : '' } : {}),
       });
     }
+    if (type === 'in' && caps.some((c) => c?.over) && !overOk) return setErr(`${OVER_CAP_MSG}. Chia thành nhiều dòng hoặc tích "${OVER_CAP_CONFIRM}".`);
     // Gắn từng dòng phiếu vào dòng đơn SO/PO cùng mã hàng
     if (head.orderId) {
       if (!order) return setErr(`Đơn ${head.orderId} không còn mở.`);
@@ -547,7 +552,8 @@ function Form({ type }) {
         {lines.map((l, i) => (
           <div key={i} className="mv-line">
             {type === 'in' ? (
-              <InLine l={l} set={(p) => setLine(i, p)} itemMap={itemMap} items={items} locations={locations} statuses={statuses} pledgees={pledgees} locRequired={false} />
+              <InLine l={l} set={(p) => setLine(i, p)} itemMap={itemMap} items={items} locations={locations} statuses={statuses} pledgees={pledgees} locRequired={false}
+                cap={caps[i]} onSplit={() => setLines((ls) => splitLineAt(ls, i, caps[i]))} />
             ) : (
               <StockLine type={type} l={l} set={(p) => setLine(i, p)} rows={stockRows} byId={stockById} blocked={blocked} onStock={setStockItem}
                 locations={locations} statuses={statuses} pledgees={pledgees} />
@@ -557,6 +563,7 @@ function Form({ type }) {
         ))}
         {lines.length < 30 && <button type="button" className="btn sm" onClick={() => setLines((ls) => [...ls, type === 'in' ? newLine() : stockLine()])}>+ Thêm dòng</button>}
       </div>
+      {type === 'in' && <OverCapConfirm caps={caps} checked={overOk} onChange={setOverOk} />}
       <ErrorBox error={err} />
       {/* Ghim ở đáy màn hình: phiếu nhiều dòng không phải kéo xuống cuối mới thấy nút */}
       <div className="form-actions sticky-actions">
@@ -645,7 +652,7 @@ function QtyFields({ l, onKg, onPallets, onBags }) {
   );
 }
 
-export function InLine({ l, set, itemMap, locations, statuses, pledgees, locRequired = true }) {
+export function InLine({ l, set, itemMap, locations, statuses, pledgees, locRequired = true, cap, onSplit }) {
   const it = itemMap.get(l.item);
   const setBags = (v) => set({ bags: v, pallets: suggestPallets(it, v), kg: kgOf(it, v), kgTxt: undefined });
   const setKg = (v) => {
@@ -686,9 +693,37 @@ export function InLine({ l, set, itemMap, locations, statuses, pledgees, locRequ
         </Field>
       )}
       <QtyFields l={l} onKg={setKg} onPallets={setPallets} onBags={setBags} />
+      {cap?.over && <CapWarn cap={cap} onSplit={onSplit} />}
     </div>
   );
 }
+
+// Cảnh báo dòng nhập vượt số pallet còn trống của vị trí + nút chia thành nhiều dòng
+function CapWarn({ cap, onSplit }) {
+  return (
+    <div className="error-box" style={{ gridColumn: '1 / -1', margin: 0 }}>
+      ⚠ <b>{OVER_CAP_MSG}</b>: {cap.location} còn trống {fmtNum(cap.free, 2)}/{fmtNum(cap.capacity)} pallet, dòng này {fmtNum(cap.need, 2)} pallet.{' '}
+      {onSplit && <button type="button" className="btn sm" onClick={onSplit}>✂ Chia thành nhiều dòng (mỗi dòng ≤ {fmtNum(cap.capacity)} pallet)</button>}
+    </div>
+  );
+}
+
+// Ô tích bắt buộc khi vẫn nhập vượt giới hạn vị trí
+export function OverCapConfirm({ caps, checked, onChange }) {
+  const over = caps.filter((c) => c?.over);
+  if (!over.length) return null;
+  return (
+    <div className="error-box">
+      ⚠ {OVER_CAP_MSG} ở {over.length} dòng ({[...new Set(over.map((c) => c.location))].join(', ')}). Chia thành nhiều dòng để chọn vị trí khác, hoặc{' '}
+      <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontWeight: 600 }}>
+        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} /> {OVER_CAP_CONFIRM}
+      </label>
+    </div>
+  );
+}
+
+// Thay dòng i bằng các dòng đã chia theo sức chứa vị trí
+export const splitLineAt = (lines, i, cap) => [...lines.slice(0, i), ...splitByCapacity(lines[i], cap), ...lines.slice(i + 1)];
 
 const STATUS_COLS = ['HTC', 'KTC', 'DGC'];
 // Bảng tồn kho dạng cột để tick chọn nhiều dòng; dòng bị khóa xuất (HTC khi xuất bán) không chọn được
