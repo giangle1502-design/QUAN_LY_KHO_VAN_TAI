@@ -8,6 +8,7 @@ import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum, norm, today } from '../../lib/utils';
 import { OPEN_STATUSES, leftKg, lineShip, lineWh } from '../../lib/orders';
 import { deleteOrRequest } from '../../lib/deletes';
+import { usePref } from '../../lib/prefs';
 import {
   ALLOC_STATUS, CONT_KEYS, DEST_TYPES, planNeedsLocation, addAllocations, addRows, updateRows, allocStatus, allocatedByPoLine, attachToOrder, cancelAllocation, createOrderFromGroup,
   detachFromOrder, groupForOrders, setCarrier, missingForOrder, poKey, updateAllocation,
@@ -494,8 +495,11 @@ function ContModal({ base, preset, pos, allocated, user, onClose }) {
 function CreateOrders({ rows, cats, user, onClose }) {
   const { salesOnly, email } = useApp();
   const users = useCollection(salesOnly ? '' : 'users').rows.filter((u) => u.role === 'kinh_doanh' && u.active !== false);
-  const groups = useMemo(() => groupForOrders(rows), [rows]);
-  const [sales, setSales] = useState(() => Object.fromEntries(groups.map((g) => [g.key, salesOnly ? email : ''])));
+  const [mode, setMode] = usePref('alloc-order-mode', 'cont');
+  const groups = useMemo(() => groupForOrders(rows, mode), [rows, mode]);
+  const nConts = new Set(rows.map((a) => a.contNo || a._id)).size;
+  const [salesMap, setSales] = useState({});
+  const sales = new Proxy(salesMap, { get: (m, k) => (k in m ? m[k] : salesOnly ? email : '') });
   const [done, setDone] = useState({});
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -515,12 +519,16 @@ function CreateOrders({ rows, cats, user, onClose }) {
   };
   return (
     <Modal title="Tạo đơn từ kế hoạch phân bổ" onClose={() => onClose(Object.keys(done).length ? `Đã tạo ${Object.values(done).join(', ')}.` : '')} wide>
-      <p className="small">Mỗi dòng kế hoạch thành 1 dòng đơn. Kho xuất của SO / kho đi của STO là nơi nhận hàng; số cont, số PO ghi vào ghi chú dòng đơn.</p>
+      <div className="seg" style={{ marginBottom: 8 }}>
+        <button type="button" className={mode === 'cont' ? 'on' : ''} disabled={busy || Object.keys(done).length > 0} onClick={() => setMode('cont')}>Mỗi cont 1 đơn ({nConts} cont)</button>
+        <button type="button" className={mode === 'merge' ? 'on' : ''} disabled={busy || Object.keys(done).length > 0} onClick={() => setMode('merge')}>Gộp theo khách / công ty</button>
+      </div>
+      <p className="small">{mode === 'cont' ? 'Cont về khác ngày: mỗi cont 1 SO / STO riêng, phiếu nhập, phiếu xuất cũng riêng từng cont.' : 'Các cont cùng khách (SO) hoặc cùng công ty (STO) gộp vào 1 đơn.'} Mỗi dòng kế hoạch thành 1 dòng đơn. Kho xuất của SO / kho đi của STO là nơi nhận hàng; số cont, số PO ghi vào ghi chú dòng đơn.</p>
       {groups.map((g) => (
         <div key={g.key} className="card" style={{ marginBottom: 10 }}>
           <div className="section-head">
             <span className={'badge ' + (g.type === 'SO' ? 'blue' : 'teal')}>{g.type === 'SO' ? 'Đơn bán (SO)' : 'Chuyển kho (STO)'}</span>
-            <b>{g.company}</b>{g.type === 'SO' ? <> · {g.partyCode} {g.partyName}</> : null}
+            <b>{g.company}</b>{g.type === 'SO' ? <> · {g.partyCode} {g.partyName}</> : null}{g.contNo ? <> · cont <span className="mono">{g.contNo}</span></> : null}
             <span className="small">· {g.rows.length} dòng · {kg(g.rows.reduce((s, a) => s + n(a.qtyKg), 0))} kg</span>
             {done[g.key] && <span className="badge green">Đã tạo {done[g.key]}</span>}
           </div>

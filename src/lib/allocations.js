@@ -112,12 +112,14 @@ export const updateAllocation = (id, patch, user) =>
   updateDoc(doc(db, 'allocations', id), { ...patch, updatedAt: nowISO(), updatedBy: user.email });
 
 // Gom các dòng kế hoạch đã chọn thành đơn: SO theo công ty + khách, STO theo công ty
-export function groupForOrders(allocs) {
+// mode 'merge': gộp theo công ty (+ khách); 'cont': mỗi cont 1 đơn (cont về khác ngày → phiếu nhập / xuất riêng)
+export function groupForOrders(allocs, mode = 'merge') {
   const groups = new Map();
   for (const a of allocs) {
     const so = a.destType === 'customer';
-    const k = so ? `SO|${a.company}|${a.partyCode}` : `STO|${a.company}`;
-    if (!groups.has(k)) groups.set(k, { key: k, type: so ? 'SO' : 'STO', company: a.company, partyCode: so ? a.partyCode : '', partyName: so ? a.partyName : '', rows: [] });
+    const cont = mode === 'cont' ? `|${a.contNo || `#${a._id}`}` : '';
+    const k = (so ? `SO|${a.company}|${a.partyCode}` : `STO|${a.company}`) + cont;
+    if (!groups.has(k)) groups.set(k, { key: k, type: so ? 'SO' : 'STO', company: a.company, partyCode: so ? a.partyCode : '', partyName: so ? a.partyName : '', contNo: mode === 'cont' ? a.contNo || '' : '', rows: [] });
     groups.get(k).rows.push(a);
   }
   return [...groups.values()].map((g) => ({ ...g, rows: g.rows.sort((x, y) => String(x.date).localeCompare(String(y.date))) }));
@@ -138,7 +140,7 @@ export async function createOrderFromGroup(g, { sales, whName }, user) {
     type: g.type, company: g.company, date: today(),
     ...(sto ? { partyCode: sum.toWarehouses.join(', '), partyName: `Chuyển đến kho ${sum.toWarehouses.map(whName).join(', ')}` }
       : { partyCode: g.partyCode, partyName: g.partyName, sales: sales || '' }),
-    refNo: '', tolerancePct: 0, note: 'Lập từ kế hoạch phân bổ hàng mua', fromAllocation: true,
+    refNo: '', tolerancePct: 0, note: `Lập từ kế hoạch phân bổ hàng mua${g.contNo ? ` · cont ${g.contNo}` : ''}`, fromAllocation: true, ...(g.contNo ? { contNo: g.contNo } : {}),
     carriers: [...new Set(lines.map((l) => l.carrier).filter(Boolean))], lines, ...sum,
   };
   const refs = g.rows.map((a) => doc(db, 'allocations', a._id));
