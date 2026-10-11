@@ -373,7 +373,7 @@ th.col-drop, .col-picker-row.col-drop { box-shadow: inset 3px 0 0 var(--primary)
 
 /* Mã hàng bấm được → menu Xem tồn kho */
 .item-code { position: relative; display: inline-block; }
-.link-btn { border: none; background: none; padding: 0; color: var(--primary); cursor: pointer; font: inherit; font-weight: 600; text-decoration: underline dotted; }
+.link-btn { white-space: nowrap; border: none; background: none; padding: 0; color: var(--primary); cursor: pointer; font: inherit; font-weight: 600; text-decoration: underline dotted; }
 .item-menu { position: absolute; z-index: 30; top: 100%; left: 0; margin-top: 4px; background: #fff; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.12); padding: 4px; white-space: nowrap; }
 .item-menu button { display: block; width: 100%; text-align: left; border: none; background: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font: inherit; }
 .item-menu button:hover { background: #eef4fd; }

@@ -7,6 +7,7 @@ import FieldInput from '../../components/FieldInput';
 import { AddFieldButton, ColumnPicker, QuickAdd } from '../../components/FormTools';
 import { dragHeadProps, orderCols } from '../../lib/colOrder';
 import { ErrorBox, Field, Modal } from '../../components/ui';
+import { ItemCode, ItemStockModal } from '../../components/ItemStock';
 import { createOrder, saveOrder, summarizeLines } from '../../lib/orders';
 import { cleanValue, defaultsOf, fillEmptyLinks, linkPatch, visibleFields } from '../../lib/fields';
 import { computeFormulas } from '../../lib/formula';
@@ -85,6 +86,11 @@ export default function SOForm({ type = 'SO', order, onClose }) {
   const [hiddenCols, setHiddenCols] = usePref(`${type}LineHiddenCols`, []);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  // Bấm mã hàng → Xem tồn kho → chọn kho xuất cho dòng (SO: Kho xuất, STO: Kho xuất đi)
+  const [stockAt, setStockAt] = useState(null);
+  const whKey = sto ? 'fromWarehouse' : 'warehouse';
+  const canStock = type === 'SO' || sto;
+  const statuses = useCollection(canStock ? 'goodsStatus' : '').rows;
 
   // Thứ tự cột dòng hàng riêng của từng người (kéo thả tiêu đề hoặc trong ⚙ Cột hiển thị)
   const [lineOrder, setLineOrder] = usePref(`${type}LineOrder`, []);
@@ -260,6 +266,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
         <div className="cell-add">
           <input list="dl-so-item" value={l.item} disabled={done} title={done ? 'Dòng đã giao, không đổi mã hàng được' : ''} onChange={(e) => set(e.target.value)} />
           {!done && <QuickAdd catKey="items" onAdded={(id, rec) => set(id, rec)} />}
+          {canStock && itemMap.has(l.item) && !done && <ItemCode code={l.item} label="📦 Tồn" onStock={() => setStockAt(i)} />}
         </div>
       );
       case 'itemName': return <span className="small">{itemMap.get(l.item)?.name || l.itemName}</span>;
@@ -350,6 +357,19 @@ export default function SOForm({ type = 'SO', order, onClose }) {
         <ErrorBox error={err} />
         <div className="form-actions"><button className="btn primary" disabled={busy}>{busy ? 'Đang lưu…' : order ? 'Lưu' : 'Lập đơn'}</button></div>
         <datalist id="dl-so-party">{parties.filter((p) => p.active !== false).map((p) => <option key={p.code} value={p.code}>{p.name}</option>)}</datalist>
+        {stockAt != null && lines[stockAt] && (() => {
+          const l = lines[stockAt];
+          // STO chuyển được mọi tình trạng (kể cả HTC); SO không xuất được hàng bị khóa (HTC) và chỉ tính TTHH của dòng nếu có
+          return (
+            <ItemStockModal item={l.item} itemName={itemMap.get(l.item)?.name || ''} whCode={l[whKey]} warehouses={warehouses} company={h.company}
+              pickRows={false} pickLabel="Chọn làm kho xuất" curLabel="Đang chọn"
+              blocked={(r) => !sto && (statuses.find((x) => x.code === r.goodsStatus)?.allowOutbound === false || (l.goodsStatus && r.goodsStatus !== l.goodsStatus))}
+              allowWh={(c) => (sto ? fromOpts.some((w) => w.code === c) && c !== l.toWarehouse : true)}
+              need={n(l.qtyKg)}
+              note={<>Dòng {stockAt + 1}: chọn kho đang có hàng làm <b>kho xuất</b>{sto ? ' (kho nhập phải khác kho xuất; thủ kho chỉ chọn được kho mình phụ trách)' : ''}. Bấm vào kho để xem chi tiết lot, vị trí, tình trạng.</>}
+              onClose={() => setStockAt(null)} onPick={(c) => { setLine(stockAt, whKey, c); setStockAt(null); }} />
+          );
+        })()}
         <datalist id="dl-so-item">{items.filter((x) => x.active !== false).map((x) => <option key={x.code} value={x.code}>{x.name}</option>)}</datalist>
       </form>
     </Modal>
