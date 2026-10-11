@@ -9,6 +9,7 @@ import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum, norm } from '../../lib/utils';
 import { CompanyPicker, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox } from '../../components/ui';
+import SalesAnalysis from './SalesAnalysis';
 
 // ============================================================================
 // Báo cáo: mỗi báo cáo = bộ lọc + 1 hoặc nhiều bảng; bảng nào cũng xuất Excel và in được.
@@ -22,6 +23,7 @@ export const REPORTS = [
   ['ton-cho-sale', '💼', 'Tồn kho cho Sale'],
   ['don-chua-giao', '📤', 'Đơn hàng chưa giao'],
   ['po-chua-nhap', '📥', 'Đơn mua chưa nhập kho'],
+  ['phan-tich-ban-hang', '📈', 'Phân tích bán hàng'],
 ];
 
 const n = (v) => Number(v) || 0;
@@ -31,7 +33,7 @@ const STATUS_ORDER = ['KTC', 'HTC', 'DGC'];
 const rankSt = (c) => (STATUS_ORDER.includes(c) ? STATUS_ORDER.indexOf(c) : 99);
 
 // Bảng dùng chung. cols: [{ key, label, num, digits, ton (kg→tấn), sum, render, style }]
-function ReportTable({ cols, rows, empty = 'Không có dữ liệu.', rowStyle }) {
+export function ReportTable({ cols, rows, empty = 'Không có dữ liệu.', rowStyle }) {
   if (!rows.length) return <Empty text={empty} />;
   const show = (c, r) => (c.render ? c.render(r) : c.ton ? t3(r[c.key]) : c.num ? fmtNum(r[c.key], c.digits ?? 0) : r[c.key]);
   const hasSum = cols.some((c) => c.sum);
@@ -59,7 +61,7 @@ function ReportTable({ cols, rows, empty = 'Không có dữ liệu.', rowStyle }
   );
 }
 // Dòng Excel theo đúng cột trên màn hình (số kg xuất dạng số)
-const toSheet = (cols, rows) => (rows.length ? rows : [{}]).map((r, i) => ({
+export const toSheet = (cols, rows) => (rows.length ? rows : [{}]).map((r, i) => ({
   STT: rows.length ? i + 1 : '',
   ...Object.fromEntries(cols.filter((c) => !c.noExcel).map((c) => [c.label + (c.ton ? ' (kg)' : ''),
     !rows.length ? '' : c.excel ? c.excel(r) : c.ton ? Math.round(T(r[c.key]) * 1000) / 1000 : r[c.key] ?? ''])),
@@ -73,7 +75,7 @@ export default function Reports() {
   const [q, setQ] = useState('');
   const props = { wh, co, q: norm(q) };
   const Body = { 'ton-theo-kho': ByWarehouse, 'ton-theo-vi-tri': ByLocation, 'ton-theo-trang-thai': ByStatus,
-    'ton-cho-sale': ForSales, 'don-chua-giao': OpenSO, 'po-chua-nhap': OpenPO }[cur[0]];
+    'ton-cho-sale': ForSales, 'don-chua-giao': OpenSO, 'po-chua-nhap': OpenPO, 'phan-tich-ban-hang': SalesAnalysis }[cur[0]];
   return (
     <div className="report-page">
       <div className="page-head">
