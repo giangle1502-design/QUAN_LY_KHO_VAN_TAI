@@ -247,6 +247,14 @@ service cloud.firestore {
           && movementForOrder(request.resource.data.lastMovement, id));
     }
 
+    // Kế hoạch phân bổ hàng mua: kinh doanh, kế toán, quản trị lập / sửa; chỉ quản trị gốc xóa (duyệt yêu cầu xóa)
+    match /allocations/{id} {
+      allow read: if isStaff();
+      allow create: if (isAdmin() || orderMgr()) && request.resource.data.id == id && request.resource.data.createdBy == me();
+      allow update: if (isAdmin() || orderMgr()) && request.resource.data.id == resource.data.id
+        && request.resource.data.createdBy == resource.data.createdBy && request.resource.data.poId == resource.data.poId;
+    }
+
     // Giá trị trường đơn hàng chỉ người được chỉ định xem (vd. Đơn giá): người trong viewers (email hoặc vai trò) và quản trị
     // salesSees: sale phụ trách của đơn (sales) xem được giá trị trong đơn của mình, vd. Giá bán
     function seesSecret(d) {

@@ -20,6 +20,7 @@ import PrintLabels from './pages/stock/PrintLabels';
 import Release, { PrintRelease } from './pages/stock/Release';
 import Dashboard from './pages/Dashboard';
 import Orders from './pages/orders/Orders';
+import Allocation from './pages/orders/Allocation';
 import Reports from './pages/reports/Reports';
 import Deletes from './pages/admin/Deletes';
 import Hauling from './pages/transport/Hauling';
@@ -59,6 +60,7 @@ export default function App() {
         {isAdmin && <Route path="xe/giao-hang" element={<Delivery />} />}
         <Route path="xe/tong-quan" element={<Overview />} />
         <Route path="don-hang" element={<Orders />} />
+        <Route path="phan-bo" element={<Allocation />} />
         <Route path="bao-cao" element={<Navigate to="/bao-cao/ton-theo-kho" />} />
         <Route path="bao-cao/:report" element={<Reports />} />
         <Route path="kho/ton" element={<Stock />} />

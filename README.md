@@ -289,5 +289,15 @@ Phiếu nhập kho chọn **Nguồn nhập** ở đầu phiếu:
 - Trường công thức thiếu giá trị (chưa nhập hoặc không được xem) thì để trống, không ra 0.
 - **Cần publish lại firestore.rules** (salesOnly / mySale cho orders, collection orderSecrets có salesSees).
 
+## Kế hoạch phân bổ hàng mua (/phan-bo)
+Thay cột "Điểm giao" của sheet COST CONT: mỗi dòng PO (hàng về cảng / KNQ) được chia cho nơi đến.
+- Tab **Hàng mua chưa phân bổ**: dòng PO còn phần chưa chia → **Phân bổ** (chia N dòng, thường 1 dòng = 1 cont, nhập sẵn số cont nếu có).
+- Tab **Kế hoạch phân bổ**: sửa trực tiếp dòng nháp (ngày giao, số kg, số cont, nơi nhận, điểm giao, khách + mã giao hoặc kho đến, nhà vận chuyển, ghi chú). Tổng các dòng không vượt số đặt của dòng PO (+ dung sai).
+- Nơi nhận = kho nhập của dòng PO (kho cảng / KNQ khai trong danh mục kho). Hàng về thì lập phiếu nhập vào kho cảng như PO thường.
+- Chọn dòng → **Tạo đơn**: dòng giao khách gom thành SO theo công ty + khách (kho xuất = nơi nhận), dòng về kho mình gom thành STO theo công ty (kho đi = nơi nhận). Số cont, số PO ghi vào ghi chú dòng đơn; dòng kế hoạch nhớ số đơn + dòng đơn, trạng thái tự cập nhật (Đã tạo đơn → Đang giao → Đã giao).
+- **Gắn SO**: gắn dòng kế hoạch vào dòng đơn bán sale đã lập (cùng công ty, mã hàng, khách); không đổi đơn.
+- Dòng nháp hủy được (quay lại phần chưa phân bổ); dòng đã có đơn thì sửa / hủy ở đơn. Chi tiết PO có bảng "Kế hoạch phân bổ".
+- Quyền: kinh doanh, kế toán, quản trị (collection `allocations`, nhớ dán lại firestore.rules).
+
 ## Sửa lỗi
 - Đề nghị giải chấp (và các thao tác theo kho) bị chặn quyền với tài khoản quản trị gốc chưa có hồ sơ trong *Phân quyền*: rules nay cho quản trị thao tác mọi kho.

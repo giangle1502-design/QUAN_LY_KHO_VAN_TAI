@@ -92,10 +92,12 @@ export function statusOf(o, lines = o.lines) {
 }
 
 // Lập đơn mới: cấp số SO/PO theo Quy tắc mã tự sinh
-export async function createOrder(o, user, secrets) {
+// hook (không bắt buộc): { read(tx) → dữ liệu đọc trước, write(tx, id, lines, đã đọc) } để ghi thêm trong cùng giao dịch (vd. kế hoạch phân bổ)
+export async function createOrder(o, user, secrets, hook) {
   const ruleRef = doc(db, 'codeRules', o.type);
   return runTransaction(db, async (tx) => {
     const snap = await tx.get(ruleRef);
+    const pre = hook?.read ? await hook.read(tx) : null;
     const seed = catalogByKey('codeRules').seed.find((s) => s.code === o.type);
     const rule = snap.exists() ? snap.data() : seed;
     const num = n(rule.next) || 1;
@@ -107,6 +109,7 @@ export async function createOrder(o, user, secrets) {
       history: [{ at, by: user.email, byName: user.name, action: 'Lập đơn' }],
     });
     writeSecrets(tx, { id, type: o.type, sales: o.sales }, lines, secrets, user.email);
+    hook?.write?.(tx, id, lines, pre);
     if (snap.exists()) tx.update(ruleRef, { next: num + 1 });
     else tx.set(ruleRef, { ...seed, next: num + 1 });
     return id;

@@ -9,6 +9,7 @@ import { ErrorBox } from '../../components/ui';
 // Xóa dữ liệu chạy thử để làm lại từ đầu (chỉ quản trị gốc). Giữ phân quyền (users) và cấu hình biểu mẫu.
 const TX = [
   ['orders', 'Đơn hàng SO / PO / STO'],
+  ['allocations', 'Kế hoạch phân bổ hàng mua'],
   ['movements', 'Phiếu kho (nhập, xuất, chuyển vị trí, điều chỉnh, đổi tình trạng)'],
   ['stock', 'Tồn kho'],
   ['releaseRequests', 'Đề nghị giải chấp'],

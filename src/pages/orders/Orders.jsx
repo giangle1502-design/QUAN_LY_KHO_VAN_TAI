@@ -321,6 +321,7 @@ function OrderDetail({ o, onClose, onEdit }) {
         </table>
       </div>
 
+      {o.type === 'PO' && !o.direct && <PoAllocations o={o} />}
       <div className="form-actions" style={{ justifyContent: 'flex-start', marginBottom: 8 }}><MoveButtons o={o} pend={pendIn.get(o.id)} />
         {isAdmin && o.type !== 'PO' && isOpen && <button type="button" className="btn" onClick={() => setAssign(true)}>🚛 Giao đơn vị vận tải</button>}</div>
       {assign && <AssignCarrier o={o} onClose={() => setAssign(false)} />}
@@ -364,6 +365,34 @@ function OrderDetail({ o, onClose, onEdit }) {
         </div>
       )}
     </Modal>
+  );
+}
+
+// Kế hoạch phân bổ của 1 PO: đã chia bao nhiêu cho khách / kho nào, còn bao nhiêu chưa chia
+function PoAllocations({ o }) {
+  const [rows, setRows] = useState([]);
+  useEffect(() => onSnapshot(query(collection(db, 'allocations'), where('poId', '==', o.id)),
+    (s) => setRows(s.docs.map((d) => ({ _id: d.id, ...d.data() })).filter((a) => a.status !== 'cancelled')), () => setRows([])), [o.id]);
+  const by = (no) => rows.filter((a) => a.poLine === no);
+  const sumKg = (list) => list.reduce((s, a) => s + (Number(a.qtyKg) || 0), 0);
+  const dest = (a) => (a.destType === 'customer' ? a.partyName || a.partyCode : a.destType === 'warehouse' ? `Kho ${a.toWarehouse}` : 'chưa chốt');
+  return (
+    <>
+      <div className="section-head">Kế hoạch phân bổ <Link className="btn sm" to="/phan-bo?tab=chua">📋 Mở kế hoạch phân bổ</Link></div>
+      <table style={{ marginBottom: 12 }}>
+        <thead><tr><th>#</th><th>Mã hàng</th><th className="num">Đặt (kg)</th><th className="num">Đã phân bổ (kg)</th><th className="num">Chưa phân bổ (kg)</th><th>Phân bổ cho</th></tr></thead>
+        <tbody>{o.lines.map((l) => {
+          const list = by(l.no);
+          const groups = {};
+          list.forEach((a) => { const k = dest(a); groups[k] = (groups[k] || 0) + (Number(a.qtyKg) || 0); });
+          return (
+            <tr key={l.no}><td>{l.no}</td><td>{l.item}</td><td className="num">{t(l.qtyKg)}</td><td className="num">{t(sumKg(list))}</td>
+              <td className="num"><b>{t(Math.max(0, (Number(l.qtyKg) || 0) - sumKg(list)))}</b></td>
+              <td className="small">{Object.entries(groups).map(([k, v]) => `${k}: ${t(v)} kg`).join(' · ') || '–'}</td></tr>
+          );
+        })}</tbody>
+      </table>
+    </>
   );
 }
 
