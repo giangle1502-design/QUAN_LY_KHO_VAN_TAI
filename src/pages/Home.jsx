@@ -4,12 +4,16 @@ import { collection, doc, getCountFromServer, setDoc } from 'firebase/firestore'
 import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
 import { CATALOGS, GROUPS, ROLES, roleLabel } from '../catalogs';
+import { norm } from '../lib/utils';
 
 export default function Home() {
   const { name, role, isAdmin, can3PL, settings } = useApp();
   const [co, setCo] = useState(null);
   const [saved, setSaved] = useState('');
   const [counts, setCounts] = useState({});
+  const [q, setQ] = useState('');
+  const words = norm(q).split(' ').filter(Boolean);
+  const match = (c) => { const t = norm(`${c.title} ${c.short} ${c.group} ${c.key}`); return words.every((w) => t.includes(w)); };
   const cats = CATALOGS.filter((c) => (isAdmin || !c.adminOnly) && (!c.only3PL || can3PL));
 
   useEffect(() => {
@@ -28,8 +32,10 @@ export default function Home() {
         <span className="small">Xin chào {name} · {roleLabel(role)}</span>
       </div>
       <p className="hint">Bước 1 của hệ thống: khai báo danh mục dùng chung. Các bước nhập kho, xuất kho và luồng xe vận tải sẽ chọn dữ liệu từ đây.</p>
+      <input type="search" placeholder="🔍 Tìm danh mục (khách hàng, mã hàng, kho…)" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 360, width: '100%', marginBottom: 8 }} />
+      {words.length > 0 && !cats.some(match) && <p className="hint">Không có danh mục nào khớp "{q}".</p>}
       {GROUPS.map((g) => {
-        const list = cats.filter((c) => c.group === g);
+        const list = cats.filter((c) => c.group === g && match(c));
         if (!list.length) return null;
         return (
           <div key={g}>

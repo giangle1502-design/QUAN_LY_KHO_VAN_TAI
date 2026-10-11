@@ -6,13 +6,54 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { CATALOGS, GROUPS, roleLabel } from '../catalogs';
 import { REPORTS } from '../pages/reports/Reports';
+import { norm } from '../lib/utils';
 
 export default function Layout() {
   const { name, email, role, isAdmin, isSuper, can3PL, canDesign, hasRole, logout, settings } = useApp();
   const [open, setOpen] = useState(false);
   const loc = useLocation();
   const orderTab = (k) => ({ isActive }) => (isActive && (new URLSearchParams(loc.search).get('tab') || 'SO') === k ? 'active' : '');
-  const close = () => setOpen(false);
+  const [q, setQ] = useState('');
+  const close = () => { setOpen(false); setQ(''); };
+  const navRef = useRef(null);
+  const searchRef = useRef(null);
+  // Lọc menu theo ô tìm kiếm (không dấu, nhiều từ). Gõ trúng tên nhóm thì hiện cả nhóm.
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const words = norm(q).split(' ').filter(Boolean);
+    const hit = (el) => { const t = norm(el.textContent); return words.every((w) => t.includes(w)); };
+    let header = null, headerHas = false, groupHit = false, total = 0;
+    const endGroup = () => { if (header) header.hidden = words.length > 0 && !headerHas; };
+    nav.querySelectorAll('a, .nav-group').forEach((el) => {
+      if (el.classList.contains('nav-group')) {
+        endGroup();
+        header = el; headerHas = false; groupHit = words.length > 0 && hit(el);
+        return;
+      }
+      const show = !words.length || groupHit || hit(el);
+      el.hidden = !show;
+      if (show) { headerHas = true; total++; }
+    });
+    endGroup();
+    const empty = nav.querySelector('.nav-empty');
+    if (empty) empty.hidden = total > 0;
+  });
+  // Ctrl+K hoặc "/" để nhảy vào ô tìm kiếm
+  useEffect(() => {
+    const onKey = (e) => {
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '') || document.activeElement?.isContentEditable;
+      if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') || (e.key === '/' && !typing)) {
+        e.preventDefault(); setOpen(true); searchRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  const onSearchKey = (e) => {
+    if (e.key === 'Escape') { setQ(''); e.currentTarget.blur(); }
+    if (e.key === 'Enter') navRef.current?.querySelector('a:not([hidden])')?.click();
+  };
   const mainRef = useRef(null);
   useEffect(() => installColumnResize(mainRef.current), []);
   // Số yêu cầu xóa đang chờ quản trị gốc duyệt
@@ -22,6 +63,10 @@ export default function Layout() {
     <div className="shell">
       <aside className={'side' + (open ? ' open' : '')}>
         <div className="brand">{settings.companyName}<small>Kho & vận tải</small></div>
+        <div className="nav-search">
+          <input ref={searchRef} type="search" placeholder="🔍 Tìm chức năng… (Ctrl+K)" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onSearchKey} />
+        </div>
+        <div className="nav-wrap" ref={navRef}>
         {role === 'tai_xe' ? (
         <nav>
           <NavLink to="/tai-xe" onClick={close}><span className="ico">🧑‍✈️</span>Chuyến của tôi</NavLink>
@@ -83,6 +128,8 @@ export default function Layout() {
           })}
         </nav>
         )}
+        <div className="nav-empty" hidden>Không tìm thấy chức năng nào.</div>
+        </div>
         <div className="me">
           <div><b>{name}</b><small>{email}</small><small className="role">{roleLabel(role)}</small></div>
           <button className="btn ghost sm" onClick={logout}>Đăng xuất</button>
