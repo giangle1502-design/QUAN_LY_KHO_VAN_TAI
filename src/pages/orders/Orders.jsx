@@ -14,7 +14,7 @@ import { fmtDate, fmtNum, norm } from '../../lib/utils';
 import { Empty, ErrorBox, Modal } from '../../components/ui';
 import Balance from './Balance';
 import SOForm from './SOForm';
-import { ColumnPicker } from '../../components/FormTools';
+import { ColumnPicker, WithAdd } from '../../components/FormTools';
 import { displayValue } from '../../components/FieldInput';
 import { usePref } from '../../lib/prefs';
 import { useCollection, usePendingIn } from '../../lib/hooks';
@@ -507,13 +507,13 @@ function AssignCarrier({ o: view, onClose }) {
     <Modal title={`Giao đơn vị vận tải · ${o.id}`} onClose={onClose} wide>
       <p className="hint">Đơn vị vận tải được giao sẽ thấy các dòng này ở mục <b>Vận chuyển</b> và tự chia xe theo tải trọng.</p>
       <div className="filters">Áp cho tất cả dòng:
-        <select value={all} onChange={(e) => { setAll(e.target.value); setMap(Object.fromEntries(o.lines.map((l) => [l.no, e.target.value]))); }}><option value="">-- Chọn --</option>{opts}</select></div>
+        <WithAdd cat="carriers" onAdded={(id) => { setAll(id); setMap(Object.fromEntries(o.lines.map((l) => [l.no, id]))); }}><select value={all} onChange={(e) => { setAll(e.target.value); setMap(Object.fromEntries(o.lines.map((l) => [l.no, e.target.value]))); }}><option value="">-- Chọn --</option>{opts}</select></WithAdd></div>
       <div className="table-wrap"><table>
         <thead><tr><th>#</th><th>Kho xuất</th><th>Mã hàng</th><th>Giao đến</th><th className="num">Còn lại (kg)</th><th>Đơn vị vận tải</th></tr></thead>
         <tbody>{o.lines.map((l) => (
           <tr key={l.no}><td>{l.no}</td><td>{lineWh(o, l, 'out')}</td><td>{l.item} {l.itemName}</td><td>{o.type === 'STO' ? `Kho ${lineTo(o, l)}` : lineShip(o, l) || o.partyName}</td>
             <td className="num">{t(leftKg(l))}</td>
-            <td><select value={map[l.no]} onChange={(e) => setMap((m) => ({ ...m, [l.no]: e.target.value }))}><option value="">-- Chưa giao --</option>{opts}</select></td></tr>
+            <td><WithAdd cat="carriers" onAdded={(id) => setMap((m) => ({ ...m, [l.no]: id }))}><select value={map[l.no]} onChange={(e) => setMap((m) => ({ ...m, [l.no]: e.target.value }))}><option value="">-- Chưa giao --</option>{opts}</select></WithAdd></td></tr>
         ))}</tbody>
       </table></div>
       <ErrorBox error={err} />

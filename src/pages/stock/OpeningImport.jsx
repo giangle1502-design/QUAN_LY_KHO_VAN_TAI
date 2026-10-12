@@ -6,6 +6,7 @@ import { kgOf, postMovement, suggestPallets } from '../../lib/stock';
 import { vnDate } from '../../lib/trips';
 import { fmtDate, fmtNum, norm } from '../../lib/utils';
 import { ErrorBox } from '../../components/ui';
+import { WithAdd } from '../../components/FormTools';
 
 // Cột file Excel tồn đầu kỳ: [khóa, tiêu đề, các tên cột chấp nhận]
 const COLS = [
@@ -130,10 +131,12 @@ export default function OpeningImport() {
         Pallet và kg để trống sẽ tự tính theo quy cách mã hàng. Hệ thống tạo phiếu nhập với lý do "Tồn đầu kỳ", hủy được nếu nhập sai.
       </p>
       <div className="toolbar">
-        <select value={wh?.code || ''} onChange={(e) => { setOpWh(e.target.value); }}>
-          <option value="">-- Chọn kho --</option>
-          {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-        </select>
+        <WithAdd cat="warehouses" onAdded={(id) => setOpWh(id)}>
+          <select value={wh?.code || ''} onChange={(e) => { setOpWh(e.target.value); }}>
+            <option value="">-- Chọn kho --</option>
+            {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
+          </select>
+        </WithAdd>
         <label className="small">Ngày chứng từ <input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
         <button className="btn" disabled={!wh} onClick={() => fileRef.current.click()}>⬆ Chọn file Excel</button>
         <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" hidden onChange={(e) => e.target.files[0] && read(e.target.files[0])} />

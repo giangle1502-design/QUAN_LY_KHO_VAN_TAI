@@ -333,5 +333,11 @@ Thay cột "Điểm giao" của sheet COST CONT: mỗi dòng PO (hàng về cả
 - Phiếu giao hàng (phiếu xuất) in mặc định **3 liên**: Liên 1 lưu kho, Liên 2 giao đơn vị vận tải (có dòng pallet), Liên 3 giao khách hàng (không có dòng pallet vận tải mượn; pallet khách giữ thì có). Chọn 1–3 liên ở thanh in (?lien=). Mẫu in tự thiết kế cũng in 3 liên, thêm trường {{Liên}}, {{Hình thức xuất}}, {{Pallet xuất kèm}} và dòng pallet trong {{BẢNG HÀNG}}.
 - Trang Quản lý pallet: vận tải đang mượn (nút Nhận trả), tồn pallet theo kho, sổ pallet (phiếu xuất + nhập / trả / điều chỉnh tay, xuất Excel). Dữ liệu: `palletStock/{kho__mã}`, `palletCarrier/{vận tải__mã}`, `palletMoves`.
 
+## Nút (+) thêm nhanh mã ở mọi ô chọn mã
+- Mọi ô chọn mã từ danh mục (kho, công ty, khách hàng, nhà cung cấp, giao đến, mã hàng, vị trí, xe, tài xế, đơn vị vận tải, trạng thái hàng, bên nhận cầm cố, lý do, mã pallet) có nút (+) bên cạnh: thêm mã mới ngay tại chỗ, lưu xong tự điền vào ô, không phải quay về Danh mục.
+- Có trên: phiếu nhập / xuất / chuyển, đơn SO / PO / STO, kế hoạch phân bổ, đăng ký xe, vận chuyển, chọn vận tải cho đơn, giải chấp, kiểm kê, quản lý pallet, nhập tồn đầu kỳ / điều chỉnh từ Excel.
+- Nút chỉ hiện với người có quyền sửa danh mục đó. Ô lọc ở báo cáo / danh sách không có (+).
+- Code: ô kiểu tham chiếu trong `FieldInput` tự có (+); ô select tự viết bọc bằng `WithAdd` (`src/components/FormTools.jsx`).
+
 ## Sửa lỗi
 - Đề nghị giải chấp (và các thao tác theo kho) bị chặn quyền với tài khoản quản trị gốc chưa có hồ sơ trong *Phân quyền*: rules nay cho quản trị thao tác mọi kho.

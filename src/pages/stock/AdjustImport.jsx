@@ -8,6 +8,7 @@ import { vnDate } from '../../lib/trips';
 import { fmtNum, norm } from '../../lib/utils';
 import { ErrorBox } from '../../components/ui';
 import { QuickAdd } from '../../components/FormTools';
+import { WithAdd } from '../../components/FormTools';
 
 // Cột file Excel điều chỉnh tồn: [khóa, tiêu đề, các tên cột chấp nhận]
 const COLS = [
@@ -151,10 +152,12 @@ export default function AdjustImport() {
         Hệ thống lập phiếu điều chỉnh (DC), hủy phiếu được nếu nhập sai.
       </p>
       <div className="toolbar">
-        <select value={wh?.code || ''} onChange={(e) => setOpWh(e.target.value)}>
-          <option value="">-- Chọn kho --</option>
-          {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-        </select>
+        <WithAdd cat="warehouses" onAdded={(id) => setOpWh(id)}>
+          <select value={wh?.code || ''} onChange={(e) => setOpWh(e.target.value)}>
+            <option value="">-- Chọn kho --</option>
+            {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
+          </select>
+        </WithAdd>
         <label className="small">Ngày chứng từ <input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
         <span className="cell-add">
           <select value={reason} onChange={(e) => setReason(e.target.value)}>

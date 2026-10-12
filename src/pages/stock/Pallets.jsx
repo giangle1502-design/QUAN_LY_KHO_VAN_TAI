@@ -9,6 +9,7 @@ import { exportSheets } from '../../lib/excel';
 import { vnDate } from '../../lib/trips';
 import { fmtDate, fmtNum } from '../../lib/utils';
 import { MOVE_KINDS, postPalletMove } from '../../lib/pallets';
+import { WithAdd } from '../../components/FormTools';
 
 // Quản lý pallet gỗ / nhựa: tồn theo kho, vận tải đang mượn (nhận trả), sổ pallet
 export default function Pallets() {
@@ -111,25 +112,31 @@ function MoveForm({ init, warehouses, catalog, onClose }) {
           </select>
         </Field>
         <Field label="Kho" required>
-          <select value={f.warehouse} onChange={(e) => set({ warehouse: e.target.value })}>
-            <option value="">-- Chọn kho --</option>
-            {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-          </select>
+          <WithAdd cat="warehouses" onAdded={(id) => set({ warehouse: id })}>
+            <select value={f.warehouse} onChange={(e) => set({ warehouse: e.target.value })}>
+              <option value="">-- Chọn kho --</option>
+              {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
+            </select>
+          </WithAdd>
         </Field>
         <Field label="Ngày" required><input type="date" value={f.date} onChange={(e) => set({ date: e.target.value })} /></Field>
         {f.kind === 'return' && (
           <Field label="Đơn vị vận tải" required>
-            <select value={f.carrier} onChange={(e) => set({ carrier: e.target.value, carrierName: carriers.find((c) => c.code === e.target.value)?.name || '' })}>
-              <option value="">-- Chọn --</option>
-              {carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}
-            </select>
+            <WithAdd cat="carriers" onAdded={(id, r) => set({ carrier: id, carrierName: r?.name || '' })}>
+              <select value={f.carrier} onChange={(e) => set({ carrier: e.target.value, carrierName: carriers.find((c) => c.code === e.target.value)?.name || '' })}>
+                <option value="">-- Chọn --</option>
+                {carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}
+              </select>
+            </WithAdd>
           </Field>
         )}
         <Field label="Mã pallet" required>
-          <select value={f.code} onChange={(e) => set({ code: e.target.value })}>
-            <option value="">-- Chọn --</option>
-            {catalog.map((p) => <option key={p.code} value={p.code}>{p.code} – {p.name} ({p.material})</option>)}
-          </select>
+          <WithAdd cat="pallets" onAdded={(id) => set({ code: id })}>
+            <select value={f.code} onChange={(e) => set({ code: e.target.value })}>
+              <option value="">-- Chọn --</option>
+              {catalog.map((p) => <option key={p.code} value={p.code}>{p.code} – {p.name} ({p.material})</option>)}
+            </select>
+          </WithAdd>
         </Field>
         {f.kind === 'adjust' && (
           <Field label="Tăng / giảm"><select value={f.sign} onChange={(e) => set({ sign: e.target.value })}><option value="+">Tăng (+)</option><option value="-">Giảm (−)</option></select></Field>

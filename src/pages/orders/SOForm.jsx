@@ -4,7 +4,7 @@ import { useCollection, useCollections, useMyWarehouses, useOpCompany } from '..
 import { refValue } from '../../catalogs';
 import { CompanyPicker } from '../../components/TripBits';
 import FieldInput from '../../components/FieldInput';
-import { AddFieldButton, ColumnPicker, QuickAdd } from '../../components/FormTools';
+import { AddFieldButton, ColumnPicker, QuickAdd, WithAdd } from '../../components/FormTools';
 import { dragHeadProps, orderCols } from '../../lib/colOrder';
 import { ErrorBox, Field, Modal } from '../../components/ui';
 import { ItemCode, ItemStockModal } from '../../components/ItemStock';
@@ -216,7 +216,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
 
   const headInput = (f) => {
     if (f.key === 'date') return <input type="date" value={h.date} onChange={(e) => setHead('date', e.target.value)} />;
-    if (f.key === 'company') return <div className="cell-add"><CompanyPicker value={h.company} allowAll={false} required onChange={(v) => setHead('company', v)} /><QuickAdd catKey="companies" onAdded={(id, r) => setHead('company', id, r)} /></div>;
+    if (f.key === 'company') return <CompanyPicker value={h.company} allowAll={false} required onChange={(v) => setHead('company', v)} />;
     if (f.key === 'partyCode') return (
       <>
         <div className="cell-add">
@@ -236,7 +236,6 @@ export default function SOForm({ type = 'SO', order, onClose }) {
     return (
       <div className="cell-add">
         <FieldInput field={f} value={f.type === 'formula' ? hc[f.key] : h[f.key]} onChange={(v) => setHead(f.key, v)} />
-        {f.type === 'ref' && <QuickAdd catKey={f.ref} onAdded={(id) => setHead(f.key, id)} />}
       </div>
     );
   };
@@ -247,19 +246,23 @@ export default function SOForm({ type = 'SO', order, onClose }) {
     switch (f.key) {
       case 'dueDate': return <input type="date" value={l.dueDate} onChange={(e) => set(e.target.value)} />;
       case 'warehouse': return (
-        <select value={l.warehouse} onChange={(e) => set(e.target.value)}>
-          <option value="">-- Kho nào cũng được --</option>
-          {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-        </select>
+        <WithAdd cat="warehouses" onAdded={(id) => set(id)}>
+          <select value={l.warehouse} onChange={(e) => set(e.target.value)}>
+            <option value="">-- Kho nào cũng được --</option>
+            {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
+          </select>
+        </WithAdd>
       );
       case 'fromWarehouse': case 'toWarehouse': {
         const opts = f.key === 'fromWarehouse' ? fromOpts : warehouses.filter((w) => w.code !== l.fromWarehouse);
         return (
-          <select value={l[f.key]} disabled={done} title={done ? 'Dòng đã xuất, không đổi kho được' : ''} onChange={(e) => set(e.target.value)}>
-            <option value="">-- Chọn --</option>
-            {l[f.key] && !opts.some((w) => w.code === l[f.key]) && <option value={l[f.key]}>{l[f.key]}</option>}
-            {opts.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-          </select>
+          <WithAdd cat="warehouses" onAdded={(id) => !done && set(id)}>
+            <select value={l[f.key]} disabled={done} title={done ? 'Dòng đã xuất, không đổi kho được' : ''} onChange={(e) => set(e.target.value)}>
+              <option value="">-- Chọn --</option>
+              {l[f.key] && !opts.some((w) => w.code === l[f.key]) && <option value={l[f.key]}>{l[f.key]}</option>}
+              {opts.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
+            </select>
+          </WithAdd>
         );
       }
       case 'item': return (
@@ -299,7 +302,6 @@ export default function SOForm({ type = 'SO', order, onClose }) {
       default: return (
         <div className="cell-add">
           <FieldInput field={f} value={f.type === 'formula' ? lc[i][f.key] : l[f.key]} onChange={(v) => set(v)} />
-          {f.type === 'ref' && <QuickAdd catKey={f.ref} onAdded={(id) => set(id)} />}
         </div>
       );
     }

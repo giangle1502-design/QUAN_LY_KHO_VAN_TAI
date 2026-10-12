@@ -10,6 +10,7 @@ import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum } from '../../lib/utils';
 import { CompanyPicker, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox, Modal } from '../../components/ui';
+import { WithAdd } from '../../components/FormTools';
 
 const addDays = (ymd, n) => { const d = new Date(ymd + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const tot = (m, k) => (m.lines || []).reduce((s, l) => s + (Number(l[k]) || 0), 0);
@@ -187,10 +188,10 @@ function TransportBox({ m }) {
       ) : (
         <>
           <div className="form-grid">
-            <label className="field"><span>Số xe</span><input list="dl-tb-plate" value={h.plate} onChange={(e) => pickPlate(e.target.value)} placeholder="VD: 51C-12345" /></label>
-            <label className="field"><span>Đơn vị vận tải</span><input list="dl-tb-carrier" value={h.carrier} placeholder="Mã" onChange={(e) => pickCarrier(e.target.value)} />
+            <label className="field"><span>Số xe</span><WithAdd cat="vehicles" preset={{ plate: h.plate, carrier: h.carrier }} onAdded={(id, r) => pickPlate(r?.plate || id)}><input list="dl-tb-plate" value={h.plate} onChange={(e) => pickPlate(e.target.value)} placeholder="VD: 51C-12345" /></WithAdd></label>
+            <label className="field"><span>Đơn vị vận tải</span><WithAdd cat="carriers" onAdded={(id, r) => { pickCarrier(id); if (r?.name) set('carrierName', r.name); }}><input list="dl-tb-carrier" value={h.carrier} placeholder="Mã" onChange={(e) => pickCarrier(e.target.value)} /></WithAdd>
               <input value={h.carrierName} placeholder="Tên đơn vị" style={{ marginTop: 4 }} onChange={(e) => set('carrierName', e.target.value)} /></label>
-            <label className="field"><span>Tài xế</span><input list="dl-tb-driver" value={h.idCard} placeholder="Số CCCD" onChange={(e) => pickDriver(e.target.value)} />
+            <label className="field"><span>Tài xế</span><WithAdd cat="drivers" preset={{ idCard: h.idCard, name: h.driverName, phone: h.driverPhone, carrier: h.carrier }} onAdded={(id, r) => { pickDriver(r?.idCard || id); if (r?.name) set('driverName', r.name); if (r?.phone) set('driverPhone', r.phone); }}><input list="dl-tb-driver" value={h.idCard} placeholder="Số CCCD" onChange={(e) => pickDriver(e.target.value)} /></WithAdd>
               <input value={h.driverName} placeholder="Họ tên" style={{ marginTop: 4 }} onChange={(e) => set('driverName', e.target.value)} />
               <input value={h.driverPhone} placeholder="Điện thoại" style={{ marginTop: 4 }} onChange={(e) => set('driverPhone', e.target.value)} /></label>
           </div>

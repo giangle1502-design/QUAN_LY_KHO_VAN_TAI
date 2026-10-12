@@ -8,6 +8,7 @@ import { exportSheets } from '../../lib/excel';
 import { vnDate } from '../../lib/trips';
 import { fmtDate, fmtNum } from '../../lib/utils';
 import { COUNT_KINDS, COUNT_STATUS, createCount, lineResult, loadLines, pickStock, scopeText } from '../../lib/counts';
+import { WithAdd } from '../../components/FormTools';
 
 // Kiểm kê (toàn kho / theo vị trí) và cycle count (khu vực, mã có giao dịch trong ngày): danh sách, lập phiếu, báo cáo
 export default function Counts() {
@@ -136,10 +137,12 @@ function CreateCount({ onClose }) {
       <div className="form-grid">
         <Field label="Công ty"><CompanyPicker value={f.company} onChange={(v) => set({ company: v })} /></Field>
         <Field label="Kho" required>
-          <select value={f.warehouse} onChange={(e) => set({ warehouse: e.target.value })}>
-            <option value="">-- Chọn kho --</option>
-            {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-          </select>
+          <WithAdd cat="warehouses" onAdded={(id) => set({ warehouse: id })}>
+            <select value={f.warehouse} onChange={(e) => set({ warehouse: e.target.value })}>
+              <option value="">-- Chọn kho --</option>
+              {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
+            </select>
+          </WithAdd>
         </Field>
         <Field label="Ngày kiểm kê" required><input type="date" value={f.date} onChange={(e) => set({ date: e.target.value })} /></Field>
         <Field label="Từ vị trí"><input list="kk-locs" value={f.locFrom} onChange={(e) => set({ locFrom: e.target.value })} placeholder="Để trống = đầu kho" /></Field>

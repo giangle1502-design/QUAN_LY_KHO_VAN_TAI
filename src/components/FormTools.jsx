@@ -33,6 +33,11 @@ export function QuickAdd({ catKey, preset, onAdded }) {
   );
 }
 
+// Ô chọn mã + nút (+) thêm nhanh vào danh mục: <WithAdd cat="carriers" onAdded={(id, rec) => …}><select …/></WithAdd>
+export function WithAdd({ cat, preset, onAdded, children, style }) {
+  return <div className="cell-add" style={style}>{children}<QuickAdd catKey={cat} preset={preset} onAdded={onAdded} /></div>;
+}
+
 // Chọn cột muốn hiển thị (mỗi người dùng một cấu hình). cols: [{ key, label, locked }]
 // order / setOrder (tùy chọn): thứ tự cột riêng của người dùng, kéo thả hoặc bấm ▲▼ trong danh sách
 export function ColumnPicker({ cols, hidden, setHidden, order, setOrder }) {

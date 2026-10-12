@@ -13,6 +13,7 @@ import {
   ALLOC_STATUS, CONT_KEYS, DEST_TYPES, planNeedsLocation, addAllocations, addRows, updateRows, allocStatus, allocatedByPoLine, attachToOrder, cancelAllocation, createOrderFromGroup,
   detachFromOrder, groupForOrders, setCarrier, missingForOrder, poKey, updateAllocation,
 } from '../../lib/allocations';
+import { WithAdd } from '../../components/FormTools';
 
 const n = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? 0 : Number(v));
 const kg = (v) => fmtNum(n(v), 2);
@@ -330,9 +331,9 @@ function SharedCells({ v, edit, editCarrier = edit, save, cats, whs }) {
       <td>{edit ? <input style={{ width: 125 }} placeholder="Số cont" defaultValue={v.contNo} key={'c' + v.contNo} onBlur={blur('contNo', (x) => x.trim().toUpperCase())} /> : <span className="mono">{v.contNo}</span>}{mixed('contNo')}</td>
       <td>{edit ? <input type="date" style={{ width: 140 }} defaultValue={v.date} key={'d' + v.date} onBlur={blur('date')} /> : <span className="nowrap">{fmtDate(v.date)}</span>}{mixed('date')}</td>
       <td>{edit && (!v.fromWarehouse || chgFrom) ? (
-        <select value={v.fromWarehouse || ''} onChange={(e) => { setChgFrom(false); save({ fromWarehouse: e.target.value, fromLocation: '' }); }}>
+        <WithAdd cat="warehouses" onAdded={(id) => { setChgFrom(false); save({ fromWarehouse: id, fromLocation: '' }); }}><select value={v.fromWarehouse || ''} onChange={(e) => { setChgFrom(false); save({ fromWarehouse: e.target.value, fromLocation: '' }); }}>
           <option value="">-- Kho --</option>{whs.map((w) => <option key={w.code} value={w.code}>{w.code}</option>)}
-        </select>) : <span title="Lấy từ kho nhập của dòng PO">{v.fromWarehouse}{edit && <button type="button" className="btn ghost sm" title="Đổi nơi nhận" onClick={() => setChgFrom(true)}>✎</button>}</span>}
+        </select></WithAdd>) : <span title="Lấy từ kho nhập của dòng PO">{v.fromWarehouse}{edit && <button type="button" className="btn ghost sm" title="Đổi nơi nhận" onClick={() => setChgFrom(true)}>✎</button>}</span>}
         {mixed('fromWarehouse')}
         <LocCell wh={whOf(v.fromWarehouse)} value={v.fromLocation} edit={edit} locs={locs} onChange={(x) => save({ fromLocation: x })} mixed={v.mixed?.fromLocation} /></td>
       <td>{edit ? (
@@ -341,23 +342,23 @@ function SharedCells({ v, edit, editCarrier = edit, save, cats, whs }) {
           {Object.entries(DEST_TYPES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
         </select>) : DEST_TYPES[v.destType]}</td>
       <td>{edit && v.destType === 'customer' ? (
-        <><input list="dl-alloc-soldto" style={{ width: 130 }} placeholder="Mã khách" defaultValue={v.partyCode} key={'p' + v.partyCode} onBlur={pickCustomer} />
+        <><WithAdd cat="soldto" onAdded={(id, r) => save({ partyCode: r?.code || id, partyName: r?.name || '', shipCode: '' })}><input list="dl-alloc-soldto" style={{ width: 130 }} placeholder="Mã khách" defaultValue={v.partyCode} key={'p' + v.partyCode} onBlur={pickCustomer} /></WithAdd>
           {v.partyName && <div className="small">{v.partyName}</div>}</>
       ) : edit && v.destType === 'warehouse' ? (
-        <select value={v.toWarehouse || ''} onChange={(e) => save({ toWarehouse: e.target.value, toLocation: '' })}>
+        <WithAdd cat="warehouses" onAdded={(id) => save({ toWarehouse: id, toLocation: '' })}><select value={v.toWarehouse || ''} onChange={(e) => save({ toWarehouse: e.target.value, toLocation: '' })}>
           <option value="">-- Kho đến --</option>{whs.filter((w) => w.code !== v.fromWarehouse).map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-        </select>
+        </select></WithAdd>
       ) : v.destType === 'customer' ? <>{v.partyCode}{v.partyName ? <div className="small">{v.partyName}</div> : null}</> : v.destType === 'warehouse' ? v.toWarehouse : <span className="small">–</span>}
         {mixed(v.destType === 'warehouse' ? 'toWarehouse' : 'partyCode')}
         {v.destType === 'warehouse' && <LocCell wh={whOf(v.toWarehouse)} value={v.toLocation} edit={edit} locs={locs} onChange={(x) => save({ toLocation: x })} mixed={v.mixed?.toLocation} />}</td>
       <td>{edit && v.destType === 'customer' && v.partyCode ? (
-        <select value={v.shipCode || ''} onChange={(e) => save({ shipCode: e.target.value })}>
+        <WithAdd cat="shipto" preset={{ customerCode: v.partyCode, customerName: v.partyName }} onAdded={(id, r) => save({ shipCode: r?.shipCode || id })}><select value={v.shipCode || ''} onChange={(e) => save({ shipCode: e.target.value })}>
           <option value="">-- Mã giao --</option>{ships.map((sh) => <option key={sh.shipCode} value={sh.shipCode} title={sh.address}>{sh.shipCode}</option>)}
-        </select>) : v.destType === 'customer' ? v.shipCode : ''}</td>
+        </select></WithAdd>) : v.destType === 'customer' ? v.shipCode : ''}</td>
       <td>{editCarrier ? (
-        <select value={v.carrier || ''} title={edit ? '' : 'Đổi nhà vận chuyển ghi luôn vào dòng đơn'} onChange={(e) => save({ carrier: e.target.value })}>
+        <WithAdd cat="carriers" onAdded={(id) => save({ carrier: id })}><select value={v.carrier || ''} title={edit ? '' : 'Đổi nhà vận chuyển ghi luôn vào dòng đơn'} onChange={(e) => save({ carrier: e.target.value })}>
           <option value="">--</option>{(cats.carriers || []).filter((c) => c.active !== false).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
-        </select>) : v.carrier}{mixed('carrier')}</td>
+        </select></WithAdd>) : v.carrier}{mixed('carrier')}</td>
     </>
   );
 }
@@ -368,13 +369,13 @@ function LocCell({ wh, value, edit, locs, onChange, mixed }) {
   const list = locs.filter((l) => l.warehouse === wh.code && !l.locked).sort((a, b) => String(a.code).localeCompare(String(b.code)));
   if (!edit) return value ? <div className="small">Vị trí {value}</div> : null;
   return (
-    <div style={{ marginTop: 4 }}>
+    <WithAdd style={{ marginTop: 4 }} cat="locations" preset={{ warehouse: wh.code }} onAdded={(id, r) => onChange(r?.code || String(id).split('__').pop())}>
       <select value={value || ''} title="Vị trí nhận hàng, chuyển sang phiếu nhập kho" onChange={(e) => onChange(e.target.value)}>
         <option value="">{mixed ? '-- Khác nhau --' : '-- Vị trí --'}</option>
         {list.map((l) => <option key={l.code} value={l.code}>{l.code}{n(l.capacity) ? ` · trống ${fmtNum(Math.max(0, n(l.capacity) - n(l.currentPallets)), 1)} pl` : ''}</option>)}
         {value && !list.some((l) => l.code === value) && <option value={value}>{value}</option>}
       </select>
-    </div>
+    </WithAdd>
   );
 }
 

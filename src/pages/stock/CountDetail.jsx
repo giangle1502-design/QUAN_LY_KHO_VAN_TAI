@@ -10,6 +10,7 @@ import { fmtDate, fmtNum, norm } from '../../lib/utils';
 import {
   COUNT_KINDS, COUNT_STATUS, addFoundLine, adjustPlan, countValue, inLocRange, lineResult, locCmp, postAdjust, saveCount, scopeText, setCountStatus, specOf,
 } from '../../lib/counts';
+import { WithAdd } from '../../components/FormTools';
 
 // Phiếu + dòng đếm realtime (nhiều người cùng đếm thấy tiến độ của nhau)
 function useCount(id) {
@@ -353,11 +354,11 @@ function FoundModal({ count, loc, user, onClose }) {
   };
   return (
     <Modal title={`Hàng ngoài hệ thống tại ${loc}`} onClose={onClose}>
-      <Field label="Mã hàng" required><input list="kk-items" value={f.item} onChange={(e) => setF({ ...f, item: e.target.value })} /></Field>
+      <Field label="Mã hàng" required><WithAdd cat="items" onAdded={(id) => setF((x) => ({ ...x, item: id }))}><input list="kk-items" value={f.item} onChange={(e) => setF({ ...f, item: e.target.value })} /></WithAdd></Field>
       <datalist id="kk-items">{items.map((i) => <option key={i.code} value={i.code}>{i.name}</option>)}</datalist>
       <Field label="Lot"><input value={f.lot} onChange={(e) => setF({ ...f, lot: e.target.value })} /></Field>
-      <Field label="Tình trạng"><select value={f.goodsStatus} onChange={(e) => setF({ ...f, goodsStatus: e.target.value })}>{statuses.map((s) => <option key={s.code} value={s.code}>{s.code} – {s.name}</option>)}</select></Field>
-      <Field label="Công ty" required><select value={f.company} onChange={(e) => setF({ ...f, company: e.target.value })}><option value="">-- Chọn --</option>{co.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}</select></Field>
+      <Field label="Tình trạng"><WithAdd cat="goodsStatus" onAdded={(id) => setF((x) => ({ ...x, goodsStatus: id }))}><select value={f.goodsStatus} onChange={(e) => setF({ ...f, goodsStatus: e.target.value })}>{statuses.map((s) => <option key={s.code} value={s.code}>{s.code} – {s.name}</option>)}</select></WithAdd></Field>
+      <Field label="Công ty" required><WithAdd cat="companies" onAdded={(id) => setF((x) => ({ ...x, company: id }))}><select value={f.company} onChange={(e) => setF({ ...f, company: e.target.value })}><option value="">-- Chọn --</option>{co.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}</select></WithAdd></Field>
       <ErrorBox error={err} />
       <div className="form-actions"><button className="btn" onClick={onClose}>Đóng</button><button className="btn primary" onClick={save}>Thêm dòng để đếm</button></div>
     </Modal>

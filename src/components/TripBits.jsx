@@ -1,6 +1,7 @@
 import { STATUS_META, fmtTime, purposeLabel, stagesOf } from '../lib/trips';
 import { useCompanies, useMyWarehouses } from '../lib/hooks';
 import { fmtNum } from '../lib/utils';
+import { WithAdd } from './FormTools';
 
 export function StatusBadge({ status }) {
   const m = STATUS_META[status] || { label: status };
@@ -29,14 +30,16 @@ export function WarehousePicker({ value, onChange, allowAll = true }) {
 }
 
 // Chọn công ty chủ hàng
-export function CompanyPicker({ value, onChange, allowAll = true, required }) {
+export function CompanyPicker({ value, onChange, allowAll = true, required, noAdd }) {
   const list = useCompanies();
-  return (
+  const sel = (
     <select value={value} onChange={(e) => onChange(e.target.value)}>
       {allowAll ? <option value="">Tất cả công ty</option> : <option value="">{required ? '-- Chọn công ty --' : '-- Không ghi công ty --'}</option>}
       {list.map((c) => <option key={c.code} value={c.code}>{c.code}{c.name && c.name !== c.code ? ` – ${c.name}` : ''}{c.kind === 'Công ty khách' ? ' (khách)' : ''}</option>)}
     </select>
   );
+  // Ô chọn trên form (không phải bộ lọc): có nút (+) thêm công ty
+  return allowAll || noAdd ? sel : <WithAdd cat="companies" onAdded={(id) => onChange(id)}>{sel}</WithAdd>;
 }
 
 export const totalPayload = (t) => (t.lines || []).reduce((s, l) => s + (Number(l.payload) || 0), 0);

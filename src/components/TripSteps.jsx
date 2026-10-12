@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext';
 import { useCollection } from '../lib/hooks';
 import { STEPS, compressImage, doStep } from '../lib/transport';
 import { ErrorBox, Modal } from './ui';
+import { WithAdd } from './FormTools';
 
 // Thực hiện 1 bước của chuyến (tài xế, hoặc điều phối làm thay)
 export function StepModal({ t, step, onClose }) {
@@ -36,10 +37,10 @@ export function StepModal({ t, step, onClose }) {
     <Modal title={`${STEPS[step]} · ${t.id}`} onClose={() => onClose(false)}>
       {step === 'reg' && (
         <div className="form-grid">
-          <label className="field"><span>Số xe *</span><input list="dl-st-plate" value={f.plate} onChange={(e) => pickPlate(e.target.value)} placeholder="VD: 51C-12345" /></label>
+          <label className="field"><span>Số xe *</span><WithAdd cat="vehicles" preset={{ plate: f.plate, vehicleType: f.vehicleType }} onAdded={(id, r) => pickPlate(r?.plate || id)}><input list="dl-st-plate" value={f.plate} onChange={(e) => pickPlate(e.target.value)} placeholder="VD: 51C-12345" /></WithAdd></label>
           <label className="field"><span>Loại xe</span><select value={f.vehicleType} onChange={(e) => set('vehicleType', e.target.value)}>
             {['', 'Xe tải', 'Container 20', 'Container 40', 'Đầu kéo + mooc'].map((x) => <option key={x} value={x}>{x || '--'}</option>)}</select></label>
-          <label className="field"><span>Số CCCD tài xế *</span><input list="dl-st-driver" value={f.idCard} onChange={(e) => pickDriver(e.target.value)} disabled={!!myIdCard} /></label>
+          <label className="field"><span>Số CCCD tài xế *</span>{myIdCard ? <input value={f.idCard} disabled /> : <WithAdd cat="drivers" preset={{ idCard: f.idCard, name: f.driverName, phone: f.driverPhone }} onAdded={(id, r) => { pickDriver(r?.idCard || id); if (r?.name) set('driverName', r.name); }}><input list="dl-st-driver" value={f.idCard} onChange={(e) => pickDriver(e.target.value)} /></WithAdd>}</label>
           <label className="field"><span>Họ tên tài xế *</span><input value={f.driverName} onChange={(e) => set('driverName', e.target.value)} /></label>
           <label className="field"><span>Điện thoại</span><input value={f.driverPhone} onChange={(e) => set('driverPhone', e.target.value)} /></label>
           <datalist id="dl-st-plate">{vehicles.map((v) => <option key={v.plate} value={v.plate}>{v.vehicleType} {v.payload ? `${v.payload} tấn` : ''}</option>)}</datalist>

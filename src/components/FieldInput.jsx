@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { useCollection } from '../lib/hooks';
 import { catalogByKey, refLabel, refValue } from '../catalogs';
+import { QuickAdd } from './FormTools';
 import { fmtDate, fmtNum } from '../lib/utils';
 
 // Ô nhập cho 1 trường theo kiểu dữ liệu
@@ -67,7 +68,7 @@ function RefInput({ field: f, value, onChange, disabled, onPick }) {
     if (hit) { pending.current = ''; onPick?.(f, hit.row); }
   }, [opts, f, onPick]);
   return (
-    <>
+    <div className="cell-add ref-input">
       <input
         list={listId}
         value={value ?? ''}
@@ -84,8 +85,9 @@ function RefInput({ field: f, value, onChange, disabled, onPick }) {
       <datalist id={listId}>
         {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </datalist>
-      {!known && <small className="req">Không có trong danh mục {catalogByKey(f.ref)?.short}</small>}
-    </>
+      {!disabled && !f.noQuickAdd && <QuickAdd catKey={f.ref} preset={f.addPreset} onAdded={(id, rec) => { const v = rec ? refValue(f.ref, rec) || id : id; onChange(v); if (rec) onPick?.(f, rec); }} />}
+      {!known && <small className="req" style={{ flexBasis: '100%' }}>Không có trong danh mục {catalogByKey(f.ref)?.short}</small>}
+    </div>
   );
 }
 

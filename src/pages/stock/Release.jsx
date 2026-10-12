@@ -14,6 +14,7 @@ import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
 import { loadReleaseData } from '../../lib/printData';
 import { pageToPdf, savePdf } from '../../lib/pdf';
 import { TemplatePage, useTemplateChoice } from '../../components/PrintTemplate';
+import { WithAdd } from '../../components/FormTools';
 
 // ============================================================================
 // Đề nghị giải chấp: kế toán chọn hàng HTC (1 công ty, 1 ngân hàng, 1 kho), in đề nghị
@@ -453,16 +454,20 @@ function ReleaseForm({ onClose, preset }) {
         <div className="form-grid">
           <Field label="Công ty (bên thế chấp)" required><CompanyPicker value={h.company} allowAll={false} required onChange={(v) => set('company', v)} /></Field>
           <Field label="Ngân hàng nhận thế chấp" required>
-            <select value={h.pledgee} onChange={(e) => set('pledgee', e.target.value)}>
-              <option value="">-- Chọn --</option>
-              {pledgees.map((p) => <option key={p.code} value={p.code}>{p.code} – {p.shortName || p.name}</option>)}
-            </select>
+            <WithAdd cat="pledgees" onAdded={(id) => set('pledgee', id)}>
+              <select value={h.pledgee} onChange={(e) => set('pledgee', e.target.value)}>
+                <option value="">-- Chọn --</option>
+                {pledgees.map((p) => <option key={p.code} value={p.code}>{p.code} – {p.shortName || p.name}</option>)}
+              </select>
+            </WithAdd>
           </Field>
           <Field label="Kho" required>
-            <select value={h.warehouse} onChange={(e) => set('warehouse', e.target.value)}>
-              <option value="">-- Chọn --</option>
-              {myWh.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-            </select>
+            <WithAdd cat="warehouses" onAdded={(id) => set('warehouse', id)}>
+              <select value={h.warehouse} onChange={(e) => set('warehouse', e.target.value)}>
+                <option value="">-- Chọn --</option>
+                {myWh.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
+              </select>
+            </WithAdd>
           </Field>
           <Field label="Ngày đề nghị" required><input type="date" value={h.date} onChange={(e) => set('date', e.target.value)} /></Field>
           <Field label="Số bộ chứng từ (BCT)" required help="Nhân viên tự đặt. In ở cột SỐ CT; áp cho mọi dòng, sửa riêng từng dòng được">

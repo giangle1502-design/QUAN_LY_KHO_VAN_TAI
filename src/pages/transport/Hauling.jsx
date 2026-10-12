@@ -11,6 +11,7 @@ import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum, today } from '../../lib/utils';
 import { Empty, ErrorBox, Modal } from '../../components/ui';
 import { PhotoModal, StepModal } from '../../components/TripSteps';
+import { WithAdd } from '../../components/FormTools';
 
 // Vận chuyển theo chuyến: đơn cần chia xe → chuyến xe (tài xế xác nhận từng bước) → chi phí & cước
 const n = (v) => (v === '' || v == null ? 0 : Number(v) || 0);
@@ -199,11 +200,11 @@ function SplitModal({ rows, carrier, onClose }) {
           const tot = rowKg(l); const overCap = n(l.cap) && tot > n(l.cap) * 1000 + 1;
           return (
             <tr key={i}><td>{i + 1}</td>
-              <td><input list="dl-sp-plate" value={l.plate} onChange={(e) => pickPlate(i, e.target.value)} />{l.vehicleType ? <div className="small">{l.vehicleType}</div> : null}</td>
+              <td><WithAdd cat="vehicles" preset={{ plate: l.plate }} onAdded={(id, r) => pickPlate(i, r?.plate || id)}><input list="dl-sp-plate" value={l.plate} onChange={(e) => pickPlate(i, e.target.value)} /></WithAdd>{l.vehicleType ? <div className="small">{l.vehicleType}</div> : null}</td>
               <td><input type="number" step="0.5" value={l.cap} onChange={(e) => setLoad(i, { cap: e.target.value })} style={{ width: 70 }} /></td>
               {rows.map((r) => <td key={r.key}><input type="number" step="0.001" value={n(l.q[r.key]) ? n(l.q[r.key]) / 1000 : ''} placeholder="0" onChange={(e) => setQ(i, r.key, e.target.value)} /></td>)}
               <td className="num"><b style={{ color: overCap ? 'var(--red)' : undefined }}>{t3(tot)}</b>{overCap ? <div className="small" style={{ color: 'var(--red)' }}>vượt tải</div> : null}</td>
-              <td><input list="dl-sp-driver" value={l.idCard} onChange={(e) => pickDriver(i, e.target.value)} /></td>
+              <td><WithAdd cat="drivers" preset={{ idCard: l.idCard, name: l.driverName }} onAdded={(id, r) => { pickDriver(i, r?.idCard || id); if (r?.name) setLoad(i, { driverName: r.name }); }}><input list="dl-sp-driver" value={l.idCard} onChange={(e) => pickDriver(i, e.target.value)} /></WithAdd></td>
               <td><input value={l.driverName} onChange={(e) => setLoad(i, { driverName: e.target.value })} /></td>
               {threepl.length > 0 && <td><select value={l.threepl} onChange={(e) => setLoad(i, { threepl: e.target.value })}><option value="">-- Xe GHA --</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</select></td>}
               <td><button type="button" className="btn ghost sm" disabled={loads.length === 1} onClick={() => setLoads((ls) => ls.filter((_, j) => j !== i))}>✕</button></td></tr>
@@ -421,7 +422,7 @@ function DriverAccounts() {
           <label className="field"><span>Họ tên *</span><input value={f.name} onChange={(e) => set('name', e.target.value)} /></label>
           <label className="field"><span>CCCD *</span><input value={f.idCard} onChange={(e) => set('idCard', e.target.value)} /></label>
           <label className="field"><span>Điện thoại</span><input value={f.phone} onChange={(e) => set('phone', e.target.value)} /></label>
-          {isAdmin && <label className="field"><span>Đơn vị vận tải *</span><select value={f.carrier} onChange={(e) => set('carrier', e.target.value)}><option value="">--</option>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}</select></label>}
+          {isAdmin && <label className="field"><span>Đơn vị vận tải *</span><WithAdd cat="carriers" onAdded={(id) => set('carrier', id)}><select value={f.carrier} onChange={(e) => set('carrier', e.target.value)}><option value="">--</option>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}</select></WithAdd></label>}
         </div>
         {msg && <div className="ok-box">{msg}</div>}
         <ErrorBox error={err} />

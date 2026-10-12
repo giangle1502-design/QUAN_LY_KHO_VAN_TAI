@@ -7,6 +7,7 @@ import { OPEN_STATUSES, ORDER_FOR_MOVE, lineFrom, lineTo, lineWh, openKg, orderI
 import { fmtNum } from '../../lib/utils';
 import { PURPOSES, firstStatus, nowISO, reserveCodes, vnDate, STATUS_META } from '../../lib/trips';
 import { ErrorBox, Field } from '../../components/ui';
+import { WithAdd } from '../../components/FormTools';
 
 const emptyLine = () => ({ partyCode: '', partyName: '', shipCode: '', address: '', payload: '', orderId: '' });
 const emptyForm = () => ({ purpose: 'export', plate: '', carrier: '', carrierName: '', vehicleType: '', idCard: '', driverName: '', driverPhone: '', note: '' });
@@ -150,10 +151,12 @@ export default function Register() {
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="form-grid">
           <Field label="Kho" required>
-            <select value={wh?.code || ''} onChange={(e) => setOpWh(e.target.value)}>
-              <option value="">-- Chọn kho --</option>
-              {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}{w.hasGuard === false ? ' (không bảo vệ)' : ''}</option>)}
-            </select>
+            <WithAdd cat="warehouses" onAdded={(id) => setOpWh(id)}>
+              <select value={wh?.code || ''} onChange={(e) => setOpWh(e.target.value)}>
+                <option value="">-- Chọn kho --</option>
+                {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}{w.hasGuard === false ? ' (không bảo vệ)' : ''}</option>)}
+              </select>
+            </WithAdd>
           </Field>
           <Field label="Mục đích" required>
             <div className="seg">
@@ -169,16 +172,16 @@ export default function Register() {
         <div className="section-head">Xe và tài xế</div>
         <div className="form-grid">
           <Field label="Biển số xe" required help={vehicles.some((v) => v.plate === form.plate) ? 'Đã có trong danh mục Xe' : ''}>
-            <input list="dl-plate" value={form.plate} onChange={(e) => pickPlate(e.target.value)} />
+            <WithAdd cat="vehicles" preset={{ plate: form.plate, carrier: form.carrier }} onAdded={(id, r) => pickPlate(r?.plate || id)}><input list="dl-plate" value={form.plate} onChange={(e) => pickPlate(e.target.value)} /></WithAdd>
           </Field>
           <Field label="Đơn vị vận tải">
-            <input list="dl-carrier" value={form.carrier} onChange={(e) => pickCarrier(e.target.value)} placeholder="Mã đơn vị" />
+            <WithAdd cat="carriers" onAdded={(id, r) => { pickCarrier(id); if (r?.name) set('carrierName', r.name); }}><input list="dl-carrier" value={form.carrier} onChange={(e) => pickCarrier(e.target.value)} placeholder="Mã đơn vị" /></WithAdd>
           </Field>
           <Field label="Tên đơn vị vận tải">
             <input value={form.carrierName} onChange={(e) => set('carrierName', e.target.value)} />
           </Field>
           <Field label="Số CCCD" required>
-            <input list="dl-driver" value={form.idCard} onChange={(e) => pickDriver(e.target.value)} />
+            <WithAdd cat="drivers" preset={{ idCard: form.idCard, name: form.driverName, phone: form.driverPhone, carrier: form.carrier }} onAdded={(id, r) => { pickDriver(r?.idCard || id); if (r?.name) set('driverName', r.name); }}><input list="dl-driver" value={form.idCard} onChange={(e) => pickDriver(e.target.value)} /></WithAdd>
           </Field>
           <Field label="Tên tài xế" required>
             <input value={form.driverName} onChange={(e) => set('driverName', e.target.value)} />
@@ -193,15 +196,17 @@ export default function Register() {
         {lines.map((l, i) => (
           <div key={i} className="line-row">
             <Field label={`${i + 1}. ${form.purpose === 'import' ? 'Nhà cung cấp' : 'Khách hàng'}`} required>
-              <input list="dl-party" value={l.partyCode} onChange={(e) => pickParty(i, e.target.value)} placeholder="Mã" />
+              <WithAdd cat={form.purpose === 'import' ? 'suppliers' : 'soldto'} onAdded={(id, r) => { pickParty(i, r?.code || id); if (r?.name) setLine(i, { partyName: r.name }); }}><input list="dl-party" value={l.partyCode} onChange={(e) => pickParty(i, e.target.value)} placeholder="Mã" /></WithAdd>
               <input value={l.partyName} onChange={(e) => setLine(i, { partyName: e.target.value })} placeholder="Tên" style={{ marginTop: 4 }} />
             </Field>
             {form.purpose === 'export' ? (
               <Field label="Giao đến (Shipto)">
-                <select value={l.shipCode} onChange={(e) => pickShip(i, e.target.value)}>
-                  <option value="">-- Chọn --</option>
-                  {shipsOf(l.partyCode).map((s) => <option key={s.shipCode} value={s.shipCode}>{s.shipCode} – {s.address}</option>)}
-                </select>
+                <WithAdd cat="shipto" preset={{ customerCode: l.partyCode, customerName: l.partyName }} onAdded={(id, r) => pickShip(i, r?.shipCode || id)}>
+                  <select value={l.shipCode} onChange={(e) => pickShip(i, e.target.value)}>
+                    <option value="">-- Chọn --</option>
+                    {shipsOf(l.partyCode).map((s) => <option key={s.shipCode} value={s.shipCode}>{s.shipCode} – {s.address}</option>)}
+                  </select>
+                </WithAdd>
                 {l.address && <small className="small">{l.address}</small>}
               </Field>
             ) : <div />}
