@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { connectAuthEmulator, getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { connectFirestoreEmulator, getFirestore } from 'firebase/firestore';
+import { connectFirestoreEmulator, getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 
 // Cấu hình web Firebase lấy từ biến môi trường (Vercel → Settings → Environment Variables,
 // hoặc file .env.local khi chạy trên máy). Xem README mục 1.
@@ -17,7 +17,15 @@ const firebaseConfig = {
 export const configured = !!firebaseConfig.apiKey && !!firebaseConfig.projectId;
 export const app = configured ? initializeApp(firebaseConfig) : null;
 export const auth = configured ? getAuth(app) : null;
-export const db = configured ? getFirestore(app) : null;
+// Lưu dữ liệu đã đọc trên trình duyệt (IndexedDB): mở lại trang / tab khác dùng bộ nhớ đệm, giảm lượt đọc Firestore
+function makeDb() {
+  try {
+    return initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
+  } catch {
+    return getFirestore(app);
+  }
+}
+export const db = configured ? makeDb() : null;
 export const googleProvider = new GoogleAuthProvider();
 
 // Chạy thử với Firebase Emulator trên máy: VITE_USE_EMULATOR=1

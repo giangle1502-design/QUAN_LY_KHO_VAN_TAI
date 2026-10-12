@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { collection, doc, onSnapshot, query, runTransaction, setDoc, updateDoc, where } from 'firebase/firestore';
+import { useMemo } from 'react';
+import { collection, doc, query, runTransaction, setDoc, updateDoc, where } from 'firebase/firestore';
+import { useShared } from './live';
 import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
 
@@ -18,15 +19,9 @@ const nowISO = () => new Date().toISOString();
 export const planLeft = (l) => Math.max(0, n(l.qtyKg) - n(l.doneKg));
 
 export function usePlans() {
-  const [state, setState] = useState({ rows: [], loading: true, error: '' });
   const { salesOnly, email } = useApp();
-  useEffect(() => {
-    const q = salesOnly ? query(collection(db, 'shipPlans'), where('sales', '==', email || '-')) : collection(db, 'shipPlans');
-    return onSnapshot(q,
-      (snap) => setState({ rows: snap.docs.map((d) => ({ ...d.data(), id: d.id })), loading: false, error: '' }),
-      (e) => setState({ rows: [], loading: false, error: e.message }));
-  }, [salesOnly, email]);
-  return state;
+  const st = useShared(`plans|${salesOnly ? email : ''}`, () => (salesOnly ? query(collection(db, 'shipPlans'), where('sales', '==', email || '-')) : collection(db, 'shipPlans')));
+  return useMemo(() => ({ rows: st.snap ? st.snap.docs.map((d) => ({ ...d.data(), id: d.id })) : [], loading: st.loading, error: st.error }), [st]);
 }
 
 // Phần dòng SO đã nằm trong các dự kiến còn mở (chưa lập phiếu): { orderId: { dòng: kg } }

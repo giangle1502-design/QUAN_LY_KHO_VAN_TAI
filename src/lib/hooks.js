@@ -3,20 +3,14 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
 import { stockId } from './stock';
+import { listenShared, useShared } from './live';
 
 // Nghe realtime toàn bộ 1 collection danh mục (danh mục thường nhỏ, vài nghìn dòng)
+// (dùng chung 1 kết nối cho mọi trang, xem lib/live.js)
 export function useCollection(name) {
-  const [state, setState] = useState({ rows: [], loading: true, error: '' });
-  useEffect(() => {
-    if (!name) return;
-    setState((s) => ({ ...s, loading: true }));
-    return onSnapshot(
-      collection(db, name),
-      (snap) => setState({ rows: snap.docs.map((d) => ({ _id: d.id, ...d.data() })), loading: false, error: '' }),
-      (e) => setState({ rows: [], loading: false, error: e.message })
-    );
-  }, [name]);
-  return state;
+  const st = useShared(name ? `c|${name}` : '', () => collection(db, name));
+  const rows = useMemo(() => (st.snap ? st.snap.docs.map((d) => ({ _id: d.id, ...d.data() })) : []), [st.snap]);
+  return { rows, loading: st.loading, error: st.error };
 }
 
 // Nghe nhiều danh mục cùng lúc (danh sách tên thay đổi theo cấu hình trường) → { tên: rows }
@@ -25,9 +19,8 @@ export function useCollections(names) {
   const [data, setData] = useState({});
   useEffect(() => {
     if (!key) return undefined;
-    const offs = key.split(',').map((n) => onSnapshot(collection(db, n),
-      (snap) => setData((d) => ({ ...d, [n]: snap.docs.map((x) => ({ _id: x.id, ...x.data() })) })),
-      () => setData((d) => ({ ...d, [n]: [] }))));
+    const offs = key.split(',').map((n) => listenShared(`c|${n}`, () => collection(db, n),
+      (s) => setData((d) => ({ ...d, [n]: s.snap ? s.snap.docs.map((x) => ({ _id: x.id, ...x.data() })) : [] }))));
     return () => offs.forEach((off) => off());
   }, [key]);
   return data;
@@ -66,17 +59,10 @@ export function useCompanies() {
 
 // Chuyến xe theo trạng thái (realtime), lọc theo kho được giao và kho đang chọn
 export function useTrips(statuses, wh) {
-  const [state, setState] = useState({ rows: [], loading: true, error: '' });
   const { inMyWarehouses } = useApp();
   const key = statuses.join(',');
-  useEffect(() => {
-    const q = query(collection(db, 'trips'), where('status', 'in', key.split(',')));
-    return onSnapshot(
-      q,
-      (snap) => setState({ rows: snap.docs.map((d) => ({ ...d.data(), id: d.id })), loading: false, error: '' }),
-      (e) => setState({ rows: [], loading: false, error: e.message })
-    );
-  }, [key]);
+  const st = useShared(`trips|${key}`, () => query(collection(db, 'trips'), where('status', 'in', key.split(','))));
+  const state = useMemo(() => ({ rows: st.snap ? st.snap.docs.map((d) => ({ ...d.data(), id: d.id })) : [], loading: st.loading, error: st.error }), [st]);
   const rows = useMemo(
     () => state.rows.filter((t) => inMyWarehouses(t.warehouse) && (!wh || t.warehouse === wh)),
     [state.rows, inMyWarehouses, wh]
@@ -86,19 +72,10 @@ export function useTrips(statuses, wh) {
 
 // Tồn kho của 1 kho (hoặc mọi kho được giao khi wh rỗng), bỏ dòng đã hết hàng
 export function useStock(wh) {
-  const [state, setState] = useState({ rows: [], loading: true, error: '', for: undefined });
   const { inMyWarehouses } = useApp();
-  useEffect(() => {
-    setState({ rows: [], loading: true, error: '', for: wh });
-    const q = wh ? query(collection(db, 'stock'), where('warehouse', '==', wh)) : collection(db, 'stock');
-    return onSnapshot(
-      q,
-      (snap) => setState({ rows: snap.docs.map((d) => ({ _id: d.id, ...d.data() })), loading: false, error: '', for: wh }),
-      (e) => setState({ rows: [], loading: false, error: e.message, for: wh })
-    );
-  }, [wh]);
-  // Lần render ngay sau khi đổi kho vẫn còn dữ liệu kho cũ: coi như đang tải
-  const stale = state.for !== wh;
+  const st = useShared(wh === '__none__' ? '' : `stock|${wh || ''}`, () => (wh ? query(collection(db, 'stock'), where('warehouse', '==', wh)) : collection(db, 'stock')));
+  const state = useMemo(() => ({ rows: st.snap ? st.snap.docs.map((d) => ({ _id: d.id, ...d.data() })) : [], loading: st.loading, error: st.error }), [st]);
+  const stale = false;
   const rows = useMemo(
     () => (stale ? [] : state.rows.filter((r) => inMyWarehouses(r.warehouse) && (Number(r.bags) > 0 || Number(r.pallets) > 0))),
     [state.rows, inMyWarehouses, stale]
@@ -108,18 +85,10 @@ export function useStock(wh) {
 
 // Tồn của một mã hàng ở mọi kho mình được xem (để chọn kho xuất khi chưa biết hàng nằm ở đâu)
 export function useItemStock(item) {
-  const [state, setState] = useState({ rows: [], loading: true, for: undefined });
   const { inMyWarehouses } = useApp();
-  useEffect(() => {
-    if (!item) return setState({ rows: [], loading: false, for: item });
-    setState({ rows: [], loading: true, for: item });
-    return onSnapshot(
-      query(collection(db, 'stock'), where('item', '==', item)),
-      (snap) => setState({ rows: snap.docs.map((d) => ({ _id: d.id, ...d.data() })), loading: false, for: item }),
-      () => setState({ rows: [], loading: false, for: item })
-    );
-  }, [item]);
-  const stale = state.for !== item;
+  const st = useShared(item ? `stock-item|${item}` : '', () => query(collection(db, 'stock'), where('item', '==', item)));
+  const state = useMemo(() => ({ rows: st.snap ? st.snap.docs.map((d) => ({ _id: d.id, ...d.data() })) : [], loading: st.loading }), [st]);
+  const stale = false;
   const rows = useMemo(
     () => (stale ? [] : state.rows.filter((r) => inMyWarehouses(r.warehouse) && (Number(r.bags) > 0 || Number(r.pallets) > 0 || Number(r.kg) > 0))),
     [state.rows, inMyWarehouses, stale]
@@ -129,22 +98,16 @@ export function useItemStock(item) {
 
 // Đơn bán / đơn mua (realtime). type: 'SO' | 'PO' | '' (cả hai); onlyOpen: chỉ đơn chưa xong
 export function useOrders(type, onlyOpen = false) {
-  const [state, setState] = useState({ rows: [], loading: true, error: '' });
   const { salesOnly, email } = useApp();
-  useEffect(() => {
-    // Lọc trên server theo loại đơn (và sale phụ trách nếu người dùng chỉ được xem đơn của mình), lọc trạng thái trên trình duyệt
+  // Lọc trên server theo loại đơn (và sale phụ trách nếu người dùng chỉ được xem đơn của mình), lọc trạng thái trên trình duyệt
+  const st = useShared(type === '__none__' ? '' : `orders|${type}|${salesOnly ? email : ''}`, () => {
     const conds = [...(type ? [where('type', '==', type)] : []), ...(salesOnly ? [where('sales', '==', email || '-')] : [])];
-    const q = conds.length ? query(collection(db, 'orders'), ...conds) : collection(db, 'orders');
-    return onSnapshot(
-      q,
-      (snap) => setState({
-        rows: snap.docs.map((d) => ({ ...d.data(), id: d.id })).filter((o) => !onlyOpen || ['open', 'partial'].includes(o.status)),
-        loading: false, error: '',
-      }),
-      (e) => setState({ rows: [], loading: false, error: e.message })
-    );
-  }, [type, onlyOpen, salesOnly, email]);
-  return state;
+    return conds.length ? query(collection(db, 'orders'), ...conds) : collection(db, 'orders');
+  });
+  return useMemo(() => ({
+    rows: st.snap ? st.snap.docs.map((d) => ({ ...d.data(), id: d.id })).filter((o) => !onlyOpen || ['open', 'partial'].includes(o.status)) : [],
+    loading: st.loading, error: st.error,
+  }), [st, onlyOpen]);
 }
 
 // Phiếu nhập đã lập, chờ thủ kho nhận hàng (chưa cập nhật đơn): Map số đơn → { ids: [số phiếu], byLine: { dòng đơn: kg } }
@@ -154,7 +117,9 @@ export const usePendingIn = () => usePendingMoves('in', 'pending');
 export const useWaitingOut = () => usePendingMoves('out', 'wait_release');
 function usePendingMoves(type, status) {
   const [map, setMap] = useState(new Map());
-  useEffect(() => onSnapshot(query(collection(db, 'movements'), where('type', '==', type), where('status', '==', status)), (s) => {
+  useEffect(() => listenShared(`mv|${type}|${status}`, () => query(collection(db, 'movements'), where('type', '==', type), where('status', '==', status)), (st) => {
+    if (!st.snap) { const m = new Map(); m.loaded = true; setMap(m); return; }
+    const s = st.snap;
     const m = new Map();
     for (const d of s.docs) {
       const x = d.data();
@@ -179,6 +144,6 @@ function usePendingMoves(type, status) {
     }
     m.loaded = true;
     setMap(m);
-  }, () => { const m = new Map(); m.loaded = true; setMap(m); }), [type, status]);
+  }), [type, status]);
   return map;
 }
