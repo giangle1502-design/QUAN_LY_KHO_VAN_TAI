@@ -457,7 +457,7 @@ function Form({ type }) {
     if (type === 'adjust' && !head.reason) return setErr('Chọn lý do điều chỉnh.');
     if (type === 'out') { const pe = palletError(pal, head); if (pe) return setErr(pe); }
     // Phiếu nhập: quản trị lập có thể chưa biết loại pallet; thủ kho kiểm tra, chọn khi nhận hàng
-    if (type === 'in' && pal.palletMode === 'pallet') { const pe = palletError(pal, head, 'in'); if (pe) return setErr(pe + ' (hoặc để thủ kho chọn khi nhận hàng: bỏ chọn Kiện)'); }
+    if (type === 'in' && pal.palletMode === 'pallet') { const pe = palletError(pal, head, 'in', { optional: !palletManaged(wh) }); if (pe) return setErr(pe + ' (hoặc để thủ kho chọn khi nhận hàng: bỏ chọn Kiện)'); }
     // Thông tin vận tải không bắt buộc: bổ sung sau ở Phiếu kho → mở phiếu → Sửa thông tin vận tải
     const out = [];
     for (const [i, l] of lines.entries()) {

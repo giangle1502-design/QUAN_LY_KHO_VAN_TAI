@@ -121,7 +121,7 @@ function ReceiveForm({ id }) {
     }
     if (caps.some((c) => c?.over) && !overOk) return setErr(`${OVER_CAP_MSG}. Chia thành nhiều dòng hoặc tích "${OVER_CAP_CONFIRM}".`);
     if (!out.length) return setErr('Nhập số thực nhận cho ít nhất 1 dòng (hàng không về thì báo quản trị hủy phiếu).');
-    const pe = palletError(pal, mv, 'in');
+    const pe = palletError(pal, mv, 'in', { optional: !palletManaged(warehouses.find((w) => w.code === mv.warehouse)) });
     if (pe) return setErr(pe);
     setBusy(true);
     try {

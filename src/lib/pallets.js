@@ -94,11 +94,13 @@ export async function readPallets(tx, effects) {
 }
 
 // Kiểm tra lựa chọn pallet trên phiếu xuất / nhập (kind 'in': không có "giao cho ai")
-export function palletError(v, m, kind = 'out') {
+export function palletError(v, m, kind = 'out', { optional = false } = {}) {
   if (!v.palletMode) return kind === 'in' ? 'Chọn hàng về là Kiện (có pallet) hay Xá (không pallet).' : 'Chọn hình thức xuất: Kiện (có pallet) hay Xá (không pallet).';
   if (v.palletMode !== 'pallet') return '';
-  if (!v.pallets?.length) return 'Thêm dòng pallet.';
+  // Nhập ở kho không quản lý pallet: Kiện là đủ, dòng pallet để trống được
+  if (!v.pallets?.length) return optional ? '' : 'Thêm dòng pallet.';
   for (const [i, p] of v.pallets.entries()) {
+    if (optional && !p.material && !p.code && !n(p.qty)) continue;
     if (!p.material) return `Pallet dòng ${i + 1}: kiểm tra và chọn pallet gỗ hay pallet nhựa.`;
     if (!p.code) return `Pallet dòng ${i + 1}: chọn mã pallet.`;
     if (!(n(p.qty) > 0)) return `Pallet dòng ${i + 1}: nhập số pallet.`;
@@ -114,7 +116,7 @@ export function cleanPallets(v, m, kind = 'out') {
   if (v.palletMode !== 'pallet') return { palletMode: v.palletMode || '', pallets: [] };
   return {
     palletMode: 'pallet',
-    pallets: v.pallets.map((p) => ({
+    pallets: v.pallets.filter((p) => kind !== 'in' || p.code).map((p) => ({
       code: p.code, name: p.name || '', material: p.material || '', qty: n(p.qty), to: kind === 'in' ? 'in' : p.to,
       ...(p.to === 'carrier' ? { carrier: p.carrier || m?.carrier || '', carrierName: p.carrierName || m?.carrierName || '' } : {}),
     })),

@@ -170,7 +170,7 @@ export default function PrintMovement({ pick = false }) {
 // Bảng pallet riêng, tách khỏi bảng hàng (phiếu giao hàng, phiếu nhập)
 function PalletTable({ m, rows }) {
   if (m.palletMode === 'xa') return <p className="small" style={{ margin: '4px 0' }}>Hàng: <b>{MODE_LABEL.xa}</b></p>;
-  if (!rows.length) return null;
+  if (!rows.length) return m.type === 'in' && m.palletMode === 'pallet' ? <p className="small" style={{ margin: '4px 0' }}>Hàng: <b>{MODE_LABEL.pallet}</b>, chưa ghi loại pallet</p> : null;
   return (
     <>
       <p style={{ margin: '8px 0 2px' }}><b>PALLET {m.type === 'in' ? 'NHẬP KÈM HÀNG' : 'XUẤT KÈM HÀNG'}</b> <span className="small">(hàng Kiện)</span></p>
