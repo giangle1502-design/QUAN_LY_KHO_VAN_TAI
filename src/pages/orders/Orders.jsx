@@ -366,6 +366,7 @@ function OrderDetail({ o, onClose, onEdit }) {
       {canManage && (
         <div className="form-actions" style={{ flexWrap: 'wrap' }}>
           {o.status !== 'cancelled' && <button className="btn" onClick={onEdit} title={isOpen ? '' : 'Sửa giá, thông tin đơn đã hoàn tất / đã đóng (ghi lý do, lưu lịch sử)'}>✏️ Sửa đơn</button>}
+          {isOpen && o.type === 'SO' && <Link className="btn primary" to={`/du-kien-xuat?so=${o.id}`}>📅 Tạo dự kiến xuất kho</Link>}
           {isOpen && <input placeholder="Lý do đóng / hủy" value={reason} onChange={(e) => setReason(e.target.value)} />}
           {isOpen && <button className="btn" disabled={!reason.trim() || busy} onClick={() => act('close')} title="Không giao/nhận tiếp phần còn lại">Đóng đơn</button>}
           {isOpen && x.done === 0 && <button className="btn danger" disabled={!reason.trim() || busy} onClick={() => act('cancel')}>Hủy đơn</button>}

@@ -458,3 +458,9 @@ tr.picked td { background: var(--primary-soft); }
   .print-copy { break-after: page; page-break-after: always; }
   .print-copy:last-child { break-after: auto; page-break-after: auto; }
 }
+
+/* Menu theo nhóm công việc, bấm tên nhóm để thu gọn */
+.side nav .nav-sec .nav-group { display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none; border-radius: 6px; }
+.side nav .nav-sec .nav-group:hover { color: #fff; background: #ffffff0d; }
+.side nav .nav-sec .nav-group .caret { font-size: 12px; opacity: .8; }
+.side nav:not(.searching) .nav-sec.closed > a { display: none; }

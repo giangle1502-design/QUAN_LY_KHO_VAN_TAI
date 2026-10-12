@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { applyMovementToPlan, planLeft, OPEN_PLAN } from '../../lib/shipPlans';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useMyWarehouses, useOpCompany, useOpWarehouse, useOrders, usePendingIn, useStock, useTrips, useWaitingOut } from '../../lib/hooks';
@@ -35,9 +36,10 @@ export function canMove(hasRole, type, isAdmin) {
 export default function MovementForm() {
   const { type } = useParams();
   const { hasRole, isAdmin } = useApp();
+  const [sp] = useSearchParams();
   if (type === 'in' && !isAdmin && hasRole('thu_kho')) return <Navigate to="/kho/nhan-hang" />;
   if (!MOVE_TYPES[type] || !canMove(hasRole, type, isAdmin)) return <Navigate to="/kho/ton" />;
-  return <Form key={type} type={type} />;
+  return <Form key={[type, sp.get('src'), sp.get('plan'), sp.get('ship')].join('|')} type={type} />;
 }
 
 function Form({ type }) {
@@ -82,7 +84,7 @@ function Form({ type }) {
     && (OPEN_STATUSES.includes(o.status) || (type === 'in' && o.status === 'closed' && o.type === 'STO') || (isReturn(o, type) && ['done', 'closed'].includes(o.status)))), [allOrders, type, pendIn]); // eslint-disable-line react-hooks/exhaustive-deps
   const [opCo, setOpCo] = useOpCompany();
   // Phiếu nhập: nguồn nhập (trực tiếp / theo PO / theo STO / hàng trả về theo SO)
-  const [source, setSource] = useState(type === 'in' ? 'direct' : '');
+  const [source, setSource] = useState(type === 'in' ? (params.get('src') === 'sto' ? 'STO' : 'direct') : '');
   const [head, setHead] = useState({ refNo: '', company: opCo, date: vnDate(), tripId: params.get('trip') || '', orderId: params.get('order') || '', partyCode: '', partyName: '', shipCode: '', reason: '', note: '', ...EMPTY_TRANSPORT });
   const vehicles = useCollection('vehicles').rows;
   const carriers = useCollection('carriers').rows;
@@ -441,6 +443,27 @@ function Form({ type }) {
   const pickDriver = (v) => { const d = drivers.find((x) => x.idCard === v); setHead((h) => ({ ...h, idCard: v, ...(d ? { driverName: d.name || '', driverPhone: d.phone || '' } : {}) })); };
 
   const parties = type === 'in' && source !== 'SO' ? suppliers : soldto;
+  // Lập phiếu xuất từ Dự kiến xuất kho của Sale: ?plan=DK…&ship=mã giao → chọn sẵn đơn, số lượng từng dòng, mã giao
+  const [shipPlan, setShipPlan] = useState(null);
+  const planParam = type === 'out' ? params.get('plan') || '' : '';
+  const shipParam = params.get('ship');
+  useEffect(() => {
+    if (!planParam || ordersLoading || shipPlan?.id === planParam) return;
+    getDoc(doc(db, 'shipPlans', planParam)).then((s) => {
+      if (!s.exists()) return setErr(`Không tìm thấy dự kiến xuất ${planParam}.`);
+      const p = { ...s.data(), id: s.id };
+      if (!OPEN_PLAN.includes(p.status)) return setErr(`Dự kiến xuất ${p.id} đã ${p.status === 'cancelled' ? 'hủy' : 'lập phiếu xuất xong'}.`);
+      const ls = (p.lines || []).filter((l) => planLeft(l) > 0.001 && (shipParam == null || (l.shipCode || '') === shipParam));
+      if (!ls.length) return setErr(`Dự kiến xuất ${p.id} không còn dòng nào cần xuất.`);
+      const pl = {};
+      ls.forEach((l) => { pl[l.orderLine] = (pl[l.orderLine] || 0) + planLeft(l); });
+      setShipPlan({ ...p, ship: ls[0].shipCode || '' });
+      pickOrder(p.orderId, { plan: pl, force: true });
+      setHead((h) => ({ ...h, shipCode: ls[0].shipCode || h.shipCode, note: h.note || p.note || '' }));
+      setFillNote(`Lập theo dự kiến xuất ${p.id} của Sale (ngày ${p.date}).`);
+    }).catch((e) => setErr(e.message));
+  }, [planParam, shipParam, ordersLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Mã giao của khách: chỉ có 1 mã thì luôn mặc định mã đó; nhiều mã thì bắt buộc chọn
   const shipOpts = useMemo(() => (type === 'out' && head.partyCode ? shipto.filter((s) => s.customerCode === head.partyCode) : []), [type, head.partyCode, shipto]);
   const shipRequired = shipOpts.length > 1 && order?.type !== 'STO';
@@ -536,11 +559,19 @@ function Form({ type }) {
         ...(type === 'in' ? { source } : {}),
         partyCode: head.partyCode.trim(), partyName: head.partyName.trim(), shipCode: head.shipCode,
         reason: head.reason, note: head.note.trim(), lines: out,
+        ...(shipPlan && shipPlan.orderId === head.orderId ? { planId: shipPlan.id } : {}),
         ...(type === 'out' ? Object.fromEntries(Object.keys(EMPTY_TRANSPORT).map((k) => [k, String(head[k] || '').trim()])) : {}),
         ...(type === 'out' ? cleanPallets(pal, head, 'out', { managed: palletManaged(wh) }) : {}),
         ...(type === 'in' ? cleanPallets(pal, head, 'in', { managed: palletManaged(wh) }) : {}),
       });
-      setDone(typeof res === 'string' ? res : res.id);
+      const mvId = typeof res === 'string' ? res : res.id;
+      // Phiếu lập từ dự kiến xuất: cộng số đã xuất vào dự kiến, đủ thì dự kiến chuyển "Đã lập phiếu xuất"
+      if (shipPlan && shipPlan.orderId === head.orderId) {
+        try { await applyMovementToPlan(shipPlan.id, { id: mvId, lines: out }, { email, name }); }
+        catch (e3) { setErr(`Đã lập phiếu ${mvId} nhưng chưa cập nhật được dự kiến xuất ${shipPlan.id}: ${e3.message}`); }
+        setShipPlan(null);
+      }
+      setDone(mvId);
       setDonePO(typeof res === 'string' ? '' : res.orderId);
       setDoneRel(rel.length ? { wait: true } : null);
       setLines([type === 'in' ? newLine() : stockLine()]);
@@ -697,6 +728,7 @@ function Form({ type }) {
 
       {order && <OrderBox order={order} lines={lines} type={type} stockById={stockById} wh={whCode} onStock={type === 'in' ? null : setStockItem} pend={type === 'in' && !isReturn(order, type) ? pendIn.get(order.id) : null}
         onRefill={type === 'in' && ['STO', 'SO'].includes(order.type) ? () => fillFromTransfer(order, order.type === 'SO' ? '' : whCode) : null} />}
+      {shipPlan && shipPlan.orderId === head.orderId && <div className="ok-box" style={{ marginBottom: 10 }}>📅 Lập theo <Link to="/du-kien-xuat">dự kiến xuất {shipPlan.id}</Link> · ngày {shipPlan.date}{shipPlan.ship ? ` · mã giao ${shipPlan.ship}` : ''}: {(shipPlan.lines || []).filter((l) => planLeft(l) > 0.001 && (!shipPlan.ship || (l.shipCode || '') === shipPlan.ship)).map((l) => `${l.item} ${fmtNum(planLeft(l), 2)} kg${l.packing ? ` (${l.packing})` : ''}`).join(', ')}</div>}
       {fillNote && <div className="hint" style={{ marginBottom: 10 }}>{fillNote}</div>}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="section-head">Hàng hóa ({lines.length})</div>

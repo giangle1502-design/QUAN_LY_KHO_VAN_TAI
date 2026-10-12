@@ -10,6 +10,7 @@ import { fmtDate, fmtNum, norm } from '../../lib/utils';
 import { CompanyPicker, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox } from '../../components/ui';
 import SalesAnalysis from './SalesAnalysis';
+import IOPlan from './IOPlan';
 import Overview from './Overview';
 
 // ============================================================================
@@ -18,6 +19,7 @@ import Overview from './Overview';
 // ============================================================================
 
 export const REPORTS = [
+  ['ke-hoach-xuat-nhap', '🗓️', 'Kế hoạch xuất nhập (Xá / Kiện)'],
   ['ton-theo-kho', '🏭', 'Tồn kho tổng theo kho'],
   ['ton-theo-vi-tri', '📍', 'Tồn kho theo vị trí'],
   ['ton-theo-trang-thai', '🔒', 'Tồn kho theo trạng thái'],
@@ -77,7 +79,7 @@ export default function Reports() {
   const [q, setQ] = useState('');
   const props = { wh, co, q: norm(q) };
   const Body = { 'ton-theo-kho': ByWarehouse, 'ton-theo-vi-tri': ByLocation, 'ton-theo-trang-thai': ByStatus,
-    'ton-cho-sale': ForSales, 'don-chua-giao': OpenSO, 'po-chua-nhap': OpenPO, 'phan-tich-ban-hang': SalesAnalysis, 'tong-quan': Overview }[cur[0]];
+    'ton-cho-sale': ForSales, 'don-chua-giao': OpenSO, 'po-chua-nhap': OpenPO, 'phan-tich-ban-hang': SalesAnalysis, 'ke-hoach-xuat-nhap': IOPlan, 'tong-quan': Overview }[cur[0]];
   return (
     <div className="report-page">
       <div className="page-head">

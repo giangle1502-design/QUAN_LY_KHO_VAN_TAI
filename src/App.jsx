@@ -25,6 +25,7 @@ import Release, { PrintRelease } from './pages/stock/Release';
 import Dashboard from './pages/Dashboard';
 import Orders from './pages/orders/Orders';
 import Allocation from './pages/orders/Allocation';
+import ShipPlans from './pages/orders/ShipPlans';
 import Reports from './pages/reports/Reports';
 import Deletes from './pages/admin/Deletes';
 import Hauling from './pages/transport/Hauling';
@@ -68,6 +69,7 @@ export default function App() {
         <Route path="xe/tong-quan" element={<Overview />} />
         <Route path="don-hang" element={<Orders />} />
         <Route path="phan-bo" element={<Allocation />} />
+        <Route path="du-kien-xuat" element={<ShipPlans />} />
         {seesDebt && <Route path="cong-no" element={<Debts />} />}
         <Route path="bao-cao" element={<Navigate to="/bao-cao/ton-theo-kho" />} />
         <Route path="bao-cao/:report" element={<Reports />} />
