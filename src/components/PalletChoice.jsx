@@ -13,8 +13,8 @@ export default function PalletChoice({ value, onChange, carrier, carrierName, su
   const v = value || { palletMode: '', pallets: [] };
   const isIn = kind === 'in';
   const defTo = isIn ? 'in' : sto ? 'transfer' : 'customer';
-  // Nhập ở kho không quản lý pallet (vd. hàng về cảng chưa mở cont): chỉ cần chọn Kiện, loại / số pallet không bắt buộc
-  const optional = isIn && !managed;
+  // Kho không quản lý pallet (vd. cảng, chưa mở cont): chỉ ghi Kiện / Xá, không chọn loại, số pallet
+  const optional = !managed;
   const set = (p) => onChange({ ...v, ...p });
   // Đơn ghi Kiện (điền sẵn từ đơn): mở sẵn 1 dòng pallet để thủ kho chọn gỗ / nhựa
   const needLine = !optional && v.palletMode === 'pallet' && !v.pallets?.length;
@@ -38,7 +38,7 @@ export default function PalletChoice({ value, onChange, carrier, carrierName, su
   return (
     <div className="pallet-choice">
       <Seg val={v.palletMode} opts={[['pallet', MODE_LABEL.pallet], ['xa', MODE_LABEL.xa]]} on={mode} />
-      {v.palletMode === 'pallet' && (v.pallets || []).map((p, i) => (
+      {!optional && v.palletMode === 'pallet' && (v.pallets || []).map((p, i) => (
         <div key={i} className="pallet-line">
           <Seg val={p.material} opts={MATERIALS.map((m) => [m, m])} on={(m) => pickMaterial(i, m)} />
           {p.material ? (
@@ -63,15 +63,15 @@ export default function PalletChoice({ value, onChange, carrier, carrierName, su
           {p.material && !codesOf(p.material).length && <span className="small" style={{ color: 'var(--red)' }}>Chưa có mã {p.material.toLowerCase()} trong danh mục Mã pallet.</span>}
         </div>
       ))}
-      {v.palletMode === 'pallet' && <button type="button" className="btn sm" disabled={disabled} onClick={() => set({ pallets: [...v.pallets, blank('', defTo, '')] })}>{optional ? (v.pallets.length ? '＋ Thêm loại pallet' : '＋ Ghi loại pallet (không bắt buộc)') : '＋ Thêm loại pallet (hàng về cả gỗ lẫn nhựa)'}</button>}
+      {!optional && v.palletMode === 'pallet' && <button type="button" className="btn sm" disabled={disabled} onClick={() => set({ pallets: [...v.pallets, blank('', defTo, '')] })}>{optional ? (v.pallets.length ? '＋ Thêm loại pallet' : '＋ Ghi loại pallet (không bắt buộc)') : '＋ Thêm loại pallet (hàng về cả gỗ lẫn nhựa)'}</button>}
       <div className="small" style={{ marginTop: 4 }}>
-        {!managed && v.palletMode === 'pallet' && <div>Kho này không quản lý tồn pallet: {isIn ? 'chỉ cần chọn Kiện, chưa biết pallet gỗ hay nhựa (chưa mở cont) thì để trống.' : 'số pallet chỉ ghi trên phiếu (pallet vận tải mượn vẫn được theo dõi).'}</div>}
-        {isIn && v.palletMode === 'pallet' && managed && 'Xác nhận nhận hàng: số pallet được cộng vào tồn pallet của kho.'}
+        {optional && v.palletMode && <div>Kho này không quản lý pallet: chỉ ghi Kiện / Xá, không cần chọn loại, số pallet; phiếu in chỉ ghi Kiện / Xá.</div>}
+        {!optional && isIn && v.palletMode === 'pallet' && managed && 'Xác nhận nhận hàng: số pallet được cộng vào tồn pallet của kho.'}
         {isIn && v.palletMode === 'xa' && 'Hàng xá: không có pallet nhập kho.'}
-        {!isIn && v.palletMode === 'xa' && 'Phiếu giao hàng in 3 liên, không có bảng pallet.'}
-        {!isIn && v.palletMode === 'pallet' && v.pallets.some((p) => p.to === 'carrier')
+        {!optional && !isIn && v.palletMode === 'xa' && 'Phiếu giao hàng in 3 liên, không có bảng pallet.'}
+        {!optional && !isIn && v.palletMode === 'pallet' && v.pallets.some((p) => p.to === 'carrier')
           && `Pallet vận tải mượn chuyển sang đơn vị ${v.pallets.find((p) => p.to === 'carrier')?.carrierName || carrierName || carrier || '…'}; vận tải trả lại thì nhập ở Quản lý pallet. Liên kho và liên vận tải có bảng pallet, liên khách hàng không có pallet vận tải mượn.`}
-        {!isIn && v.palletMode === 'pallet' && v.pallets.every((p) => p.to !== 'carrier') && (sto
+        {!optional && !isIn && v.palletMode === 'pallet' && v.pallets.every((p) => p.to !== 'carrier') && (sto
           ? 'Pallet đi theo hàng: trừ tồn pallet kho xuất; kho nhận cộng khi xác nhận nhận hàng.'
           : 'Pallet khách giữ: trừ tồn pallet kho; cả 3 liên phiếu giao hàng có bảng pallet riêng.')}
       </div>

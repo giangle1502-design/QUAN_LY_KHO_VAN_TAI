@@ -455,9 +455,9 @@ function Form({ type }) {
     if (type === 'in' && source === 'direct' && !head.partyCode.trim()) return setErr('Chọn nhà cung cấp (bấm + để thêm nhà cung cấp mới).');
     if (type === 'in' && source !== 'direct' && !head.orderId) return setErr(`Chọn ${{ PO: 'đơn mua (PO)', STO: 'lệnh chuyển kho (STO)', SO: 'đơn bán (SO) của hàng trả về' }[source]}.`);
     if (type === 'adjust' && !head.reason) return setErr('Chọn lý do điều chỉnh.');
-    if (type === 'out') { const pe = palletError(pal, head); if (pe) return setErr(pe); }
+    if (type === 'out') { const pe = palletError(pal, head, 'out', { managed: palletManaged(wh) }); if (pe) return setErr(pe); }
     // Phiếu nhập: quản trị lập có thể chưa biết loại pallet; thủ kho kiểm tra, chọn khi nhận hàng
-    if (type === 'in' && pal.palletMode === 'pallet') { const pe = palletError(pal, head, 'in', { optional: !palletManaged(wh) }); if (pe) return setErr(pe + ' (hoặc để thủ kho chọn khi nhận hàng: bỏ chọn Kiện)'); }
+    if (type === 'in' && pal.palletMode === 'pallet') { const pe = palletError(pal, head, 'in', { managed: palletManaged(wh) }); if (pe) return setErr(pe + ' (hoặc để thủ kho chọn khi nhận hàng: bỏ chọn Kiện)'); }
     // Thông tin vận tải không bắt buộc: bổ sung sau ở Phiếu kho → mở phiếu → Sửa thông tin vận tải
     const out = [];
     for (const [i, l] of lines.entries()) {
@@ -529,8 +529,8 @@ function Form({ type }) {
         partyCode: head.partyCode.trim(), partyName: head.partyName.trim(), shipCode: head.shipCode,
         reason: head.reason, note: head.note.trim(), lines: out,
         ...(type === 'out' ? Object.fromEntries(Object.keys(EMPTY_TRANSPORT).map((k) => [k, String(head[k] || '').trim()])) : {}),
-        ...(type === 'out' ? cleanPallets(pal, head) : {}),
-        ...(type === 'in' ? cleanPallets(pal, head, 'in') : {}),
+        ...(type === 'out' ? cleanPallets(pal, head, 'out', { managed: palletManaged(wh) }) : {}),
+        ...(type === 'in' ? cleanPallets(pal, head, 'in', { managed: palletManaged(wh) }) : {}),
       });
       setDone(typeof res === 'string' ? res : res.id);
       setDonePO(typeof res === 'string' ? '' : res.orderId);

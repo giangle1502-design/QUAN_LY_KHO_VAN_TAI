@@ -121,11 +121,12 @@ function ReceiveForm({ id }) {
     }
     if (caps.some((c) => c?.over) && !overOk) return setErr(`${OVER_CAP_MSG}. Chia thành nhiều dòng hoặc tích "${OVER_CAP_CONFIRM}".`);
     if (!out.length) return setErr('Nhập số thực nhận cho ít nhất 1 dòng (hàng không về thì báo quản trị hủy phiếu).');
-    const pe = palletError(pal, mv, 'in', { optional: !palletManaged(warehouses.find((w) => w.code === mv.warehouse)) });
+    const managed = palletManaged(warehouses.find((w) => w.code === mv.warehouse));
+    const pe = palletError(pal, mv, 'in', { managed });
     if (pe) return setErr(pe);
     setBusy(true);
     try {
-      const res = await confirmIn(id, out, { email, name }, cleanPallets(pal, mv, 'in'));
+      const res = await confirmIn(id, out, { email, name }, cleanPallets(pal, mv, 'in', { managed }));
       setDone(typeof res === 'string' ? { id: res } : res);
     } catch (e2) {
       setErr(e2.code === 'permission-denied' ? 'Bạn không có quyền nhận hàng cho kho này.' : e2.message);

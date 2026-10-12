@@ -10,7 +10,7 @@ import { loadMovementData } from '../../lib/printData';
 import { TemplatePage, TemplateSheets, useTemplateChoice } from '../../components/PrintTemplate';
 import PalletChoice from '../../components/PalletChoice';
 import { ErrorBox } from '../../components/ui';
-import { MODE_LABEL, palletError, palletText, palletToText, setSlipPallets } from '../../lib/pallets';
+import { MODE_LABEL, palletError, palletManaged, palletText, palletToText, setSlipPallets } from '../../lib/pallets';
 
 // 3 liên phiếu giao hàng: liên kho, liên vận tải (có dòng pallet), liên khách hàng (không có pallet vận tải mượn)
 const COPIES = [
@@ -43,6 +43,8 @@ export default function PrintMovement({ pick = false }) {
     }).catch(() => setM(null));
   }, [id, ver]);
 
+  // Kho không quản lý pallet: phiếu chỉ ghi Kiện / Xá, không có bảng pallet
+  const managed = !!wh && palletManaged(wh) && m?.palletTracked !== false;
   const choice = useTemplateChoice(m ? docTypeOfMovement(m, pick) : null, { company: m?.company || m?.lines?.find((l) => l.company)?.company, party: m?.partyCode });
 
   if (m === undefined || choice.loading) return <div className="center">Đang tải…</div>;
@@ -63,11 +65,11 @@ export default function PrintMovement({ pick = false }) {
   );
   // Mẫu in tự thiết kế: phiếu giao hàng cũng in 3 liên; dòng pallet thêm vào bảng hàng, trường {{Liên}}, {{Pallet xuất kèm}}
   if (choice.tpl && m.type === 'out' && !pick) {
-    const pals = (c) => (m.palletMode !== 'pallet' ? [] : (m.pallets || []).filter((p) => c.key !== 'customer' || p.to !== 'carrier'));
+    const pals = (c) => (m.palletMode !== 'pallet' || !managed ? [] : (m.pallets || []).filter((p) => c.key !== 'customer' || p.to !== 'carrier'));
     return (
       <div className="tpl-screen">
         <div className="no-print toolbar label-toolbar">{toolbar}</div>
-        <div className="no-print" style={{ padding: '0 16px' }}><SlipPallet m={m} onSaved={reload} /></div>
+        <div className="no-print" style={{ padding: '0 16px' }}><SlipPallet m={m} managed={managed} onSaved={reload} /></div>
         <TplCopies key={`${choice.tpl.id}-${ver}`} tpl={choice.tpl} m={m} copies={COPIES.slice(0, nCopies)} pals={pals} />
       </div>
     );
@@ -96,7 +98,7 @@ export default function PrintMovement({ pick = false }) {
 
   // Phiếu giao hàng (phiếu xuất) mặc định in 3 liên; liên khách hàng chỉ có dòng pallet khách giữ
   const copies = summary ? COPIES.slice(0, nCopies) : [null];
-  const palRows = (copy) => (!copy || m.palletMode !== 'pallet' ? [] : (m.pallets || []).filter((p) => copy.key !== 'customer' || p.to !== 'carrier'));
+  const palRows = (copy) => (!copy || m.palletMode !== 'pallet' || !managed ? [] : (m.pallets || []).filter((p) => copy.key !== 'customer' || p.to !== 'carrier'));
   const Body = ({ copy }) => (
     <>
       <div className="print-head">
@@ -151,7 +153,7 @@ export default function PrintMovement({ pick = false }) {
         <tfoot><tr><td colSpan={m.type === 'move' || m.type === 'status' ? 7 : 6}>Cộng</td><td className="num">{fmtNum(tot('kg'), 2)}<div className="small">= {fmtNum(tot('kg') / 1000, 3, 3)} tấn</div></td><td className="num">{fmtNum(tot('pallets'), 2)}</td><td className="num">{fmtNum(tot('bags'))}</td>{pend && <><td></td><td></td></>}</tr></tfoot>
       </table>
       )}
-      {(summary || m.type === 'in') && <PalletTable m={m} rows={summary ? palRows(copy) : m.palletMode === 'pallet' ? m.pallets || [] : []} />}
+      {(summary || m.type === 'in') && <PalletTable m={m} rows={summary ? palRows(copy) : m.palletMode === 'pallet' && managed ? m.pallets || [] : []} />}
       <div className="print-signs">
         {signs.map((s) => <div key={s}><b>{s}</b><br /><span className="small">(Ký, ghi rõ họ tên)</span><div className="sign-space" />{s === 'Người lập phiếu' ? m.createdByName : ''}</div>)}
       </div>
@@ -161,7 +163,7 @@ export default function PrintMovement({ pick = false }) {
   return (
     <div className="print-page">
       <div className="no-print toolbar">{toolbar}</div>
-      {summary && <SlipPallet m={m} onSaved={reload} />}
+      {summary && <SlipPallet m={m} managed={managed} onSaved={reload} />}
       {copies.map((c, i) => <div key={i} className={copies.length > 1 ? 'print-copy' : ''}><Body copy={c} /></div>)}
     </div>
   );
@@ -170,7 +172,7 @@ export default function PrintMovement({ pick = false }) {
 // Bảng pallet riêng, tách khỏi bảng hàng (phiếu giao hàng, phiếu nhập)
 function PalletTable({ m, rows }) {
   if (m.palletMode === 'xa') return <p className="small" style={{ margin: '4px 0' }}>Hàng: <b>{MODE_LABEL.xa}</b></p>;
-  if (!rows.length) return m.type === 'in' && m.palletMode === 'pallet' ? <p className="small" style={{ margin: '4px 0' }}>Hàng: <b>{MODE_LABEL.pallet}</b>, chưa ghi loại pallet</p> : null;
+  if (!rows.length) return m.palletMode === 'pallet' ? <p className="small" style={{ margin: '4px 0' }}>Hàng: <b>Kiện</b></p> : null;
   return (
     <>
       <p style={{ margin: '8px 0 2px' }}><b>PALLET {m.type === 'in' ? 'NHẬP KÈM HÀNG' : 'XUẤT KÈM HÀNG'}</b> <span className="small">(hàng Kiện)</span></p>
@@ -204,7 +206,7 @@ function TplCopies({ tpl, m, copies, pals }) {
 }
 
 // Chọn / đổi hình thức xuất ngay lúc in phiếu giao hàng (không hiện khi in)
-function SlipPallet({ m, onSaved }) {
+function SlipPallet({ m, managed, onSaved }) {
   const { email, name } = useApp();
   const [v, setV] = useState({ palletMode: m.palletMode || '', pallets: (m.pallets || []).map((p) => ({ ...p })) });
   const [open, setOpen] = useState(!m.palletMode);
@@ -212,23 +214,23 @@ function SlipPallet({ m, onSaved }) {
   const [err, setErr] = useState('');
   if (m.status === 'cancelled') return null;
   const save = async () => {
-    const e = palletError(v, m);
+    const e = palletError(v, m, 'out', { managed });
     if (e) return setErr(e);
     setBusy(true); setErr('');
-    try { await setSlipPallets(m.id, v, { email, name }); setOpen(false); onSaved(); } catch (x) { setErr(x.code === 'permission-denied' ? 'Bạn không có quyền sửa phiếu này.' : x.message); }
+    try { await setSlipPallets(m.id, v, { email, name }, { managed }); setOpen(false); onSaved(); } catch (x) { setErr(x.code === 'permission-denied' ? 'Bạn không có quyền sửa phiếu này.' : x.message); }
     setBusy(false);
   };
   return (
     <div className="no-print slip-pallet">
       {!open ? (
         <div className="toolbar">
-          <span>Hàng: <b>{m.palletMode === 'pallet' ? `Kiện, ${palletText(m)}` : MODE_LABEL.xa}</b></span>
+          <span>Hàng: <b>{m.palletMode === 'pallet' ? (managed && m.pallets?.length ? `Kiện, ${palletText(m)}` : 'Kiện') : MODE_LABEL.xa}</b>{!managed && <span className="small"> · kho không quản lý pallet</span>}</span>
           <button className="btn sm" onClick={() => setOpen(true)}>Đổi</button>
         </div>
       ) : (
         <>
           <b>{m.palletMode ? 'Đổi Kiện / Xá, loại pallet' : 'Kiểm tra hàng Kiện / Xá, loại pallet trước khi in phiếu giao hàng'}</b>
-          <PalletChoice value={v} onChange={setV} carrier={m.carrier} carrierName={m.carrierName} sto={m.orderType === 'STO' || String(m.orderId || '').startsWith('STO')}
+          <PalletChoice value={v} onChange={setV} carrier={m.carrier} carrierName={m.carrierName} sto={m.orderType === 'STO' || String(m.orderId || '').startsWith('STO')} managed={managed}
             suggestQty={Math.ceil((m.lines || []).reduce((a, l) => a + (Number(l.pallets) || 0), 0)) || ''} />
           <ErrorBox error={err} />
           <div className="toolbar">

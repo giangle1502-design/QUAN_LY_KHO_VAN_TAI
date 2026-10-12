@@ -94,13 +94,12 @@ export async function readPallets(tx, effects) {
 }
 
 // Kiểm tra lựa chọn pallet trên phiếu xuất / nhập (kind 'in': không có "giao cho ai")
-export function palletError(v, m, kind = 'out', { optional = false } = {}) {
+export function palletError(v, m, kind = 'out', { managed = true } = {}) {
   if (!v.palletMode) return kind === 'in' ? 'Chọn hàng về là Kiện (có pallet) hay Xá (không pallet).' : 'Chọn hình thức xuất: Kiện (có pallet) hay Xá (không pallet).';
-  if (v.palletMode !== 'pallet') return '';
-  // Nhập ở kho không quản lý pallet: Kiện là đủ, dòng pallet để trống được
-  if (!v.pallets?.length) return optional ? '' : 'Thêm dòng pallet.';
+  // Kho không quản lý pallet: Kiện là đủ, không chọn loại / số pallet
+  if (v.palletMode !== 'pallet' || !managed) return '';
+  if (!v.pallets?.length) return 'Thêm dòng pallet.';
   for (const [i, p] of v.pallets.entries()) {
-    if (optional && !p.material && !p.code && !n(p.qty)) continue;
     if (!p.material) return `Pallet dòng ${i + 1}: kiểm tra và chọn pallet gỗ hay pallet nhựa.`;
     if (!p.code) return `Pallet dòng ${i + 1}: chọn mã pallet.`;
     if (!(n(p.qty) > 0)) return `Pallet dòng ${i + 1}: nhập số pallet.`;
@@ -112,8 +111,8 @@ export function palletError(v, m, kind = 'out', { optional = false } = {}) {
 }
 
 // Ghi gọn chọn lựa pallet để lưu trên phiếu
-export function cleanPallets(v, m, kind = 'out') {
-  if (v.palletMode !== 'pallet') return { palletMode: v.palletMode || '', pallets: [] };
+export function cleanPallets(v, m, kind = 'out', { managed = true } = {}) {
+  if (v.palletMode !== 'pallet' || !managed) return { palletMode: v.palletMode || '', pallets: [] };
   return {
     palletMode: 'pallet',
     pallets: v.pallets.filter((p) => kind !== 'in' || p.code).map((p) => ({
@@ -124,14 +123,14 @@ export function cleanPallets(v, m, kind = 'out') {
 }
 
 // Đổi / chọn hình thức xuất của phiếu đã lập (lúc in phiếu giao hàng): đảo pallet cũ, ghi pallet mới
-export async function setSlipPallets(id, v, user) {
+export async function setSlipPallets(id, v, user, { managed = true } = {}) {
   return runTransaction(db, async (tx) => {
     const ref = doc(db, 'movements', id);
     const s = await tx.get(ref);
     if (!s.exists()) throw new Error(`Không tìm thấy phiếu ${id}.`);
     const m = s.data();
     if (m.type !== 'out' || m.status === 'cancelled') throw new Error('Chỉ chọn pallet cho phiếu xuất chưa hủy.');
-    const next = cleanPallets(v, m);
+    const next = cleanPallets(v, m, 'out', { managed });
     // Phiếu chờ giải chấp chưa ghi tồn: pallet tính khi phiếu được ghi xuất
     const live = m.status === 'posted';
     const write = live ? await readPallets(tx, [...palletEffects(m, -1), ...palletEffects({ ...m, ...next }, 1)]) : null;
