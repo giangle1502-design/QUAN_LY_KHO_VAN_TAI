@@ -123,6 +123,12 @@ export default function SOForm({ type = 'SO', order, onClose }) {
     if (isVia(lineFields, k)) Object.assign(p, linkPatch(lineFields, k, r));
     return { ...l, ...p };
   }));
+  // Khách chỉ có 1 mã giao: dòng chưa có mã giao tự lấy mã đó
+  const oneShip = !sto && myShips.length === 1 ? myShips[0] : null;
+  useEffect(() => {
+    if (!oneShip || !lines.some((l) => !l.shipCode)) return;
+    setLines((ls) => ls.map((l) => (l.shipCode ? l : { ...l, shipCode: oneShip.shipCode, ...(isVia(lineFields, 'shipCode') ? linkPatch(lineFields, 'shipCode', oneShip) : {}) })));
+  }, [oneShip?.shipCode, lines.length]); // eslint-disable-line react-hooks/exhaustive-deps
   // Dòng mới lấy sẵn ngày giao, kho, mã giao, TTHH của dòng trên cho nhanh
   const addLine = () => setLines((ls) => {
     const last = ls[ls.length - 1] || {};

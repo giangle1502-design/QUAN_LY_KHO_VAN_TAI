@@ -441,6 +441,12 @@ function Form({ type }) {
   const pickDriver = (v) => { const d = drivers.find((x) => x.idCard === v); setHead((h) => ({ ...h, idCard: v, ...(d ? { driverName: d.name || '', driverPhone: d.phone || '' } : {}) })); };
 
   const parties = type === 'in' && source !== 'SO' ? suppliers : soldto;
+  // Mã giao của khách: chỉ có 1 mã thì luôn mặc định mã đó; nhiều mã thì bắt buộc chọn
+  const shipOpts = useMemo(() => (type === 'out' && head.partyCode ? shipto.filter((s) => s.customerCode === head.partyCode) : []), [type, head.partyCode, shipto]);
+  const shipRequired = shipOpts.length > 1 && order?.type !== 'STO';
+  useEffect(() => {
+    if (shipOpts.length === 1 && head.shipCode !== shipOpts[0].shipCode && !shipto.some((s) => s.shipCode === head.shipCode && s.customerCode === head.partyCode)) setHead((h) => ({ ...h, shipCode: shipOpts[0].shipCode }));
+  }, [shipOpts]); // eslint-disable-line react-hooks/exhaustive-deps
   const changeSource = (v) => {
     setSource(v); setFillNote(''); setErr('');
     setHead((h) => ({ ...h, orderId: '', partyCode: '', partyName: '', refNo: '' }));
@@ -455,6 +461,8 @@ function Form({ type }) {
     if (type === 'in' && source === 'direct' && !head.partyCode.trim()) return setErr('Chọn nhà cung cấp (bấm + để thêm nhà cung cấp mới).');
     if (type === 'in' && source !== 'direct' && !head.orderId) return setErr(`Chọn ${{ PO: 'đơn mua (PO)', STO: 'lệnh chuyển kho (STO)', SO: 'đơn bán (SO) của hàng trả về' }[source]}.`);
     if (type === 'adjust' && !head.reason) return setErr('Chọn lý do điều chỉnh.');
+    if (type === 'out' && shipRequired && !head.shipCode) return setErr(`Khách hàng ${head.partyCode} có ${shipOpts.length} mã giao hàng: chọn mã giao (Giao đến).`);
+    if (type === 'out' && head.shipCode && shipOpts.length && !shipOpts.some((s) => s.shipCode === head.shipCode)) return setErr(`Mã giao ${head.shipCode} không thuộc khách hàng ${head.partyCode}.`);
     if (type === 'out') { const pe = palletError(pal, head, 'out', { managed: palletManaged(wh) }); if (pe) return setErr(pe); }
     // Phiếu nhập: quản trị lập có thể chưa biết loại pallet; thủ kho kiểm tra, chọn khi nhận hàng
     if (type === 'in' && pal.palletMode === 'pallet') { const pe = palletError(pal, head, 'in', { managed: palletManaged(wh) }); if (pe) return setErr(pe + ' (hoặc để thủ kho chọn khi nhận hàng: bỏ chọn Kiện)'); }
@@ -618,11 +626,12 @@ function Form({ type }) {
               {ordPicking && <OrderPicker orders={orders} myWh={warehouses} whCode={whCode} onClose={() => setOrdPicking(false)}
                 onPick={(id, pl, w) => { setOrdPicking(false); pickOrder(id, { plan: pl, wh: w, force: true }); }} />}
               {type === 'out' && (
-                <Field label="Giao đến (Shipto)">
+                <Field label="Giao đến (Shipto)" required={shipRequired}
+                  help={shipOpts.length === 1 ? 'Khách chỉ có 1 mã giao: tự chọn sẵn' : shipRequired ? `Khách có ${shipOpts.length} mã giao: bắt buộc chọn` : ''}>
                   <WithAdd cat="shipto" preset={{ customerCode: head.partyCode, customerName: head.partyName }} onAdded={(id, r) => setH('shipCode', r?.shipCode || id)}>
                     <select value={head.shipCode} onChange={(e) => setH('shipCode', e.target.value)}>
                       <option value="">-- Chọn --</option>
-                      {shipto.filter((s) => s.customerCode === head.partyCode).map((s) => <option key={s.shipCode} value={s.shipCode}>{s.shipCode} – {s.address}</option>)}
+                      {shipOpts.map((s) => <option key={s.shipCode} value={s.shipCode}>{s.shipCode} – {s.address}</option>)}
                     </select>
                   </WithAdd>
                 </Field>
