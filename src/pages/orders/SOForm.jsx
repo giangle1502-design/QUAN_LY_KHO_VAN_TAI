@@ -8,8 +8,8 @@ import { AddFieldButton, ColumnPicker, QuickAdd, WithAdd } from '../../component
 import { dragHeadProps, orderCols } from '../../lib/colOrder';
 import { ErrorBox, Field, Modal } from '../../components/ui';
 import { ItemCode, ItemStockModal } from '../../components/ItemStock';
-import { createOrder, saveOrder, summarizeLines } from '../../lib/orders';
-import { cleanValue, defaultsOf, fillEmptyLinks, linkPatch, visibleFields } from '../../lib/fields';
+import { createOrder, isFinished, ORDER_STATUS, saveOrder, summarizeLines } from '../../lib/orders';
+import { cleanValue, defaultsOf, fillEmptyLinks, isPrivate, linkPatch, visibleFields } from '../../lib/fields';
 import { computeFormulas } from '../../lib/formula';
 import { isUSD, moneyUnit, usesFx, withFx } from '../../lib/currency';
 import { splitSecrets } from '../../lib/orderSecrets';
@@ -32,6 +32,31 @@ const CFG = {
 const BUILTIN_HEAD = ['date', 'company', 'partyCode', 'sales', 'tolerancePct', 'note'];
 const BUILTIN_LINE = ['dueDate', 'warehouse', 'fromWarehouse', 'toWarehouse', 'item', 'itemName', 'qtyKg', 'qtyT', 'shipCode', 'goodsStatus', 'note'];
 const n = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? 0 : Number(v));
+
+// Sửa đơn: liệt kê thay đổi để ghi lịch sử. Trường riêng tư (vd. giá) chỉ ghi "đổi …", không ghi giá trị
+const blank = (v) => v === '' || v == null;
+const same = (a, b) => (blank(a) && blank(b)) || String(a) === String(b)
+  || (!blank(a) && !blank(b) && !Number.isNaN(Number(a)) && !Number.isNaN(Number(b)) && Number(a) === Number(b));
+const show = (v) => (blank(v) ? '(trống)' : typeof v === 'number' ? fmtNum(v, 3) : String(v));
+const LINE_FALLBACK = ['warehouse', 'shipCode', 'dueDate', 'fromWarehouse', 'toWarehouse'];
+function orderChanges(order, head, lines, headFields, lineFields) {
+  const out = [];
+  const one = (f, a, b, pre = '') => {
+    if (!same(a, b)) out.push(isPrivate(f) ? `${pre}đổi ${f.label}` : `${pre}${f.label}: ${show(a)} → ${show(b)}`);
+  };
+  for (const f of headFields) if (f.type !== 'formula' && f.key in head) one(f, order[f.key], head[f.key]);
+  const old = new Map(order.lines.map((l) => [l.no, l]));
+  const lf = lineFields.filter((f) => f.type !== 'formula' && !['qtyKg', 'qtyT', 'itemName'].includes(f.key));
+  for (const l of lines) {
+    const o = l.no != null ? old.get(l.no) : null;
+    if (!o) { out.push(`Thêm dòng ${l.item} ${fmtNum(l.qtyKg, 2)} kg`); continue; }
+    const pre = `Dòng ${o.no} (${o.item}): `;
+    if (!same(o.qtyKg, l.qtyKg)) out.push(`${pre}SL ${fmtNum(n(o.qtyKg), 2)} → ${fmtNum(l.qtyKg, 2)} kg`);
+    for (const f of lf) if (f.key in l) one(f, o[f.key] ?? (LINE_FALLBACK.includes(f.key) ? order[f.key] : ''), l[f.key], pre);
+  }
+  for (const o of order.lines) if (!lines.some((l) => l.no === o.no)) out.push(`Xóa dòng ${o.no} (${o.item})`);
+  return out;
+}
 
 export default function SOForm({ type = 'SO', order, onClose }) {
   const cfg = CFG[type];
@@ -88,6 +113,9 @@ export default function SOForm({ type = 'SO', order, onClose }) {
   const [hiddenCols, setHiddenCols] = usePref(`${type}LineHiddenCols`, []);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  // Sửa đơn đã hoàn tất / đã đóng: bắt buộc ghi lý do
+  const finished = isFinished(order);
+  const [editReason, setEditReason] = useState('');
   // Bấm mã hàng → Xem tồn kho → chọn kho xuất cho dòng (SO: Kho xuất, STO: Kho xuất đi)
   const [stockAt, setStockAt] = useState(null);
   const whKey = sto ? 'fromWarehouse' : 'warehouse';
@@ -183,6 +211,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
     if (!h.company) return setErr(sto ? 'Chọn công ty chủ hàng.' : 'Chọn công ty xuất.');
     if (!sto && !h.partyCode.trim()) return setErr(`Chọn ${cfg.partyLabel}.`);
     if (usd && !(n(h.fxRate) > 0)) return setErr(`Đơn USD: nhập ${fxLabel}.`);
+    if (finished && !editReason.trim()) return setErr('Nhập lý do sửa đơn (đơn đã hoàn tất / đã đóng).');
     const headCustom = {};
     for (const f of headFields.filter((x) => !BUILTIN_HEAD.includes(x.key) && x.type !== 'formula')) {
       // Đơn VNĐ không lưu tỷ giá
@@ -212,6 +241,10 @@ export default function SOForm({ type = 'SO', order, onClose }) {
         dueDate: l.dueDate || '', ...(sto ? { fromWarehouse: l.fromWarehouse, toWarehouse: l.toWarehouse } : { warehouse: l.warehouse || '', shipCode: l.shipCode || '' }),
         goodsStatus: l.goodsStatus || '', note: String(l.note || '').trim(), ...custom });
     }
+    const changes = order ? orderChanges(order, { ...headCustom, company: h.company, date: h.date, partyCode: h.partyCode, note: String(h.note || '').trim(),
+      tolerancePct: h.tolerancePct === '' ? 0 : Number(h.tolerancePct), ...(sto || salesOnly ? {} : { sales: String(h.sales || '').trim().toLowerCase() }) },
+    out, headFields, lineFields) : [];
+    if (finished && !changes.length) return setErr('Chưa có thay đổi nào.');
     // Trường riêng tư (chỉ người được chỉ định xem) lưu riêng ở orderSecrets
     const sp = splitSecrets(headFields, lineFields, headCustom, out);
     const sum = summarizeLines(sp.lines, sto);
@@ -225,7 +258,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
     };
     setBusy(true);
     try {
-      const id = order ? (await saveOrder(order.id, data, { email, name }, sp.secrets), order.id) : await createOrder(data, { email, name }, sp.secrets);
+      const id = order ? (await saveOrder(order.id, data, { email, name }, sp.secrets, { reason: editReason, changes }), order.id) : await createOrder(data, { email, name }, sp.secrets);
       onClose(id);
     } catch (e2) {
       setErr(e2.code === 'permission-denied' ? 'Bạn không có quyền lập/sửa đơn.' : e2.message);
@@ -330,6 +363,13 @@ export default function SOForm({ type = 'SO', order, onClose }) {
   return (
     <Modal title={order ? `Sửa ${order.id}` : `Lập ${cfg.title}`} onClose={() => onClose()} wide>
       <form onSubmit={submit}>
+        {finished && (
+          <div style={{ marginBottom: 10, padding: 10, border: '1px solid var(--amber)', background: 'var(--amber-soft)', borderRadius: 8 }}>
+            Đơn đang <b>{ORDER_STATUS[order.status].label.toLowerCase()}</b>: sửa được giá, khách hàng, thông tin dòng hàng… Số lượng không nhỏ hơn phần {cfg.done.toLowerCase()};
+            tăng số lượng thì đơn {order.status === 'done' ? 'chuyển lại "Đang thực hiện" để giao/nhận tiếp' : 'vẫn giữ trạng thái đã đóng'}. Mọi thay đổi được ghi vào lịch sử đơn.
+            <Field label="Lý do sửa" required><input value={editReason} onChange={(e) => setEditReason(e.target.value)} placeholder="vd. Sai đơn giá, khách đổi mã giao…" /></Field>
+          </div>
+        )}
         <div className="so-section">
           <div className="section-head"><span className="grow">Thông tin chung của đơn</span><AddFieldButton formKey={cfg.head} vias={HEAD_VIAS} /></div>
           <div className="form-grid">

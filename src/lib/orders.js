@@ -68,6 +68,9 @@ export const ORDER_STATUS = {
   cancelled: { label: 'Đã hủy', tone: 'red' },
 };
 export const OPEN_STATUSES = ['open', 'partial'];
+// Đơn đã hoàn tất / đã đóng vẫn sửa được (sai giá, sai thông tin khách…): bắt buộc ghi lý do, lịch sử ghi rõ thay đổi
+export const EDITABLE_STATUSES = [...OPEN_STATUSES, 'done', 'closed'];
+export const isFinished = (o) => ['done', 'closed'].includes(o?.status);
 
 const EPS = 0.001;
 const n = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? 0 : Number(v));
@@ -180,13 +183,15 @@ export function matchOrderLine(order, item, usedKg = {}, moveType = 'out', opts 
 }
 
 // Sửa đơn (kinh doanh / kế toán / quản trị): giữ "đã giao/nhận", không cho đặt ít hơn phần đã làm
-export async function saveOrder(id, patch, user, secrets) {
+// log (không bắt buộc): { reason, changes: ['Đơn giá: 10 → 12', …] } ghi vào lịch sử đơn
+export async function saveOrder(id, patch, user, secrets, log = {}) {
   const ref = doc(db, 'orders', id);
   return runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists()) throw new Error(`Không tìm thấy đơn ${id}.`);
     const cur = snap.data();
-    if (!OPEN_STATUSES.includes(cur.status)) throw new Error('Đơn đã hoàn tất, đóng hoặc hủy: mở lại đơn trước khi sửa.');
+    if (!EDITABLE_STATUSES.includes(cur.status)) throw new Error('Đơn đã hủy: mở lại đơn trước khi sửa.');
+    if (isFinished(cur) && !String(log.reason || '').trim()) throw new Error('Đơn đã hoàn tất / đã đóng: nhập lý do sửa.');
     const old = new Map(cur.lines.map((l) => [l.no, l]));
     let next = n(cur.nextLineNo) || cur.lines.length + 1;
     const lines = patch.lines.map((l) => {
@@ -205,7 +210,9 @@ export async function saveOrder(id, patch, user, secrets) {
     const at = new Date().toISOString();
     tx.update(ref, {
       ...patch, lines, carriers: [...new Set(lines.map((l) => l.carrier).filter(Boolean))], nextLineNo: next, status: statusOf(cur, lines), updatedAt: at, updatedBy: user.email,
-      history: [...(cur.history || []), { at, by: user.email, byName: user.name, action: 'Sửa đơn' }],
+      history: [...(cur.history || []), { at, by: user.email, byName: user.name,
+        action: `${isFinished(cur) ? `Sửa đơn ${ORDER_STATUS[cur.status].label.toLowerCase()}` : 'Sửa đơn'}${log.reason ? `: ${String(log.reason).trim()}` : ''}`,
+        ...(log.changes?.length ? { changes: log.changes } : {}) }],
     });
     writeSecrets(tx, { ...cur, sales: patch.sales ?? cur.sales }, lines, secrets, user.email);
   });

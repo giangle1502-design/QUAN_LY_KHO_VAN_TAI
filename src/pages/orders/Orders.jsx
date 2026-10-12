@@ -358,12 +358,14 @@ function OrderDetail({ o, onClose, onEdit }) {
       )}
 
       <div className="section-head">Lịch sử</div>
-      <table><tbody>{(o.history || []).map((hh, i) => <tr key={i}><td className="nowrap">{fmtTime(hh.at)}</td><td>{hh.action}</td><td className="small">{hh.byName || hh.by}</td></tr>)}</tbody></table>
+      <table><tbody>{(o.history || []).map((hh, i) => <tr key={i}><td className="nowrap">{fmtTime(hh.at)}</td>
+        <td>{hh.action}{hh.changes?.length ? <ul className="small" style={{ margin: '2px 0 0', paddingLeft: 18 }}>{hh.changes.map((c, j) => <li key={j}>{c}</li>)}</ul> : null}</td>
+        <td className="small">{hh.byName || hh.by}</td></tr>)}</tbody></table>
 
       <ErrorBox error={err} />
       {canManage && (
         <div className="form-actions" style={{ flexWrap: 'wrap' }}>
-          {isOpen && <button className="btn" onClick={onEdit}>✏️ Sửa đơn</button>}
+          {o.status !== 'cancelled' && <button className="btn" onClick={onEdit} title={isOpen ? '' : 'Sửa giá, thông tin đơn đã hoàn tất / đã đóng (ghi lý do, lưu lịch sử)'}>✏️ Sửa đơn</button>}
           {isOpen && <input placeholder="Lý do đóng / hủy" value={reason} onChange={(e) => setReason(e.target.value)} />}
           {isOpen && <button className="btn" disabled={!reason.trim() || busy} onClick={() => act('close')} title="Không giao/nhận tiếp phần còn lại">Đóng đơn</button>}
           {isOpen && x.done === 0 && <button className="btn danger" disabled={!reason.trim() || busy} onClick={() => act('cancel')}>Hủy đơn</button>}
