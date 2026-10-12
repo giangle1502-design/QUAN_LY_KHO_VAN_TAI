@@ -1,4 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { db } from '../../firebase';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useCollections, useOpCompany, useOrders } from '../../lib/hooks';
@@ -34,7 +36,9 @@ export default function Allocation() {
   const allocs = allocState.rows;
   const allocated = useMemo(() => allocatedByPoLine(allocs), [allocs]);
   const pos = useMemo(() => orders.filter((o) => o.type === 'PO' && o.status !== 'cancelled' && !o.direct), [orders]);
-  const ctx = { canManage, user, cats, orderMap, orders, allocs, allocated, co };
+  const received = usePoReceipts(pos);
+  useFillReceived(allocs, received, canManage, user);
+  const ctx = { canManage, user, cats, orderMap, orders, allocs, allocated, co, received };
   const nOpenPo = useMemo(() => pos.filter((o) => !co || o.company === co).flatMap((o) => o.lines.filter((l) => n(l.qtyKg) - (allocated.get(poKey(o.id, l.no)) || 0) > 0.001)).length, [pos, allocated, co]);
 
   return (
@@ -46,16 +50,75 @@ export default function Allocation() {
           <button type="button" className={tab === 'chua' ? 'on' : ''} onClick={() => setParams({ tab: 'chua' })}>Hàng mua chưa phân bổ{nOpenPo ? ` (${nOpenPo})` : ''}</button>
         </div>
       </div>
-      <p className="hint">Mỗi dòng PO được chia thành các dòng kế hoạch theo cont. 1 cont có thể gồm nhiều mã hàng (nhiều dòng PO): các mã cùng số cont được gom thành 1 cont, sửa điểm giao một lần ở dòng cont. Dòng <b>giao khách</b> sẽ thành đơn bán (SO) xuất từ nơi nhận hàng, dòng <b>về kho mình</b> thành lệnh chuyển kho (STO) từ nơi nhận hàng tới kho đó. Nơi nhận = kho nhập trên dòng PO (kho cảng / KNQ).</p>
+      <p className="hint">Mỗi dòng PO được chia thành các dòng kế hoạch theo cont. 1 cont có thể gồm nhiều mã hàng (nhiều dòng PO): các mã cùng số cont được gom thành 1 cont, sửa điểm giao một lần ở dòng cont. Dòng <b>giao khách</b> sẽ thành đơn bán (SO) xuất từ nơi nhận hàng, dòng <b>về kho mình</b> thành lệnh chuyển kho (STO) từ nơi nhận hàng tới kho đó. Nơi nhận = kho nhập trên dòng PO (kho cảng / KNQ); hàng đã nhập kho thì tự lấy kho và vị trí đã nhập, không phải chọn lại.</p>
       <ErrorBox error={allocState.error || oErr} />
       {tab === 'chua' ? <OpenPoLines {...ctx} pos={pos} setCo={setCo} /> : <Plan {...ctx} pos={pos} setCo={setCo} />}
     </div>
   );
 }
 
+
+// Hàng của dòng PO đã nhập kho (phiếu nhập theo PO): kho / vị trí thực nhận, key poKey(PO, dòng)
+function usePoReceipts(pos) {
+  const ids = useMemo(() => pos.filter((o) => o.lines.some((l) => n(l.doneKg) > 0)).map((o) => o.id).sort().join(','), [pos]);
+  const [map, setMap] = useState(() => new Map());
+  useEffect(() => {
+    let live = true;
+    const list = ids ? ids.split(',') : [];
+    const chunks = [];
+    for (let i = 0; i < list.length; i += 30) chunks.push(list.slice(i, i + 30));
+    Promise.all(chunks.map((c) => getDocs(query(collection(db, 'movements'), where('orderId', 'in', c))))).then((snaps) => {
+      const m = new Map();
+      for (const s of snaps) for (const d of s.docs) {
+        const mv = d.data();
+        if (mv.type !== 'in' || mv.orderType !== 'PO' || mv.status === 'cancelled') continue;
+        for (const l of mv.lines || []) {
+          const k = poKey(mv.orderId, l.orderLine);
+          const r = m.get(k) || { whs: new Set(), locs: new Set(), kg: 0 };
+          r.whs.add(mv.warehouse);
+          if (l.location) r.locs.add(l.location);
+          r.kg += Math.abs(n(l.kg));
+          m.set(k, r);
+        }
+      }
+      if (live) setMap(m);
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [ids]);
+  return map;
+}
+
+// Kho / vị trí nhận thực tế của dòng PO (chỉ khi nhập về đúng 1 kho, 1 vị trí)
+export function receivedAt(received, a) {
+  const r = received?.get(poKey(a.poId, a.poLine));
+  if (!r || r.whs.size !== 1) return null;
+  return { warehouse: [...r.whs][0], location: r.locs.size === 1 ? [...r.locs][0] : '', kg: r.kg };
+}
+
+// Dòng kế hoạch chưa tạo đơn: hàng đã nhập kho thì lấy luôn kho / vị trí đã nhập, không bắt chọn lại
+function useFillReceived(allocs, received, canManage, user) {
+  const done = useRef(new Set());
+  useEffect(() => {
+    if (!canManage || !received.size) return;
+    const fix = [];
+    for (const a of allocs) {
+      if (a.status !== 'draft' || a.orderId) continue;
+      const r = receivedAt(received, a);
+      if (!r) continue;
+      const patch = {};
+      if (a.fromWarehouse !== r.warehouse) Object.assign(patch, { fromWarehouse: r.warehouse, fromLocation: r.location });
+      else if (!a.fromLocation && r.location) patch.fromLocation = r.location;
+      const key = `${a._id}|${patch.fromWarehouse || ''}|${patch.fromLocation || ''}`;
+      if (Object.keys(patch).length && !done.current.has(key)) { done.current.add(key); fix.push([a, patch]); }
+    }
+    fix.forEach(([a, patch]) => updateRows([a], patch, user).catch(() => {}));
+  }, [allocs, received, canManage]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
 // ---------------------------------------------------------------------------
 // Dòng PO còn phần chưa phân bổ
-function OpenPoLines({ pos, allocated, co, setCo, canManage, user }) {
+function OpenPoLines({ pos, allocated, co, setCo, canManage, user, received }) {
+  const rcv = (o, l) => receivedAt(received, { poId: o.id, poLine: l.no });
   const [q, setQ] = useState('');
   const [all, setAll] = useState(false);
   const [split, setSplit] = useState(null);
@@ -99,7 +162,7 @@ function OpenPoLines({ pos, allocated, co, setCo, canManage, user }) {
               <tr key={poKey(o.id, l.no)} className={pick[poKey(o.id, l.no)] ? 'picked' : ''}>
                 <td>{canManage && left > 0.001 && <input type="checkbox" checked={!!pick[poKey(o.id, l.no)]} onChange={() => togglePick(poKey(o.id, l.no))} />}</td>
                 <td className="mono nowrap">{o.id}</td><td className="mono">{o.refNo}</td><td><b>{o.company}</b></td><td>{o.partyName || o.partyCode}</td>
-                <td className="nowrap">{fmtDate(l.dueDate || o.dueDate)}</td><td>{lineWh(o, l, 'in') || <span className="req">chưa ghi kho nhập</span>}</td>
+                <td className="nowrap">{fmtDate(l.dueDate || o.dueDate)}</td><td>{rcv(o, l) ? <>{rcv(o, l).warehouse}{rcv(o, l).location ? ` · ${rcv(o, l).location}` : ''} <span className="small" style={{ color: 'var(--green)' }}>đã nhập</span></> : lineWh(o, l, 'in') || <span className="req">chưa ghi kho nhập</span>}</td>
                 <td>{l.item}</td><td>{l.itemName}</td><td className="num">{kg(l.qtyKg)}</td><td className="num">{kg(l.doneKg)}</td>
                 <td className="num">{kg(done)}</td><td className="num"><b>{kg(left)}</b><div className="small">{tn(left)}</div></td>
                 <td>{canManage && left > 0.001 && <button className="btn sm primary" onClick={() => setSplit({ o, l, left })}>Phân bổ</button>}</td>
