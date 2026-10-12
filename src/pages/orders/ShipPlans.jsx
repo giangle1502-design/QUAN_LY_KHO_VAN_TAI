@@ -18,6 +18,9 @@ export default function ShipPlans() {
   const canPlan = hasRole('kinh_doanh', 'ke_toan');
   const canOut = hasRole('thu_kho');
   const { rows: plans, error } = usePlans();
+  // Tên Sale phụ trách (đơn chỉ lưu email)
+  const users = useCollection('users').rows;
+  const saleName = (p) => p.salesName || users.find((u) => (u._id || u.email) === p.sales)?.name || p.sales || '';
   const [params, setParams] = useSearchParams();
   const [fStatus, setFStatus] = useState('open');
   const [q, setQ] = useState('');
@@ -50,7 +53,7 @@ export default function ShipPlans() {
       'Khách hàng': p.partyCode, 'Tên khách hàng': p.partyName, 'Mã giao': l.shipCode, 'Địa chỉ giao': l.shipAddress || '',
       'Mã hàng': l.item, 'Tên hàng': l.itemName, 'Kiện/Xá': l.packing || '', 'Kho (theo SO)': l.warehouse || '',
       'SL dự kiến (kg)': Number(l.qtyKg) || 0, 'Đã xuất (kg)': Number(l.doneKg) || 0, 'Còn (kg)': planLeft(l),
-      'Trạng thái': PLAN_STATUS[p.status]?.label || p.status, 'Sale': p.salesName || p.sales || '', 'Ghi chú': p.note || '', 'Phiếu xuất': (p.movementIds || []).join(', '),
+      'Trạng thái': PLAN_STATUS[p.status]?.label || p.status, 'Sale': saleName(p), 'Ghi chú': p.note || '', 'Phiếu xuất': (p.movementIds || []).join(', '),
     }))),
   });
 
@@ -110,7 +113,7 @@ export default function ShipPlans() {
                       <td rowSpan={ls.length}><span className={'badge ' + (PLAN_STATUS[p.status]?.tone || '')}>{PLAN_STATUS[p.status]?.label || p.status}</span>
                         {(p.movementIds || []).length > 0 && <div className="small">{p.movementIds.map((m) => <Link key={m} className="mono" to={`/kho/phieu/${m}/in`} target="_blank" style={{ marginRight: 4 }}>{m}</Link>)}</div>}
                         {p.cancelReason && <div className="small">{p.cancelReason}</div>}</td>
-                      <td rowSpan={ls.length} className="small">{p.salesName || p.sales}</td>
+                      <td rowSpan={ls.length} className="small">{saleName(p)}</td>
                       <td rowSpan={ls.length} style={{ whiteSpace: 'nowrap' }}>
                         {open && canOut && ships.map((s) => (
                           <div key={s}><Link className="btn primary sm" to={`/kho/out?plan=${p.id}${s ? `&ship=${encodeURIComponent(s)}` : ''}`}>📤 Lập phiếu xuất{ships.length > 1 ? ` (${s || 'chưa có mã giao'})` : ''}</Link></div>
