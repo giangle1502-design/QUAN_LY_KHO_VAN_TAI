@@ -16,6 +16,7 @@ import Balance from './Balance';
 import SOForm from './SOForm';
 import { ColumnPicker, WithAdd } from '../../components/FormTools';
 import { displayValue } from '../../components/FieldInput';
+import { moneyUnit } from '../../lib/currency';
 import { usePref } from '../../lib/prefs';
 import { useCollection, usePendingIn } from '../../lib/hooks';
 import { useShortfall } from '../../lib/shortfall';
@@ -118,7 +119,9 @@ function OrderList({ type }) {
   // Trường được xem (bỏ trường riêng tư không được chỉ định), giá trị riêng tư + công thức gộp vào đơn
   const headSeen = useMemo(() => seenFieldsOf(`${fk}Head`, fieldsOf(`${fk}Line`)), [seenFieldsOf, fieldsOf, fk]);
   const lineSeen = useMemo(() => seenFieldsOf(`${fk}Line`, fieldsOf(`${fk}Head`)), [seenFieldsOf, fieldsOf, fk]);
-  const customHead = headSeen.filter((f) => f.custom && !f.hidden);
+  // Trường tự thêm + Đơn vị tiền tệ / Tỷ giá (có sẵn) hiện trên danh sách, chi tiết, Excel
+  const customHead = headSeen.filter((f) => (f.custom || f.fx) && !f.hidden);
+  const fxLists = [lineSeen, headSeen];
   const customLine = lineSeen.filter((f) => f.custom && !f.hidden);
   const { rows: rawRows, error } = useOrders(type);
   const secMap = useOrderSecrets(type);
@@ -158,7 +161,7 @@ function OrderList({ type }) {
     { key: 'refNo', label: 'Số Ecount', cls: 'mono', render: (o) => o.refNo, hideDefault: true },
     { key: 'date', label: 'Ngày tạo đơn', cls: 'nowrap', render: (o) => fmtDate(o.date) },
     ...(sto ? [] : [{ key: 'party', label: meta.partyLabel, cls: 'nowrap', render: (o) => partyText(o) }, { key: 'sales', label: 'Sale phụ trách', cls: 'small', render: (o) => o.sales || '' }]),
-    ...customHead.map((f) => ({ key: f.key, label: f.label, render: (o) => displayValue(f, o[f.key]) })),
+    ...customHead.map((f) => ({ key: f.key, label: f.label, render: (o) => displayValue(f, o[f.key], false, moneyUnit(f, o, fxLists)) })),
     ...(sto ? [{ key: 'from', label: 'Kho xuất', render: (o) => uniqText(o, lineFrom) }, { key: 'to', label: 'Kho nhập', render: (o) => uniqText(o, lineTo) }]
       : [{ key: 'warehouse', label: so ? 'Kho xuất' : 'Kho nhập', render: (o) => uniqText(o, lineWh) }]),
     ...(so ? [{ key: 'ship', label: 'Mã giao', render: (o) => uniqText(o, lineShip) }] : []),
@@ -267,8 +270,11 @@ function OrderDetail({ o, onClose, onEdit }) {
   const [assign, setAssign] = useState(false);
   const so = o.type === 'SO';
   const fk = o.type.toLowerCase();
-  const headCustom = seenFieldsOf(`${fk}Head`, fieldsOf(`${fk}Line`)).filter((f) => f.custom && !f.hidden && o[f.key] !== '' && o[f.key] != null);
-  const lineCustom = seenFieldsOf(`${fk}Line`, fieldsOf(`${fk}Head`)).filter((f) => f.custom && !f.hidden);
+  const headAll = seenFieldsOf(`${fk}Head`, fieldsOf(`${fk}Line`));
+  const lineAll = seenFieldsOf(`${fk}Line`, fieldsOf(`${fk}Head`));
+  const headCustom = headAll.filter((f) => (f.custom || f.fx) && !f.hidden && o[f.key] !== '' && o[f.key] != null);
+  const lineCustom = lineAll.filter((f) => f.custom && !f.hidden);
+  const unitOf = (f) => moneyUnit(f, o, [lineAll, headAll]);
   const canManage = canManageOrders(hasRole, o.type);
   const sto = o.type === 'STO';
   const [moves, setMoves] = useState([]);
@@ -295,7 +301,7 @@ function OrderDetail({ o, onClose, onEdit }) {
       <p>
         <OrderStatus status={o.status} /> {o.refNo ? <> · Số Ecount <b className="mono">{o.refNo}</b></> : null} · Ngày {fmtDate(o.date)}
         {' · '}{meta.partyLabel}: <b>{sto ? partyText(o) : `${o.partyCode} ${o.partyName}`}</b>{o.sales ? <> · Sale: <b>{o.sales}</b></> : null}
-        {headCustom.map((f) => <span key={f.key}> · {f.label}: <b>{displayValue(f, o[f.key])}</b></span>)}
+        {headCustom.map((f) => <span key={f.key}> · {f.label}: <b>{displayValue(f, o[f.key], false, unitOf(f))}</b></span>)}
         {Number(o.tolerancePct) ? ` · Dung sai ${o.tolerancePct}%` : ''}
       </p>
       {o.direct && <p className="small">Đơn mua lập tự động khi <b>nhập kho trực tiếp</b> (hàng về không có PO trước).</p>}
@@ -314,7 +320,7 @@ function OrderDetail({ o, onClose, onEdit }) {
             {sto && <><th className="num">{meta.transit}</th><th className="num">{meta.received}</th></>}<th className="num">{meta.left}</th>{o.type !== 'PO' && <th>Vận tải</th>}<th>Ghi chú</th></tr></thead>
           <tbody>{o.lines.map((l) => (
             <tr key={l.no}><td>{l.no}</td><td className="nowrap">{fmtDate(lineDue(o, l))}</td>{sto ? <><td>{lineFrom(o, l)}</td><td>{lineTo(o, l)}</td></> : <td>{lineWh(o, l) || 'Kho nào cũng được'}</td>}<td>{l.item}</td><td>{l.itemName}</td>
-              {so && <td>{lineShip(o, l)}</td>}<td>{l.goodsStatus || (so ? 'KTC/DGC' : '')}</td>{lineCustom.map((f) => <td key={f.key}>{displayValue(f, l[f.key])}</td>)}<td className="num">{t(l.qtyKg)}</td><td className="num">{t(l.doneKg)}</td>{hasRet && <td className="num">{t(l.returnedKg)}</td>}
+              {so && <td>{lineShip(o, l)}</td>}<td>{l.goodsStatus || (so ? 'KTC/DGC' : '')}</td>{lineCustom.map((f) => <td key={f.key}>{displayValue(f, l[f.key], false, unitOf(f))}</td>)}<td className="num">{t(l.qtyKg)}</td><td className="num">{t(l.doneKg)}</td>{hasRet && <td className="num">{t(l.returnedKg)}</td>}
               {sto && <><td className="num">{t(transitKg(l))}</td><td className="num">{t(l.receivedKg)}</td></>}
               <td className="num"><b>{isOpen ? t(leftKg(l)) : '–'}</b>{pendIn.get(o.id)?.byLine?.[l.no] ? <div className="small" style={{ color: 'var(--amber)' }}>đã lập phiếu chờ nhận {t(pendIn.get(o.id).byLine[l.no])}</div> : null}</td>{o.type !== 'PO' && <td>{l.carrier || <span className="small">–</span>}</td>}<td className="small">{l.note}</td></tr>
           ))}</tbody>

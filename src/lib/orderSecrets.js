@@ -6,6 +6,7 @@ import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
 import { isPrivate } from './fields';
 import { computeFormulas } from './formula';
+import { withFx } from './currency';
 
 export const secretId = (orderId, key) => `${orderId}__${key}`;
 
@@ -133,7 +134,9 @@ export async function syncFieldPrivacy(type, level, key, viewers, salesSees = fa
 // Đơn để hiển thị: gộp giá trị riêng tư được xem + tính trường công thức (dòng trước, phần chung sau)
 export function viewOrder(order, secMap, headFields, lineFields) {
   const o = withSecrets(order, secMap);
-  const lines = (o.lines || []).map((l) => computeFormulas(lineFields, { ...l, qtyT: (Number(l.qtyKg) || 0) / 1000 }, { extraFields: headFields, rowExtra: o }));
+  // Đơn VNĐ: [Tỷ giá] = 1 trong công thức (Thành tiền VNĐ = SL × đơn giá × tỷ giá dùng chung cho đơn VNĐ và USD)
+  const ox = withFx(o);
+  const lines = (o.lines || []).map((l) => computeFormulas(lineFields, { ...l, qtyT: (Number(l.qtyKg) || 0) / 1000 }, { extraFields: headFields, rowExtra: ox }));
   // _raw: đơn gốc, dùng khi ghi lại (không để lọt giá trị riêng tư / công thức vào đơn)
-  return { ...computeFormulas(headFields, o, { lines, lineFields }), lines, _raw: order };
+  return { ...computeFormulas(headFields, ox, { lines, lineFields }), fxRate: o.fxRate, lines, _raw: order };
 }

@@ -11,6 +11,7 @@ import { ItemCode, ItemStockModal } from '../../components/ItemStock';
 import { createOrder, saveOrder, summarizeLines } from '../../lib/orders';
 import { cleanValue, defaultsOf, fillEmptyLinks, linkPatch, visibleFields } from '../../lib/fields';
 import { computeFormulas } from '../../lib/formula';
+import { isUSD, moneyUnit, usesFx, withFx } from '../../lib/currency';
 import { splitSecrets } from '../../lib/orderSecrets';
 import { usePref } from '../../lib/prefs';
 import { vnDate } from '../../lib/trips';
@@ -73,7 +74,8 @@ export default function SOForm({ type = 'SO', order, onClose }) {
   const [defaultCo] = useOpCompany();
   // Đơn mới: lấy giá trị mặc định đã thiết lập ở Quản lý trường
   const [h, setH] = useState(() => {
-    if (order) return { ...order, tolerancePct: order.tolerancePct || '' };
+    // Đơn cũ chưa có đơn vị tiền tệ = VNĐ
+    if (order) return { ...order, tolerancePct: order.tolerancePct || '', ...(sto ? {} : { currency: order.currency || 'VNĐ', fxRate: order.fxRate ?? '' }) };
     const d = defaultsOf(headFields);
     return { partyCode: '', partyName: '', tolerancePct: '', note: '', ...d, company: d.company || defaultCo, date: d.date || vnDate(), sales: d.sales || (role === 'kinh_doanh' ? email : '') };
   });
@@ -156,8 +158,17 @@ export default function SOForm({ type = 'SO', order, onClose }) {
   const total = lines.reduce((s, l) => s + n(l.qtyKg), 0);
   // Trường công thức: tính lại mỗi lần nhập (dòng hàng trước, phần chung sau để dùng SUM)
   // Số lượng (tấn) = kg / 1000, chỉ để xem và dùng trong công thức
-  const lc = lines.map((l) => computeFormulas(lineFields, { ...l, qtyT: l.qtyKg === '' ? '' : n(l.qtyKg) / 1000 }, { extraFields: headFields, rowExtra: h }));
-  const hc = computeFormulas(headFields, h, { lines: lc, lineFields });
+  // Đơn USD: Thành tiền (VNĐ) = số lượng × đơn giá × [Tỷ giá]; đơn VNĐ thì [Tỷ giá] = 1
+  const hx = withFx(h);
+  const lc = lines.map((l) => computeFormulas(lineFields, { ...l, qtyT: l.qtyKg === '' ? '' : n(l.qtyKg) / 1000 }, { extraFields: headFields, rowExtra: hx }));
+  const hc = computeFormulas(headFields, hx, { lines: lc, lineFields });
+  const usd = !sto && isUSD(h);
+  const lists = [lineFields, headFields];
+  const unitOf = (f) => moneyUnit(f, h, lists);
+  // Đơn USD mà có giá nhập tay nhưng chưa có công thức nào nhân tỷ giá → nhắc sửa công thức Thành tiền
+  const fxLabel = headFields.find((f) => f.key === 'fxRate')?.label || 'Tỷ giá (VNĐ/USD)';
+  const fxMissing = usd && lineFields.some((f) => f.type === 'currency') && !lineFields.some((f) => usesFx(f, lists));
+  const shownHead = headFields.filter((f) => f.key !== 'fxRate' || usd);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -165,10 +176,12 @@ export default function SOForm({ type = 'SO', order, onClose }) {
     if (!h.date) return setErr('Nhập ngày tạo đơn.');
     if (!h.company) return setErr(sto ? 'Chọn công ty chủ hàng.' : 'Chọn công ty xuất.');
     if (!sto && !h.partyCode.trim()) return setErr(`Chọn ${cfg.partyLabel}.`);
+    if (usd && !(n(h.fxRate) > 0)) return setErr(`Đơn USD: nhập ${fxLabel}.`);
     const headCustom = {};
     for (const f of headFields.filter((x) => !BUILTIN_HEAD.includes(x.key) && x.type !== 'formula')) {
-      const v = cleanValue(f, h[f.key]);
-      if (f.required && (v === '' || v == null)) return setErr(`Nhập ${f.label}.`);
+      // Đơn VNĐ không lưu tỷ giá
+      const v = f.key === 'fxRate' && !usd ? null : cleanValue(f, h[f.key]);
+      if (f.required && (v === '' || v == null) && (f.key !== 'fxRate' || usd)) return setErr(`Nhập ${f.label}.`);
       headCustom[f.key] = v;
     }
     const out = [];
@@ -235,7 +248,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
     );
     return (
       <div className="cell-add">
-        <FieldInput field={f} value={f.type === 'formula' ? hc[f.key] : h[f.key]} onChange={(v) => setHead(f.key, v)} />
+        <FieldInput field={f} value={f.type === 'formula' ? hc[f.key] : h[f.key]} unit={unitOf(f)} onChange={(v) => setHead(f.key, v)} />
       </div>
     );
   };
@@ -301,7 +314,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
       case 'note': return Number(f.height) > 40 ? <textarea value={l.note} onChange={(e) => set(e.target.value)} /> : <input value={l.note} onChange={(e) => set(e.target.value)} />;
       default: return (
         <div className="cell-add">
-          <FieldInput field={f} value={f.type === 'formula' ? lc[i][f.key] : l[f.key]} onChange={(v) => set(v)} />
+          <FieldInput field={f} value={f.type === 'formula' ? lc[i][f.key] : l[f.key]} unit={unitOf(f)} onChange={(v) => set(v)} />
         </div>
       );
     }
@@ -314,7 +327,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
         <div className="so-section">
           <div className="section-head"><span className="grow">Thông tin chung của đơn</span><AddFieldButton formKey={cfg.head} vias={HEAD_VIAS} /></div>
           <div className="form-grid">
-            {headFields.map((f) => (
+            {shownHead.map((f) => (
               <Field key={f.key} label={f.label} required={f.required} size={f} full={f.type === 'textarea' && !f.width}
                 help={f.link ? `Tự lấy theo ${viaLabel(HEAD_VIAS, f.link.via)}` : f.help}>
                 {headInput(f)}
@@ -355,6 +368,8 @@ export default function SOForm({ type = 'SO', order, onClose }) {
           </div>
           <button type="button" className="btn sm" style={{ marginTop: 6 }} onClick={addLine}>+ Thêm dòng</button>
           <span className="small" style={{ marginLeft: 8 }}>{cfg.hint}</span>
+          {usd && <p className="small" style={{ marginTop: 6 }}>Đơn <b>USD</b>: đơn giá nhập theo USD; Thành tiền (VNĐ) = số lượng × đơn giá × tỷ giá {n(h.fxRate) > 0 ? <b>{fmtNum(n(h.fxRate), 2)}</b> : <b className="req">(chưa nhập tỷ giá)</b>}.</p>}
+          {fxMissing && <p className="small req">Công thức Thành tiền chưa nhân tỷ giá nên đang ra USD. Vào ✎ Sửa trường, sửa công thức thành vd. <b>[Số lượng (tấn)] * [Đơn giá] * [{fxLabel}]</b> (đơn VNĐ tỷ giá tự = 1). Báo cáo vẫn tự quy đổi ra VNĐ.</p>}
         </div>
         <ErrorBox error={err} />
         <div className="form-actions"><button className="btn primary" disabled={busy}>{busy ? 'Đang lưu…' : order ? 'Lưu' : 'Lập đơn'}</button></div>

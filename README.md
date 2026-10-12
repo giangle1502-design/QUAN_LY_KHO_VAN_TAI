@@ -294,6 +294,12 @@ Quản trị và người có quyền **Được thiết lập biểu mẫu** t�
 - Dùng + − * / ( ), SUM (cộng 1 trường của mọi dòng, dùng ở phần chung), ROUND, MIN, MAX, ABS. Phần trăm tính như Excel: VAT 8% = 0,08. Dòng hàng dùng được trường ở phần chung.
 - Kết quả hiện dạng Số / Tiền / Phần trăm, tính lại ngay khi nhập; trên đơn hàng không lưu mà tính lúc hiển thị (bảng, chi tiết, Excel).
 
+## Đơn vị tiền tệ VNĐ / USD và tỷ giá (SO, PO)
+- Phần chung của đơn bán và đơn mua có sẵn **Đơn vị tiền tệ** (mặc định VNĐ) và **Tỷ giá (VNĐ/USD)**. Ô tỷ giá chỉ hiện và bắt buộc khi chọn USD.
+- Đơn USD: giá nhập tay (trường kiểu Tiền, vd. Đơn giá) hiểu là USD, nhập được số lẻ, hiện đơn vị USD.
+- Công thức Thành tiền (VNĐ) dùng chung cho cả 2 loại tiền: `[Số lượng (tấn)] * [Đơn giá] * [Tỷ giá (VNĐ/USD)]`; đơn VNĐ thì tỷ giá tự tính = 1. Form nhắc nếu công thức chưa nhân tỷ giá.
+- Báo cáo (Phân tích bán hàng, Tổng quan) luôn tính tiền bằng VNĐ: trường tiền nào chưa nhân tỷ giá thì đơn USD tự nhân thêm.
+
 ## Sale chỉ thấy đơn của mình, trường chỉ người được chỉ định xem
 - SO/PO có **Sale phụ trách**. Vai trò Kinh doanh chỉ thấy / sửa đơn có Sale phụ trách là mình, trừ người được tích "Kinh doanh: xem đơn của mọi sale" ở Phân quyền. Sale lập đơn thì tự là sale phụ trách. Quản trị có nút "Gán sale cho N đơn cũ" (= người lập đơn).
 - Quản lý trường → biểu mẫu đơn hàng → cột **Người được xem** (chỉ quản trị): chọn vai trò / người. Giá trị trường đó lưu riêng ở `orderSecrets`, firestore.rules chỉ cho những người này và quản trị đọc (không chỉ ẩn trên màn hình). Trường công thức dùng trường riêng tư cũng ẩn với người khác. Đổi người xem thì dữ liệu đã nhập được chuyển theo.

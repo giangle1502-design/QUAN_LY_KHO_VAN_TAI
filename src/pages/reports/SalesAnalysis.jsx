@@ -109,7 +109,7 @@ export default function SalesAnalysis({ wh, co, q }) {
     return (o.lines || []).map((l) => {
       const ordered = n(l.qtyKg);
       const q2 = basis === 'done' ? Math.max(0, n(l.doneKg) - n(l.returnedKg)) : ordered;
-      const { full: amtFull, price } = lineMoney(l);
+      const { full: amtFull, price } = lineMoney(l, o);
       const a = ordered ? amtFull * (q2 / ordered) : 0;
       return {
         d: o.date, m: o.date.slice(0, 7), so: o.id, co: o.company || '', st: o.status, cc: o.partyCode || o.partyName || '', cn: o.partyName || o.partyCode || '',

@@ -84,7 +84,7 @@ export default function Overview({ wh, co, q }) {
         if (!(whOk(w) || (w2 && whOk(w2)))) continue;
         if (!qOk(o.id, o.partyCode, o.partyName, l.item, l.itemName, w, w2)) continue;
         const qty = n(l.qtyKg); const done = n(l.doneKg);
-        const mm = m ? m.lineMoney(l) : { full: 0, price: 0 };
+        const mm = m ? m.lineMoney(l, o) : { full: 0, price: 0 };
         out[t]?.push({
           id: o.id, date: o.date, co: o.company || '', party: o.partyCode || '', partyName: o.partyName || o.partyCode || '', sales: o.sales || '', direct: !!o.direct,
           item: l.item || '', itemName: l.itemName || '', wh: w, wh2: w2, carrier: l.carrier || '', qty, done, left: Math.max(0, qty - done), received: n(l.receivedKg),

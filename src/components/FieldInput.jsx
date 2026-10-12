@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useCollection } from '../lib/hooks';
 import { catalogByKey, refLabel, refValue } from '../catalogs';
@@ -6,8 +6,9 @@ import { QuickAdd } from './FormTools';
 import { fmtDate, fmtNum } from '../lib/utils';
 
 // Ô nhập cho 1 trường theo kiểu dữ liệu
-export default function FieldInput({ field: f, value, onChange, disabled, onPickRef }) {
-  if (f.type === 'formula') return <div className="readonly-val" title="Tự tính theo công thức">{displayValue(f, value) || '–'}</div>;
+// unit: đơn vị tiền của trường kiểu Tiền ('đ' mặc định, 'USD' trên đơn USD)
+export default function FieldInput({ field: f, value, onChange, disabled, onPickRef, unit }) {
+  if (f.type === 'formula') return <div className="readonly-val" title="Tự tính theo công thức">{displayValue(f, value, false, unit) || '–'}</div>;
   if (f.type === 'ref') return <RefInput field={f} value={value} onChange={onChange} disabled={disabled} onPick={onPickRef} />;
   if (f.type === 'multiref') return <MultiRefInput field={f} value={value} onChange={onChange} disabled={disabled} />;
   if (f.type === 'select')
@@ -27,7 +28,7 @@ export default function FieldInput({ field: f, value, onChange, disabled, onPick
     );
   if (f.type === 'checkbox') return <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} disabled={disabled} />;
   if (f.type === 'textarea' || (f.type === 'text' && Number(f.height) > 40 && !f.options?.length)) return <textarea rows={2} value={value ?? ''} onChange={(e) => onChange(e.target.value)} disabled={disabled} />;
-  if (f.type === 'currency') return <MoneyInput value={value} onChange={onChange} disabled={disabled} />;
+  if (f.type === 'currency') return <MoneyInput value={value} onChange={onChange} disabled={disabled} unit={unit} />;
   if (f.type === 'percent')
     return (
       <span className="suffix-input">
@@ -109,21 +110,28 @@ function MultiRefInput({ field: f, value, onChange, disabled }) {
 }
 
 // Tiền: hiện dấu chấm phân cách hàng nghìn khi gõ, lưu số
-function MoneyInput({ value, onChange, disabled }) {
-  const shown = value === '' || value == null ? '' : fmtNum(value);
+// USD: nhập được số lẻ (vd. 1,250.50) — giữ nguyên chữ đang gõ, định dạng lại khi rời ô
+function MoneyInput({ value, onChange, disabled, unit = 'đ' }) {
+  const usd = unit === 'USD';
+  const [typing, setTyping] = useState(null);
+  const shown = typing ?? (value === '' || value == null ? '' : fmtNum(value, usd ? 4 : 0));
   return (
     <span className="suffix-input">
-      <input inputMode="numeric" value={shown} disabled={disabled}
-        onChange={(e) => { const d = e.target.value.replace(/[^\d-]/g, ''); onChange(d === '' || d === '-' ? '' : Number(d)); }} /><b>đ</b>
+      <input inputMode={usd ? 'decimal' : 'numeric'} value={shown} disabled={disabled} onBlur={() => setTyping(null)}
+        onChange={(e) => {
+          const d = e.target.value.replace(usd ? /[^\d.-]/g : /[^\d-]/g, '');
+          if (usd) setTyping(e.target.value);
+          onChange(d === '' || d === '-' || d === '.' || Number.isNaN(Number(d)) ? '' : Number(d));
+        }} /><b>{unit}</b>
     </span>
   );
 }
 
 // Giá trị hiển thị trong bảng / Excel
-export function displayValue(f, v, forExcel) {
+export function displayValue(f, v, forExcel, unit = 'đ') {
   if (v === null || v === undefined || v === '') return '';
-  if (f.type === 'formula') return displayValue({ type: f.resultType || 'number' }, v, forExcel);
-  if (f.type === 'currency') return forExcel ? Number(v) : `${fmtNum(v)} đ`;
+  if (f.type === 'formula') return displayValue({ type: f.resultType || 'number' }, v, forExcel, unit);
+  if (f.type === 'currency') return forExcel ? Number(v) : `${fmtNum(v, unit === 'USD' ? 4 : 0)} ${unit || 'đ'}`;
   if (f.type === 'percent') return forExcel ? Number(v) : `${fmtNum(v, 2)}%`;
   if (f.type === 'datetime') return forExcel ? String(v).replace('T', ' ') : `${fmtDate(String(v).slice(0, 10))} ${String(v).slice(11, 16)}`;
   if (f.type === 'checkbox') return v ? (forExcel ? 'x' : '✓') : '';
