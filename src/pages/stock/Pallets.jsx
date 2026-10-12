@@ -8,7 +8,7 @@ import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
 import { exportSheets } from '../../lib/excel';
 import { vnDate } from '../../lib/trips';
 import { fmtDate, fmtNum } from '../../lib/utils';
-import { MOVE_KINDS, postPalletMove } from '../../lib/pallets';
+import { MOVE_KINDS, palletManaged, postPalletMove } from '../../lib/pallets';
 import { WithAdd } from '../../components/FormTools';
 
 // Quản lý pallet gỗ / nhựa: tồn theo kho, vận tải đang mượn (nhận trả), sổ pallet
@@ -41,7 +41,9 @@ export default function Pallets() {
         </div>
       </div>
       <p className="hint">
-        Pallet xuất kèm hàng chọn trên phiếu xuất (hoặc lúc in phiếu giao hàng): <b>xuất cho khách hàng</b> trừ tồn pallet kho; <b>cho vận tải mượn</b> trừ tồn kho và ghi nợ cho đơn vị vận tải.
+        Đơn hàng chỉ ghi <b>Kiện</b> (có pallet) hoặc <b>Xá</b>. Thủ kho kiểm tra pallet gỗ / nhựa và số pallet khi nhận hàng (phiếu nhập: cộng tồn pallet kho) và trên phiếu xuất (hoặc lúc in phiếu giao hàng):
+        <b> xuất cho khách hàng</b> trừ tồn pallet kho; <b>cho vận tải mượn</b> trừ tồn kho và ghi nợ cho đơn vị vận tải; <b>chuyển theo hàng (STO)</b> trừ kho đi, kho nhận cộng khi nhận hàng.
+        Tồn pallet chỉ tính ở kho có <b>Quản lý pallet</b> ({warehouses.filter(palletManaged).map((w) => w.code).join(', ') || 'chưa có kho nào'}; chỉnh ở <Link to="/dm/warehouses">Danh sách kho</Link>).
         Khi vận tải mang trả, bấm <b>Vận tải trả pallet</b> để nhập lại kho. Mã pallet khai ở <Link to="/dm/pallets">Danh mục → Mã pallet</Link>.
         {!catalog.length && <b style={{ color: 'var(--red)' }}> Chưa có mã pallet nào, hãy tạo mã pallet nhựa / gỗ trước.</b>}
       </p>
@@ -115,7 +117,7 @@ function MoveForm({ init, warehouses, catalog, onClose }) {
           <WithAdd cat="warehouses" onAdded={(id) => set({ warehouse: id })}>
             <select value={f.warehouse} onChange={(e) => set({ warehouse: e.target.value })}>
               <option value="">-- Chọn kho --</option>
-              {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
+              {warehouses.filter((w) => f.kind === 'return' || palletManaged(w)).map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}{palletManaged(w) ? '' : ' (không quản lý pallet)'}</option>)}
             </select>
           </WithAdd>
         </Field>
@@ -167,10 +169,16 @@ function Ledger({ mine, carrierOnly }) {
       const out = [];
       for (const d of mv.docs) {
         const m = d.data();
-        if (m.type !== 'out' || m.palletMode !== 'pallet' || m.status !== 'posted' || !mine.has(m.warehouse)) continue;
+        if (!['in', 'out'].includes(m.type) || m.palletMode !== 'pallet' || m.status !== 'posted' || !mine.has(m.warehouse)) continue;
+        const tracked = m.palletTracked !== false;
         for (const p of m.pallets || []) {
+          if (m.type === 'in') {
+            out.push({ date: m.date, ref: m.id, link: `/kho/phieu/${m.id}/in`, warehouse: m.warehouse, code: p.code, name: p.name, material: p.material,
+              kind: 'slipIn', stock: tracked ? Number(p.qty) : 0, lent: 0, who: `${m.partyCode || ''} ${m.partyName || ''}`.trim(), carrier: '', by: m.confirmedByName || m.createdByName });
+            continue;
+          }
           out.push({ date: m.date, ref: m.id, link: `/kho/phieu/${m.id}/in`, warehouse: m.warehouse, code: p.code, name: p.name, material: p.material,
-            kind: p.to === 'carrier' ? 'lend' : 'customer', stock: -Number(p.qty), lent: p.to === 'carrier' ? Number(p.qty) : 0,
+            kind: p.to === 'carrier' ? 'lend' : p.to === 'transfer' ? 'transfer' : 'customer', stock: tracked ? -Number(p.qty) : 0, lent: p.to === 'carrier' ? Number(p.qty) : 0,
             who: p.to === 'carrier' ? p.carrierName || p.carrier : `${m.partyCode || ''} ${m.partyName || ''}`.trim(), carrier: p.carrier || '', by: m.createdByName });
         }
       }

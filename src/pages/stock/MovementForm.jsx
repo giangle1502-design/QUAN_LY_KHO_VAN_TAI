@@ -14,7 +14,7 @@ import { ErrorBox, Field, Modal } from '../../components/ui';
 import { QuickAdd, WithAdd } from '../../components/FormTools';
 import { ItemCode, ItemStockModal } from '../../components/ItemStock';
 import PalletChoice from '../../components/PalletChoice';
-import { cleanPallets, palletError } from '../../lib/pallets';
+import { cleanPallets, packingMode, palletError, palletManaged } from '../../lib/pallets';
 import { OVER_CAP_CONFIRM, OVER_CAP_MSG, capacityCheck, splitByCapacity } from '../../lib/capacity';
 
 // Thông tin vận tải gắn trên phiếu xuất (SO và STO). Phiếu nhập không cần.
@@ -88,8 +88,14 @@ function Form({ type }) {
   const carriers = useCollection('carriers').rows;
   const drivers = useCollection('drivers').rows;
   const [lines, setLines] = useState(() => [type === 'in' ? newLine() : stockLine()]);
-  // Hình thức xuất: xuất xá / kèm pallet (khách giữ hoặc vận tải mượn)
+  // Kiện (có pallet: gỗ / nhựa, số pallet) / Xá. Đơn chỉ ghi Kiện / Xá; thủ kho chọn loại pallet thực tế
   const [pal, setPal] = useState({ palletMode: '', pallets: [] });
+  // Điền sẵn Kiện / Xá theo dòng đơn (chưa chọn loại pallet); không đè lựa chọn đã có
+  const palFromOrder = (o, keep) => {
+    const mode = packingMode(o, keep);
+    if (!mode) return;
+    setPal((p) => (p.palletMode && (p.palletMode !== mode || p.pallets.some((x) => x.material)) ? p : { palletMode: mode, pallets: [] }));
+  };
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState('');
@@ -155,6 +161,7 @@ function Form({ type }) {
       .map((l) => l.carrier).filter(Boolean))] : [];
     const car = cars.length === 1 ? { carrier: cars[0], carrierName: carriers.find((c) => c.code === cars[0])?.name || '', carrierAuto: true } : { carrier: '', carrierName: '', carrierAuto: false };
     setHead((h) => ({ ...h, orderId: id, ...party, ...(o.company ? { company: o.company } : {}), ...(!h.carrier || h.carrierAuto ? car : {}) }));
+    palFromOrder(o, (l) => inPlan(l) && (!tw || !lineWh(o, l, type) || lineWh(o, l, type) === tw));
     // Nhập theo STO: luôn lấy hàng từ phiếu xuất ở kho đi (mã, lot, NSX, HSD, TTHH, số lượng), không phải nhập lại
     if (type === 'in' && o.type === 'STO') { fillFromTransfer(o, tw); return; }
     setPlan(opts.plan || null);
@@ -211,6 +218,23 @@ function Form({ type }) {
       return;
     }
     const m = new Map();
+    // Pallet đi theo hàng (phiếu xuất STO, "chuyển theo hàng sang kho nhận") trừ phần các phiếu nhập đã nhận
+    const pm = new Map();
+    for (const d of snap.docs) {
+      const mv = d.data();
+      if (ret || mv.status !== 'posted' || mv.palletMode !== 'pallet') continue;
+      if (mv.type === 'out' && tw && mv.lines.every((l) => !mine.has(l.orderLine))) continue;
+      if (mv.type === 'in' && tw && mv.warehouse !== tw) continue;
+      for (const p of mv.pallets || []) {
+        if (mv.type === 'out' && p.to !== 'transfer') continue;
+        const cur = pm.get(p.code) || { code: p.code, name: p.name || '', material: p.material || '', qty: 0, to: 'in', carrier: '', carrierName: '' };
+        cur.qty += (mv.type === 'out' ? 1 : -1) * num(p.qty);
+        pm.set(p.code, cur);
+      }
+    }
+    const palIn = [...pm.values()].filter((p) => p.qty > 0);
+    if (palIn.length) setPal({ palletMode: 'pallet', pallets: palIn });
+    else if (!ret) palFromOrder(o, (l) => mine.has(l.no));
     for (const d of snap.docs) {
       const mv = d.data();
       if (mv.status !== 'posted') continue;
@@ -432,6 +456,8 @@ function Form({ type }) {
     if (type === 'in' && source !== 'direct' && !head.orderId) return setErr(`Chọn ${{ PO: 'đơn mua (PO)', STO: 'lệnh chuyển kho (STO)', SO: 'đơn bán (SO) của hàng trả về' }[source]}.`);
     if (type === 'adjust' && !head.reason) return setErr('Chọn lý do điều chỉnh.');
     if (type === 'out') { const pe = palletError(pal, head); if (pe) return setErr(pe); }
+    // Phiếu nhập: quản trị lập có thể chưa biết loại pallet; thủ kho kiểm tra, chọn khi nhận hàng
+    if (type === 'in' && pal.palletMode === 'pallet') { const pe = palletError(pal, head, 'in'); if (pe) return setErr(pe + ' (hoặc để thủ kho chọn khi nhận hàng: bỏ chọn Kiện)'); }
     // Thông tin vận tải không bắt buộc: bổ sung sau ở Phiếu kho → mở phiếu → Sửa thông tin vận tải
     const out = [];
     for (const [i, l] of lines.entries()) {
@@ -504,6 +530,7 @@ function Form({ type }) {
         reason: head.reason, note: head.note.trim(), lines: out,
         ...(type === 'out' ? Object.fromEntries(Object.keys(EMPTY_TRANSPORT).map((k) => [k, String(head[k] || '').trim()])) : {}),
         ...(type === 'out' ? cleanPallets(pal, head) : {}),
+        ...(type === 'in' ? cleanPallets(pal, head, 'in') : {}),
       });
       setDone(typeof res === 'string' ? res : res.id);
       setDonePO(typeof res === 'string' ? '' : res.orderId);
@@ -630,9 +657,17 @@ function Form({ type }) {
           )}
           {type === 'out' && (
             <div className="full transport-box">
-              <div className="section-head">🪵 Hình thức xuất <span className="req">*</span></div>
-              <PalletChoice value={pal} onChange={setPal} carrier={head.carrier} carrierName={head.carrierName}
+              <div className="section-head">🪵 Hàng Kiện / Xá <span className="req">*</span></div>
+              <PalletChoice value={pal} onChange={setPal} carrier={head.carrier} carrierName={head.carrierName} sto={order?.type === 'STO'} managed={palletManaged(wh)}
                 suggestQty={Math.ceil(lines.reduce((a, l) => a + (Number(l.pallets) || 0), 0)) || ''} />
+            </div>
+          )}
+          {type === 'in' && (
+            <div className="full transport-box">
+              <div className="section-head">🪵 Hàng về Kiện / Xá <span className="small">(chưa biết thì để thủ kho kiểm tra, chọn khi nhận hàng)</span></div>
+              <PalletChoice value={pal} onChange={setPal} kind="in" managed={palletManaged(wh)}
+                suggestQty={Math.ceil(lines.reduce((a, l) => a + (Number(l.pallets) || 0), 0)) || ''} />
+              {pal.palletMode && <button type="button" className="btn sm ghost" onClick={() => setPal({ palletMode: '', pallets: [] })}>Bỏ chọn</button>}
             </div>
           )}
           {(type === 'adjust' || type === 'in' || type === 'out') && (

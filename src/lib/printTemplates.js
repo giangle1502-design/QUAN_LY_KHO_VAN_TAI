@@ -158,7 +158,8 @@ export function fieldDefs(docType, fieldsOf) {
     { g: 'Tổng', label: 'Tổng số bao', key: 'totalBags', type: 'num', dec: 0, get: (d) => lineSum(d, 'bags') },
     { g: 'Tổng', label: 'Số dòng hàng', key: 'lineCount', get: (d) => (m(d).lines || []).length },
     { g: 'Phiếu', label: 'Liên', key: 'copyLabel', get: (d) => d.copyLabel || '' },
-    { g: 'Phiếu', label: 'Hình thức xuất', key: 'palletMode', get: (d) => (m(d).palletMode === 'pallet' ? 'Xuất kèm pallet' : m(d).palletMode === 'xa' ? 'Xuất xá' : '') },
+    { g: 'Phiếu', label: 'Hình thức xuất', key: 'palletMode', get: (d) => (m(d).palletMode === 'pallet' ? 'Kiện (có pallet)' : m(d).palletMode === 'xa' ? 'Xá (không pallet)' : '') },
+    { g: 'Phiếu', label: 'Kiện / Xá', key: 'packing', get: (d) => (m(d).palletMode === 'pallet' ? 'Kiện' : m(d).palletMode === 'xa' ? 'Xá' : '') },
     { g: 'Phiếu', label: 'Pallet xuất kèm', key: 'palletText', get: (d) => d.palletText ?? '' },
     ...catFields(fieldsOf, 'companies', 'Công ty chủ hàng', 'Công ty', (d) => d.co),
     ...catFields(fieldsOf, 'warehouses', 'Kho', 'Kho', (d) => d.wh),
@@ -205,7 +206,18 @@ export function fieldDefs(docType, fieldsOf) {
 }
 
 // ---------- Bộ máy in ----------
-const SPECIAL = { table: norm('BẢNG HÀNG'), signs: norm('CHỮ KÝ') };
+const SPECIAL = { table: norm('BẢNG HÀNG'), signs: norm('CHỮ KÝ'), pallet: norm('BẢNG PALLET') };
+
+// Bảng pallet riêng (hàng Kiện), tách khỏi bảng hàng
+function palletTableHtml(d) {
+  const rows = d.palletRows || [];
+  if (!rows.length) return '';
+  const to = (p) => (p.to === 'carrier' ? `vận tải ${p.carrierName || p.carrier || ''} mượn, trả lại kho` : p.to === 'customer' ? 'khách hàng giữ' : p.to === 'transfer' ? 'chuyển theo hàng sang kho nhận' : '');
+  const showTo = rows.some((p) => to(p));
+  const body = rows.map((p, i) => `<tr><td style="text-align:center">${i + 1}</td><td>${esc(p.code)}</td><td>${esc(p.name || p.material)}</td><td style="text-align:right"><b>${esc(fmtNum(p.qty))}</b></td>${showTo ? `<td>${esc(to(p))}</td>` : ''}</tr>`).join('');
+  const total = rows.reduce((a, p) => a + num(p.qty), 0);
+  return `<p style="margin:8px 0 2px"><b>PALLET KÈM HÀNG</b></p><table class="tpl-lines no-resize"><thead><tr><th>STT</th><th>Mã pallet</th><th>Loại pallet</th><th>Số lượng (cái)</th>${showTo ? '<th>Ghi chú</th>' : ''}</tr></thead><tbody>${body}</tbody><tfoot><tr><td colspan="3"><b>Cộng pallet</b></td><td style="text-align:right"><b>${esc(fmtNum(total))}</b></td>${showTo ? '<td></td>' : ''}</tr></tfoot></table>`;
+}
 
 function valueMap(defs, d, l) {
   const map = new Map();
@@ -337,10 +349,14 @@ export function renderBody(tpl, d, fieldsOf, { preview = false } = {}) {
     const k = norm(name.replace(/<[^>]*>/g, ''));
     if (k === SPECIAL.table) return `\u0001T\u0001`;
     if (k === SPECIAL.signs) return `\u0001S\u0001`;
+    if (k === SPECIAL.pallet) return `\u0001P\u0001`;
     return all;
   });
+  // Mẫu chưa có {{BẢNG PALLET}}: bảng pallet tự đặt ngay dưới bảng hàng (hoặc cuối nội dung)
+  if (['px', 'pn'].includes(tpl.docType) && d.palletRows?.length && !html.includes('\u0001P\u0001')) html = html.includes('\u0001T\u0001') ? html.replace('\u0001T\u0001', '\u0001T\u0001\u0001P\u0001') : `${html}\u0001P\u0001`;
   html = fill(html, lookup, preview);
-  html = html.replace(/\u0001T\u0001/g, () => tableHtml(tpl, d, defs, headMap, preview)).replace(/\u0001S\u0001/g, () => signsHtml(tpl, lookup, preview));
+  html = html.replace(/\u0001T\u0001/g, () => tableHtml(tpl, d, defs, headMap, preview)).replace(/\u0001S\u0001/g, () => signsHtml(tpl, lookup, preview))
+    .replace(/\u0001P\u0001/g, () => palletTableHtml(d));
   return sanitize(html);
 }
 

@@ -2,7 +2,7 @@ import { doc, runTransaction } from 'firebase/firestore';
 import { db } from '../firebase';
 import { catalogByKey } from '../catalogs';
 import { applyOrder, summarizeLines } from './orders';
-import { palletEffects, readPallets } from './pallets';
+import { palletEffects, palletManaged, readPallets } from './pallets';
 
 // ============================================================================
 // Tồn kho: mỗi dòng tồn = 1 document `stock/{kho__vị trí__mã hàng__lot__tình trạng}`
@@ -160,8 +160,13 @@ async function commit(tx, mv, user, at, newOrder, bump) {
   if (orderRef && !orderSnap.exists()) throw new Error(`Không tìm thấy đơn ${mv.orderId}.`);
   if (orderSnap) mv.orderType = orderSnap.data().type;
   const orderUpd = orderRef ? applyOrder({ ...orderSnap.data(), id: mv.orderId }, mv, 1) : null;
-  // Pallet xuất kèm (khách giữ / vận tải mượn): đọc trước, ghi sau cùng
-  const writePallets = mv.type === 'out' ? await readPallets(tx, palletEffects(mv, 1)) : null;
+  // Pallet nhập / xuất kèm hàng: chỉ ghi tồn pallet ở kho có "Quản lý pallet"; đọc trước, ghi sau cùng
+  let writePallets = null;
+  if (mv.type === 'out' || mv.type === 'in') {
+    const whSnap = await tx.get(doc(db, 'warehouses', mv.warehouse));
+    mv.palletTracked = whSnap.exists() ? palletManaged(whSnap.data()) : false;
+    writePallets = await readPallets(tx, palletEffects(mv, 1));
+  }
   await applyEffects(tx, mv, effectsOf(mv, 1), user);
   if (writePallets) writePallets(user, id);
   if (direct) {
@@ -191,7 +196,7 @@ export async function cancelMovement(m, reason, user) {
     const orderSnap = orderRef ? await tx.get(orderRef) : null;
     const orderUpd = orderSnap?.exists() ? applyOrder({ ...orderSnap.data(), id: m.orderId }, m, -1) : null;
     const cur0 = cur.data();
-    const writePallets = cur0.type === 'out' ? await readPallets(tx, palletEffects(cur0, -1)) : null;
+    const writePallets = ['in', 'out'].includes(cur0.type) ? await readPallets(tx, palletEffects(cur0, -1)) : null;
     await applyEffects(tx, { ...m, id: m.id }, effectsOf(m, -1), user);
     if (writePallets) writePallets(user, m.id);
     const at = new Date().toISOString();

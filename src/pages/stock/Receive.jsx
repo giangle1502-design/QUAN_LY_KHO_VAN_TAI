@@ -10,6 +10,8 @@ import { fmtDate, fmtNum } from '../../lib/utils';
 import { Empty, ErrorBox } from '../../components/ui';
 import { InLine, OverCapConfirm, newLine, splitLineAt } from './MovementForm';
 import { OVER_CAP_CONFIRM, OVER_CAP_MSG, capacityCheck } from '../../lib/capacity';
+import PalletChoice from '../../components/PalletChoice';
+import { cleanPallets, packingMode, palletError, palletManaged } from '../../lib/pallets';
 
 // Nhận hàng: quản trị lập và in phiếu nhập trước; thủ kho nhận hàng ngoài hiện trường,
 // nhập số thực nhận, lot, vị trí rồi xác nhận → tồn kho cập nhật (nhập trực tiếp: lập PO theo số thực nhận)
@@ -74,11 +76,23 @@ function ReceiveForm({ id }) {
   const allLocations = useCollection('locations').rows;
   const statuses = useCollection('goodsStatus').rows;
   const pledgees = useCollection('pledgees').rows;
+  const warehouses = useCollection('warehouses').rows;
+  // Hàng về Kiện (pallet gỗ / nhựa, số pallet) hay Xá: thủ kho kiểm tra thực tế
+  const [pal, setPal] = useState({ palletMode: '', pallets: [] });
   useEffect(() => {
     getDoc(doc(db, 'movements', id)).then((s) => {
       const m = s.exists() ? s.data() : null;
       setMv(m);
-      if (m) setLines(m.lines.map((l) => ({ ...newLine(), ...l, plannedKg: l.kg })));
+      if (!m) return;
+      setLines(m.lines.map((l) => ({ ...newLine(), ...l, plannedKg: l.kg })));
+      if (m.palletMode) setPal({ palletMode: m.palletMode, pallets: (m.pallets || []).map((p) => ({ ...p })) });
+      // Phiếu chưa ghi Kiện / Xá: lấy theo dòng đơn (đơn chỉ ghi Kiện / Xá, loại pallet do thủ kho chọn)
+      else if (m.orderId) getDoc(doc(db, 'orders', m.orderId)).then((o) => {
+        if (!o.exists()) return;
+        const nos = new Set(m.lines.map((l) => l.orderLine));
+        const mode = packingMode(o.data(), (l) => nos.has(l.no));
+        if (mode) setPal((p) => (p.palletMode ? p : { palletMode: mode, pallets: [] }));
+      }).catch(() => {});
     }).catch((e) => { setErr(e.message); setMv(null); });
   }, [id]);
   if (mv === undefined) return <p>Đang tải…</p>;
@@ -107,9 +121,11 @@ function ReceiveForm({ id }) {
     }
     if (caps.some((c) => c?.over) && !overOk) return setErr(`${OVER_CAP_MSG}. Chia thành nhiều dòng hoặc tích "${OVER_CAP_CONFIRM}".`);
     if (!out.length) return setErr('Nhập số thực nhận cho ít nhất 1 dòng (hàng không về thì báo quản trị hủy phiếu).');
+    const pe = palletError(pal, mv, 'in');
+    if (pe) return setErr(pe);
     setBusy(true);
     try {
-      const res = await confirmIn(id, out, { email, name });
+      const res = await confirmIn(id, out, { email, name }, cleanPallets(pal, mv, 'in'));
       setDone(typeof res === 'string' ? { id: res } : res);
     } catch (e2) {
       setErr(e2.code === 'permission-denied' ? 'Bạn không có quyền nhận hàng cho kho này.' : e2.message);
@@ -152,6 +168,12 @@ function ReceiveForm({ id }) {
           </div>
         ))}
         <button type="button" className="btn sm" onClick={() => setLines((ls) => [...ls, { ...newLine(), item: ls[ls.length - 1]?.item || '', goodsStatus: ls[ls.length - 1]?.goodsStatus || 'KTC', pledgee: ls[ls.length - 1]?.pledgee || '' }])}>+ Thêm dòng (lot khác)</button>
+      </div>
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div className="section-head">🪵 Hàng về Kiện / Xá <span className="req">*</span></div>
+        <p className="small">Kiểm tra hàng thực tế: hàng Kiện thì chọn pallet gỗ hay nhựa và số pallet{palletManaged(warehouses.find((w) => w.code === mv.warehouse)) ? ' (cộng vào tồn pallet của kho khi xác nhận)' : ''}; hàng rời chọn Xá.</p>
+        <PalletChoice value={pal} onChange={setPal} kind="in" disabled={!pending} managed={palletManaged(warehouses.find((w) => w.code === mv.warehouse))}
+          suggestQty={Math.ceil(lines.reduce((a, l) => a + (num(l.pallets) || 0), 0)) || ''} />
       </div>
       <OverCapConfirm caps={caps} checked={overOk} onChange={setOverOk} />
       <ErrorBox error={err} />

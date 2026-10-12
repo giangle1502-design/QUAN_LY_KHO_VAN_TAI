@@ -127,7 +127,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
   const addLine = () => setLines((ls) => {
     const last = ls[ls.length - 1] || {};
     const b = blankLine();
-    const carry = Object.fromEntries(['dueDate', 'warehouse', 'fromWarehouse', 'toWarehouse', 'shipCode', 'goodsStatus'].map((k) => [k, last[k] || b[k]]));
+    const carry = Object.fromEntries(['dueDate', 'warehouse', 'fromWarehouse', 'toWarehouse', 'shipCode', 'goodsStatus', 'packing'].map((k) => [k, last[k] || b[k]]));
     const nl = { ...b, ...carry };
     return [...ls, { ...nl, ...fillEmptyLinks(lineFields, nl, (via) => (via.startsWith('h:') ? recAt(headFields, via.slice(2), h[via.slice(2)]) : recAt(lineFields, via, nl[via]))) }];
   });

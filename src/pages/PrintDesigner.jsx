@@ -15,6 +15,7 @@ import { norm, today } from '../lib/utils';
 
 const TOKENS = [
   ['{{BẢNG HÀNG}}', '▦ Bảng hàng', 'Vị trí đặt bảng dòng hàng (cột chỉnh ở mục Bảng hàng)'],
+  ['{{BẢNG PALLET}}', '🪵 Bảng pallet', 'Phiếu xuất / nhập hàng Kiện: bảng pallet riêng (mã, loại, số lượng). Không đặt thì tự in ngay dưới bảng hàng'],
   ['{{CHỮ KÝ}}', '✍ Chữ ký', 'Vị trí hàng ô ký tên (chỉnh ở mục Chữ ký)'],
   ['{{#nếu Tên trường}}…{{/nếu}}', '❓ Nếu có', 'Đoạn giữa {{#nếu X}} và {{/nếu}} chỉ in khi trường X có giá trị. Sửa "Tên trường" thành tên trường cần xét.'],
 ];

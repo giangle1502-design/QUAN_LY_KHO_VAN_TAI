@@ -10,7 +10,7 @@ import { loadMovementData } from '../../lib/printData';
 import { TemplatePage, TemplateSheets, useTemplateChoice } from '../../components/PrintTemplate';
 import PalletChoice from '../../components/PalletChoice';
 import { ErrorBox } from '../../components/ui';
-import { palletError, palletText, setSlipPallets } from '../../lib/pallets';
+import { MODE_LABEL, palletError, palletText, palletToText, setSlipPallets } from '../../lib/pallets';
 
 // 3 liên phiếu giao hàng: liên kho, liên vận tải (có dòng pallet), liên khách hàng (không có pallet vận tải mượn)
 const COPIES = [
@@ -125,10 +125,7 @@ export default function PrintMovement({ pick = false }) {
       <table className="print-lines">
         <thead><tr><th>STT</th><th>Mã hàng</th><th>Tên hàng</th><th className="num">Số lượng (kg)</th><th className="num">Số bao</th></tr></thead>
         <tbody>{groups.map((g, i) => <tr key={g.item}><td>{i + 1}</td><td>{g.item}</td><td>{g.itemName}</td><td className="num">{fmtNum(g.kg, 2)}</td><td className="num">{fmtNum(g.bags)}</td></tr>)}
-          {palRows(copy).map((p, i) => (
-            <tr key={`p${i}`} className="print-pallet"><td>{groups.length + i + 1}</td><td>{p.code}</td>
-              <td>{p.name || p.material} · <b>{fmtNum(p.qty)} cái</b> · {p.to === 'carrier' ? `vận tải ${p.carrierName || p.carrier || ''} mượn, trả lại kho` : 'khách hàng giữ'}</td><td className="num"></td><td className="num"></td></tr>
-          ))}</tbody>
+          </tbody>
         <tfoot><tr><td colSpan={3}>Cộng</td><td className="num">{fmtNum(tot('kg'), 2)}<div className="small">= {fmtNum(tot('kg') / 1000, 3, 3)} tấn</div></td><td className="num">{fmtNum(tot('bags'))}</td></tr></tfoot>
       </table>
       ) : pick ? (
@@ -154,6 +151,7 @@ export default function PrintMovement({ pick = false }) {
         <tfoot><tr><td colSpan={m.type === 'move' || m.type === 'status' ? 7 : 6}>Cộng</td><td className="num">{fmtNum(tot('kg'), 2)}<div className="small">= {fmtNum(tot('kg') / 1000, 3, 3)} tấn</div></td><td className="num">{fmtNum(tot('pallets'), 2)}</td><td className="num">{fmtNum(tot('bags'))}</td>{pend && <><td></td><td></td></>}</tr></tfoot>
       </table>
       )}
+      {(summary || m.type === 'in') && <PalletTable m={m} rows={summary ? palRows(copy) : m.palletMode === 'pallet' ? m.pallets || [] : []} />}
       <div className="print-signs">
         {signs.map((s) => <div key={s}><b>{s}</b><br /><span className="small">(Ký, ghi rõ họ tên)</span><div className="sign-space" />{s === 'Người lập phiếu' ? m.createdByName : ''}</div>)}
       </div>
@@ -169,6 +167,25 @@ export default function PrintMovement({ pick = false }) {
   );
 }
 
+// Bảng pallet riêng, tách khỏi bảng hàng (phiếu giao hàng, phiếu nhập)
+function PalletTable({ m, rows }) {
+  if (m.palletMode === 'xa') return <p className="small" style={{ margin: '4px 0' }}>Hàng: <b>{MODE_LABEL.xa}</b></p>;
+  if (!rows.length) return null;
+  return (
+    <>
+      <p style={{ margin: '8px 0 2px' }}><b>PALLET {m.type === 'in' ? 'NHẬP KÈM HÀNG' : 'XUẤT KÈM HÀNG'}</b> <span className="small">(hàng Kiện)</span></p>
+      <table className="print-lines print-pallet-table">
+        <thead><tr><th>STT</th><th>Mã pallet</th><th>Loại pallet</th><th className="num">Số lượng (cái)</th>{m.type !== 'in' && <th>Ghi chú</th>}</tr></thead>
+        <tbody>{rows.map((p, i) => (
+          <tr key={i}><td>{i + 1}</td><td>{p.code}</td><td>{p.name || p.material}{p.name && p.material && !p.name.includes(p.material) ? ` (${p.material})` : ''}</td>
+            <td className="num"><b>{fmtNum(p.qty)}</b></td>{m.type !== 'in' && <td>{palletToText(p)}</td>}</tr>
+        ))}</tbody>
+        <tfoot><tr><td colSpan={3}>Cộng pallet</td><td className="num">{fmtNum(rows.reduce((a, p) => a + (Number(p.qty) || 0), 0))}</td>{m.type !== 'in' && <td></td>}</tr></tfoot>
+      </table>
+    </>
+  );
+}
+
 function TplCopies({ tpl, m, copies, pals }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
@@ -179,8 +196,8 @@ function TplCopies({ tpl, m, copies, pals }) {
     <div className="tpl-pages">
       {copies.map((c) => {
         const ps = pals(c);
-        const lines = [...data.lines, ...ps.map((p) => ({ item: p.code, itemName: `${p.name || p.material} (${p.to === 'carrier' ? `vận tải ${p.carrierName || p.carrier || ''} mượn` : 'khách hàng giữ'})`, kg: '', bags: '', pallets: p.qty, note: `${p.qty} cái` }))];
-        return <TemplateSheets key={c.key} tpl={tpl} data={{ ...data, lines, copyLabel: c.label, palletText: palletText({ palletMode: m.palletMode, pallets: ps }) }} />;
+        // Dòng pallet không trộn vào bảng hàng: in thành bảng pallet riêng ({{BẢNG PALLET}}, hoặc tự đặt ngay dưới bảng hàng)
+        return <TemplateSheets key={c.key} tpl={tpl} data={{ ...data, palletRows: ps, palletModeText: MODE_LABEL[m.palletMode] || '', copyLabel: c.label, palletText: palletText({ palletMode: m.palletMode, pallets: ps }) }} />;
       })}
     </div>
   );
@@ -205,17 +222,17 @@ function SlipPallet({ m, onSaved }) {
     <div className="no-print slip-pallet">
       {!open ? (
         <div className="toolbar">
-          <span>Hình thức xuất: <b>{m.palletMode === 'pallet' ? `Kèm pallet: ${palletText(m)}` : 'Xuất xá'}</b></span>
+          <span>Hàng: <b>{m.palletMode === 'pallet' ? `Kiện, ${palletText(m)}` : MODE_LABEL.xa}</b></span>
           <button className="btn sm" onClick={() => setOpen(true)}>Đổi</button>
         </div>
       ) : (
         <>
-          <b>{m.palletMode ? 'Đổi hình thức xuất' : 'Chọn hình thức xuất trước khi in phiếu giao hàng'}</b>
-          <PalletChoice value={v} onChange={setV} carrier={m.carrier} carrierName={m.carrierName}
+          <b>{m.palletMode ? 'Đổi Kiện / Xá, loại pallet' : 'Kiểm tra hàng Kiện / Xá, loại pallet trước khi in phiếu giao hàng'}</b>
+          <PalletChoice value={v} onChange={setV} carrier={m.carrier} carrierName={m.carrierName} sto={m.orderType === 'STO' || String(m.orderId || '').startsWith('STO')}
             suggestQty={Math.ceil((m.lines || []).reduce((a, l) => a + (Number(l.pallets) || 0), 0)) || ''} />
           <ErrorBox error={err} />
           <div className="toolbar">
-            <button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Đang lưu…' : 'Lưu hình thức xuất'}</button>
+            <button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Đang lưu…' : 'Lưu'}</button>
             {m.palletMode && <button className="btn" onClick={() => setOpen(false)}>Đóng</button>}
           </div>
         </>

@@ -11,7 +11,26 @@ import { fmtNum } from './utils';
 // ============================================================================
 
 export const MATERIALS = ['Pallet nhựa', 'Pallet gỗ'];
-export const PALLET_TO = { customer: 'Khách hàng giữ', carrier: 'Vận tải mượn' };
+export const PALLET_TO = { customer: 'Khách hàng giữ', carrier: 'Vận tải mượn', transfer: 'Chuyển theo hàng sang kho nhận' };
+// Đơn hàng chỉ ghi Kiện (hàng có pallet, chưa biết gỗ hay nhựa) / Xá (hàng rời); thủ kho chọn loại pallet khi nhập, xuất
+export const PACKINGS = ['Kiện', 'Xá'];
+export const MODE_LABEL = { pallet: 'Kiện (có pallet)', xa: 'Xá (không pallet)' };
+
+// Kho có quản lý tồn pallet không: trường "Quản lý pallet" Có / Không; bỏ trống thì kho tên có Đức Hòa, Bãi xe, 3-PL → Có
+const AUTO_MANAGED = /đức\s*hòa|đức\s*hoà|duc\s*hoa|bãi\s*xe|bai\s*xe|3\s*-?\s*pl/i;
+export function palletManaged(wh) {
+  if (!wh) return false;
+  if (wh.managePallets === 'Có') return true;
+  if (wh.managePallets === 'Không') return false;
+  return AUTO_MANAGED.test(`${wh.code || ''} ${wh.name || ''}`);
+}
+
+// Hình thức đóng gói của đơn (các dòng làm ở kho / theo bộ lọc): có dòng Kiện → 'pallet', toàn bộ Xá → 'xa', chưa ghi → ''
+export function packingMode(o, keep = () => true) {
+  const ps = (o?.lines || []).filter(keep).map((l) => l.packing).filter(Boolean);
+  if (!ps.length) return '';
+  return ps.includes('Kiện') ? 'pallet' : 'xa';
+}
 export const MOVE_KINDS = {
   in: 'Nhập pallet (mua / tồn đầu)',
   return: 'Vận tải trả pallet',
@@ -19,20 +38,28 @@ export const MOVE_KINDS = {
   customer: 'Xuất cho khách hàng',
   lend: 'Cho vận tải mượn',
   customerReturn: 'Khách trả pallet',
+  slipIn: 'Nhập kèm hàng Kiện (phiếu nhập)',
+  transfer: 'Chuyển theo hàng sang kho khác (STO)',
 };
 const n = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? 0 : Number(v));
 const clean = (s) => String(s ?? '').trim().replace(/\//g, '_');
 export const palletStockId = (wh, code) => `${clean(wh)}__${clean(code)}`;
 export const palletCarrierId = (carrier, code) => `${clean(carrier)}__${clean(code)}`;
 
-// Pallet của phiếu xuất → biến động tồn kho pallet / số đang mượn (sign = -1 khi hủy)
+// Pallet của phiếu xuất / nhập → biến động tồn kho pallet / số đang mượn (sign = -1 khi hủy)
+// Kho không quản lý pallet (m.palletTracked === false): không ghi tồn pallet kho, chỉ ghi số vận tải mượn
 export function palletEffects(m, sign = 1) {
-  if (m.palletMode !== 'pallet') return [];
+  if (m.palletMode !== 'pallet' || !['in', 'out'].includes(m.type)) return [];
+  const tracked = m.palletTracked !== false;
   const out = [];
   for (const p of m.pallets || []) {
     const q = n(p.qty) * sign;
     if (!p.code || !q) continue;
-    out.push({ kind: 'stock', id: palletStockId(m.warehouse, p.code), base: { warehouse: m.warehouse, code: p.code, name: p.name || '', material: p.material || '' }, d: -q });
+    if (m.type === 'in') {
+      if (tracked) out.push({ kind: 'stock', id: palletStockId(m.warehouse, p.code), base: { warehouse: m.warehouse, code: p.code, name: p.name || '', material: p.material || '' }, d: q });
+      continue;
+    }
+    if (tracked) out.push({ kind: 'stock', id: palletStockId(m.warehouse, p.code), base: { warehouse: m.warehouse, code: p.code, name: p.name || '', material: p.material || '' }, d: -q });
     if (p.to === 'carrier') {
       const c = p.carrier || m.carrier;
       out.push({ kind: 'carrier', id: palletCarrierId(c, p.code), base: { carrier: c, carrierName: p.carrierName || m.carrierName || c, code: p.code, name: p.name || '', material: p.material || '' }, d: q });
@@ -66,27 +93,29 @@ export async function readPallets(tx, effects) {
   };
 }
 
-// Kiểm tra lựa chọn pallet trên phiếu xuất
-export function palletError(v, m) {
-  if (!v.palletMode) return 'Chọn hình thức xuất: xuất xá hoặc xuất kèm pallet.';
+// Kiểm tra lựa chọn pallet trên phiếu xuất / nhập (kind 'in': không có "giao cho ai")
+export function palletError(v, m, kind = 'out') {
+  if (!v.palletMode) return kind === 'in' ? 'Chọn hàng về là Kiện (có pallet) hay Xá (không pallet).' : 'Chọn hình thức xuất: Kiện (có pallet) hay Xá (không pallet).';
   if (v.palletMode !== 'pallet') return '';
   if (!v.pallets?.length) return 'Thêm dòng pallet.';
   for (const [i, p] of v.pallets.entries()) {
+    if (!p.material) return `Pallet dòng ${i + 1}: kiểm tra và chọn pallet gỗ hay pallet nhựa.`;
     if (!p.code) return `Pallet dòng ${i + 1}: chọn mã pallet.`;
-    if (!(n(p.qty) > 0)) return `Pallet dòng ${i + 1}: nhập số lượng.`;
-    if (!p.to) return `Pallet dòng ${i + 1}: chọn xuất cho khách hàng hay vận tải mượn.`;
+    if (!(n(p.qty) > 0)) return `Pallet dòng ${i + 1}: nhập số pallet.`;
+    if (kind === 'in') continue;
+    if (!p.to) return `Pallet dòng ${i + 1}: chọn pallet đi đâu (khách hàng giữ / vận tải mượn / chuyển kho).`;
     if (p.to === 'carrier' && !(p.carrier || m?.carrier)) return `Pallet dòng ${i + 1}: chọn đơn vị vận tải mượn pallet.`;
   }
   return '';
 }
 
 // Ghi gọn chọn lựa pallet để lưu trên phiếu
-export function cleanPallets(v, m) {
+export function cleanPallets(v, m, kind = 'out') {
   if (v.palletMode !== 'pallet') return { palletMode: v.palletMode || '', pallets: [] };
   return {
     palletMode: 'pallet',
     pallets: v.pallets.map((p) => ({
-      code: p.code, name: p.name || '', material: p.material || '', qty: n(p.qty), to: p.to,
+      code: p.code, name: p.name || '', material: p.material || '', qty: n(p.qty), to: kind === 'in' ? 'in' : p.to,
       ...(p.to === 'carrier' ? { carrier: p.carrier || m?.carrier || '', carrierName: p.carrierName || m?.carrierName || '' } : {}),
     })),
   };
@@ -107,7 +136,7 @@ export async function setSlipPallets(id, v, user) {
     const at = new Date().toISOString();
     if (write) write(user, id);
     tx.update(ref, { ...next, updatedAt: at, updatedBy: user.email,
-      history: [...(m.history || []), { at, by: user.email, byName: user.name, action: `Hình thức xuất: ${palletText(next) || 'xuất xá'}` }] });
+      history: [...(m.history || []), { at, by: user.email, byName: user.name, action: `Hình thức xuất: ${next.palletMode === 'pallet' ? `Kiện, ${palletText(next)}` : 'Xá (không pallet)'}` }] });
   });
 }
 
@@ -124,6 +153,12 @@ export async function postPalletMove(mv, user) {
   }
   const ref = doc(collection(db, 'palletMoves'));
   await runTransaction(db, async (tx) => {
+    // Kho không quản lý pallet: không ghi tồn pallet kho (vận tải trả thì chỉ giảm số đang mượn)
+    const whSnap = mv.warehouse ? await tx.get(doc(db, 'warehouses', mv.warehouse)) : null;
+    if (whSnap?.exists() && !palletManaged(whSnap.data())) {
+      if (mv.kind !== 'return') throw new Error(`Kho ${mv.warehouse} không quản lý pallet (Danh sách kho → Quản lý pallet).`);
+      eff.splice(0, eff.length, ...eff.filter((e) => e.kind !== 'stock'));
+    }
     const write = await readPallets(tx, eff);
     write(user, ref.id);
     tx.set(ref, { ...mv, qty: q, id: ref.id, createdAt: new Date().toISOString(), createdBy: user.email, createdByName: user.name });
@@ -133,5 +168,11 @@ export async function postPalletMove(mv, user) {
 
 export function palletText(v) {
   if (v?.palletMode !== 'pallet') return '';
-  return (v.pallets || []).map((p) => `${p.name || p.code} ${fmtNum(p.qty)} cái (${p.to === 'carrier' ? `vận tải ${p.carrierName || p.carrier || ''} mượn` : 'khách hàng giữ'})`).join('; ');
+  return (v.pallets || []).map((p) => `${p.name || p.code} ${fmtNum(p.qty)} cái${palletToText(p) ? ` (${palletToText(p)})` : ''}`).join('; ');
+}
+export function palletToText(p) {
+  if (p.to === 'carrier') return `vận tải ${p.carrierName || p.carrier || ''} mượn, trả lại kho`;
+  if (p.to === 'customer') return 'khách hàng giữ';
+  if (p.to === 'transfer') return 'chuyển theo hàng sang kho nhận';
+  return '';
 }

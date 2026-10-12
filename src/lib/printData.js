@@ -65,7 +65,8 @@ export async function loadMovementData(m) {
         .then((s) => { const rows = s.docs.map((d) => d.data()); return rows.find((r) => r.customerCode === m.partyCode) || rows[0] || null; }).catch(() => null)
       : null,
   ]);
-  return { m, co: co || (company ? { code: company, name: company } : null), wh, trip, party, supplier, order, items, shipto, lines: m.lines || [] };
+  return { m, co: co || (company ? { code: company, name: company } : null), wh, trip, party, supplier, order, items, shipto, lines: m.lines || [],
+    palletRows: m.palletMode === 'pallet' && ['in', 'out'].includes(m.type) ? m.pallets || [] : [] };
 }
 
 // Dòng đề nghị giải chấp gộp theo mã hàng + số CT + vị trí (như bản in gốc)
