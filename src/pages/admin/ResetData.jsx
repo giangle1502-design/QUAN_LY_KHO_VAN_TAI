@@ -20,6 +20,8 @@ const TX = [
   ['trips', 'Chuyến xe (gồm chuyến đã chia xe)'],
   ['tripPhotos', 'Ảnh phiếu giao hàng của chuyến'],
   ['tripPrivate', '3PL của chuyến (GHA)'],
+  ['debtSnapshots', 'Công nợ: số tổng từng ngày (file tuổi nợ MISA)'],
+  ['debtRows', 'Công nợ: chi tiết khách hàng từng ngày'],
   ['counters', 'Bộ đếm số theo ngày (số đề nghị giải chấp…)'],
 ];
 const CATS = CATALOGS.filter((c) => !['users', 'codeRules'].includes(c.key));

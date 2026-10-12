@@ -31,9 +31,10 @@ import Hauling from './pages/transport/Hauling';
 import Driver from './pages/transport/Driver';
 import ResetData from './pages/admin/ResetData';
 import PrintDesigner from './pages/PrintDesigner';
+import Debts from './pages/debts/Debts';
 
 export default function App() {
-  const { user, allowed, isAdmin, isSuper, role, canDesign, hasRole, loading, logout, email } = useApp();
+  const { user, allowed, isAdmin, isSuper, role, canDesign, hasRole, loading, logout, email, seesDebt } = useApp();
   if (loading) return <div className="center">Đang tải…</div>;
   if (!user) return <Login />;
   if (!user.emailVerified) return <VerifyEmail user={user} logout={logout} />;
@@ -67,6 +68,7 @@ export default function App() {
         <Route path="xe/tong-quan" element={<Overview />} />
         <Route path="don-hang" element={<Orders />} />
         <Route path="phan-bo" element={<Allocation />} />
+        {seesDebt && <Route path="cong-no" element={<Debts />} />}
         <Route path="bao-cao" element={<Navigate to="/bao-cao/ton-theo-kho" />} />
         <Route path="bao-cao/:report" element={<Reports />} />
         <Route path="kho/ton" element={<Stock />} />

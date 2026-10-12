@@ -9,7 +9,7 @@ import { REPORTS } from '../pages/reports/Reports';
 import { norm } from '../lib/utils';
 
 export default function Layout() {
-  const { name, email, role, isAdmin, isSuper, can3PL, canDesign, hasRole, logout, settings } = useApp();
+  const { name, email, role, isAdmin, isSuper, can3PL, canDesign, hasRole, logout, settings, seesDebt } = useApp();
   const [open, setOpen] = useState(false);
   const loc = useLocation();
   const orderTab = (k) => ({ isActive }) => (isActive && (new URLSearchParams(loc.search).get('tab') || 'SO') === k ? 'active' : '');
@@ -108,6 +108,10 @@ export default function Layout() {
           <NavLink to="/kho/pallet" onClick={close}><span className="ico">🪵</span>Quản lý pallet</NavLink>
           <NavLink to="/kho/phieu" onClick={close}><span className="ico">🧾</span>Phiếu kho</NavLink>
           {hasRole('thu_kho') && <NavLink to="/kho/ton-dau-ky" onClick={close}><span className="ico">📋</span>Nhập tồn đầu kỳ</NavLink>}
+          {seesDebt && <>
+            <div className="nav-group">Công nợ</div>
+            <NavLink to="/cong-no?tab=tong-hop" onClick={close}><span className="ico">💳</span>Theo dõi công nợ (MISA)</NavLink>
+          </>}
           <div className="nav-group">Báo cáo</div>
           {REPORTS.map(([k, ic, l]) => <NavLink key={k} to={`/bao-cao/${k}`} onClick={close}><span className="ico">{ic}</span>{l}</NavLink>)}
           <div className="nav-group">Danh mục</div>
