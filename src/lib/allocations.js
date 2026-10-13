@@ -13,6 +13,7 @@ import { norm, today } from './utils';
 export const DEST_TYPES = {
   customer: 'Giao khách',
   warehouse: 'Về kho mình',
+  keep: 'Để tồn tại kho nhận',
   pending: 'Chưa chốt',
 };
 
@@ -28,10 +29,11 @@ export const ALLOC_STATUS = {
   done: { label: 'Đã giao', tone: 'green' },
   orderGone: { label: 'Đơn đã hủy / đóng', tone: 'red' },
   cancelled: { label: 'Đã hủy dòng', tone: 'red' },
+  kept: { label: 'Để tồn kho nhận', tone: 'green' },
 };
 export function allocStatus(a, orders) {
   if (a.status === 'cancelled') return 'cancelled';
-  if (!a.orderId) return 'draft';
+  if (!a.orderId) return a.destType === 'keep' ? 'kept' : 'draft';
   const o = orders.get(a.orderId);
   if (!o) return 'ordered';
   const l = (o.lines || []).find((x) => x.no === a.orderLine);
@@ -60,6 +62,7 @@ export function missingForOrder(a) {
   if (a.status === 'cancelled') return 'dòng đã hủy';
   if (!(n(a.qtyKg) > 0)) return 'chưa có số lượng';
   if (!a.fromWarehouse) return 'chưa có nơi nhận (kho lấy hàng)';
+  if (a.destType === 'keep') return 'để tồn tại kho nhận, không cần đơn';
   if (a.destType === 'customer') return a.partyCode ? '' : 'chưa chọn khách hàng';
   if (a.destType === 'warehouse') {
     if (!a.toWarehouse) return 'chưa chọn kho đến';
@@ -91,7 +94,7 @@ export async function addRows(parts, user) {
       bct: po.refNo || '', item: line.item, itemName: line.itemName || '', qtyKg: p.qtyKg, date: p.date || line.dueDate || po.dueDate || '',
       contNo: p.contNo || '', fromWarehouse: p.fromWarehouse || line.warehouse || po.warehouse || '', fromLocation: p.fromLocation || '', toLocation: p.toLocation || '', destType: p.destType || 'pending',
       partyCode: p.partyCode || '', partyName: p.partyName || '', shipCode: p.shipCode || '', toWarehouse: p.toWarehouse || '', carrier: p.carrier || '', note: '',
-      orderId: '', orderType: '', orderLine: null, status: 'draft',
+      orderId: '', orderType: '', orderLine: null, status: 'draft', ...(p.extra || {}),
       createdAt: at, createdBy: user.email, updatedAt: at, updatedBy: user.email,
     });
   }

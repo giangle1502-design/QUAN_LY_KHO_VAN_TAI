@@ -321,6 +321,8 @@ Thay cột "Điểm giao" của sheet COST CONT: mỗi dòng PO (hàng về cả
 - Dòng nháp hủy được (quay lại phần chưa phân bổ); dòng đã có đơn thì sửa / hủy ở đơn. Chi tiết PO có bảng "Kế hoạch phân bổ".
 - Quyền: kinh doanh, kế toán, quản trị (collection `allocations`, nhớ dán lại firestore.rules).
 
+- Hàng mua nội địa (không có cont): bấm **Phân bổ** ở dòng PO → chọn **⚖️ Theo số lượng / đơn bán**. Tick các đơn bán đang mở cùng mã hàng, công ty (tự điền số kg còn cần, sửa được) → dòng kế hoạch gắn luôn vào SO đó; thêm khách chưa có SO nếu cần; phần còn lại về kho: chọn kho nhận = "để tồn tại kho nhận" (không cần đơn), chọn kho khác = lệnh chuyển kho (STO).
+
 ## Kiểm kê, cycle count (/kho/kiem-ke) và điều chỉnh tồn từ Excel
 
 - **Điều chỉnh tồn từ Excel** (/kho/dieu-chinh-excel, nút "⬆ Nhập từ Excel" ở trang Điều chỉnh tồn): cột Công ty, Vị trí, Mã hàng, Lot, Tình trạng, Tăng/Giảm (+/−, hoặc số âm), Số bao, Pallet, Kg. Pallet, kg trống thì tự tính theo quy cách. Dòng giảm phải khớp 1 dòng tồn và không vượt tồn. Ghi thành phiếu DC (150 dòng/phiếu).

@@ -117,7 +117,7 @@ function useFillReceived(allocs, received, canManage, user) {
 
 // ---------------------------------------------------------------------------
 // Dòng PO còn phần chưa phân bổ
-function OpenPoLines({ pos, allocated, co, setCo, canManage, user, received }) {
+function OpenPoLines({ pos, allocated, co, setCo, canManage, user, received, orders, allocs }) {
   const rcv = (o, l) => receivedAt(received, { poId: o.id, poLine: l.no });
   const [q, setQ] = useState('');
   const [all, setAll] = useState(false);
@@ -171,14 +171,121 @@ function OpenPoLines({ pos, allocated, co, setCo, canManage, user, received }) {
           </table>
         )}
       </div>
-      {split && <SplitModal {...split} user={user} onClose={() => setSplit(null)} />}
+      {split && <SplitModal {...split} user={user} orders={orders} allocs={allocs} rcv={rcv(split.o, split.l)} onClose={() => setSplit(null)} />}
       {cont && <ContModal preset={cont} pos={pos} allocated={allocated} user={user} onClose={(ok) => { setCont(null); if (ok) setPick({}); }} />}
     </div>
   );
 }
 
-// Chia 1 dòng PO thành N dòng kế hoạch (mặc định chia đều theo số cont)
-function SplitModal({ o, l, left, user, onClose }) {
+// Chia 1 dòng PO: theo cont (hàng nhập khẩu) hoặc theo số lượng cho từng đơn bán, phần còn lại về kho (hàng mua nội địa)
+function SplitModal(props) {
+  const [mode, setMode] = usePref('alloc-split-mode', 'cont');
+  const { o, l, onClose } = props;
+  const head = (
+    <div className="seg wrap" style={{ marginBottom: 8 }}>
+      <button type="button" className={mode === 'cont' ? 'on' : ''} onClick={() => setMode('cont')}>📦 Theo cont (hàng nhập khẩu)</button>
+      <button type="button" className={mode === 'qty' ? 'on' : ''} onClick={() => setMode('qty')}>⚖️ Theo số lượng / đơn bán (mua nội địa)</button>
+    </div>
+  );
+  return (
+    <Modal title={`Phân bổ ${o.id} – ${l.item}`} onClose={onClose} wide={mode === 'qty'}>
+      {head}
+      {mode === 'qty' ? <QtySplit {...props} /> : <ContSplit {...props} />}
+    </Modal>
+  );
+}
+
+// Hàng mua nội địa: không chia cont. Chia kg cho các đơn bán đang mở (gắn luôn SO), khách chưa có SO, phần còn lại về kho
+function QtySplit({ o, l, left, user, orders, allocs, rcv, onClose }) {
+  const soldto = useCollection('soldto').rows;
+  const whs = useCollection('warehouses').rows.filter((w) => w.active !== false);
+  const fromWh = rcv?.warehouse || lineWh(o, l, 'in') || '';
+  const planned = useMemo(() => {
+    const m = new Map();
+    for (const x of allocs) if (x.orderId && x.status !== 'cancelled') m.set(`${x.orderId}__${x.orderLine}`, (m.get(`${x.orderId}__${x.orderLine}`) || 0) + n(x.qtyKg));
+    return m;
+  }, [allocs]);
+  const sos = useMemo(() => orders.filter((x) => x.type === 'SO' && OPEN_STATUSES.includes(x.status) && x.company === o.company)
+    .flatMap((x) => x.lines.filter((y) => y.item === l.item).map((y) => ({ o: x, l: y, need: Math.max(0, leftKg(y) - (planned.get(`${x.id}__${y.no}`) || 0)) })))
+    .filter((r) => r.need > 0.001)
+    .sort((a, b) => String(a.l.dueDate || a.o.dueDate || '9999').localeCompare(String(b.l.dueDate || b.o.dueDate || '9999'))), [orders, o, l, planned]);
+  const [soKg, setSoKg] = useState({}); // `SO__dòng` → kg ('' = không lấy)
+  const [free, setFree] = useState([]); // giao khách chưa có SO: { partyCode, kg }
+  const [restWh, setRestWh] = useState(fromWh);
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const usedSo = Object.values(soKg).reduce((s, v) => s + n(v), 0);
+  const usedFree = free.reduce((s, r) => s + n(r.kg), 0);
+  const rest = Math.round((left - usedSo - usedFree) * 1000) / 1000;
+  const toggle = (r) => {
+    const k = `${r.o.id}__${r.l.no}`;
+    setSoKg((m) => {
+      if (m[k] !== undefined) { const { [k]: _, ...x } = m; return x; }
+      const avail = Math.max(0, left - Object.values(m).reduce((s, v) => s + n(v), 0) - usedFree);
+      return { ...m, [k]: String(Math.round(Math.min(r.need, avail) * 1000) / 1000) };
+    });
+  };
+  const go = async () => {
+    setErr('');
+    if (rest < -0.001) return setErr(`Tổng chia ${kg(usedSo + usedFree)} kg vượt phần chưa phân bổ ${kg(left)} kg.`);
+    for (const r of free) if (!r.partyCode || !(n(r.kg) > 0)) return setErr('Dòng giao khách chưa có SO: chọn khách và nhập số kg.');
+    if (rest > 0.001 && !restWh) return setErr('Chọn kho nhận phần còn lại.');
+    const parts = [];
+    for (const r of sos) {
+      const v = soKg[`${r.o.id}__${r.l.no}`];
+      if (!(n(v) > 0)) continue;
+      parts.push({ qtyKg: n(v), fromWarehouse: fromWh, date: r.l.dueDate || r.o.dueDate || '', destType: 'customer', partyCode: r.o.partyCode || '', partyName: r.o.partyName || '', shipCode: lineShip(r.o, r.l) || '',
+        extra: { orderId: r.o.id, orderType: 'SO', orderLine: r.l.no, status: 'ordered', attached: true } });
+    }
+    for (const r of free) parts.push({ qtyKg: n(r.kg), fromWarehouse: fromWh, destType: 'customer', partyCode: r.partyCode, partyName: soldto.find((c) => c.code === r.partyCode)?.name || '' });
+    if (rest > 0.001) parts.push(restWh === fromWh ? { qtyKg: rest, fromWarehouse: fromWh, destType: 'keep' } : { qtyKg: rest, fromWarehouse: fromWh, destType: 'warehouse', toWarehouse: restWh });
+    if (!parts.length) return setErr('Chưa chia số lượng nào.');
+    setBusy(true);
+    try { await addAllocations(o, l, parts, user); onClose(); }
+    catch (e) { setErr(e.code === 'permission-denied' ? 'Bạn không có quyền lập kế hoạch phân bổ.' : e.message); setBusy(false); }
+  };
+  return (
+    <>
+      <p>{o.company} · {o.partyName || o.partyCode} · Nơi nhận <b>{fromWh || '–'}</b>{rcv ? ' (đã nhập)' : ''} · Chưa phân bổ <b>{kg(left)} kg</b> ({tn(left)})</p>
+      <h3 style={{ margin: '8px 0 4px' }}>1. Giao cho đơn bán đang mở ({l.item}, công ty {o.company})</h3>
+      {!sos.length ? <p className="small">Không có đơn bán đang mở nào còn thiếu {l.item}.</p> : (
+        <div className="table-wrap"><table>
+          <thead><tr><th></th><th>Số SO</th><th>Khách hàng</th><th>Ngày giao</th><th>Mã giao</th><th className="num">Còn cần (kg)</th><th className="num">Lấy từ PO này (kg)</th></tr></thead>
+          <tbody>{sos.map((r) => { const k = `${r.o.id}__${r.l.no}`; const on = soKg[k] !== undefined; return (
+            <tr key={k} className={on ? 'picked' : ''}><td><input type="checkbox" checked={on} onChange={() => toggle(r)} /></td>
+              <td className="mono">{r.o.id}</td><td>{r.o.partyName || r.o.partyCode}</td><td>{fmtDate(r.l.dueDate || r.o.dueDate)}</td><td>{lineShip(r.o, r.l)}</td>
+              <td className="num">{kg(r.need)}</td>
+              <td className="num">{on && <input type="number" step="any" min="0" style={{ width: 110 }} value={soKg[k]} onChange={(e) => setSoKg((m) => ({ ...m, [k]: e.target.value }))} />}</td></tr>); })}</tbody>
+        </table></div>
+      )}
+      <h3 style={{ margin: '12px 0 4px' }}>2. Giao khách chưa có đơn bán (tạo SO sau ở bảng kế hoạch)</h3>
+      {free.map((r, i) => (
+        <div key={i} className="filters" style={{ marginBottom: 4 }}>
+          <WithAdd cat="soldto" onAdded={(id, rec) => setFree((f) => f.map((x, j) => (j === i ? { ...x, partyCode: rec?.code || id } : x)))}>
+            <select value={r.partyCode} onChange={(e) => setFree((f) => f.map((x, j) => (j === i ? { ...x, partyCode: e.target.value } : x)))}>
+              <option value="">-- Khách hàng --</option>{soldto.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}
+            </select></WithAdd>
+          <input type="number" step="any" min="0" placeholder="kg" style={{ width: 120 }} value={r.kg} onChange={(e) => setFree((f) => f.map((x, j) => (j === i ? { ...x, kg: e.target.value } : x)))} />
+          <button type="button" className="btn sm ghost" onClick={() => setFree((f) => f.filter((_, j) => j !== i))}>✕</button>
+        </div>
+      ))}
+      <button type="button" className="btn sm" onClick={() => setFree((f) => [...f, { partyCode: '', kg: '' }])}>＋ Thêm khách</button>
+      <h3 style={{ margin: '12px 0 4px' }}>3. Phần còn lại: <span style={{ color: rest < -0.001 ? 'var(--red)' : undefined }}>{kg(rest)} kg</span> <span className="small">{tn(rest)}</span></h3>
+      {rest > 0.001 && (
+        <label className="field"><span>Về kho</span>
+          <WithAdd cat="warehouses" onAdded={(id) => setRestWh(id)}><select value={restWh} onChange={(e) => setRestWh(e.target.value)}>
+            <option value="">-- Chọn kho --</option>{whs.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}{w.code === fromWh ? ' (kho nhận, để tồn)' : ''}</option>)}
+          </select></WithAdd>
+          <small className="small">{restWh && restWh === fromWh ? 'Hàng để tồn tại kho nhận, không cần lệnh chuyển kho.' : restWh ? `Tạo lệnh chuyển kho (STO) từ ${fromWh || 'nơi nhận'} về ${restWh}.` : ''}</small></label>
+      )}
+      <ErrorBox error={err} />
+      <div className="form-actions"><button className="btn" onClick={onClose}>Đóng</button><button className="btn primary" disabled={busy} onClick={go}>Tạo dòng kế hoạch</button></div>
+    </>
+  );
+}
+
+// Chia 1 dòng PO thành N dòng kế hoạch (chia đều theo số cont)
+function ContSplit({ o, l, left, user, onClose }) {
   const [count, setCount] = useState(1);
   const [per, setPer] = useState(String(Math.round(left * 1000) / 1000));
   const [conts, setConts] = useState('');
@@ -199,7 +306,7 @@ function SplitModal({ o, l, left, user, onClose }) {
     } catch (e) { setErr(e.code === 'permission-denied' ? 'Bạn không có quyền lập kế hoạch phân bổ.' : e.message); setBusy(false); }
   };
   return (
-    <Modal title={`Phân bổ ${o.id} – ${l.item}`} onClose={onClose}>
+    <>
       <p>{o.company} · {o.partyName || o.partyCode}{o.refNo ? <> · BCT <b>{o.refNo}</b></> : null} · Nơi nhận <b>{lineWh(o, l, 'in') || '–'}</b> · ETA {fmtDate(l.dueDate || o.dueDate)}</p>
       <p>Chưa phân bổ: <b>{kg(left)} kg</b> ({tn(left)})</p>
       <div className="form-grid">
@@ -210,7 +317,7 @@ function SplitModal({ o, l, left, user, onClose }) {
       <p className="small">Tạo {count} dòng × {kg(per)} kg = <b>{kg(total)} kg</b>. Điểm giao để "Chưa chốt", chọn khách hoặc kho đến ở bảng kế hoạch.</p>
       <ErrorBox error={err} />
       <div className="form-actions"><button className="btn" onClick={onClose}>Đóng</button><button className="btn primary" disabled={busy} onClick={go}>Tạo dòng kế hoạch</button></div>
-    </Modal>
+    </>
   );
 }
 
@@ -219,7 +326,7 @@ function SplitModal({ o, l, left, user, onClose }) {
 const FILTERS = {
   draft: 'Chưa tạo đơn',
   tracking: 'Đã tạo đơn, chưa giao xong',
-  done: 'Đã giao',
+  done: 'Đã giao / để tồn kho nhận',
   '': 'Tất cả (trừ dòng đã hủy)',
   cancelled: 'Dòng đã hủy',
 };
@@ -240,7 +347,7 @@ function Plan({ allocs, orderMap, orders, allocated, pos, cats, co, setCo, canMa
       .filter((a) => !co || a.company === co)
       .filter((a) => !dest || a.destType === dest)
       .filter((a) => (filter === 'draft' ? a.st === 'draft' : filter === 'tracking' ? ['ordered', 'partial', 'orderGone'].includes(a.st)
-        : filter === 'done' ? a.st === 'done' : filter === 'cancelled' ? a.st === 'cancelled' : a.st !== 'cancelled'))
+        : filter === 'done' ? ['done', 'kept'].includes(a.st) : filter === 'cancelled' ? a.st === 'cancelled' : a.st !== 'cancelled'))
       .filter((a) => !f || norm([a.poId, a.bct, a.item, a.itemName, a.contNo, a.fromWarehouse, a.partyCode, a.partyName, a.shipCode, a.toWarehouse, a.orderId, a.carrier, a.note].join(' ')).includes(f))
       .sort((x, y) => String(x.date || '9999').localeCompare(String(y.date || '9999')) || String(x.poId).localeCompare(String(y.poId)) || String(x.createdAt).localeCompare(String(y.createdAt)));
   }, [allocs, orderMap, co, dest, filter, q]);
@@ -259,7 +366,7 @@ function Plan({ allocs, orderMap, orders, allocated, pos, cats, co, setCo, canMa
     try {
       const linked = g.rows.filter((a) => a.orderId && a.st !== 'cancelled');
       if ('carrier' in patch && linked.length) await setCarrier(linked, patch.carrier, user);
-      const drafts = g.rows.filter((a) => a.st === 'draft');
+      const drafts = g.rows.filter((a) => ['draft', 'kept'].includes(a.st));
       if (drafts.length) await updateRows(drafts, patch, user);
     } catch (e) { setErr(e.code === 'permission-denied' ? 'Bạn không có quyền sửa kế hoạch phân bổ.' : e.message); }
   };
@@ -336,7 +443,7 @@ function Plan({ allocs, orderMap, orders, allocated, pos, cats, co, setCo, canMa
             </tr></thead>
             <tbody>{groups.map((g) => {
               const rowProps = (a, sub) => ({
-                key: a._id, a, sub, edit: canManage && a.st === 'draft', canManage, cats, whs,
+                key: a._id, a, sub, edit: canManage && ['draft', 'kept'].includes(a.st), canManage, cats, whs,
                 checked: sel.has(a._id), onCheck: () => toggle(a._id), save: (p) => save(a, p), setQty: (v) => setQty(a, v),
                 onCancel: () => cancel(a), onRemove: () => remove(a), onAttach: () => setAttach(a),
                 onDetach: () => detachFromOrder(a, user).catch((e) => setErr(e.message)),
@@ -411,7 +518,7 @@ function SharedCells({ v, edit, editCarrier = edit, save, cats, whs }) {
         <WithAdd cat="warehouses" onAdded={(id) => save({ toWarehouse: id, toLocation: '' })}><select value={v.toWarehouse || ''} onChange={(e) => save({ toWarehouse: e.target.value, toLocation: '' })}>
           <option value="">-- Kho đến --</option>{whs.filter((w) => w.code !== v.fromWarehouse).map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
         </select></WithAdd>
-      ) : v.destType === 'customer' ? <>{v.partyCode}{v.partyName ? <div className="small">{v.partyName}</div> : null}</> : v.destType === 'warehouse' ? v.toWarehouse : <span className="small">–</span>}
+      ) : v.destType === 'customer' ? <>{v.partyCode}{v.partyName ? <div className="small">{v.partyName}</div> : null}</> : v.destType === 'warehouse' ? v.toWarehouse : v.destType === 'keep' ? <span className="small">Ở lại {v.fromWarehouse || 'kho nhận'}</span> : <span className="small">–</span>}
         {mixed(v.destType === 'warehouse' ? 'toWarehouse' : 'partyCode')}
         {v.destType === 'warehouse' && <LocCell wh={whOf(v.toWarehouse)} value={v.toLocation} edit={edit} locs={locs} onChange={(x) => save({ toLocation: x })} mixed={v.mixed?.toLocation} />}</td>
       <td>{edit && v.destType === 'customer' && v.partyCode ? (
@@ -445,7 +552,7 @@ function LocCell({ wh, value, edit, locs, onChange, mixed }) {
 // Dòng tiêu đề của 1 cont nhiều mã hàng: sửa điểm giao một lần cho cả cont
 function ContRow({ g, canManage, cats, whs, checked, onCheck, save, onAdd }) {
   const v = contView(g.rows);
-  const drafts = g.rows.filter((a) => a.st === 'draft');
+  const drafts = g.rows.filter((a) => ['draft', 'kept'].includes(a.st));
   const edit = canManage && drafts.length === g.rows.length;
   const total = g.rows.reduce((s, a) => s + n(a.qtyKg), 0);
   const sts = [...new Set(g.rows.map((a) => a.st))];
@@ -488,7 +595,7 @@ function AllocRow({ a, sub, edit, canManage, cats, whs, checked, onCheck, save, 
       </td>
       <td className="nowrap">
         {canManage && a.st === 'draft' && a.destType !== 'warehouse' && <button className="btn sm" title="Gắn vào dòng đơn bán sale đã lập" onClick={onAttach}>Gắn SO</button>}
-        {canManage && a.st === 'draft' && <button className="btn sm ghost" title="Hủy dòng kế hoạch" onClick={onCancel}>✕</button>}
+        {canManage && ['draft', 'kept'].includes(a.st) && <button className="btn sm ghost" title="Hủy dòng kế hoạch" onClick={onCancel}>✕</button>}
         {canManage && a.attached && a.st === 'ordered' && <button className="btn sm ghost" title="Bỏ gắn khỏi đơn bán" onClick={onDetach}>Bỏ gắn</button>}
         {canManage && a.st === 'cancelled' && <button className="btn sm ghost" onClick={onRemove}>🗑</button>}
       </td>
