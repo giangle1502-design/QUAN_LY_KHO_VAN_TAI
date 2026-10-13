@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
-import { useCollection, useOrders, useStock } from './hooks';
+import { useCollection, useOrders, useStock, useWaitingOut } from './hooks';
 import { leftKg } from './orders';
 
 const num = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? 0 : Number(v));
@@ -22,7 +22,10 @@ export function usePendingRelease() {
 }
 
 // stock: dòng tồn; orders: đơn đang mở; locked: Set tình trạng bị khóa xuất (HTC); pending: Map stockId → kg chờ duyệt
-export function computeShortfall({ stock, orders, locked, pending = new Map() }) {
+// waiting: phiếu xuất đã lập nhưng chờ giải chấp (useWaitingOut): phần đơn đó đã có phiếu, hàng của phiếu đã giữ chỗ
+// → không tính là thiếu nữa (tránh đề nghị giải chấp lần 2), xử lý ở tab Chờ giải chấp
+export function computeShortfall({ stock, orders, locked, pending = new Map(), waiting = new Map() }) {
+  const heldKg = (r) => waiting.byStock?.get(r._id)?.kg || 0;
   const m = new Map();
   const get = (co, wh, item, nm) => {
     const k = shortKey(co, wh, item);
@@ -32,8 +35,8 @@ export function computeShortfall({ stock, orders, locked, pending = new Map() })
   for (const o of orders) {
     if (o.type !== 'SO') continue;
     for (const l of o.lines || []) {
-      const left = leftKg(l);
-      if (left <= 0) continue;
+      const left = leftKg(l) - (waiting.get(o.id)?.byLine?.[l.no] || 0);
+      if (left <= 0.001) continue;
       const x = get(l.company || o.company || '', l.warehouse || o.warehouse || '', l.item, l.itemName);
       x.so += left; x.orders.add(o.id);
     }
@@ -43,18 +46,20 @@ export function computeShortfall({ stock, orders, locked, pending = new Map() })
     const x = m.get(k);
     if (!x) continue;
     if (!x.itemName && r.itemName) x.itemName = r.itemName;
+    const kg = num(r.kg) - heldKg(r);
     if (locked.has(r.goodsStatus)) {
       const held = pending.get(r._id) || 0;
-      x.htc += num(r.kg); x.held += held;
-      if (r.goodsStatus === 'HTC') x.lots.push({ ...r, free: r3(num(r.kg) - held) });
-    } else x.usable += num(r.kg);
+      x.htc += kg; x.held += held;
+      if (r.goodsStatus === 'HTC') x.lots.push({ ...r, kg, free: r3(kg - held) });
+    } else x.usable += kg;
   }
   // Đơn chưa ghi kho: so với tồn của công ty ở mọi kho
   for (const x of m.values()) {
     if (x.warehouse) continue;
     for (const r of stock) {
       if ((r.company || '') !== x.company || r.item !== x.item) continue;
-      if (locked.has(r.goodsStatus)) { x.htc += num(r.kg); x.held += pending.get(r._id) || 0; } else x.usable += num(r.kg);
+      const kg = num(r.kg) - heldKg(r);
+      if (locked.has(r.goodsStatus)) { x.htc += kg; x.held += pending.get(r._id) || 0; } else x.usable += kg;
     }
   }
   return [...m.values()].map((x) => {
@@ -81,10 +86,11 @@ export function useShortfall(wh = '') {
   const { rows: orders } = useOrders('SO', true);
   const statuses = useCollection('goodsStatus').rows;
   const pending = usePendingRelease();
+  const waiting = useWaitingOut();
   const rows = useMemo(() => {
     const locked = new Set(statuses.filter((s) => s.allowOutbound === false).map((s) => s.code));
     if (!statuses.length) locked.add('HTC');
-    return computeShortfall({ stock, orders: wh ? orders.map((o) => ({ ...o, lines: o.lines.filter((l) => (l.warehouse || o.warehouse) === wh) })) : orders, locked, pending });
-  }, [stock, orders, statuses, pending, wh]);
+    return computeShortfall({ stock, orders: wh ? orders.map((o) => ({ ...o, lines: o.lines.filter((l) => (l.warehouse || o.warehouse) === wh) })) : orders, locked, pending, waiting });
+  }, [stock, orders, statuses, pending, waiting, wh]);
   return { rows, loading };
 }

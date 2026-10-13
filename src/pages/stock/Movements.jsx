@@ -5,6 +5,8 @@ import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useOpCompany, useOpWarehouse } from '../../lib/hooks';
 import { MOVE_TYPES, cancelMovement } from '../../lib/stock';
+import { revertMovementFromPlan } from '../../lib/shipPlans';
+import { MVT, MVT_GROUPS, moveCodes, signedTotal, stepOf, wasPosted } from '../../lib/moveCodes';
 import { fmtTime, vnDate } from '../../lib/trips';
 import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum } from '../../lib/utils';
@@ -13,13 +15,28 @@ import { Empty, ErrorBox, Modal } from '../../components/ui';
 import { WithAdd } from '../../components/FormTools';
 
 const addDays = (ymd, n) => { const d = new Date(ymd + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
-const tot = (m, k) => (m.lines || []).reduce((s, l) => s + (Number(l[k]) || 0), 0);
+// Số lượng có dấu (nhập +, xuất −); chuyển vị trí / đổi tình trạng không đổi tổng tồn → hiện ± số lượng
+const qtyCell = (m, k, cancel) => {
+  const v = signedTotal(m, k, cancel);
+  // Phiếu chưa ghi tồn (chờ nhận / chờ giải chấp / hủy trước khi ghi): số lượng nhạt, chưa tính vào tồn
+  const live = cancel || m.status === 'posted' || (m.status === 'cancelled' && wasPosted(m));
+  if (Math.abs(v) < 1e-9) {
+    const raw = (m.lines || []).reduce((a, l) => a + Math.abs(Number(l[k]) || 0), 0);
+    return raw ? <span className="small">± {fmtNum(raw)}</span> : '';
+  }
+  const txt = `${v > 0 ? '+' : '−'}${fmtNum(Math.abs(v))}`;
+  return live ? <b style={{ color: v > 0 ? 'var(--green)' : 'var(--red)' }}>{txt}</b> : <span className="small" title="Chưa ghi vào tồn kho">({txt})</span>;
+};
+const mvtText = (m, cancel) => moveCodes(m, cancel).join('/');
+const STEP_FILTERS = [['', 'Mọi tình trạng'], ['doing', 'Đang làm (chưa hoàn thành)'], ['done', 'Hoàn thành'], ['cancelled', 'Đã hủy']];
 
 export default function Movements() {
   const { inMyWarehouses } = useApp();
   const [wh, setWh] = useOpWarehouse();
   const [range, setRange] = useState({ from: addDays(vnDate(), -30), to: vnDate() });
   const [type, setType] = useState('');
+  const [fStep, setFStep] = useState('');
+  const [showMvt, setShowMvt] = useState(false);
   const [co, setCo] = useOpCompany();
   const [q, setQ] = useState('');
   const [rows, setRows] = useState([]);
@@ -34,19 +51,24 @@ export default function Movements() {
   const list = useMemo(() => {
     const f = q.trim().toLowerCase();
     return rows
-      .filter((m) => inMyWarehouses(m.warehouse) && (!wh || m.warehouse === wh) && (!type || m.type === type) && (!co || m.company === co || (m.lines || []).some((l) => l.company === co)))
-      .filter((m) => !f || [m.id, m.tripId, m.plate, m.driverName, m.carrierName, m.orderId, m.orderRef, m.partyCode, m.partyName, ...(m.lines || []).flatMap((l) => [l.item, l.lot, l.location])].join(' ').toLowerCase().includes(f))
+      .filter((m) => inMyWarehouses(m.warehouse) && (!wh || m.warehouse === wh) && (!type || m.type === type) && (!fStep || (fStep === 'cancelled' ? m.status === 'cancelled' : fStep === 'doing' ? ['pending', 'wait_release'].includes(m.status) : m.status === 'posted')) && (!co || m.company === co || (m.lines || []).some((l) => l.company === co)))
+      .filter((m) => !f || [m.id, ...moveCodes(m), ...(m.status === 'cancelled' ? moveCodes(m, true) : []), m.tripId, m.plate, m.driverName, m.carrierName, m.orderId, m.orderRef, m.partyCode, m.partyName, ...(m.lines || []).flatMap((l) => [l.item, l.lot, l.location])].join(' ').toLowerCase().includes(f))
       .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-  }, [rows, inMyWarehouses, wh, type, q, co]);
+  }, [rows, inMyWarehouses, wh, type, q, co, fStep]);
+  // Phiếu đã ghi tồn rồi mới hủy: thêm 1 dòng đảo (mã hủy, số lượng ngược dấu) như SAP
+  const view = useMemo(() => list.flatMap((m) => (m.status === 'cancelled' && wasPosted(m) ? [{ m }, { m, rev: true }] : [{ m }])), [list]);
   const current = open && rows.find((m) => m.id === open);
 
   const exportExcel = () => {
     const out = [];
-    list.forEach((m) => m.lines.forEach((l) => out.push({
-      'Số phiếu': m.id, Loại: MOVE_TYPES[m.type]?.label, 'Ngày': m.date, Kho: m.warehouse, 'Công ty': m.company || '', 'Chuyến xe': m.tripId, 'Số xe': m.plate || '', 'Đơn vị vận tải': m.carrierName || m.carrier || '', 'Tài xế': m.driverName || '', 'CCCD tài xế': m.idCard || '', 'ĐT tài xế': m.driverPhone || '', 'Đơn SO/PO': m.orderId || '', 'Số Ecount': m.orderRef || '',
+    view.forEach(({ m, rev }) => m.lines.forEach((l) => out.push({
+      'Số phiếu': m.id, Movetype: mvtText({ ...m, lines: [l] }, rev), 'Diễn giải movetype': moveCodes({ ...m, lines: [l] }, rev).map((c) => MVT[c]?.label).join(', '),
+      Loại: MOVE_TYPES[m.type]?.label, 'Ngày': rev ? String(m.cancelledAt || '').slice(0, 10) : m.date, Kho: m.warehouse, 'Công ty': m.company || '', 'Chuyến xe': m.tripId, 'Số xe': m.plate || '', 'Đơn vị vận tải': m.carrierName || m.carrier || '', 'Tài xế': m.driverName || '', 'CCCD tài xế': m.idCard || '', 'ĐT tài xế': m.driverPhone || '', 'Đơn SO/PO': m.orderId || '', 'Số Ecount': m.orderRef || '',
       'Mã KH/NCC': m.partyCode, 'Tên KH/NCC': m.partyName, 'Mã hàng': l.item, 'Tên hàng': l.itemName, Lot: l.lot,
       'Vị trí': l.location, 'Đến vị trí': l.toLocation || '', 'Tình trạng': l.goodsStatus, 'Tình trạng mới': l.toStatus || '',
-      'Số bao': l.bags, Pallet: l.pallets, Kg: l.kg, 'Lý do': m.reason, 'Trạng thái': m.status === 'cancelled' ? 'Đã hủy' : m.status === 'pending' ? 'Chờ nhận hàng' : m.status === 'wait_release' ? 'Chờ giải chấp' : '',
+      'Số bao': signedTotal({ ...m, lines: [l] }, 'bags', rev) || Number(l.bags) || 0, Pallet: signedTotal({ ...m, lines: [l] }, 'pallets', rev) || Number(l.pallets) || 0,
+      'Kg (+ nhập / − xuất)': signedTotal({ ...m, lines: [l] }, 'kg', rev) || Number(l.kg) || 0, 'Lý do': rev ? m.cancelReason : m.reason,
+      'Tình trạng': rev ? 'Dòng hủy (đảo tồn)' : stepOf(m).title,
       'Người lập': m.createdByName || m.createdBy,
     })));
     exportSheets(`Phieu_kho_${range.from}_${range.to}`, { 'Phiếu kho': out.length ? out : [{ 'Số phiếu': '' }] });
@@ -54,7 +76,7 @@ export default function Movements() {
 
   return (
     <div>
-      <div className="page-head"><h1>🧾 Phiếu kho</h1><button className="btn" onClick={exportExcel}>⬇ Excel</button></div>
+      <div className="page-head"><h1>🧾 Phiếu kho</h1><div className="actions"><button className="btn" onClick={() => setShowMvt(true)}>ⓘ Bảng mã movetype</button><button className="btn" onClick={exportExcel}>⬇ Excel</button></div></div>
       <div className="filters">
         <input type="date" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} />
         <span>→</span>
@@ -65,35 +87,71 @@ export default function Movements() {
           <option value="">Tất cả loại phiếu</option>
           {Object.entries(MOVE_TYPES).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
         </select>
-        <input type="search" placeholder="Tìm số phiếu, mã hàng, lot, khách…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <select value={fStep} onChange={(e) => setFStep(e.target.value)}>
+          {STEP_FILTERS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+        </select>
+        <input type="search" placeholder="Tìm số phiếu, movetype, mã hàng, lot, khách…" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
       <ErrorBox error={error} />
       <div className="table-wrap">
         {!list.length ? <Empty /> : (
           <table>
-            <thead><tr><th>Số phiếu</th><th>Loại</th><th>Ngày</th><th>Kho</th><th>Công ty</th><th>Số xe / chuyến</th><th>Đơn</th><th>Khách / NCC</th><th>Mặt hàng</th>
-              <th className="num">Số bao</th><th className="num">Kg</th><th>Người lập</th><th></th></tr></thead>
+            <thead><tr><th>Số phiếu</th><th title="Mã nghiệp vụ kiểu SAP, bấm ⓘ Bảng mã movetype để xem">MVT</th><th>Loại</th><th>Ngày</th><th>Tình trạng</th><th>Kho</th><th>Công ty</th><th>Số xe / chuyến</th><th>Đơn</th><th>Khách / NCC</th><th>Mặt hàng</th>
+              <th className="num">Số bao</th><th className="num" title="Nhập vào +, xuất đi −">Kg (±)</th><th>Người lập</th><th></th></tr></thead>
             <tbody>
-              {list.map((m) => (
-                <tr key={m.id} onClick={() => setOpen(m.id)} style={{ cursor: 'pointer', opacity: m.status === 'cancelled' ? 0.5 : 1 }}>
-                  <td className="mono nowrap">{m.id}</td><td className="nowrap">{MOVE_TYPES[m.type]?.icon} {MOVE_TYPES[m.type]?.label}</td>
-                  <td className="nowrap">{fmtDate(m.date)}</td><td>{m.warehouse}</td><td>{m.company || [...new Set((m.lines || []).map((l) => l.company).filter(Boolean))].join(', ')}</td><td className="mono">{m.plate ? <span className="plate">{m.plate}</span> : m.tripId}</td><td className="mono">{m.orderId}</td>
+              {view.map(({ m, rev }) => {
+                const st = stepOf(m);
+                if (rev) return (
+                  <tr key={m.id + '#rev'} onClick={() => setOpen(m.id)} style={{ cursor: 'pointer', background: 'var(--red-bg, #fff5f5)' }}>
+                    <td className="mono nowrap">{m.id}</td><td className="mono nowrap" title={moveCodes(m, true).map((c) => `${c}: ${MVT[c]?.label}`).join('\n')}><b>{mvtText(m, true)}</b></td>
+                    <td className="nowrap">↩ Hủy {MOVE_TYPES[m.type]?.label.toLowerCase()}</td><td className="nowrap">{fmtDate(String(m.cancelledAt || '').slice(0, 10))}</td>
+                    <td className="nowrap"><span className="badge red">↩ Đảo tồn</span></td><td>{m.warehouse}</td><td colSpan={4} className="small">{m.cancelReason}</td>
+                    <td>{[...new Set(m.lines.map((l) => l.item))].join(', ')}</td>
+                    <td className="num">{qtyCell(m, 'bags', true)}</td><td className="num">{qtyCell(m, 'kg', true)}</td><td className="small">{m.cancelledBy}</td><td></td>
+                  </tr>
+                );
+                return (
+                <tr key={m.id} onClick={() => setOpen(m.id)} style={{ cursor: 'pointer', opacity: m.status === 'cancelled' ? 0.6 : 1 }}>
+                  <td className="mono nowrap">{m.id}</td><td className="mono nowrap" title={moveCodes(m).map((c) => `${c}: ${MVT[c]?.label}`).join('\n')}><b>{mvtText(m)}</b></td>
+                  <td className="nowrap">{MOVE_TYPES[m.type]?.icon} {MOVE_TYPES[m.type]?.label}</td>
+                  <td className="nowrap">{fmtDate(m.date)}</td>
+                  <td className="nowrap" title={st.title} onClick={(e) => e.stopPropagation()}>{m.status === 'pending' ? <Link className={'badge ' + st.tone} to={`/kho/nhan-hang/${m.id}`}>{st.label}</Link>
+                    : m.status === 'wait_release' ? <Link className={'badge ' + st.tone} to="/kho/giai-chap">{st.label}</Link>
+                    : <span className={'badge ' + st.tone}>{st.label}</span>}</td><td>{m.warehouse}</td><td>{m.company || [...new Set((m.lines || []).map((l) => l.company).filter(Boolean))].join(', ')}</td><td className="mono">{m.plate ? <span className="plate">{m.plate}</span> : m.tripId}</td><td className="mono">{m.orderId}</td>
                   <td>{m.partyName || m.partyCode}</td><td>{[...new Set(m.lines.map((l) => l.item))].join(', ')}</td>
-                  <td className="num">{fmtNum(tot(m, 'bags'))}</td><td className="num">{fmtNum(tot(m, 'kg'))}</td>
+                  <td className="num">{qtyCell(m, 'bags')}</td><td className="num">{qtyCell(m, 'kg')}</td>
                   <td className="small">{m.createdByName || m.createdBy}</td>
-                  <td className="nowrap" onClick={(e) => e.stopPropagation()}>{m.status === 'cancelled' ? <span className="badge red">Đã hủy</span>
-                    : m.status === 'pending' ? <Link className="badge amber" to={`/kho/nhan-hang/${m.id}`}>Chờ nhận hàng</Link>
-                    : m.status === 'wait_release' ? <><Link className="badge amber" to="/kho/giai-chap">Chờ giải chấp</Link> <Link className="btn sm" to={`/kho/phieu/${m.id}/soan`} target="_blank">📋 Soạn hàng</Link></>
+                  <td className="nowrap" onClick={(e) => e.stopPropagation()}>{m.status === 'cancelled' ? null
+                    : m.status === 'pending' ? <Link className="btn sm" to={`/kho/nhan-hang/${m.id}`}>📥 Nhận hàng</Link>
+                    : m.status === 'wait_release' ? <Link className="btn sm" to={`/kho/phieu/${m.id}/soan`} target="_blank">📋 Soạn hàng</Link>
                     : m.type === 'in' ? <Link className="btn sm" to={`/kho/phieu/${m.id}/nhan`} target="_blank">🏷️ In nhãn</Link>
                     : m.type === 'out' ? <Link className="btn sm" to={`/kho/phieu/${m.id}/soan`} target="_blank">📋 Soạn hàng</Link> : null}</td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
       {current && <Detail m={current} onClose={() => setOpen(null)} />}
+      {showMvt && <MvtTable onClose={() => setShowMvt(false)} />}
     </div>
+  );
+}
+
+// Bảng tra cứu movetype
+export function MvtTable({ onClose }) {
+  return (
+    <Modal title="Bảng mã movetype (kiểu SAP)" onClose={onClose}>
+      <p className="small">Mỗi phiếu kho có 1 mã nghiệp vụ. Hủy phiếu đã ghi tồn tạo thêm 1 dòng mã hủy với số lượng ngược dấu. Số lượng: <b style={{ color: 'var(--green)' }}>+ nhập vào</b>, <b style={{ color: 'var(--red)' }}>− xuất đi</b>; chuyển vị trí, đổi tình trạng không đổi tổng tồn (±).</p>
+      <table>
+        <thead><tr><th>Nhóm</th><th>Mã</th><th>Nghiệp vụ</th><th>Dấu SL</th></tr></thead>
+        <tbody>{MVT_GROUPS.flatMap(([g, cs]) => cs.map((c, i) => (
+          <tr key={c}>{!i && <td rowSpan={cs.length}><b>{g}</b></td>}<td className="mono"><b>{c}</b></td><td>{MVT[c].label}</td>
+            <td className="num">{MVT[c].sign > 0 ? '+' : MVT[c].sign < 0 ? '−' : '±'}</td></tr>
+        )))}</tbody>
+      </table>
+    </Modal>
   );
 }
 
@@ -104,11 +162,21 @@ function Detail({ m, onClose }) {
   const [busy, setBusy] = useState(false);
   const cancel = async () => {
     setErr(''); setBusy(true);
-    try { await cancelMovement(m, reason, { email, name }); } catch (e) { setErr(e.message); }
+    try {
+      await cancelMovement(m, reason, { email, name });
+      // Phiếu xuất lập từ dự kiến xuất: trả lại số lượng cho dự kiến để lập phiếu khác
+      if (m.type === 'out' && m.planId) {
+        try { await revertMovementFromPlan(m.planId, m, { email, name }); }
+        catch (e2) { setErr(`Đã hủy phiếu nhưng chưa cập nhật được dự kiến xuất ${m.planId}: ${e2.message}`); }
+      }
+    } catch (e) { setErr(e.message); }
     setBusy(false);
   };
   return (
     <Modal title={`${MOVE_TYPES[m.type]?.label} ${m.id}`} onClose={onClose} wide>
+      <p>Movetype <b className="mono">{moveCodes(m).join('/')}</b> ({moveCodes(m).map((c) => MVT[c]?.label).join(', ')})
+        {m.status === 'cancelled' && wasPosted(m) && <> · hủy: <b className="mono">{moveCodes(m, true).join('/')}</b></>}
+        {' · '}<span className={'badge ' + stepOf(m).tone}>{stepOf(m).label}</span></p>
       <p>
         Ngày {fmtDate(m.date)} · Kho {m.warehouse}{m.tripId ? ` · Chuyến ${m.tripId}` : ''}{m.orderId ? ` · Đơn ${m.orderId}${m.orderRef ? ` (${m.orderRef})` : ''}` : ''}
         {m.partyCode || m.partyName ? ` · ${m.partyCode} ${m.partyName}` : ''}{m.shipCode ? ` · giao ${m.shipCode}` : ''}

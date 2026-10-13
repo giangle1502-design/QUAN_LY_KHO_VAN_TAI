@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
-import { useCollection, useOrders } from '../../lib/hooks';
+import { useCollection, useOrders, useWaitingOut } from '../../lib/hooks';
 import { OPEN_STATUSES, leftKg, lineShip, lineWh } from '../../lib/orders';
 import { OPEN_PLAN, PLAN_STATUS, createPlan, planLeft, plannedByLine, updatePlan, usePlans } from '../../lib/shipPlans';
 import { exportSheets } from '../../lib/excel';
@@ -18,6 +18,16 @@ export default function ShipPlans() {
   const canPlan = hasRole('kinh_doanh', 'ke_toan');
   const canOut = hasRole('thu_kho');
   const { rows: plans, error } = usePlans();
+  // Phiếu xuất đã lập nhưng chờ giải chấp hàng HTC (chưa trừ SO): khóa nút lập phiếu để không lập trùng
+  const waitOut = useWaitingOut();
+  const { rows: openSO } = useOrders('SO', true);
+  const soMap = useMemo(() => new Map(openSO.map((o) => [o.id, o])), [openSO]);
+  // Phần SO còn lập phiếu xuất được cho 1 dòng dự kiến = SO còn phải giao − phiếu xuất đang chờ giải chấp
+  const soFree = (p, l) => {
+    const o = soMap.get(p.orderId);
+    const ol = o?.lines?.find((x) => x.no === l.orderLine);
+    return ol ? leftKg(ol) - (waitOut.get(p.orderId)?.byLine?.[l.orderLine] || 0) : 0;
+  };
   // Tên Sale phụ trách (đơn chỉ lưu email)
   const users = useCollection('users').rows;
   const saleName = (p) => p.salesName || users.find((u) => (u._id || u.email) === p.sales)?.name || p.sales || '';
@@ -96,6 +106,10 @@ export default function ShipPlans() {
                 const open = OPEN_PLAN.includes(p.status);
                 // Mỗi mã giao lập 1 phiếu xuất
                 const ships = [...new Set(ls.filter((l) => planLeft(l) > 0.001).map((l) => l.shipCode || ''))];
+                const waitIds = waitOut.byPlan?.get(p.id) || [];
+                const soWait = waitOut.get(p.orderId)?.ids || [];
+                // Mã giao không còn gì lập phiếu được (đã có phiếu chờ giải chấp / SO đã giao đủ, đã đóng)
+                const blocked = (sc) => waitOut.loaded && !ls.some((l) => (l.shipCode || '') === sc && planLeft(l) > 0.001 && soFree(p, l) > 0.001);
                 return ls.map((l, i) => (
                   <tr key={`${p.id}#${i}`} >
                     {!i && <>
@@ -111,12 +125,16 @@ export default function ShipPlans() {
                     <td className="num">{Number(l.doneKg) ? kg(l.doneKg) : ''}</td>
                     {!i && <>
                       <td rowSpan={ls.length}><span className={'badge ' + (PLAN_STATUS[p.status]?.tone || '')}>{PLAN_STATUS[p.status]?.label || p.status}</span>
+                        {waitIds.length > 0 && <div><Link className="badge amber" to="/kho/giai-chap" title={`Phiếu xuất chờ giải chấp: ${waitIds.join(', ')}`}>⏳ Chờ giải chấp ({waitIds.length})</Link></div>}
                         {(p.movementIds || []).length > 0 && <div className="small">{p.movementIds.map((m) => <Link key={m} className="mono" to={`/kho/phieu/${m}/in`} target="_blank" style={{ marginRight: 4 }}>{m}</Link>)}</div>}
                         {p.cancelReason && <div className="small">{p.cancelReason}</div>}</td>
                       <td rowSpan={ls.length} className="small">{saleName(p)}</td>
                       <td rowSpan={ls.length} style={{ whiteSpace: 'nowrap' }}>
-                        {open && canOut && ships.map((s) => (
-                          <div key={s}><Link className="btn primary sm" to={`/kho/out?plan=${p.id}${s ? `&ship=${encodeURIComponent(s)}` : ''}`}>📤 Lập phiếu xuất{ships.length > 1 ? ` (${s || 'chưa có mã giao'})` : ''}</Link></div>
+                        {open && canOut && ships.map((s) => (blocked(s)
+                          ? <div key={s}><span className="btn sm" aria-disabled="true" style={{ opacity: 0.5, cursor: 'not-allowed' }}
+                            title={soWait.length ? `Đơn ${p.orderId} đã lập đủ phiếu xuất, đang chờ giải chấp hàng HTC: ${soWait.join(', ')}` : `Đơn ${p.orderId} không còn phần nào để xuất (đã giao đủ hoặc đã đóng)`}>
+                            {soWait.length ? '⏳ Đã lập phiếu · chờ giải chấp' : '📤 SO không còn hàng phải giao'}{ships.length > 1 ? ` (${s || 'chưa có mã giao'})` : ''}</span></div>
+                          : <div key={s}><Link className="btn primary sm" to={`/kho/out?plan=${p.id}${s ? `&ship=${encodeURIComponent(s)}` : ''}`}>📤 Lập phiếu xuất{ships.length > 1 ? ` (${s || 'chưa có mã giao'})` : ''}</Link></div>
                         ))}
                         {open && canPlan && p.status === 'open' && <button className="btn sm" onClick={() => setEdit(p)}>✎ Sửa</button>}
                         {open && canPlan && p.status === 'open' && <button className="btn sm danger" onClick={() => cancel(p)}>Hủy</button>}

@@ -70,3 +70,24 @@ export async function applyMovementToPlan(planId, mv, user) {
     });
   });
 }
+
+// Hủy phiếu xuất lập từ dự kiến: trả lại số đã xuất cho dòng dự kiến, dự kiến mở lại để lập phiếu khác
+export async function revertMovementFromPlan(planId, mv, user) {
+  const ref = doc(db, 'shipPlans', planId);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) return;
+    const p = snap.data();
+    if (p.status === 'cancelled' || !(p.movementIds || []).includes(mv.id)) return;
+    const byLine = {};
+    for (const l of mv.lines || []) if (l.orderLine != null) byLine[l.orderLine] = (byLine[l.orderLine] || 0) + Math.abs(n(l.kg));
+    const lines = (p.lines || []).map((l) => {
+      const sub = Math.min(byLine[l.orderLine] || 0, n(l.doneKg));
+      if (sub > 0) byLine[l.orderLine] -= sub;
+      return sub > 0 ? { ...l, doneKg: Math.round((n(l.doneKg) - sub) * 1000) / 1000 } : l;
+    });
+    const any = lines.some((l) => n(l.doneKg) > 0.001);
+    tx.update(ref, { lines, status: any ? 'partial' : 'open', movementIds: (p.movementIds || []).filter((x) => x !== mv.id), doneAt: null,
+      updatedAt: nowISO(), updatedBy: user.email });
+  });
+}

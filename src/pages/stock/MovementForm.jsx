@@ -334,6 +334,21 @@ function Form({ type }) {
   }, [ordersLoading, orders, items.length, pendIn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setH = (k, v) => setHead((h) => ({ ...h, [k]: v }));
+  // Đổi kho: phiếu nhập giữ nguyên mã hàng, số lượng đã có (theo PO / nhập tay), chỉ bỏ vị trí của kho cũ để chọn vị trí kho mới;
+  // phiếu theo đơn chưa có dòng nào thì điền lại theo đơn cho kho mới. Phiếu xuất / chuyển: dòng tồn thuộc kho cũ nên chọn lại (theo đơn: FIFO lại)
+  const changeWh = (code) => {
+    setOpWh(code);
+    setFillNote('');
+    if (type === 'in') {
+      if (order && order.type === 'STO') { setLines([newLine()]); if (code) fillFromTransfer(order, code); return; }
+      if (lines.some((l) => l.item)) { setLines((ls) => ls.map((l) => ({ ...l, location: '' }))); return; }
+      if (order && code) { pickOrder(order.id, { wh: code, force: true }); return; }
+      setLines([newLine()]);
+      return;
+    }
+    setLines([stockLine()]);
+    if (type === 'out' && order && code) setAutoFill(order.id);
+  };
   // Chọn kho từ bảng tồn của một mã hàng; đổi kho thì bỏ các dòng của kho cũ
   const pickFromItemStock = (code, picked) => {
     setStockItem('');
@@ -600,8 +615,8 @@ function Form({ type }) {
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="form-grid">
           <Field label="Kho" required>
-            <WithAdd cat="warehouses" onAdded={(id) => { setOpWh(id); setLines([type === 'in' ? newLine() : stockLine()]); }}>
-              <select value={whCode} onChange={(e) => { setOpWh(e.target.value); setLines([type === 'in' ? newLine() : stockLine()]); }}>
+            <WithAdd cat="warehouses" onAdded={(id) => changeWh(id)}>
+              <select value={whCode} onChange={(e) => changeWh(e.target.value)}>
                 <option value="">-- Chọn kho --</option>
                 {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
               </select>

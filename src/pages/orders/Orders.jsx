@@ -18,7 +18,7 @@ import { ColumnPicker, WithAdd } from '../../components/FormTools';
 import { displayValue } from '../../components/FieldInput';
 import { moneyUnit } from '../../lib/currency';
 import { usePref } from '../../lib/prefs';
-import { useCollection, usePendingIn } from '../../lib/hooks';
+import { useCollection, usePendingIn, useWaitingOut } from '../../lib/hooks';
 import { useShortfall } from '../../lib/shortfall';
 import { dragHeadProps, orderCols } from '../../lib/colOrder';
 
@@ -50,7 +50,8 @@ function ShortBanner({ co }) {
 
 // Nút lập phiếu kho theo đơn: SO/STO → phiếu xuất kho (thủ kho), PO/STO/SO trả về → phiếu nhập kho (quản trị lập, thủ kho nhận hàng)
 // pend: phiếu nhập đã lập theo đơn, chờ thủ kho nhận ({ ids, byLine }) → trừ vào phần còn phải nhập
-export function MoveButtons({ o, sm, pend }) {
+// wait: phiếu xuất đã lập theo đơn, chờ giải chấp hàng HTC ({ ids, byLine }) → trừ vào phần còn phải xuất
+export function MoveButtons({ o, sm, pend, wait }) {
   const { hasRole, isAdmin, inMyWarehouses } = useApp();
   if (!hasRole('thu_kho') || o.status === 'cancelled') return null;
   const x = orderTotals(o);
@@ -67,10 +68,14 @@ export function MoveButtons({ o, sm, pend }) {
   const canIn = isAdmin && (o.type === 'PO' ? OPEN_STATUSES.includes(o.status) && x.left > 0 && mine('in', leftKg) : o.type === 'STO' && x.transit > 0 && mine('in', transitKg));
   // Phiếu đã lập (kể cả chờ thủ kho nhận) đủ số của đơn → làm mờ nút, chỉ ra các phiếu đang chờ
   const inFull = canIn && !mine('in', (l) => (inNeed(l) > 0.001 ? 1 : 0));
+  const canOut = ['SO', 'STO'].includes(o.type) && OPEN_STATUSES.includes(o.status) && x.left > 0 && mine('out', leftKg);
+  // Phiếu xuất đã lập đủ nhưng còn chờ giải chấp (chưa trừ đơn) → làm mờ nút, tránh người khác lập trùng
+  const outFull = canOut && !!wait?.ids?.length && !mine('out', (l) => (leftKg(l) - (wait.byLine?.[l.no] || 0) > 0.001 ? 1 : 0));
   return (
     <>
-      {['SO', 'STO'].includes(o.type) && OPEN_STATUSES.includes(o.status) && x.left > 0 && mine('out', leftKg) &&
-        <Link className={cls} onClick={stop} to={`/kho/out?order=${o.id}`}>📤 Lập phiếu xuất kho</Link>}
+      {canOut && !outFull && <Link className={cls} onClick={stop} to={`/kho/out?order=${o.id}`}>📤 Lập phiếu xuất kho</Link>}
+      {outFull && <Link className={'btn' + (sm ? ' sm' : '')} onClick={stop} to="/kho/giai-chap" style={{ opacity: 0.55 }}
+        title={`Đã lập đủ phiếu xuất cho đơn, đang chờ giải chấp hàng HTC: ${wait.ids.join(', ')}. Bấm để mở Chờ giải chấp.`}>⏳ Đã lập phiếu xuất ({wait.ids.length}) · chờ giải chấp</Link>}
       {canIn && !inFull && <Link className={cls} onClick={stop} to={`/kho/in?order=${o.id}`}>📥 Lập phiếu nhập kho</Link>}
       {inFull && <span className={'btn' + (sm ? ' sm' : '')} aria-disabled="true" onClick={stop} style={{ opacity: 0.55, cursor: 'not-allowed' }}
         title={`Đã lập đủ phiếu nhập cho đơn, chờ thủ kho nhận hàng: ${pend.ids.join(', ')}`}>📥 Đã lập đủ phiếu ({pend.ids.length}) · chờ thủ kho nhận</span>}
@@ -109,6 +114,7 @@ export default function Orders() {
 
 function OrderList({ type }) {
   const pendIn = usePendingIn();
+  const waitOut = useWaitingOut();
   const meta = ORDER_TYPES[type];
   const { hasRole, inMyWarehouses, fieldsOf, seenFieldsOf, isAdmin, email } = useApp();
   const canManage = canManageOrders(hasRole, type);
@@ -248,7 +254,7 @@ function OrderList({ type }) {
                 return (
                   <tr key={o.id} onClick={() => setOpen(o.id)} style={{ cursor: 'pointer', opacity: ['closed', 'cancelled'].includes(o.status) ? 0.6 : 1 }}>
                     {shownCols.map((c) => <td key={c.key} className={(c.num ? 'num ' : '') + (c.cls || '')} style={c.style?.(o, ctx)}>{c.render(o, ctx)}</td>)}
-                    <td className="nowrap"><MoveButtons o={o} sm pend={pendIn.get(o.id)} /></td>
+                    <td className="nowrap"><MoveButtons o={o} sm pend={pendIn.get(o.id)} wait={waitOut.get(o.id)} /></td>
                   </tr>
                 );
               })}
@@ -265,6 +271,7 @@ function OrderList({ type }) {
 // ---------------------------------------------------------------------------
 function OrderDetail({ o, onClose, onEdit }) {
   const pendIn = usePendingIn();
+  const waitOut = useWaitingOut();
   const meta = ORDER_TYPES[o.type];
   const { hasRole, isAdmin, email, name, fieldsOf, seenFieldsOf } = useApp();
   const [assign, setAssign] = useState(false);
@@ -322,13 +329,14 @@ function OrderDetail({ o, onClose, onEdit }) {
             <tr key={l.no}><td>{l.no}</td><td className="nowrap">{fmtDate(lineDue(o, l))}</td>{sto ? <><td>{lineFrom(o, l)}</td><td>{lineTo(o, l)}</td></> : <td>{lineWh(o, l) || 'Kho nào cũng được'}</td>}<td>{l.item}</td><td>{l.itemName}</td>
               {so && <td>{lineShip(o, l)}</td>}<td>{l.goodsStatus || (so ? 'KTC/DGC' : '')}</td>{lineCustom.map((f) => <td key={f.key}>{displayValue(f, l[f.key], false, unitOf(f))}</td>)}<td className="num">{t(l.qtyKg)}</td><td className="num">{t(l.doneKg)}</td>{hasRet && <td className="num">{t(l.returnedKg)}</td>}
               {sto && <><td className="num">{t(transitKg(l))}</td><td className="num">{t(l.receivedKg)}</td></>}
-              <td className="num"><b>{isOpen ? t(leftKg(l)) : '–'}</b>{pendIn.get(o.id)?.byLine?.[l.no] ? <div className="small" style={{ color: 'var(--amber)' }}>đã lập phiếu chờ nhận {t(pendIn.get(o.id).byLine[l.no])}</div> : null}</td>{o.type !== 'PO' && <td>{l.carrier || <span className="small">–</span>}</td>}<td className="small">{l.note}</td></tr>
+              <td className="num"><b>{isOpen ? t(leftKg(l)) : '–'}</b>{pendIn.get(o.id)?.byLine?.[l.no] ? <div className="small" style={{ color: 'var(--amber)' }}>đã lập phiếu chờ nhận {t(pendIn.get(o.id).byLine[l.no])}</div> : null}
+                {isOpen && waitOut.get(o.id)?.byLine?.[l.no] ? <div className="small" style={{ color: 'var(--amber)' }}>đã lập phiếu xuất, chờ giải chấp {t(waitOut.get(o.id).byLine[l.no])}</div> : null}</td>{o.type !== 'PO' && <td>{l.carrier || <span className="small">–</span>}</td>}<td className="small">{l.note}</td></tr>
           ))}</tbody>
         </table>
       </div>
 
       {o.type === 'PO' && !o.direct && <PoAllocations o={o} />}
-      <div className="form-actions" style={{ justifyContent: 'flex-start', marginBottom: 8 }}><MoveButtons o={o} pend={pendIn.get(o.id)} />
+      <div className="form-actions" style={{ justifyContent: 'flex-start', marginBottom: 8 }}><MoveButtons o={o} pend={pendIn.get(o.id)} wait={waitOut.get(o.id)} />
         {isAdmin && o.type !== 'PO' && isOpen && <button type="button" className="btn" onClick={() => setAssign(true)}>🚛 Giao đơn vị vận tải</button>}</div>
       {assign && <AssignCarrier o={o} onClose={() => setAssign(false)} />}
       <div className="section-head">Phiếu {sto || hasRet ? 'xuất / nhập kho' : MOVE_TYPES[moveType].label.toLowerCase()} theo đơn ({moves.length})</div>

@@ -118,11 +118,14 @@ export const useWaitingOut = () => usePendingMoves('out', 'wait_release');
 function usePendingMoves(type, status) {
   const [map, setMap] = useState(new Map());
   useEffect(() => listenShared(`mv|${type}|${status}`, () => query(collection(db, 'movements'), where('type', '==', type), where('status', '==', status)), (st) => {
-    if (!st.snap) { const m = new Map(); m.loaded = true; setMap(m); return; }
+    if (!st.snap) { const m = new Map(); m.byPlan = new Map(); m.loaded = true; setMap(m); return; }
     const s = st.snap;
     const m = new Map();
+    // Phiếu theo dự kiến xuất: planId → [số phiếu]
+    m.byPlan = new Map();
     for (const d of s.docs) {
       const x = d.data();
+      if (x.planId) m.byPlan.set(x.planId, [...(m.byPlan.get(x.planId) || []), x.id || d.id]);
       if (!x.orderId) continue;
       if (!m.has(x.orderId)) m.set(x.orderId, { ids: [], byLine: {} });
       const e = m.get(x.orderId);
