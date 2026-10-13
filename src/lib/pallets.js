@@ -21,7 +21,7 @@ export const MODE_LABEL = { pallet: 'Kiện (có pallet)', xa: 'Xá (không pall
 export function palletManaged(wh) {
   const v = wh?.managePallets;
   if (v === true) return true;
-  return ['có', 'co', 'yes', 'true', '1', 'x'].includes(String(v ?? '').trim().toLowerCase());
+  return ['có', 'co', 'yes', 'true', '1', 'x', 'pallet'].includes(String(v ?? '').trim().toLowerCase());
 }
 
 // Hình thức đóng gói của đơn (các dòng làm ở kho / theo bộ lọc): có dòng Kiện → 'pallet', toàn bộ Xá → 'xa', chưa ghi → ''
@@ -156,7 +156,7 @@ export async function postPalletMove(mv, user) {
     // Kho không quản lý pallet: không ghi tồn pallet kho (vận tải trả thì chỉ giảm số đang mượn)
     const whSnap = mv.warehouse ? await tx.get(doc(db, 'warehouses', mv.warehouse)) : null;
     if (whSnap?.exists() && !palletManaged(whSnap.data())) {
-      if (mv.kind !== 'return') throw new Error(`Kho ${mv.warehouse} không quản lý pallet (Danh sách kho → Quản lý pallet).`);
+      if (mv.kind !== 'return') throw new Error(`Kho ${mv.warehouse} quản lý theo Kiện, không ghi tồn pallet (Danh sách kho → Quản lý pallet).`);
       eff.splice(0, eff.length, ...eff.filter((e) => e.kind !== 'stock'));
     }
     const write = await readPallets(tx, eff);

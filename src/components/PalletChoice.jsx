@@ -65,7 +65,7 @@ export default function PalletChoice({ value, onChange, carrier, carrierName, su
       ))}
       {!optional && v.palletMode === 'pallet' && <button type="button" className="btn sm" disabled={disabled} onClick={() => set({ pallets: [...v.pallets, blank('', defTo, '')] })}>{optional ? (v.pallets.length ? '＋ Thêm loại pallet' : '＋ Ghi loại pallet (không bắt buộc)') : '＋ Thêm loại pallet (hàng về cả gỗ lẫn nhựa)'}</button>}
       <div className="small" style={{ marginTop: 4 }}>
-        {optional && v.palletMode && <div>Kho này không quản lý pallet: chỉ ghi Kiện / Xá, không cần chọn loại, số pallet; phiếu in chỉ ghi Kiện / Xá.</div>}
+        {optional && v.palletMode && <div>Kho quản lý theo Kiện: chỉ ghi Kiện / Xá, không cần chọn loại, số pallet; phiếu in chỉ ghi Kiện / Xá.</div>}
         {!optional && isIn && v.palletMode === 'pallet' && managed && 'Xác nhận nhận hàng: số pallet được cộng vào tồn pallet của kho.'}
         {isIn && v.palletMode === 'xa' && 'Hàng xá: không có pallet nhập kho.'}
         {!optional && !isIn && v.palletMode === 'xa' && 'Phiếu giao hàng in 3 liên, không có bảng pallet.'}

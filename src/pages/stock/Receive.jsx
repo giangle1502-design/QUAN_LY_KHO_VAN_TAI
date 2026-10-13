@@ -173,8 +173,8 @@ function ReceiveForm({ id }) {
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="section-head">🪵 Hàng về Kiện / Xá <span className="req">*</span></div>
         <p className="small">{palletManaged(warehouses.find((w) => w.code === mv.warehouse))
-          ? <>Kho {mv.warehouse} đang đặt <b>Quản lý pallet = Có</b>: hàng Kiện chọn pallet gỗ hay nhựa và số pallet (cộng vào tồn pallet của kho khi xác nhận); hàng rời chọn Xá.</>
-          : <>Kho {mv.warehouse} không quản lý pallet: chỉ cần chọn Kiện hoặc Xá.</>}</p>
+          ? <>Kho {mv.warehouse} quản lý theo <b>Pallet</b>: hàng Kiện chọn pallet gỗ, nhựa hoặc Kiện (chưa rõ loại) và số pallet đếm thực tế (cộng vào tồn pallet của kho khi xác nhận); hàng rời chọn Xá.</>
+          : <>Kho {mv.warehouse} quản lý theo <b>Kiện</b>: chỉ cần chọn Kiện hoặc Xá.</>}</p>
         <PalletChoice value={pal} onChange={setPal} kind="in" disabled={!pending} managed={palletManaged(warehouses.find((w) => w.code === mv.warehouse))}
           suggestQty={Math.ceil(lines.reduce((a, l) => a + (num(l.pallets) || 0), 0)) || ''} />
       </div>

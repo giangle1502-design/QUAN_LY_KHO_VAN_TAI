@@ -43,7 +43,7 @@ export default function Pallets() {
       <p className="hint">
         Đơn hàng chỉ ghi <b>Kiện</b> (có pallet) hoặc <b>Xá</b>. Thủ kho kiểm tra pallet gỗ / nhựa và số pallet khi nhận hàng (phiếu nhập: cộng tồn pallet kho) và trên phiếu xuất (hoặc lúc in phiếu giao hàng):
         <b> xuất cho khách hàng</b> trừ tồn pallet kho; <b>cho vận tải mượn</b> trừ tồn kho và ghi nợ cho đơn vị vận tải; <b>chuyển theo hàng (STO)</b> trừ kho đi, kho nhận cộng khi nhận hàng.
-        Tồn pallet chỉ tính ở kho có <b>Quản lý pallet</b> ({warehouses.filter(palletManaged).map((w) => w.code).join(', ') || 'chưa có kho nào'}; chỉnh ở <Link to="/dm/warehouses">Danh sách kho</Link>).
+        Tồn pallet chỉ tính ở kho quản lý theo <b>Pallet</b> ({warehouses.filter(palletManaged).map((w) => w.code).join(', ') || 'chưa có kho nào'}; chỉnh ở <Link to="/dm/warehouses">Danh sách kho</Link>).
         Khi vận tải mang trả, bấm <b>Vận tải trả pallet</b> để nhập lại kho. Mã pallet khai ở <Link to="/dm/pallets">Danh mục → Mã pallet</Link>.
         {!catalog.length && <b style={{ color: 'var(--red)' }}> Chưa có mã pallet nào, hãy tạo mã pallet nhựa / gỗ trước.</b>}
       </p>
@@ -117,7 +117,7 @@ function MoveForm({ init, warehouses, catalog, onClose }) {
           <WithAdd cat="warehouses" onAdded={(id) => set({ warehouse: id })}>
             <select value={f.warehouse} onChange={(e) => set({ warehouse: e.target.value })}>
               <option value="">-- Chọn kho --</option>
-              {warehouses.filter((w) => f.kind === 'return' || palletManaged(w)).map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}{palletManaged(w) ? '' : ' (không quản lý pallet)'}</option>)}
+              {warehouses.filter((w) => f.kind === 'return' || palletManaged(w)).map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}{palletManaged(w) ? '' : ' (quản lý theo Kiện)'}</option>)}
             </select>
           </WithAdd>
         </Field>

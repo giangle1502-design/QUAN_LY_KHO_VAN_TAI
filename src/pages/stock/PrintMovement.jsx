@@ -224,7 +224,7 @@ function SlipPallet({ m, managed, onSaved }) {
     <div className="no-print slip-pallet">
       {!open ? (
         <div className="toolbar">
-          <span>Hàng: <b>{m.palletMode === 'pallet' ? (managed && m.pallets?.length ? `Kiện, ${palletText(m)}` : 'Kiện') : MODE_LABEL.xa}</b>{!managed && <span className="small"> · kho không quản lý pallet</span>}</span>
+          <span>Hàng: <b>{m.palletMode === 'pallet' ? (managed && m.pallets?.length ? `Kiện, ${palletText(m)}` : 'Kiện') : MODE_LABEL.xa}</b>{!managed && <span className="small"> · kho quản lý theo Kiện</span>}</span>
           <button className="btn sm" onClick={() => setOpen(true)}>Đổi</button>
         </div>
       ) : (
