@@ -190,7 +190,7 @@ export const CATALOGS = [
       { key: 'planNoLocation', label: 'Kế hoạch phân bổ chỉ cần kho', type: 'checkbox',
         help: 'Tích: kế hoạch phân bổ không chọn vị trí ở kho này (kho nhiều vị trí nhỏ). Kho tên có chữ Đức Hòa luôn chỉ cần kho; kho khác (cảng, mua nội địa…) chọn vị trí' },
       { key: 'managePallets', label: 'Quản lý pallet', type: 'select', options: ['Có', 'Không'],
-        help: 'Có: nhập / xuất hàng Kiện cộng / trừ tồn pallet gỗ, nhựa của kho. Bỏ trống: kho tên có Đức Hòa, Bãi xe, 3-PL → Có; kho khác → Không' },
+        help: 'Có: nhập / xuất hàng Kiện phải chọn pallet gỗ / nhựa, số pallet và cộng / trừ tồn pallet của kho (vd. Đức Hòa, Bãi xe, 3-PL). Không hoặc bỏ trống: chỉ ghi Kiện / Xá' },
       { key: 'address', label: 'Địa chỉ', type: 'textarea' },
       { key: 'manager', label: 'Người phụ trách', type: 'text' },
       { key: 'phone', label: 'Điện thoại', type: 'text' },

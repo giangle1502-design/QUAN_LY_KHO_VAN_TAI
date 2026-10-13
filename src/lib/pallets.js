@@ -16,13 +16,11 @@ export const PALLET_TO = { customer: 'Khách hàng giữ', carrier: 'Vận tải
 export const PACKINGS = ['Kiện', 'Xá'];
 export const MODE_LABEL = { pallet: 'Kiện (có pallet)', xa: 'Xá (không pallet)' };
 
-// Kho có quản lý tồn pallet không: trường "Quản lý pallet" Có / Không; bỏ trống thì kho tên có Đức Hòa, Bãi xe, 3-PL → Có
-const AUTO_MANAGED = /đức\s*hòa|đức\s*hoà|duc\s*hoa|bãi\s*xe|bai\s*xe|3\s*-?\s*pl/i;
+// Kho có quản lý tồn pallet không: chỉ kho đặt "Quản lý pallet" = Có (Danh sách kho); bỏ trống / Không = không quản lý
 export function palletManaged(wh) {
-  if (!wh) return false;
-  if (wh.managePallets === 'Có') return true;
-  if (wh.managePallets === 'Không') return false;
-  return AUTO_MANAGED.test(`${wh.code || ''} ${wh.name || ''}`);
+  const v = wh?.managePallets;
+  if (v === true) return true;
+  return ['có', 'co', 'yes', 'true', '1', 'x'].includes(String(v ?? '').trim().toLowerCase());
 }
 
 // Hình thức đóng gói của đơn (các dòng làm ở kho / theo bộ lọc): có dòng Kiện → 'pallet', toàn bộ Xá → 'xa', chưa ghi → ''
