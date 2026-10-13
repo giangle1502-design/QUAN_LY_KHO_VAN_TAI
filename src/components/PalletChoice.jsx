@@ -40,7 +40,7 @@ export default function PalletChoice({ value, onChange, carrier, carrierName, su
       <Seg val={v.palletMode} opts={[['pallet', MODE_LABEL.pallet], ['xa', MODE_LABEL.xa]]} on={mode} />
       {!optional && v.palletMode === 'pallet' && (v.pallets || []).map((p, i) => (
         <div key={i} className="pallet-line">
-          <Seg val={p.material} opts={MATERIALS.map((m) => [m, m])} on={(m) => pickMaterial(i, m)} />
+          <Seg val={p.material} opts={MATERIALS.map((m) => [m, m === 'Kiện' ? 'Kiện (chưa rõ loại)' : m])} on={(m) => pickMaterial(i, m)} />
           {p.material ? (
             <WithAdd cat="pallets" preset={{ material: p.material }} onAdded={(id, r) => setLine(i, { code: id, name: r?.name || '', material: r?.material || p.material })}>
               <select value={p.code} disabled={disabled} onChange={(e) => { const x = pallets.find((y) => y.code === e.target.value); setLine(i, { code: e.target.value, name: x?.name || '' }); }}>
@@ -48,7 +48,7 @@ export default function PalletChoice({ value, onChange, carrier, carrierName, su
                 {codesOf(p.material).map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}{x.size ? ` (${x.size})` : ''}</option>)}
               </select>
             </WithAdd>
-          ) : <span className="small" style={{ color: 'var(--red)' }}>Kiểm tra hàng thực tế: pallet gỗ hay pallet nhựa?</span>}
+          ) : <span className="small" style={{ color: 'var(--red)' }}>Pallet gỗ hay nhựa? Chưa rõ thì chọn Kiện</span>}
           <label className="small">Số pallet <input type="number" min="0" step="1" style={{ width: 80 }} value={p.qty} disabled={disabled} onChange={(e) => setLine(i, { qty: e.target.value })} /> cái</label>
           {!isIn && <Seg val={p.to} opts={toOpts} on={(t) => setLine(i, { to: t })} />}
           {!isIn && p.to === 'carrier' && (

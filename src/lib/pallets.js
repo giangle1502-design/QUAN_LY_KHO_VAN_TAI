@@ -10,7 +10,8 @@ import { fmtNum } from './utils';
 // nhập / trả / điều chỉnh tay: `palletMoves`; pallet theo phiếu xuất lưu ngay trên phiếu (movements.pallets).
 // ============================================================================
 
-export const MATERIALS = ['Pallet nhựa', 'Pallet gỗ'];
+// 'Kiện': có pallet nhưng chưa biết gỗ hay nhựa (vd. nhà cung cấp nội địa chỉ báo Kiện / Xá)
+export const MATERIALS = ['Pallet nhựa', 'Pallet gỗ', 'Kiện'];
 export const PALLET_TO = { customer: 'Khách hàng giữ', carrier: 'Vận tải mượn', transfer: 'Chuyển theo hàng sang kho nhận' };
 // Đơn hàng chỉ ghi Kiện (hàng có pallet, chưa biết gỗ hay nhựa) / Xá (hàng rời); thủ kho chọn loại pallet khi nhập, xuất
 export const PACKINGS = ['Kiện', 'Xá'];
@@ -98,7 +99,7 @@ export function palletError(v, m, kind = 'out', { managed = true } = {}) {
   if (v.palletMode !== 'pallet' || !managed) return '';
   if (!v.pallets?.length) return 'Thêm dòng pallet.';
   for (const [i, p] of v.pallets.entries()) {
-    if (!p.material) return `Pallet dòng ${i + 1}: kiểm tra và chọn pallet gỗ hay pallet nhựa.`;
+    if (!p.material) return `Pallet dòng ${i + 1}: chọn pallet gỗ, pallet nhựa hoặc Kiện (chưa rõ loại).`;
     if (!p.code) return `Pallet dòng ${i + 1}: chọn mã pallet.`;
     if (!(n(p.qty) > 0)) return `Pallet dòng ${i + 1}: nhập số pallet.`;
     if (kind === 'in') continue;

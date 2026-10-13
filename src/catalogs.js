@@ -231,7 +231,7 @@ export const CATALOGS = [
     fields: [
       { key: 'code', label: 'Mã pallet', type: 'text', required: true },
       { key: 'name', label: 'Tên pallet', type: 'text', required: true },
-      { key: 'material', label: 'Loại', type: 'select', options: ['Pallet nhựa', 'Pallet gỗ'], required: true, default: 'Pallet nhựa' },
+      { key: 'material', label: 'Loại', type: 'select', options: ['Pallet nhựa', 'Pallet gỗ', 'Kiện'], labels: { 'Pallet nhựa': 'Pallet nhựa', 'Pallet gỗ': 'Pallet gỗ', 'Kiện': 'Kiện (chưa rõ gỗ hay nhựa)' }, required: true, default: 'Pallet nhựa' },
       { key: 'size', label: 'Kích thước', type: 'text' },
       { key: 'note', label: 'Ghi chú', type: 'textarea' },
       { key: 'active', label: 'Đang dùng', type: 'checkbox', default: true },
