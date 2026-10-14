@@ -14,6 +14,8 @@ import { CompanyPicker, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox } from '../../components/ui';
 import { MovementDetail } from '../stock/Movements';
 import EditSlip, { canEditSlip } from '../../components/EditSlip';
+import { ColumnPicker } from '../../components/FormTools';
+import { dragHeadProps, orderCols } from '../../lib/colOrder';
 
 const n = (v) => Number(v) || 0;
 const kgOf = (m) => (m.lines || []).reduce((a, l) => a + n(l.kg), 0);
@@ -51,6 +53,8 @@ export default function SlipList({ kind, loai = '' }) {
   // DO: thêm các dòng chờ lập phiếu xuất từ Dự kiến xuất kho và Kế hoạch phân bổ (đã gắn / đã tạo SO)
   const { rows: plans } = usePlans();
   const allocs = useCollection(isDO ? 'allocations' : '').rows;
+  const shipto = useCollection(isDO ? 'shipto' : '').rows;
+  const shiptoMap = useMemo(() => new Map(shipto.map((x) => [x.shipCode || x._id, x])), [shipto]);
 
   const rows = useMemo(() => {
     const out = slips
@@ -171,6 +175,51 @@ export default function SlipList({ kind, loai = '' }) {
     );
   };
 
+  // Cột bảng: mỗi người tự chọn cột hiển thị và kéo thứ tự (⚙ Cột hiển thị, lưu trên trình duyệt)
+  const shipName = (code) => { const x = shiptoMap.get(code); return x?.address || ''; };
+  const ln = (m) => m.lines || [];
+  const cols = [
+    { key: 'id', label: isDO ? 'Số phiếu xuất' : 'Số phiếu nhập', locked: true, cls: 'mono nowrap', render: (r) => <>{r.m.id || <span className="small">{isDO ? '(chưa có phiếu xuất)' : '(chưa lập)'}</span>}{r.m.editedAt ? <span className="badge" title="Phiếu đã được sửa, xem lịch sử trong chi tiết" style={{ marginLeft: 4 }}>đã sửa</span> : null}</> },
+    { key: 'date', label: 'Ngày', cls: 'nowrap', render: (r) => fmtDate(r.m.date) },
+    { key: 'status', label: 'Tình trạng', locked: true, cls: 'nowrap', render: statusCell },
+    ...(isDO ? [{ key: 'src', label: 'Nguồn lập', cls: 'nowrap small', render: (r) => <>{r.src.label}{r.src.ref ? <div className="mono">{r.src.ref}</div> : null}</> }] : []),
+    { key: 'order', label: 'Đơn', cls: 'mono nowrap', render: (r) => <><Link to={`/don-hang?tab=${r.type}&q=${r.m.orderId}`} onClick={(e) => e.stopPropagation()}>{r.m.orderId}</Link><div className="small">{r.type}{r.o?.refNo ? ` · ${r.o.refNo}` : ''}</div></> },
+    { key: 'refNo', label: 'Số Ecount / số đơn KH', hideDefault: true, cls: 'mono', render: (r) => r.o?.refNo || '' },
+    { key: 'company', label: 'Công ty', hideDefault: true, render: (r) => r.o?.company || r.m.company || '' },
+    { key: 'party', label: isDO ? 'Khách / tuyến' : 'NCC / tuyến', render: party },
+    ...(isDO ? [
+      { key: 'ship', label: 'Mã giao', cls: 'small', render: (r) => r.m.shipCode || '' },
+      { key: 'shipAddr', label: 'Địa chỉ giao', hideDefault: true, cls: 'small', render: (r) => String(r.m.shipCode || '').split(', ').map(shipName).filter(Boolean).join('; ') },
+      { key: 'sales', label: 'Sale phụ trách', hideDefault: true, cls: 'small', render: (r) => r.o?.sales || r.plan?.salesName || '' },
+    ] : []),
+    { key: 'warehouse', label: isDO ? 'Kho xuất' : 'Kho nhập', render: (r) => r.m.warehouse },
+    { key: 'items', label: 'Mã hàng', render: (r) => uniq(ln(r.m).map((l) => l.item)).join(', ') },
+    { key: 'itemNames', label: 'Tên hàng', hideDefault: true, cls: 'small', render: (r) => uniq(ln(r.m).map((l) => l.itemName)).join(', ') },
+    { key: 'lots', label: 'Lot', hideDefault: true, cls: 'small', render: (r) => uniq(ln(r.m).map((l) => l.lot)).join(', ') },
+    { key: 'locations', label: 'Vị trí', hideDefault: true, cls: 'small', render: (r) => uniq(ln(r.m).map((l) => l.location)).join(', ') },
+    { key: 'kg', label: 'Số kg', num: true, render: (r) => <b>{t(r.virtual ? r.left : kgOf(r.m))}</b> },
+    { key: 'bags', label: 'Số bao', num: true, hideDefault: true, render: (r) => (r.virtual ? '' : fmtNum(ln(r.m).reduce((a, l) => a + n(l.bags), 0))) },
+    { key: 'pallets', label: 'Pallet', num: true, hideDefault: true, render: (r) => (r.virtual ? '' : fmtNum(ln(r.m).reduce((a, l) => a + n(l.pallets), 0), 2)) },
+    { key: 'packing', label: 'Kiện / Xá', hideDefault: true, render: (r) => (r.m.palletMode === 'pallet' ? 'Kiện' : r.m.palletMode === 'xa' ? 'Xá' : '') },
+    { key: 'plate', label: 'Số xe', hideDefault: !isDO, cls: 'mono', render: (r) => (r.m.plate ? <span className="plate">{r.m.plate}</span> : <span className="small">–</span>) },
+    { key: 'carrier', label: 'Đơn vị vận tải', hideDefault: !isDO, render: (r) => r.m.carrierName || r.m.carrier || r.alloc?.carrierName || r.alloc?.carrier || '' },
+    { key: 'driver', label: 'Tài xế', hideDefault: true, render: (r) => r.m.driverName || '' },
+    { key: 'driverPhone', label: 'ĐT tài xế', hideDefault: true, cls: 'mono', render: (r) => r.m.driverPhone || '' },
+    { key: 'idCard', label: 'CCCD tài xế', hideDefault: true, cls: 'mono', render: (r) => r.m.idCard || '' },
+    { key: 'trip', label: 'Chuyến xe', hideDefault: true, cls: 'mono', render: (r) => r.m.tripId || '' },
+    ...(!isDO ? [{ key: 'docNo', label: 'Số chứng từ', hideDefault: true, cls: 'mono', render: (r) => r.m.refNo || '' },
+      { key: 'confirmedBy', label: 'Thủ kho nhận', hideDefault: true, cls: 'small', render: (r) => r.m.confirmedByName || r.m.confirmedBy || '' }] : []),
+    { key: 'note', label: 'Ghi chú', hideDefault: true, cls: 'small', render: (r) => r.m.note || '' },
+    { key: 'createdBy', label: 'Người lập', hideDefault: true, cls: 'small', render: (r) => r.m.createdByName || r.m.createdBy || '' },
+    { key: 'left', label: isDO ? 'Đơn còn phải xuất' : 'Đơn còn phải nhập', num: true, title: isDO ? 'SL đơn − đã xuất − phiếu xuất chờ giải chấp' : 'PO: SL đơn − đã nhận − phiếu chờ nhận; STO: đang đi đường − phiếu chờ nhận',
+      render: (r) => { const left = orderLeft(r); return left == null ? '' : left > 0.001 ? t(left) : <span className="badge green">đủ</span>; } },
+  ];
+  const [hidden, setHidden] = usePref(`slips:${kind}:hidden`, cols.filter((c) => c.hideDefault).map((c) => c.key));
+  const [colOrder, setColOrder] = usePref(`slips:${kind}:cols`, []);
+  const ordered = orderCols(cols, colOrder);
+  const colKeys = ordered.map((c) => c.key);
+  const shown = ordered.filter((c) => c.locked || !hidden.includes(c.key));
+
   const exportExcel = () => {
     const out = [];
     list.forEach((r) => (r.m.lines || []).forEach((l) => out.push({
@@ -218,35 +267,23 @@ export default function SlipList({ kind, loai = '' }) {
           {DO_SOURCES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
         </select>}
         <input type="search" placeholder="Tìm số phiếu, đơn, khách, mã hàng, số xe…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <div className="actions" style={{ marginLeft: 'auto' }}><button className="btn" onClick={exportExcel}>⬇ Excel</button></div>
+        <div className="actions" style={{ marginLeft: 'auto' }}>
+          <ColumnPicker cols={cols.map((c) => ({ key: c.key, label: c.label, locked: c.locked }))} hidden={hidden} setHidden={setHidden} order={colOrder} setOrder={setColOrder} />
+          <button className="btn" onClick={exportExcel}>⬇ Excel</button></div>
       </div>
       <ErrorBox error={error} />
       <div className="table-wrap">
         {!list.length ? <Empty text={isDO ? 'Chưa có DO trong khoảng ngày này' : 'Không có đơn chờ nhập'} /> : (
           <table>
             <thead><tr>
-              <th>{isDO ? 'Số phiếu xuất' : 'Số phiếu nhập'}</th><th>Ngày</th><th>Tình trạng</th>{isDO && <th>Nguồn lập</th>}<th>Đơn</th><th>{isDO ? 'Khách / tuyến' : 'NCC / tuyến'}</th>
-              {isDO && <th>Mã giao</th>}<th>{isDO ? 'Kho xuất' : 'Kho nhập'}</th><th>Mặt hàng</th><th className="num">Số kg</th>{isDO && <th>Số xe</th>}
-              <th className="num" title={isDO ? 'SL đơn − đã xuất − DO chờ giải chấp' : 'PO: SL đơn − đã nhận − phiếu chờ nhận; STO: đang đi đường − phiếu chờ nhận'}>{isDO ? 'Đơn còn phải xuất' : 'Đơn còn phải nhập'}</th><th></th>
+              {shown.map((c) => <th key={c.key} className={c.num ? 'num' : undefined} title={c.title} {...dragHeadProps(c.key, colKeys, setColOrder)}>{c.label}</th>)}<th></th>
             </tr></thead>
             <tbody>
               {list.map((r) => {
                 const m = r.m;
-                const left = orderLeft(r);
                 return (
                   <tr key={r.key} onClick={() => !r.virtual && setOpen(m.id)} style={{ cursor: r.virtual ? 'default' : 'pointer', opacity: m.status === 'cancelled' ? 0.55 : 1 }}>
-                    <td className="mono nowrap">{m.id || <span className="small">{isDO ? '(chưa có phiếu xuất)' : '(chưa lập)'}</span>}{m.editedAt ? <span className="badge" title="Phiếu đã được sửa, xem lịch sử trong chi tiết" style={{ marginLeft: 4 }}>đã sửa</span> : null}</td>
-                    <td className="nowrap">{fmtDate(m.date)}</td>
-                    <td className="nowrap">{statusCell(r)}</td>
-                    {isDO && <td className="nowrap small">{r.src.label}{r.src.ref ? <div className="mono">{r.src.ref}</div> : null}</td>}
-                    <td className="mono nowrap"><Link to={`/don-hang?tab=${r.type}&q=${m.orderId}`} onClick={(e) => e.stopPropagation()}>{m.orderId}</Link><div className="small">{r.type}{r.o?.refNo ? ` · ${r.o.refNo}` : ''}</div></td>
-                    <td>{party(r)}</td>
-                    {isDO && <td className="small">{m.shipCode || ''}</td>}
-                    <td>{m.warehouse}</td>
-                    <td>{uniq((m.lines || []).map((l) => l.item)).join(', ')}</td>
-                    <td className="num"><b>{t(r.virtual ? r.left : kgOf(m))}</b></td>
-                    {isDO && <td className="mono">{m.plate ? <span className="plate">{m.plate}</span> : <span className="small">–</span>}</td>}
-                    <td className="num">{left == null ? '' : left > 0.001 ? t(left) : <span className="badge green">đủ</span>}</td>
+                    {shown.map((c) => <td key={c.key} className={c.cls || (c.num ? 'num' : undefined)}>{c.render(r)}</td>)}
                     <td className="nowrap" onClick={(e) => e.stopPropagation()}>{actions(r)}</td>
                   </tr>
                 );
