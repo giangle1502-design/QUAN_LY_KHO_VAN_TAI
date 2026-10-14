@@ -206,6 +206,46 @@ export async function cancelMovement(m, reason, user) {
   });
 }
 
+// Sửa phiếu đã lập (DO / phiếu nhập): đổi ngày, số chứng từ, ghi chú, mã giao và số lượng từng dòng (bỏ dòng = số lượng 0).
+// Phiếu chưa ghi tồn (chờ nhận / chờ giải chấp): chỉ ghi lại phiếu, phần "đang chờ" của đơn tự tính lại.
+// Phiếu đã ghi tồn: trong 1 giao dịch đảo số cũ, ghi số mới vào tồn kho, pallet vị trí và "đã giao / đã nhận" của SO / PO / STO.
+export async function editMovement(id, patch, reason, user) {
+  return runTransaction(db, async (tx) => {
+    const ref = doc(db, 'movements', id);
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error(`Không tìm thấy phiếu ${id}.`);
+    const old = { ...snap.data(), id };
+    if (old.status === 'cancelled') throw new Error(`Phiếu ${id} đã hủy, không sửa được.`);
+    const at = new Date().toISOString();
+    const lines = (patch.lines || old.lines).filter((l) => n(l.kg) > EPS || n(l.bags) > EPS);
+    if (!lines.length) throw new Error('Phiếu phải còn ít nhất 1 dòng. Muốn bỏ cả phiếu thì dùng Hủy phiếu.');
+    const before = (old.lines || []).reduce((a, l) => a + n(l.kg), 0);
+    const after = lines.reduce((a, l) => a + n(l.kg), 0);
+    const what = `Sửa phiếu${reason ? `: ${reason}` : ''} (${round(before)} → ${round(after)} kg)`;
+    const next = { ...old, ...patch, lines, id, updatedAt: at, updatedBy: user.email, editedAt: at,
+      history: [...(old.history || []), { at, by: user.email, byName: user.name, action: what }] };
+    if (old.status !== 'posted') { tx.set(ref, next); return { old, next }; }
+    const orderRef = old.orderId ? doc(db, 'orders', old.orderId) : null;
+    const orderSnap = orderRef ? await tx.get(orderRef) : null;
+    let orderUpd = null;
+    if (orderSnap?.exists()) {
+      const ord = { ...orderSnap.data(), id: old.orderId };
+      const back = applyOrder(ord, old, -1);
+      // Đơn đã đóng vẫn cho sửa phiếu đã lập (giữ trạng thái đóng)
+      const reopened = ord.status === 'closed' ? 'partial' : back.status;
+      const fwd = applyOrder({ ...ord, lines: back.lines, status: reopened }, next, 1);
+      orderUpd = { lines: fwd.lines, status: ord.status === 'closed' ? 'closed' : fwd.status,
+        history: [...(ord.history || []), { at, by: user.email, byName: user.name, action: `${what} — phiếu ${id}` }] };
+    }
+    const writePallets = ['in', 'out'].includes(old.type) ? await readPallets(tx, [...palletEffects(old, -1), ...palletEffects(next, 1)]) : null;
+    await applyEffects(tx, next, [...effectsOf(old, -1), ...effectsOf(next, 1)], user);
+    if (writePallets) writePallets(user, id);
+    if (orderUpd) tx.update(orderRef, { ...orderUpd, lastMovement: id, updatedAt: at, updatedBy: user.email });
+    tx.set(ref, next);
+    return { old, next };
+  });
+}
+
 async function applyEffects(tx, mv, effects, user) {
   // Gộp biến động theo dòng tồn
   const byStock = new Map();

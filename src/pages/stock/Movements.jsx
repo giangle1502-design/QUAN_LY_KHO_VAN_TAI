@@ -13,6 +13,7 @@ import { fmtDate, fmtNum } from '../../lib/utils';
 import { CompanyPicker, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox, Modal } from '../../components/ui';
 import { WithAdd } from '../../components/FormTools';
+import EditSlip, { canEditSlip } from '../../components/EditSlip';
 
 const addDays = (ymd, n) => { const d = new Date(ymd + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 // Số lượng có dấu (nhập +, xuất −); chuyển vị trí / đổi tình trạng không đổi tổng tồn → hiện ± số lượng
@@ -133,7 +134,7 @@ export default function Movements() {
           </table>
         )}
       </div>
-      {current && <Detail m={current} onClose={() => setOpen(null)} />}
+      {current && <MovementDetail m={current} onClose={() => setOpen(null)} />}
       {showMvt && <MvtTable onClose={() => setShowMvt(false)} />}
     </div>
   );
@@ -155,8 +156,11 @@ export function MvtTable({ onClose }) {
   );
 }
 
-function Detail({ m, onClose }) {
-  const { isAdmin, email, name } = useApp();
+// Chi tiết phiếu (dùng chung cho Phiếu kho, DO, Danh sách đơn chờ nhập): in, sửa, hủy, thông tin vận tải
+export function MovementDetail({ m, onClose }) {
+  const { isAdmin, email, name, hasRole, inMyWarehouses } = useApp();
+  const [editing, setEditing] = useState(false);
+  const canEdit = canEditSlip(m, { isAdmin, hasRole, inMyWarehouses });
   const [reason, setReason] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -186,7 +190,9 @@ function Detail({ m, onClose }) {
       <p><Link className="btn sm" to={`/kho/phieu/${m.id}/in`} target="_blank">🖨 In phiếu</Link>
         {m.status === 'pending' && <> <Link className="btn sm primary" to={`/kho/nhan-hang/${m.id}`}>📥 Thủ kho nhận hàng</Link></>}
         {m.type === 'in' && m.status === 'posted' && <> <Link className="btn sm" to={`/kho/phieu/${m.id}/nhan`} target="_blank">🏷️ In nhãn pallet</Link></>}
-        {m.type === 'out' && <> <Link className="btn sm" to={`/kho/phieu/${m.id}/soan`} target="_blank">📋 Phiếu soạn hàng</Link></>}</p>
+        {m.type === 'out' && <> <Link className="btn sm" to={`/kho/phieu/${m.id}/soan`} target="_blank">📋 Phiếu soạn hàng</Link></>}
+        {canEdit && <> <button type="button" className="btn sm" onClick={() => setEditing(true)} title="Sửa ngày, ghi chú, số lượng; tồn kho và đơn SO / PO / STO cập nhật theo">✏️ Sửa phiếu</button></>}</p>
+      {editing && <EditSlip m={m} onClose={() => setEditing(false)} />}
       {m.status === 'cancelled' && <div className="error-box">Đã hủy: {m.cancelReason}</div>}
       {m.type === 'out' && <TransportBox m={m} />}
       <div className="table-wrap" style={{ marginBottom: 12 }}>

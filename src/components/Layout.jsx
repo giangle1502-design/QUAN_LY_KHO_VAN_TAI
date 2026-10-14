@@ -8,6 +8,7 @@ import { CATALOGS, GROUPS, roleLabel } from '../catalogs';
 import { REPORTS } from '../pages/reports/Reports';
 import { norm } from '../lib/utils';
 import { usePref } from '../lib/prefs';
+import { FAV_KEY, MenuEditor, itemId, useNavLayout } from './NavCustom';
 
 // Nhóm thu gọn sẵn lần đầu: các nhóm danh mục, quản trị dữ liệu
 const DEFAULT_CLOSED = ['quan-tri', ...GROUPS.map((g) => `dm:${g}`)];
@@ -74,24 +75,33 @@ export default function Layout() {
     return !tab || path !== '/don-hang' || (new URLSearchParams(loc.search).get('tab') || 'SO') === tab;
   };
   // Phiếu xuất / nhập mở từ nhóm Chuyển kho (?src=sto) và từ nhóm Bán / Mua dùng chung 1 trang: tô sáng đúng mục
+  // DO / Danh sách đơn chờ nhập mở từ nhóm Bán / Mua (mọi loại đơn) hoặc nhóm Chuyển kho (?loai=STO)
+  const slipTab = (k, loai) => ({ isActive }) => {
+    const p = new URLSearchParams(loc.search);
+    return isActive && p.get('tab') === k && (p.get('loai') || '') === loai ? 'active' : '';
+  };
   const srcTab = (sto) => ({ isActive }) => (isActive && (new URLSearchParams(loc.search).get('src') === 'sto') === sto ? 'active' : '');
   const sections = [
     { key: 'ban', title: '🧾 Bán hàng (SO → xuất kho)', items: [
       { to: '/don-hang?tab=SO', cls: orderTab('SO'), ico: '🧾', label: 'Đơn bán (SO)' },
       { to: '/du-kien-xuat', ico: '📅', label: 'Dự kiến xuất kho (Sale)' },
       { to: '/kho/out', cls: srcTab(false), ico: '📤', label: 'Lập phiếu xuất kho', show: hasRole('thu_kho') },
+      { to: '/don-hang?tab=DO', cls: slipTab('DO', ''), ico: '🚚', label: 'DO (phiếu xuất theo đơn)' },
       { to: '/xe/giao-hang', ico: '✅', label: 'Xác nhận giao hàng', show: isAdmin },
     ] },
     { key: 'mua', title: '🛒 Mua hàng (PO → nhập kho)', items: [
       { to: '/don-hang?tab=PO', cls: orderTab('PO'), ico: '🛒', label: 'Đơn mua (PO)' },
       { to: '/phan-bo', ico: '📋', label: 'Kế hoạch phân bổ hàng mua' },
       { to: '/kho/in', cls: srcTab(false), ico: '📝', label: 'Lập phiếu nhập kho', show: isAdmin },
+      { to: '/don-hang?tab=cho-nhap', cls: slipTab('cho-nhap', ''), ico: '📥', label: 'Danh sách đơn chờ nhập' },
       { to: '/kho/nhan-hang', ico: '📥', label: 'Nhận hàng (chờ nhập)', show: hasRole('thu_kho') },
     ] },
     { key: 'sto', title: '🔁 Chuyển kho (STO)', items: [
       { to: '/don-hang?tab=STO', cls: orderTab('STO'), ico: '🔁', label: 'Lệnh chuyển kho (STO)' },
       { to: '/kho/out?src=sto', cls: srcTab(true), ico: '📤', label: 'Xuất chuyển kho (kho đi)', show: hasRole('thu_kho') },
       { to: '/kho/in?src=sto', cls: srcTab(true), ico: '📥', label: 'Nhập chuyển kho (kho đến)', show: isAdmin },
+      { to: '/don-hang?tab=DO&loai=STO', cls: slipTab('DO', 'STO'), ico: '🚚', label: 'DO chuyển kho (đã xuất)' },
+      { to: '/don-hang?tab=cho-nhap&loai=STO', cls: slipTab('cho-nhap', 'STO'), ico: '⏳', label: 'STO chờ nhập (đang đi đường)' },
     ] },
     { key: 'kho', title: '🏭 Tồn kho & vận hành kho', items: [
       { to: '/kho/ton', ico: '🏭', label: 'Tồn kho' },
@@ -130,12 +140,24 @@ export default function Layout() {
     ...GROUPS.map((g) => ({ key: `dm:${g}`, title: `📚 ${g}`, items: CATALOGS.filter((c) => c.group === g && (isAdmin || !c.adminOnly) && (!c.only3PL || can3PL))
       .map((c) => ({ to: `/dm/${c.key}`, ico: c.icon, label: c.short })) })),
   ];
+  // Menu theo ý từng người: yêu thích, thư mục tự tạo, thứ tự, ẩn mục (lưu trên trình duyệt)
+  const [nav, navApi] = useNavLayout(sections.map((sec) => ({ ...sec, items: sec.items.filter((x) => x.show !== false) })));
+  const [editMenu, setEditMenu] = useState(false);
+  const shownSecs = [...(nav.fav.length ? [{ key: FAV_KEY, title: '⭐ Yêu thích', items: nav.fav }] : []), ...nav.secs];
+  const navItem = (x) => (
+    <NavLink key={x.to + x.label} to={x.to} end={x.end} className={x.cls} onClick={close}>
+      <span className="ico">{x.ico}</span>{x.label}{x.badge ? <span className="badge red" style={{ marginLeft: 6 }}>{x.badge}</span> : null}
+      <span className={'fav-star' + (x.fav ? ' on' : '')} role="button" title={x.fav ? 'Bỏ khỏi Yêu thích' : 'Ghim vào Yêu thích'}
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); navApi.toggleFav(itemId(x)); }}>{x.fav ? '★' : '☆'}</span>
+    </NavLink>
+  );
   return (
     <div className="shell">
       <aside className={'side' + (open ? ' open' : '')}>
         <div className="brand">{settings.companyName}<small>Kho & vận tải</small></div>
         <div className="nav-search">
           <input ref={searchRef} type="search" placeholder="🔍 Tìm chức năng… (Ctrl+K)" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onSearchKey} />
+          {role !== 'tai_xe' && role !== 'van_tai' && <button type="button" className="nav-cfg" title="Tùy chỉnh menu: yêu thích, thư mục, thứ tự, ẩn mục" onClick={() => setEditMenu(true)}>⚙</button>}
         </div>
         <div className="nav-wrap" ref={navRef}>
         {role === 'tai_xe' ? (
@@ -153,21 +175,17 @@ export default function Layout() {
         ) : (
         <nav className={q ? 'searching' : ''}>
           <NavLink to="/" end onClick={close}><span className="ico">📈</span>Tổng quan</NavLink>
-          {sections.map((sec) => {
-            const items = sec.items.filter((x) => x.show !== false);
+          {shownSecs.map((sec) => {
+            const items = sec.items;
             if (!items.length) return null;
             const isOpen = !closed.includes(sec.key) || items.some((x) => here(x.to));
             return (
-              <div key={sec.key} className={'nav-sec' + (isOpen ? '' : ' closed')}>
+              <div key={sec.key} className={'nav-sec' + (isOpen ? '' : ' closed') + (sec.key === FAV_KEY ? ' nav-fav' : '')}>
                 <div className="nav-group" role="button" tabIndex={0} onClick={() => toggle(sec.key)} onKeyDown={(e) => e.key === 'Enter' && toggle(sec.key)}
                   title={isOpen ? 'Thu gọn nhóm' : 'Mở nhóm'}>
                   <span>{sec.title}</span><span className="caret">{isOpen ? '▾' : '▸'}</span>
                 </div>
-                {items.map((x) => (
-                  <NavLink key={x.to + x.label} to={x.to} end={x.end} className={x.cls} onClick={close}>
-                    <span className="ico">{x.ico}</span>{x.label}{x.badge ? <span className="badge red" style={{ marginLeft: 6 }}>{x.badge}</span> : null}
-                  </NavLink>
-                ))}
+                {items.map(navItem)}
               </div>
             );
           })}
@@ -181,6 +199,7 @@ export default function Layout() {
         </div>
       </aside>
       {open && <div className="side-bg" onClick={close} />}
+      {editMenu && <MenuEditor view={nav} api={navApi} onClose={() => setEditMenu(false)} />}
       <main ref={mainRef}>
         <button className="menu-btn" onClick={() => setOpen(true)}>☰</button>
         <Outlet />

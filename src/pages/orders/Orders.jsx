@@ -13,6 +13,7 @@ import { exportSheets, exportTemplate, readFirstSheet, toNumber, toYmd } from '.
 import { fmtDate, fmtNum, norm } from '../../lib/utils';
 import { Empty, ErrorBox, Modal } from '../../components/ui';
 import Balance from './Balance';
+import SlipList from './Slips';
 import SOForm from './SOForm';
 import { ColumnPicker, WithAdd } from '../../components/FormTools';
 import { displayValue } from '../../components/FieldInput';
@@ -93,26 +94,40 @@ export function Progress({ o }) {
   return <span className="meter"><span className="bar"><div className={p >= 100 ? '' : 'warn'} style={{ width: `${p}%`, background: p >= 100 ? 'var(--green)' : undefined }} /></span>{fmtNum(p, 0)}%</span>;
 }
 
-// Trang Đơn hàng: tab Đơn bán (SO), Đơn mua (PO), Cân đối theo mã hàng
+// Trang Đơn hàng: SO → DO (phiếu xuất theo đơn), PO / STO → Danh sách đơn chờ nhập, Cân đối theo mã hàng.
+// Mỗi người tự kéo thả thứ tự các thẻ (lưu trên trình duyệt).
+export const ORDER_TABS = [['SO', '🧾 Đơn bán (SO)'], ['DO', '🚚 DO (phiếu xuất theo đơn)'], ['PO', '🛒 Đơn mua (PO)'], ['cho-nhap', '📥 Danh sách đơn chờ nhập'], ['STO', '🔁 Chuyển kho (STO)'], ['can-doi', '⚖️ Cân đối theo mã hàng']];
 export default function Orders() {
   const [params, setParams] = useSearchParams();
-  const tab = ['SO', 'PO', 'STO', 'can-doi'].includes(params.get('tab')) ? params.get('tab') : 'SO';
+  const keys = ORDER_TABS.map(([k]) => k);
+  const tab = keys.includes(params.get('tab')) ? params.get('tab') : 'SO';
+  const [order, setOrder] = usePref('order-tabs', []);
+  const tabs = [...ORDER_TABS].sort((a, b) => (order.indexOf(a[0]) + 1 || 99) - (order.indexOf(b[0]) + 1 || 99));
+  const [drag, setDrag] = useState('');
+  const drop = (k) => {
+    if (!drag || drag === k) return;
+    const cur = tabs.map(([x]) => x).filter((x) => x !== drag);
+    cur.splice(cur.indexOf(k), 0, drag);
+    setOrder(cur); setDrag('');
+  };
   return (
     <div>
       <div className="page-head">
         <h1>🧾 Đơn hàng</h1>
-        <div className="seg">
-          {[['SO', 'Đơn bán (SO)'], ['PO', 'Đơn mua (PO)'], ['STO', 'Chuyển kho (STO)'], ['can-doi', 'Cân đối theo mã hàng']].map(([k, l]) => (
-            <button type="button" key={k} className={tab === k ? 'on' : ''} onClick={() => setParams({ tab: k })}>{l}</button>
+        <div className="seg seg-wrap" title="Kéo thả để đổi thứ tự các thẻ">
+          {tabs.map(([k, l]) => (
+            <button type="button" key={k} className={(tab === k ? 'on' : '') + (drag === k ? ' dragging' : '')} onClick={() => setParams({ tab: k })}
+              draggable onDragStart={() => setDrag(k)} onDragEnd={() => setDrag('')} onDragOver={(e) => e.preventDefault()} onDrop={() => drop(k)}>{l}</button>
           ))}
         </div>
       </div>
-      {tab === 'can-doi' ? <Balance /> : <OrderList key={tab} type={tab} />}
+      {tab === 'can-doi' ? <Balance /> : tab === 'DO' ? <SlipList key={"DO" + (params.get('loai') || '')} kind="DO" loai={params.get('loai') || ''} /> : tab === 'cho-nhap' ? <SlipList key={"IN" + (params.get('loai') || '')} kind="IN" loai={params.get('loai') || ''} />
+        : <OrderList key={tab} type={tab} initialQ={params.get('q') || ''} />}
     </div>
   );
 }
 
-function OrderList({ type }) {
+function OrderList({ type, initialQ = '' }) {
   const pendIn = usePendingIn();
   const waitOut = useWaitingOut();
   const meta = ORDER_TYPES[type];
@@ -139,9 +154,9 @@ function OrderList({ type }) {
     const stale = secMap.docs.filter((d) => salesOf.has(d.orderId) && (d.sales || '') !== salesOf.get(d.orderId));
     stale.forEach((d) => updateDoc(doc(db, 'orderSecrets', d._id), { sales: salesOf.get(d.orderId) }).catch(() => {}));
   }, [isAdmin, secMap, rawRows]);
-  const [status, setStatus] = useState('opening');
+  const [status, setStatus] = useState(initialQ ? '' : 'opening');
   const [co, setCo] = useOpCompany();
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(initialQ);
   const [open, setOpen] = useState(null);
   const [edit, setEdit] = useState(null); // null | 'new' | order
   const [msg, setMsg] = useState('');
