@@ -240,7 +240,8 @@ function TransportBox({ m }) {
   const pickPlate = (v) => {
     const veh = vehicles.find((x) => x.plate === v.trim().toUpperCase());
     const car = veh && carriers.find((c) => c.code === veh.carrier);
-    setH((x) => ({ ...x, plate: v.toUpperCase(), ...(veh ? { carrier: veh.carrier || x.carrier, carrierName: car?.name || x.carrierName } : {}) }));
+    // Xe thuê ngoài có thể trùng số với xe của đơn vị vận tải khác: chỉ điền đơn vị vận tải khi còn trống
+    setH((x) => ({ ...x, plate: v.toUpperCase(), ...(veh && !x.carrier ? { carrier: veh.carrier || '', carrierName: car?.name || x.carrierName } : {}) }));
   };
   const pickCarrier = (v) => { const c = carriers.find((x) => x.code === v); setH((x) => ({ ...x, carrier: v, carrierName: c ? c.name : x.carrierName })); };
   const pickDriver = (v) => { const d = drivers.find((x) => x.idCard === v); setH((x) => ({ ...x, idCard: v, ...(d ? { driverName: d.name || '', driverPhone: d.phone || '' } : {}) })); };

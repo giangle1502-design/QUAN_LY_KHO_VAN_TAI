@@ -115,9 +115,11 @@ service cloud.firestore {
         || (hasRole('van_tai') && ownCarrierTrip() && stepStatus(true) && costOk(['entered'])
           && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(driverKeys().concat(costKeys()).concat(['plannedDate', 'note', 'cancelReason', 'cancelTime'])))
-        // Tài xế: nhận chuyến (CCCD của mình) và xác nhận giao nhận; không được nhập / sửa cước
-        || (hasRole('tai_xe') && ownCarrierTrip() && myIdCard() != ''
-          && resource.data.get('idCard', '') in ['', myIdCard()] && request.resource.data.idCard == myIdCard()
+        // Tài xế: nhập số xe (chuyến chưa có xe) hoặc chạy chuyến điều phối đã chỉ định cho xe đó, xác nhận từng bước;
+        // không đổi được xe điều phối đã chỉ định, không nhập / sửa cước. Xe thuê ngoài không cần có trong danh mục, không cần CCCD
+        || (hasRole('tai_xe') && ownCarrierTrip()
+          && request.resource.data.get('plate', '') != ''
+          && resource.data.get('plate', '') in ['', request.resource.data.get('plate', '')]
           && stepStatus(false)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(driverKeys()))
         // Kế toán nhập / sửa / chốt chi phí chuyến (xe nội bộ cập nhật cước sau)

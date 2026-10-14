@@ -12,16 +12,20 @@ import { calcFreight, matchRate } from './freight';
 const num = (v) => (v === '' || v == null ? 0 : Number(v) || 0);
 export const tripKg = (t) => (t.lines || []).reduce((s, l) => s + num(l.plannedKg ?? num(l.payload) * 1000), 0);
 
+// So khớp số xe không phân biệt khoảng trắng, dấu chấm, gạch (51C-123.45 = 51C12345)
+export const plateKey = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
 export const STEPS = {
-  reg: 'Đăng ký xe & tài xế',
-  arrive: 'Đến kho',
-  loaded: 'Lấy hàng xong',
-  atDest: 'Đến điểm giao',
-  delivered: 'Giao hàng xong',
+  reg: 'Nhập số xe',
+  arrive: 'Đến điểm nhận hàng',
+  loaded: 'Nhận / lấy hàng xong',
+  atDest: 'Đến điểm giao hàng',
+  delivered: 'Hoàn thành (giao xong)',
 };
 export function nextStep(t) {
   if (t.source !== 'plan' || [ST.COMPLETED, ST.CANCELLED].includes(t.status)) return null;
-  if (!t.plate || !t.idCard) return 'reg';
+  // Chỉ cần số xe (xe thuê ngoài không có trong danh mục, không cần CCCD)
+  if (!t.plate) return 'reg';
   if (t.status === ST.PLANNED) return 'arrive';
   if (!t.driverLoadedAt) return 'loaded';
   if (!t.driverAtDestAt) return 'atDest';
@@ -44,7 +48,10 @@ export async function doStep(t, step, user, data = {}) {
   if (step === 'reg') {
     upd = { plate: String(data.plate || '').trim().toUpperCase(), vehicleType: data.vehicleType || t.vehicleType || '', idCard: String(data.idCard || '').trim(),
       driverName: String(data.driverName || '').trim(), driverPhone: String(data.driverPhone || '').trim(), driverRegAt: at };
-    if (!upd.plate || !upd.idCard || !upd.driverName) throw new Error('Nhập số xe, CCCD và họ tên tài xế.');
+    if (!upd.plate) throw new Error('Nhập số xe.');
+    if (t.plate && plateKey(t.plate) !== plateKey(upd.plate)) throw new Error(`Chuyến này điều phối đã chỉ định xe ${t.plate}.`);
+    // Giữ thông tin điều phối đã nhập nếu tài xế để trống
+    for (const k of ['idCard', 'driverName', 'driverPhone', 'vehicleType']) if (!upd[k]) upd[k] = t[k] || '';
   } else if (step === 'arrive') {
     const status = firstStatus(t.hasGuard !== false);
     upd = { status, arrivalTime: at, arrivalDate: vnDate(at), driverArrivedAt: at, ...(status === ST.WAITING_GATE ? { gateConfirmTime: at } : {}) };

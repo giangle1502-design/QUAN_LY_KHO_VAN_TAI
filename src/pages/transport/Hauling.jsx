@@ -189,12 +189,12 @@ function SplitModal({ rows, carrier, onClose }) {
       <p className="small">Mỗi cột là một mã hàng / dòng đơn, mỗi dòng là một chuyến xe. Sửa trực tiếp số tấn từng ô; tổng chuyến phải ≤ tải trọng, tổng cột phải bằng số cần chia.</p>
       <div className="table-wrap" style={{ maxHeight: '55vh', overflow: 'auto' }}><table className="so-lines split">
         <thead>
-          <tr><th>#</th><th>Số xe (bổ sung sau được)</th><th>Tải trọng</th>
+          <tr><th>#</th><th title="Xe nhà: chọn trong danh sách. Xe thuê ngoài: gõ thẳng số xe, không cần thêm vào danh mục">Số xe (xe ngoài gõ tự do, bổ sung sau được)</th><th>Tải trọng</th>
             {rows.map((r) => <th key={r.key} className="num" title={`${r.orderId} dòng ${r.no}`}>{r.item}<div className="small" style={{ fontWeight: 400 }}>{r.orderId}{r.shipCode ? ` · ${r.shipCode}` : ''}</div></th>)}
-            <th className="num">Tổng chuyến</th><th>Tài xế (CCCD)</th><th>Họ tên</th>{threepl.length > 0 && <th>3PL</th>}<th></th></tr>
+            <th className="num">Tổng chuyến</th><th>CCCD (không bắt buộc)</th><th>Họ tên tài xế</th><th>ĐT tài xế</th>{threepl.length > 0 && <th>3PL</th>}<th></th></tr>
           <tr className="need"><td colSpan={3} className="small"><b>Cần chia (tấn)</b> · còn lại tối đa</td>
             {rows.map((r) => <td key={r.key}><input type="number" step="0.001" value={n(need[r.key]) / 1000} onChange={(e) => setNeed((m) => ({ ...m, [r.key]: Math.round(n(e.target.value) * 1000) }))} /><div className="small num">/ {t3(r.rest)}</div></td>)}
-            <td className="num"><b>{t3(total)}</b></td><td colSpan={threepl.length > 0 ? 4 : 3} /></tr>
+            <td className="num"><b>{t3(total)}</b></td><td colSpan={threepl.length > 0 ? 5 : 4} /></tr>
         </thead>
         <tbody>{loads.map((l, i) => {
           const tot = rowKg(l); const overCap = n(l.cap) && tot > n(l.cap) * 1000 + 1;
@@ -206,13 +206,14 @@ function SplitModal({ rows, carrier, onClose }) {
               <td className="num"><b style={{ color: overCap ? 'var(--red)' : undefined }}>{t3(tot)}</b>{overCap ? <div className="small" style={{ color: 'var(--red)' }}>vượt tải</div> : null}</td>
               <td><WithAdd cat="drivers" preset={{ idCard: l.idCard, name: l.driverName }} onAdded={(id, r) => { pickDriver(i, r?.idCard || id); if (r?.name) setLoad(i, { driverName: r.name }); }}><input list="dl-sp-driver" value={l.idCard} onChange={(e) => pickDriver(i, e.target.value)} /></WithAdd></td>
               <td><input value={l.driverName} onChange={(e) => setLoad(i, { driverName: e.target.value })} /></td>
+              <td><input value={l.driverPhone} onChange={(e) => setLoad(i, { driverPhone: e.target.value })} style={{ width: 110 }} /></td>
               {threepl.length > 0 && <td><select value={l.threepl} onChange={(e) => setLoad(i, { threepl: e.target.value })}><option value="">-- Xe GHA --</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</select></td>}
               <td><button type="button" className="btn ghost sm" disabled={loads.length === 1} onClick={() => setLoads((ls) => ls.filter((_, j) => j !== i))}>✕</button></td></tr>
           );
         })}</tbody>
         <tfoot><tr><td colSpan={3} className="small"><b>Đã xếp</b></td>
           {rows.map((r) => { const d = colKg(r) - n(need[r.key]); return <td key={r.key} className="num"><b>{t3(colKg(r))}</b>{Math.abs(d) > 1 ? <div className="small" style={{ color: 'var(--red)' }}>{d > 0 ? 'thừa' : 'thiếu'} {t3(Math.abs(d))}</div> : <div className="small" style={{ color: 'var(--green)' }}>✓</div>}</td>; })}
-          <td className="num"><b>{t3(sumLoads)}</b></td><td colSpan={threepl.length > 0 ? 4 : 3} /></tr></tfoot>
+          <td className="num"><b>{t3(sumLoads)}</b></td><td colSpan={threepl.length > 0 ? 5 : 4} /></tr></tfoot>
       </table></div>
       <datalist id="dl-sp-plate">{vehicles.map((v) => <option key={v.plate} value={v.plate}>{v.vehicleType} {v.payload ? `${v.payload} tấn` : ''}</option>)}</datalist>
       <datalist id="dl-sp-driver">{drivers.map((d) => <option key={d.idCard} value={d.idCard}>{d.name}</option>)}</datalist>
@@ -401,11 +402,11 @@ function DriverAccounts() {
   const save = async (e) => {
     e.preventDefault(); setErr(''); setMsg('');
     const em = f.email.trim().toLowerCase();
-    if (!em.includes('@') || !f.name.trim() || !f.idCard.trim() || !f.carrier) return setErr('Nhập email, họ tên, CCCD và đơn vị vận tải.');
+    if (!em.includes('@') || !f.name.trim() || !f.carrier) return setErr('Nhập email, họ tên và đơn vị vận tải.');
     const at = nowISO();
     try {
       await setDoc(doc(db, 'users', em), { email: em, name: f.name.trim(), role: 'tai_xe', carrier: f.carrier, idCard: f.idCard.trim(), phone: f.phone.trim(), warehouses: [], active: true, updatedAt: at, updatedBy: email }, { merge: true });
-      await setDoc(doc(db, 'drivers', f.idCard.trim()), { idCard: f.idCard.trim(), name: f.name.trim(), phone: f.phone.trim(), carrier: f.carrier, loginEmail: em, updatedAt: at, updatedBy: email }, { merge: true });
+      if (f.idCard.trim()) await setDoc(doc(db, 'drivers', f.idCard.trim()), { idCard: f.idCard.trim(), name: f.name.trim(), phone: f.phone.trim(), carrier: f.carrier, loginEmail: em, updatedAt: at, updatedBy: email }, { merge: true });
       setMsg(`Đã tạo tài khoản ${em}. Tài xế mở app, đăng nhập bằng Google hoặc tạo mật khẩu với email này.`);
       setF({ email: '', name: '', idCard: '', phone: '', carrier: myCarrier });
     } catch (e2) { setErr(e2.code === 'permission-denied' ? 'Không có quyền tạo tài khoản (email này có thể đang là tài khoản vai trò khác).' : e2.message); }
@@ -420,7 +421,7 @@ function DriverAccounts() {
         <div className="form-grid">
           <label className="field"><span>Email đăng nhập *</span><input value={f.email} onChange={(e) => set('email', e.target.value)} /></label>
           <label className="field"><span>Họ tên *</span><input value={f.name} onChange={(e) => set('name', e.target.value)} /></label>
-          <label className="field"><span>CCCD *</span><input value={f.idCard} onChange={(e) => set('idCard', e.target.value)} /></label>
+          <label className="field"><span>CCCD (không bắt buộc)</span><input value={f.idCard} onChange={(e) => set('idCard', e.target.value)} /></label>
           <label className="field"><span>Điện thoại</span><input value={f.phone} onChange={(e) => set('phone', e.target.value)} /></label>
           {isAdmin && <label className="field"><span>Đơn vị vận tải *</span><WithAdd cat="carriers" onAdded={(id) => set('carrier', id)}><select value={f.carrier} onChange={(e) => set('carrier', e.target.value)}><option value="">--</option>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}</select></WithAdd></label>}
         </div>
