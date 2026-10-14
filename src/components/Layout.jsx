@@ -86,7 +86,7 @@ export default function Layout() {
       { to: '/don-hang?tab=SO', cls: orderTab('SO'), ico: '🧾', label: 'Đơn bán (SO)' },
       { to: '/du-kien-xuat', ico: '📅', label: 'Dự kiến xuất kho (Sale)' },
       { to: '/kho/out', cls: srcTab(false), ico: '📤', label: 'Lập phiếu xuất kho', show: hasRole('thu_kho') },
-      { to: '/don-hang?tab=DO', cls: slipTab('DO', ''), ico: '🚚', label: 'DO (phiếu xuất theo đơn)' },
+      { to: '/don-hang?tab=DO', cls: slipTab('DO', ''), ico: '🚚', label: 'DO (lệnh giao hàng)' },
       { to: '/xe/giao-hang', ico: '✅', label: 'Xác nhận giao hàng', show: isAdmin },
     ] },
     { key: 'mua', title: '🛒 Mua hàng (PO → nhập kho)', items: [

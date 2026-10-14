@@ -96,7 +96,7 @@ export function Progress({ o }) {
 
 // Trang Đơn hàng: SO → DO (phiếu xuất theo đơn), PO / STO → Danh sách đơn chờ nhập, Cân đối theo mã hàng.
 // Mỗi người tự kéo thả thứ tự các thẻ (lưu trên trình duyệt).
-export const ORDER_TABS = [['SO', '🧾 Đơn bán (SO)'], ['DO', '🚚 DO (phiếu xuất theo đơn)'], ['PO', '🛒 Đơn mua (PO)'], ['cho-nhap', '📥 Danh sách đơn chờ nhập'], ['STO', '🔁 Chuyển kho (STO)'], ['can-doi', '⚖️ Cân đối theo mã hàng']];
+export const ORDER_TABS = [['SO', '🧾 Đơn bán (SO)'], ['DO', '🚚 DO (lệnh giao hàng)'], ['PO', '🛒 Đơn mua (PO)'], ['cho-nhap', '📥 Danh sách đơn chờ nhập'], ['STO', '🔁 Chuyển kho (STO)'], ['can-doi', '⚖️ Cân đối theo mã hàng']];
 export default function Orders() {
   const [params, setParams] = useSearchParams();
   const keys = ORDER_TABS.map(([k]) => k);
