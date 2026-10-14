@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { listenShared, useShared } from './live';
-import { applyMovementToPlan, revertMovementFromPlan } from './shipPlans';
+import { applyMovementToOrderPlans, applyMovementToPlan, revertMovementFromOrderPlans, revertMovementFromPlan } from './shipPlans';
 import { editMovement } from './stock';
 
 // ============================================================================
@@ -41,11 +41,14 @@ export function useSlips(type, from, to, waitStatus) {
 export const orderTypeOf = (m) => m.orderType || (String(m.orderId || '').match(/^(SO|PO|STO)/) || [])[1] || '';
 
 // Phiếu xuất được lập từ đâu: dự kiến xuất kho, kế hoạch phân bổ (đơn lập từ phân bổ) hay lập trực tiếp
-export function doSource(m, order) {
+// allocs: dòng kế hoạch phân bổ (kể cả dòng "Gắn SO" vào đơn có sẵn)
+export function doSource(m, order, allocs = []) {
   if (m.planId) return { key: 'plan', label: '📅 Dự kiến xuất', ref: m.planId };
   const nos = new Set((m.lines || []).map((l) => l.orderLine));
   const al = (order?.lines || []).find((l) => nos.has(l.no) && l.allocId);
   if (al) return { key: 'alloc', label: '📋 Kế hoạch phân bổ', ref: al.poId || '' };
+  const at = allocs.find((a) => a.orderId === m.orderId && nos.has(a.orderLine) && a.status !== 'cancelled');
+  if (at) return { key: 'alloc', label: '📋 Kế hoạch phân bổ', ref: at.poId || '' };
   if (m.tripId) return { key: 'trip', label: '🚚 Theo chuyến xe', ref: m.tripId };
   return { key: 'direct', label: '📤 Lập trực tiếp', ref: '' };
 }
@@ -57,6 +60,9 @@ export async function saveSlipEdit(m, patch, reason, user) {
   if (old.type === 'out' && old.planId) {
     await revertMovementFromPlan(old.planId, old, user);
     await applyMovementToPlan(old.planId, next, user);
+  } else if (old.type === 'out' && old.orderId) {
+    await revertMovementFromOrderPlans(old.orderId, old, user);
+    await applyMovementToOrderPlans(old.orderId, next, user);
   }
   return next;
 }

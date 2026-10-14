@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { applyMovementToPlan, planLeft, OPEN_PLAN } from '../../lib/shipPlans';
+import { applyMovementToOrderPlans, applyMovementToPlan, planLeft, OPEN_PLAN } from '../../lib/shipPlans';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useMyWarehouses, useOpCompany, useOpWarehouse, useOrders, usePendingIn, useStock, useTrips, useWaitingOut } from '../../lib/hooks';
@@ -585,6 +585,10 @@ function Form({ type }) {
         try { await applyMovementToPlan(shipPlan.id, { id: mvId, lines: out }, { email, name }); }
         catch (e3) { setErr(`Đã lập phiếu ${mvId} nhưng chưa cập nhật được dự kiến xuất ${shipPlan.id}: ${e3.message}`); }
         setShipPlan(null);
+      } else if (type === 'out' && head.orderId) {
+        // Lập thẳng từ SO (không qua dự kiến): trừ vào các dự kiến còn mở của SO để dự kiến không treo
+        try { await applyMovementToOrderPlans(head.orderId, { id: mvId, lines: out, shipCode: head.shipCode }, { email, name }); }
+        catch (e3) { console.warn('Chưa cập nhật được dự kiến xuất của', head.orderId, e3); }
       }
       setDone(mvId);
       setDonePO(typeof res === 'string' ? '' : res.orderId);

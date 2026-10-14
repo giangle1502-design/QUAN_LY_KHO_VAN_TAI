@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
-import { useOpCompany, useOpWarehouse, useOrders, usePendingIn, useWaitingOut } from '../../lib/hooks';
+import { useCollection, useOpCompany, useOpWarehouse, useOrders, usePendingIn, useWaitingOut } from '../../lib/hooks';
+import { OPEN_PLAN, planLeft, plannedByLine, usePlans } from '../../lib/shipPlans';
 import { DO_SOURCES, doSource, orderTypeOf, useSlips } from '../../lib/slips';
-import { lineTo, orderTotals, OPEN_STATUSES, stoRoute, transitKg } from '../../lib/orders';
+import { leftKg, lineShip, lineWh, lineTo, orderTotals, OPEN_STATUSES, stoRoute, transitKg } from '../../lib/orders';
 import { stepOf } from '../../lib/moveCodes';
 import { vnDate } from '../../lib/trips';
 import { exportSheets } from '../../lib/excel';
@@ -19,6 +20,7 @@ const kgOf = (m) => (m.lines || []).reduce((a, l) => a + n(l.kg), 0);
 const t = (kg) => fmtNum(n(kg), 2);
 const addDays = (ymd, d) => { const x = new Date(ymd + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + d); return x.toISOString().slice(0, 10); };
 const uniq = (a) => [...new Set(a.filter(Boolean))];
+const lineDueOf = (o, l) => l.dueDate || o.dueDate || '';
 
 // Nhóm tình trạng để lọc: đang chờ (chưa ghi tồn / STO chưa lập phiếu nhập), hoàn thành, đã hủy
 const bucketOf = (r) => (r.virtual ? 'doing' : r.m.status === 'cancelled' ? 'cancelled' : ['pending', 'wait_release'].includes(r.m.status) ? 'doing' : 'done');
@@ -46,13 +48,16 @@ export default function SlipList({ kind, loai = '' }) {
   const pendIn = usePendingIn();
   const waitOut = useWaitingOut();
   const types = isDO ? ['SO', 'STO'] : ['PO', 'STO'];
+  // DO: thêm các dòng chờ lập phiếu xuất từ Dự kiến xuất kho và Kế hoạch phân bổ (đã gắn / đã tạo SO)
+  const { rows: plans } = usePlans();
+  const allocs = useCollection(isDO ? 'allocations' : '').rows;
 
   const rows = useMemo(() => {
     const out = slips
       .filter((m) => m.orderId && types.includes(orderTypeOf(m)))
       .map((m) => {
         const o = orderMap.get(m.orderId);
-        return { key: m.id, m, o, type: orderTypeOf(m), src: isDO ? doSource(m, o) : null };
+        return { key: m.id, m, o, type: orderTypeOf(m), src: isDO ? doSource(m, o, allocs) : null };
       });
     // STO đã xuất ở kho đi, chưa lập phiếu nhập ở kho đến: hiện thành dòng "chưa lập phiếu nhập"
     if (!isDO) {
@@ -62,8 +67,55 @@ export default function SlipList({ kind, loai = '' }) {
         if (left > 0.001) out.push({ key: 'v:' + o.id, virtual: true, o, type: 'STO', left, m: { id: '', orderId: o.id, date: o.lastShipDate || o.date, warehouse: uniq((o.lines || []).filter((l) => transitKg(l) > 0).map((l) => lineTo(o, l))).join(', '), lines: (o.lines || []).filter((l) => transitKg(l) > 0).map((l) => ({ item: l.item, kg: transitKg(l) })) } });
       }
     }
+    if (isDO) {
+      // Phần SO còn lập DO được = còn phải giao − DO chờ giải chấp
+      const free = (o, l) => leftKg(l) - (waitOut.get(o.id)?.byLine?.[l.no] || 0);
+      // 1) Dự kiến xuất còn mở: mỗi dự kiến 1 dòng chờ lập DO
+      const usedByPlan = {};
+      for (const p of plans) {
+        if (!OPEN_PLAN.includes(p.status)) continue;
+        const o = orderMap.get(p.orderId);
+        if (!o || !OPEN_STATUSES.includes(o.status)) continue;
+        const ls = (p.lines || []).map((l) => {
+          const ol = (o.lines || []).find((x) => x.no === l.orderLine);
+          const k = `${o.id}#${l.orderLine}`;
+          const kgLeft = ol ? Math.max(0, Math.min(planLeft(l), free(o, ol) - (usedByPlan[k] || 0))) : 0;
+          usedByPlan[k] = (usedByPlan[k] || 0) + kgLeft;
+          return { ...l, kg: kgLeft };
+        }).filter((l) => l.kg > 0.001);
+        if (!ls.length) continue;
+        out.push({ key: 'p:' + p.id, virtual: 'plan', o, type: 'SO', left: ls.reduce((a, l) => a + l.kg, 0), plan: p, ships: [...new Set(ls.map((l) => l.shipCode || ''))],
+          src: { key: 'plan', label: '📅 Dự kiến xuất', ref: p.id },
+          m: { id: '', orderId: o.id, date: p.date || '', warehouse: uniq(ls.map((l) => l.warehouse || lineWh(o, (o.lines || []).find((x) => x.no === l.orderLine) || {}))).join(', '), shipCode: uniq(ls.map((l) => l.shipCode)).join(', '), lines: ls } });
+      }
+      // 2) Kế hoạch phân bổ đã gắn / tạo SO: phần chưa có DO, chưa nằm trong dự kiến xuất
+      const planned = plannedByLine(plans);
+      const byLine = new Map();
+      for (const a of allocs) {
+        if (a.status === 'cancelled' || a.orderType !== 'SO' || !a.orderId) continue;
+        const k = `${a.orderId}#${a.orderLine}`;
+        const g = byLine.get(k) || { orderId: a.orderId, no: a.orderLine, kg: 0, rows: [] };
+        g.kg += n(a.qtyKg); g.rows.push(a);
+        byLine.set(k, g);
+      }
+      for (const g of byLine.values()) {
+        const o = orderMap.get(g.orderId);
+        const ol = (o?.lines || []).find((x) => x.no === g.no);
+        if (!o || !ol || !OPEN_STATUSES.includes(o.status)) continue;
+        const kgLeft = Math.min(g.kg, free(o, ol) - (planned[o.id]?.[g.no] || 0));
+        if (kgLeft <= 0.001) continue;
+        const a0 = g.rows[0];
+        // Hàng mua chưa về: PO của dòng phân bổ chưa nhập kg nào
+        const po = orderMap.get(a0.poId);
+        const pol = (po?.lines || []).find((x) => x.no === a0.poLine);
+        const notIn = !!pol && !(n(pol.doneKg) > 0);
+        out.push({ key: 'a:' + o.id + '#' + g.no, virtual: 'alloc', o, type: 'SO', left: kgLeft, notIn, alloc: a0,
+          src: { key: 'alloc', label: '📋 Kế hoạch phân bổ', ref: [a0.poId, a0.contNo].filter(Boolean).join(' · ') },
+          m: { id: '', orderId: o.id, date: lineDueOf(o, ol) || a0.date || '', warehouse: lineWh(o, ol) || a0.fromWarehouse || '', shipCode: lineShip(o, ol) || a0.shipCode || '', lines: [{ item: ol.item, itemName: ol.itemName, kg: kgLeft }] } });
+      }
+    }
     return out;
-  }, [slips, orders, orderMap, pendIn, isDO]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [slips, orders, orderMap, pendIn, waitOut, plans, allocs, isDO]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const list = useMemo(() => {
     const f = norm(q);
@@ -94,12 +146,17 @@ export default function SlipList({ kind, loai = '' }) {
   };
   const party = (r) => (r.type === 'STO' ? (r.o ? stoRoute(r.o) : '') : r.o?.partyName || r.m.partyName || r.o?.partyCode || r.m.partyCode || '');
   const statusCell = (r) => {
+    if (r.virtual === 'plan') return <span className="badge amber" title="Sale đã lập dự kiến xuất, kho chưa lập phiếu xuất">📅 Chờ lập DO</span>;
+    if (r.virtual === 'alloc') return r.notIn ? <span className="badge" title={`PO ${r.alloc.poId} chưa nhập kho: hàng về thì lập DO`}>⏳ Chờ hàng về · {r.alloc.poId}</span>
+      : <span className="badge amber" title="Kế hoạch phân bổ đã gắn SO, kho chưa lập phiếu xuất">📋 Chờ lập DO</span>;
     if (r.virtual) return <span className="badge amber" title="Kho đi đã xuất, hàng đang đi đường; chưa lập phiếu nhập ở kho đến">🚚 Đang đi đường · chưa lập phiếu nhập</span>;
     const st = stepOf(r.m);
     return <span className={'badge ' + st.tone} title={st.title}>{st.label}</span>;
   };
   const actions = (r) => {
     const m = r.m;
+    if (r.virtual === 'plan') return hasRole('thu_kho') ? r.ships.map((sc) => <Link key={sc} className="btn sm primary" to={`/kho/out?plan=${r.plan.id}&ship=${encodeURIComponent(sc)}`}>📤 Lập DO{r.ships.length > 1 ? ` (${sc || 'chưa có mã giao'})` : ''}</Link>) : null;
+    if (r.virtual === 'alloc') return hasRole('thu_kho') ? <Link className={'btn sm' + (r.notIn ? '' : ' primary')} to={`/kho/out?order=${r.o.id}`}>📤 Lập DO</Link> : null;
     if (r.virtual) return isAdmin ? <Link className="btn sm primary" to={`/kho/in?order=${r.o.id}`}>📥 Lập phiếu nhập</Link> : null;
     if (m.status === 'cancelled') return null;
     return (
@@ -122,7 +179,7 @@ export default function SlipList({ kind, loai = '' }) {
       [isDO ? 'Khách / tuyến' : 'NCC / tuyến']: party(r), Kho: r.m.warehouse, 'Công ty': r.o?.company || r.m.company || '',
       'Mã hàng': l.item, 'Tên hàng': l.itemName || '', Lot: l.lot || '', 'Vị trí': l.location || '', 'Số kg': n(l.kg), 'Pallet': n(l.pallets), 'Số bao': n(l.bags),
       'Số xe': r.m.plate || '', 'Đơn vị vận tải': r.m.carrierName || r.m.carrier || '', 'Tài xế': r.m.driverName || '',
-      'Tình trạng': r.virtual ? 'Đang đi đường · chưa lập phiếu nhập' : stepOf(r.m).label.replace(/^\S+\s/, ''),
+      'Tình trạng': r.virtual === 'plan' ? 'Chờ lập DO (dự kiến xuất)' : r.virtual === 'alloc' ? (r.notIn ? `Chờ hàng về (${r.alloc.poId})` : 'Chờ lập DO (kế hoạch phân bổ)') : r.virtual ? 'Đang đi đường · chưa lập phiếu nhập' : stepOf(r.m).label.replace(/^\S+\s/, ''),
       [isDO ? 'Đơn còn phải xuất (kg)' : 'Đơn còn phải nhập (kg)']: orderLeft(r) ?? '',
     })));
     exportSheets(`${isDO ? 'DO' : 'Don_cho_nhap'}_${range.from}_${range.to}`, { [isDO ? 'DO' : 'Đơn chờ nhập']: out.length ? out : [{ Ngày: '' }] });
@@ -131,13 +188,13 @@ export default function SlipList({ kind, loai = '' }) {
   return (
     <div>
       <p className="small" style={{ marginTop: 0 }}>
-        {isDO ? <>Bước giữa SO / STO và giao hàng: mỗi phiếu xuất kho lập theo đơn là 1 <b>DO</b>, dù lập trực tiếp, từ <Link to="/du-kien-xuat">Dự kiến xuất kho</Link> hay từ đơn của <Link to="/phan-bo">Kế hoạch phân bổ</Link>. Lập DO là phần còn lại của đơn giảm theo; sửa / hủy DO thì đơn cập nhật lại.</>
+        {isDO ? <>Bước giữa SO / STO và giao hàng: mỗi phiếu xuất kho lập theo đơn là 1 <b>DO</b>, dù lập trực tiếp, từ <Link to="/du-kien-xuat">Dự kiến xuất kho</Link> hay từ đơn của <Link to="/phan-bo">Kế hoạch phân bổ</Link>. Dự kiến xuất và kế hoạch phân bổ đã gắn SO mà kho chưa lập phiếu hiện ở đây là <b>Chờ lập DO</b>. Lập DO là phần còn lại của đơn giảm theo; sửa / hủy DO thì đơn cập nhật lại.</>
           : <>PO / STO đã lập phiếu nhập kho (chờ thủ kho nhận hoặc đã nhập), và STO kho đi đã xuất nhưng chưa lập phiếu nhập. Sửa / hủy phiếu thì số đã nhận, còn phải nhập của đơn cập nhật lại.</>}
       </p>
       <div className="stats">
         <div className="stat"><div className="stat-label">{isDO ? 'Số DO' : 'Số dòng'} đang hiển thị</div><div className="stat-value">{sum.n}</div></div>
         <div className="stat"><div className="stat-label">Tổng kg</div><div className="stat-value">{t(sum.kg)} kg</div><div className="stat-sub">= {fmtNum(sum.kg / 1000, 3)} tấn</div></div>
-        <div className="stat amber"><div className="stat-label">{isDO ? 'Chờ giải chấp' : 'Đang chờ nhập'}</div><div className="stat-value">{sum.doing}</div></div>
+        <div className="stat amber"><div className="stat-label">{isDO ? 'Đang chờ (chờ lập DO / giải chấp)' : 'Đang chờ nhập'}</div><div className="stat-value">{sum.doing}</div></div>
         <div className="stat green"><div className="stat-label">{isDO ? 'Đã xuất kho' : 'Đã nhập kho'}</div><div className="stat-value">{sum.done}</div></div>
       </div>
       <div className="filters">
@@ -152,7 +209,7 @@ export default function SlipList({ kind, loai = '' }) {
         </select>
         <select value={fStep} onChange={(e) => setFStep(e.target.value)}>
           <option value="">Mọi tình trạng</option>
-          <option value="doing">{isDO ? 'Chờ giải chấp (chưa trừ tồn)' : 'Đang chờ nhập'}</option>
+          <option value="doing">{isDO ? 'Đang chờ (chờ lập DO / chờ giải chấp)' : 'Đang chờ nhập'}</option>
           <option value="done">{isDO ? 'Đã xuất kho' : 'Đã nhập kho'}</option>
           <option value="cancelled">Đã hủy</option>
         </select>
@@ -178,7 +235,7 @@ export default function SlipList({ kind, loai = '' }) {
                 const left = orderLeft(r);
                 return (
                   <tr key={r.key} onClick={() => !r.virtual && setOpen(m.id)} style={{ cursor: r.virtual ? 'default' : 'pointer', opacity: m.status === 'cancelled' ? 0.55 : 1 }}>
-                    <td className="mono nowrap">{m.id || <span className="small">(chưa lập)</span>}{m.editedAt ? <span className="badge" title="Phiếu đã được sửa, xem lịch sử trong chi tiết" style={{ marginLeft: 4 }}>đã sửa</span> : null}</td>
+                    <td className="mono nowrap">{m.id || <span className="small">{isDO ? '(chưa lập DO)' : '(chưa lập)'}</span>}{m.editedAt ? <span className="badge" title="Phiếu đã được sửa, xem lịch sử trong chi tiết" style={{ marginLeft: 4 }}>đã sửa</span> : null}</td>
                     <td className="nowrap">{fmtDate(m.date)}</td>
                     <td className="nowrap">{statusCell(r)}</td>
                     {isDO && <td className="nowrap small">{r.src.label}{r.src.ref ? <div className="mono">{r.src.ref}</div> : null}</td>}

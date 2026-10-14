@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useOrders, useWaitingOut } from '../../lib/hooks';
@@ -20,8 +20,22 @@ export default function ShipPlans() {
   const { rows: plans, error } = usePlans();
   // Phiếu xuất đã lập nhưng chờ giải chấp hàng HTC (chưa trừ SO): khóa nút lập phiếu để không lập trùng
   const waitOut = useWaitingOut();
-  const { rows: openSO } = useOrders('SO', true);
-  const soMap = useMemo(() => new Map(openSO.map((o) => [o.id, o])), [openSO]);
+  const { rows: allSO, loading: soLoading } = useOrders('SO');
+  const soMap = useMemo(() => new Map(allSO.map((o) => [o.id, o])), [allSO]);
+  // Dự kiến còn mở mà SO đã giao đủ / đã đóng / đã hủy (phiếu xuất lập không qua dự kiến, hoặc lập trước khi có tự trừ):
+  // tự đóng để không còn treo "Chờ lập phiếu"
+  const tried = useRef(new Set());
+  useEffect(() => {
+    if (soLoading || !waitOut.loaded || !(canOut || canPlan)) return;
+    for (const p of plans) {
+      const o = soMap.get(p.orderId);
+      if (!OPEN_PLAN.includes(p.status) || !o || OPEN_STATUSES.includes(o.status) || waitOut.get(p.orderId)?.ids?.length || tried.current.has(p.id)) continue;
+      tried.current.add(p.id);
+      const patch = o.status === 'cancelled' && canPlan ? { status: 'cancelled', cancelReason: `Tự hủy: đơn ${o.id} đã hủy`, cancelledBy: email }
+        : { status: 'done', doneAt: new Date().toISOString() };
+      updatePlan(p.id, patch, { email, name }).catch(() => {});
+    }
+  }, [plans, soMap, soLoading, waitOut]); // eslint-disable-line react-hooks/exhaustive-deps
   // Phần SO còn lập phiếu xuất được cho 1 dòng dự kiến = SO còn phải giao − phiếu xuất đang chờ giải chấp
   const soFree = (p, l) => {
     const o = soMap.get(p.orderId);

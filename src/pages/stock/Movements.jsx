@@ -5,7 +5,7 @@ import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useOpCompany, useOpWarehouse } from '../../lib/hooks';
 import { MOVE_TYPES, cancelMovement } from '../../lib/stock';
-import { revertMovementFromPlan } from '../../lib/shipPlans';
+import { revertMovementFromOrderPlans, revertMovementFromPlan } from '../../lib/shipPlans';
 import { MVT, MVT_GROUPS, moveCodes, signedTotal, stepOf, wasPosted } from '../../lib/moveCodes';
 import { fmtTime, vnDate } from '../../lib/trips';
 import { exportSheets } from '../../lib/excel';
@@ -172,6 +172,8 @@ export function MovementDetail({ m, onClose }) {
       if (m.type === 'out' && m.planId) {
         try { await revertMovementFromPlan(m.planId, m, { email, name }); }
         catch (e2) { setErr(`Đã hủy phiếu nhưng chưa cập nhật được dự kiến xuất ${m.planId}: ${e2.message}`); }
+      } else if (m.type === 'out' && m.orderId) {
+        try { await revertMovementFromOrderPlans(m.orderId, m, { email, name }); } catch (e2) { setErr(`Đã hủy phiếu nhưng chưa cập nhật được dự kiến xuất của ${m.orderId}: ${e2.message}`); }
       }
     } catch (e) { setErr(e.message); }
     setBusy(false);
