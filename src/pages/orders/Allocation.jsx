@@ -210,6 +210,7 @@ function QtySplit({ o, l, left, user, orders, allocs, rcv, onClose }) {
     .filter((r) => r.need > 0.001)
     .sort((a, b) => String(a.l.dueDate || a.o.dueDate || '9999').localeCompare(String(b.l.dueDate || b.o.dueDate || '9999'))), [orders, o, l, planned]);
   const [soKg, setSoKg] = useState({}); // `SO__dòng` → kg ('' = không lấy)
+  const [q, setQ] = useState('');
   const [free, setFree] = useState([]); // giao khách chưa có SO: { partyCode, kg }
   const [restWh, setRestWh] = useState(fromWh);
   const [err, setErr] = useState('');
@@ -248,10 +249,11 @@ function QtySplit({ o, l, left, user, orders, allocs, rcv, onClose }) {
     <>
       <p>{o.company} · {o.partyName || o.partyCode} · Nơi nhận <b>{fromWh || '–'}</b>{rcv ? ' (đã nhập)' : ''} · Chưa phân bổ <b>{kg(left)} kg</b> ({tn(left)})</p>
       <h3 style={{ margin: '8px 0 4px' }}>1. Giao cho đơn bán đang mở ({l.item}, công ty {o.company})</h3>
+      {sos.length > 0 && <div className="filters"><input type="search" style={{ flex: 1 }} placeholder="Tìm số SO, khách hàng, mã giao, sale, ngày giao…" value={q} onChange={(e) => setQ(e.target.value)} /><span className="small">Đã chọn {Object.keys(soKg).length} SO</span></div>}
       {!sos.length ? <p className="small">Không có đơn bán đang mở nào còn thiếu {l.item}.</p> : (
         <div className="table-wrap"><table>
           <thead><tr><th></th><th>Số SO</th><th>Khách hàng</th><th>Ngày giao</th><th>Mã giao</th><th className="num">Còn cần (kg)</th><th className="num">Lấy từ PO này (kg)</th></tr></thead>
-          <tbody>{sos.map((r) => { const k = `${r.o.id}__${r.l.no}`; const on = soKg[k] !== undefined; return (
+          <tbody>{sos.filter((r) => !q || soKg[`${r.o.id}__${r.l.no}`] !== undefined || soText(r.o, r.l).includes(norm(q))).map((r) => { const k = `${r.o.id}__${r.l.no}`; const on = soKg[k] !== undefined; return (
             <tr key={k} className={on ? 'picked' : ''}><td><input type="checkbox" checked={on} onChange={() => toggle(r)} /></td>
               <td className="mono">{r.o.id}</td><td>{r.o.partyName || r.o.partyCode}</td><td>{fmtDate(r.l.dueDate || r.o.dueDate)}</td><td>{lineShip(r.o, r.l)}</td>
               <td className="num">{kg(r.need)}</td>
@@ -727,9 +729,13 @@ function CreateOrders({ rows, cats, user, onClose }) {
   );
 }
 
+// Ô tìm đơn bán (nhiều khách cùng đặt 1 mã): số SO, khách, mã giao, sale, ngày giao, ghi chú
+const soText = (o, l) => norm([o.id, o.refNo, o.partyCode, o.partyName, lineShip(o, l), o.sales, o.salesName, fmtDate(l.dueDate || o.dueDate), l.note, o.note].join(' '));
+
 // Gắn dòng kế hoạch vào dòng SO đang mở cùng công ty + mã hàng (cùng khách nếu đã chọn khách)
 function AttachModal({ a, orders, allocs, user, onClose }) {
   const [err, setErr] = useState('');
+  const [q, setQ] = useState('');
   const used = useMemo(() => {
     const m = new Map();
     for (const x of allocs) if (x.orderId && x.status !== 'cancelled') m.set(`${x.orderId}__${x.orderLine}`, (m.get(`${x.orderId}__${x.orderLine}`) || 0) + n(x.qtyKg));
@@ -738,6 +744,7 @@ function AttachModal({ a, orders, allocs, user, onClose }) {
   const cand = orders.filter((o) => o.type === 'SO' && OPEN_STATUSES.includes(o.status) && o.company === a.company && (!a.partyCode || o.partyCode === a.partyCode))
     .flatMap((o) => o.lines.filter((l) => l.item === a.item).map((l) => ({ o, l, planned: used.get(`${o.id}__${l.no}`) || 0 })))
     .sort((x, y) => String(x.l.dueDate || x.o.dueDate || '9999').localeCompare(String(y.l.dueDate || y.o.dueDate || '9999')));
+  const shown = cand.filter((r) => !q || soText(r.o, r.l).includes(norm(q)));
   const pick = async (o, l) => {
     setErr('');
     try { await attachToOrder(a, o, l, user); onClose(); } catch (e) { setErr(e.message); }
@@ -745,9 +752,10 @@ function AttachModal({ a, orders, allocs, user, onClose }) {
   return (
     <Modal title={`Gắn ${a.item} ${kg(a.qtyKg)} kg vào đơn bán có sẵn`} onClose={onClose} wide>
       <p className="small">Đơn bán đang mở của công ty <b>{a.company}</b>, mã hàng <b>{a.item}</b>{a.partyCode ? <>, khách <b>{a.partyCode}</b></> : ''}. Dòng đơn không thay đổi; dòng kế hoạch chỉ ghi nhớ là hàng cho đơn này.</p>
-      {!cand.length ? <Empty text="Không có dòng đơn bán phù hợp." /> : (
+      {cand.length > 0 && <div className="filters"><input type="search" autoFocus style={{ flex: 1 }} placeholder="Tìm số SO, khách hàng, mã giao, sale, ngày giao…" value={q} onChange={(e) => setQ(e.target.value)} /><span className="small">{shown.length}/{cand.length} dòng</span></div>}
+      {!cand.length ? <Empty text="Không có dòng đơn bán phù hợp." /> : !shown.length ? <Empty text="Không tìm thấy đơn bán khớp từ khóa." /> : (
         <table><thead><tr><th>Số SO</th><th>Khách hàng</th><th>Ngày giao</th><th>Kho xuất</th><th>Mã giao</th><th className="num">Còn phải giao (kg)</th><th className="num">Đã có kế hoạch (kg)</th><th></th></tr></thead>
-          <tbody>{cand.map(({ o, l, planned }) => (
+          <tbody>{shown.map(({ o, l, planned }) => (
             <tr key={`${o.id}-${l.no}`}><td className="mono">{o.id}</td><td>{o.partyName || o.partyCode}</td><td>{fmtDate(l.dueDate || o.dueDate)}</td><td>{lineWh(o, l) || 'Kho nào cũng được'}</td>
               <td>{lineShip(o, l)}</td><td className="num">{kg(leftKg(l))}</td><td className="num">{kg(planned)}</td>
               <td><button className="btn sm primary" onClick={() => pick(o, l)}>Gắn</button>
