@@ -136,8 +136,9 @@ export default function SOForm({ type = 'SO', order, onClose }) {
   const partyOpts = isSO && salesOnly ? parties.filter((p) => saleSeesCustomer(p, email)) : parties;
   const itemOpts = isSO && salesOnly ? items.filter((x) => itemAllowed(x, cust, email)) : items;
   const soTypes = isSO ? typesOf(lines.map((l) => l.item), itemMap) : [];
-  const autoSale = isSO && soTypes.length === 1 ? salesFor(cust, soTypes[0]) : '';
-  // Sale phụ trách SO luôn theo thiết lập của khách hàng + loại hạt nhựa (không theo người lập: admin lập hộ vẫn về đúng sale)
+  // Sale phụ trách SO mới luôn theo thiết lập của khách hàng + loại hạt nhựa (không theo người lập: admin lập hộ vẫn về đúng sale).
+  // Đơn đã lập giữ nguyên sale cũ khi khách chuyển sang sale khác (doanh số đã tính cho sale trước)
+  const autoSale = isSO && !order && soTypes.length === 1 ? salesFor(cust, soTypes[0]) : '';
   useEffect(() => {
     if (autoSale && h.sales !== autoSale) setH((x) => ({ ...x, sales: autoSale }));
   }, [autoSale]); // eslint-disable-line react-hooks/exhaustive-deps
