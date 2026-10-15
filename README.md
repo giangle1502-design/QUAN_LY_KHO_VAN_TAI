@@ -323,6 +323,8 @@ Thay cột "Điểm giao" của sheet COST CONT: mỗi dòng PO (hàng về cả
 
 - Hàng mua nội địa (không có cont): bấm **Phân bổ** ở dòng PO → chọn **⚖️ Theo số lượng / đơn bán**. Tick các đơn bán đang mở cùng mã hàng, công ty (tự điền số kg còn cần, sửa được) → dòng kế hoạch gắn luôn vào SO đó; thêm khách chưa có SO nếu cần; phần còn lại về kho: chọn kho nhận = "để tồn tại kho nhận" (không cần đơn), chọn kho khác = lệnh chuyển kho (STO).
 
+- Bảng kế hoạch có ô lọc **Mã hàng** và **Kho** (nơi nhận hoặc kho đến, hiện tên kho), ô tìm theo cả tên hàng / tên kho; cột kho hiện mã + tên kho. Phía trên có **📊 Tổng hợp theo mã hàng và nơi nhận** (tổng kg, giao khách, về kho, để tồn, chưa chốt, nháp, đã tạo đơn, đã giao, khách hàng), bấm một dòng để lọc bảng theo mã + kho đó; nút Thu gọn.
+
 ## Kiểm kê, cycle count (/kho/kiem-ke) và điều chỉnh tồn từ Excel
 
 - **Điều chỉnh tồn từ Excel** (/kho/dieu-chinh-excel, nút "⬆ Nhập từ Excel" ở trang Điều chỉnh tồn): cột Công ty, Vị trí, Mã hàng, Lot, Tình trạng, Tăng/Giảm (+/−, hoặc số âm), Số bao, Pallet, Kg. Pallet, kg trống thì tự tính theo quy cách. Dòng giảm phải khớp 1 dòng tồn và không vượt tồn. Ghi thành phiếu DC (150 dòng/phiếu).

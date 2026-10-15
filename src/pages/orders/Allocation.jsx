@@ -334,11 +334,64 @@ const FILTERS = {
   '': 'Tất cả (trừ dòng đã hủy)',
   cancelled: 'Dòng đã hủy',
 };
+// Bảng tổng hợp phía trên kế hoạch: theo mã hàng + nơi nhận (theo đúng các dòng đang lọc)
+function PlanSummary({ rows, whName, open, setOpen, onPick }) {
+  const data = useMemo(() => {
+    const m = new Map();
+    for (const a of rows) {
+      if (a.st === 'cancelled') continue;
+      const k = `${a.item}|${a.fromWarehouse || ''}`;
+      const r = m.get(k) || { item: a.item, itemName: a.itemName, wh: a.fromWarehouse || '', total: 0, customer: 0, warehouse: 0, keep: 0, pending: 0, draft: 0, ordered: 0, done: 0, customers: new Set() };
+      const q = n(a.qtyKg);
+      r.total += q;
+      r[a.destType in r ? a.destType : 'pending'] += q;
+      if (a.destType === 'customer' && (a.partyName || a.partyCode)) r.customers.add(a.partyName || a.partyCode);
+      if (a.st === 'draft') r.draft += q; else if (['done', 'kept'].includes(a.st)) r.done += q; else r.ordered += q;
+      m.set(k, r);
+    }
+    return [...m.values()].sort((x, y) => x.item.localeCompare(y.item) || x.wh.localeCompare(y.wh));
+  }, [rows]);
+  if (!rows.length) return null;
+  const tot = data.reduce((s, r) => { for (const k of ['total', 'customer', 'warehouse', 'keep', 'pending', 'draft', 'ordered', 'done']) s[k] += r[k]; return s; },
+    { total: 0, customer: 0, warehouse: 0, keep: 0, pending: 0, draft: 0, ordered: 0, done: 0 });
+  const c = (v) => (v > 0.001 ? kg(v) : <span className="small">–</span>);
+  return (
+    <div className="card" style={{ marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <b>📊 Tổng hợp theo mã hàng và nơi nhận ({data.length} nhóm, theo các dòng đang lọc)</b>
+        <button type="button" className="btn sm ghost" style={{ marginLeft: 'auto' }} onClick={() => setOpen(!open)}>{open ? 'Thu gọn' : 'Mở bảng tổng hợp'}</button>
+      </div>
+      {open && (
+        <div className="table-wrap" style={{ marginTop: 8 }}>
+          <table>
+            <thead><tr><th>Mã hàng</th><th>Tên hàng</th><th>Nơi nhận</th><th className="num">Tổng (kg)</th><th className="num">Giao khách</th><th className="num">Về kho mình</th><th className="num">Để tồn kho nhận</th>
+              <th className="num">Chưa chốt</th><th className="num">Nháp</th><th className="num">Đã tạo đơn</th><th className="num">Đã giao / để tồn</th><th>Khách hàng</th></tr></thead>
+            <tbody>{data.map((r) => (
+              <tr key={`${r.item}|${r.wh}`} style={{ cursor: 'pointer' }} title="Bấm để lọc bảng kế hoạch theo mã hàng + kho này" onClick={() => onPick(r.item, r.wh)}>
+                <td><b>{r.item}</b></td><td className="small">{r.itemName}</td><td>{whName.get(r.wh) || r.wh || '–'}{whName.get(r.wh) ? <div className="small">{r.wh}</div> : null}</td>
+                <td className="num"><b>{kg(r.total)}</b><div className="small">{tn(r.total)}</div></td><td className="num">{c(r.customer)}</td><td className="num">{c(r.warehouse)}</td><td className="num">{c(r.keep)}</td>
+                <td className="num" style={r.pending > 0.001 ? { color: 'var(--amber)', fontWeight: 600 } : undefined}>{c(r.pending)}</td>
+                <td className="num">{c(r.draft)}</td><td className="num">{c(r.ordered)}</td><td className="num">{c(r.done)}</td>
+                <td className="small">{[...r.customers].join(', ')}</td></tr>
+            ))}</tbody>
+            {data.length > 1 && <tfoot><tr><th colSpan={3}>Cộng</th><th className="num">{kg(tot.total)}</th><th className="num">{kg(tot.customer)}</th><th className="num">{kg(tot.warehouse)}</th><th className="num">{kg(tot.keep)}</th>
+              <th className="num">{kg(tot.pending)}</th><th className="num">{kg(tot.draft)}</th><th className="num">{kg(tot.ordered)}</th><th className="num">{kg(tot.done)}</th><th></th></tr></tfoot>}
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Plan({ allocs, orderMap, orders, allocated, pos, cats, co, setCo, canManage, user }) {
   const { isSuper } = useApp();
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('draft');
   const [dest, setDest] = useState('');
+  const [itemF, setItemF] = useState('');
+  const [whF, setWhF] = useState('');
+  const [showSum, setShowSum] = usePref('alloc-show-summary', true);
+  const whName = useMemo(() => new Map((cats.warehouses || []).map((w) => [w.code, w.name || ''])), [cats.warehouses]);
   const [sel, setSel] = useState(() => new Set());
   const [creating, setCreating] = useState(false);
   const [attach, setAttach] = useState(null);
@@ -350,11 +403,16 @@ function Plan({ allocs, orderMap, orders, allocated, pos, cats, co, setCo, canMa
     return allocs.map((a) => ({ ...a, st: allocStatus(a, orderMap) }))
       .filter((a) => !co || a.company === co)
       .filter((a) => !dest || a.destType === dest)
+      .filter((a) => !itemF || a.item === itemF)
+      .filter((a) => !whF || a.fromWarehouse === whF || a.toWarehouse === whF)
       .filter((a) => (filter === 'draft' ? a.st === 'draft' : filter === 'tracking' ? ['ordered', 'partial', 'orderGone'].includes(a.st)
         : filter === 'done' ? ['done', 'kept'].includes(a.st) : filter === 'cancelled' ? a.st === 'cancelled' : a.st !== 'cancelled'))
-      .filter((a) => !f || norm([a.poId, a.bct, a.item, a.itemName, a.contNo, a.fromWarehouse, a.partyCode, a.partyName, a.shipCode, a.toWarehouse, a.orderId, a.carrier, a.note].join(' ')).includes(f))
+      .filter((a) => !f || norm([a.poId, a.bct, a.item, a.itemName, a.contNo, a.fromWarehouse, whName.get(a.fromWarehouse), a.fromLocation, a.partyCode, a.partyName, a.shipCode, a.toWarehouse, whName.get(a.toWarehouse), a.orderId, a.carrier, a.note].join(' ')).includes(f))
       .sort((x, y) => String(x.date || '9999').localeCompare(String(y.date || '9999')) || String(x.poId).localeCompare(String(y.poId)) || String(x.createdAt).localeCompare(String(y.createdAt)));
-  }, [allocs, orderMap, co, dest, filter, q]);
+  }, [allocs, orderMap, co, dest, filter, q, itemF, whF, whName]);
+  // Mã hàng / kho có trong kế hoạch (cho ô lọc)
+  const itemOpts = useMemo(() => [...new Map(allocs.filter((a) => !co || a.company === co).map((a) => [a.item, a.itemName])).entries()].sort((x, y) => x[0].localeCompare(y[0])), [allocs, co]);
+  const whOpts = useMemo(() => [...new Set(allocs.filter((a) => !co || a.company === co).flatMap((a) => [a.fromWarehouse, a.toWarehouse]).filter(Boolean))].sort(), [allocs, co]);
   // Gom các mã hàng cùng số cont (cùng công ty) thành 1 cont; dòng chưa có số cont đứng riêng
   const groups = useMemo(() => {
     const m = new Map();
@@ -405,8 +463,8 @@ function Plan({ allocs, orderMap, orders, allocated, pos, cats, co, setCo, canMa
   const exportExcel = () => exportSheets(`Ke_hoach_phan_bo_${today()}`, {
     'Kế hoạch phân bổ': (rows.length ? rows : [{}]).map((a) => ({
       'Ngày giao dự kiến': a.date || '', 'Số PO': a.poId || '', 'BCT / Số Ecount': a.bct || '', 'Công ty': a.company || '', 'Nhà cung cấp': a.supplierName || a.supplier || '',
-      'Mã hàng': a.item || '', 'Tên hàng': a.itemName || '', 'Số lượng (kg)': n(a.qtyKg), 'Số cont': a.contNo || '', 'Nơi nhận': a.fromWarehouse || '', 'Vị trí nhận': a.fromLocation || '',
-      'Điểm giao': DEST_TYPES[a.destType] || '', 'Khách hàng': a.partyName || a.partyCode || '', 'Mã giao': a.shipCode || '', 'Kho đến': a.toWarehouse || '', 'Vị trí kho đến': a.toLocation || '',
+      'Mã hàng': a.item || '', 'Tên hàng': a.itemName || '', 'Số lượng (kg)': n(a.qtyKg), 'Số cont': a.contNo || '', 'Nơi nhận': a.fromWarehouse || '', 'Tên nơi nhận': whName.get(a.fromWarehouse) || '', 'Vị trí nhận': a.fromLocation || '',
+      'Điểm giao': DEST_TYPES[a.destType] || '', 'Khách hàng': a.partyName || a.partyCode || '', 'Mã giao': a.shipCode || '', 'Kho đến': a.toWarehouse || '', 'Tên kho đến': whName.get(a.toWarehouse) || '', 'Vị trí kho đến': a.toLocation || '',
       'Nhà vận chuyển': a.carrier || '', 'Số đơn': a.orderId || '', 'Trạng thái': ALLOC_STATUS[a.st]?.label || '', 'Ghi chú': a.note || '',
     })),
   });
@@ -427,7 +485,13 @@ function Plan({ allocs, orderMap, orders, allocated, pos, cats, co, setCo, canMa
           <option value="">Mọi điểm giao</option>
           {Object.entries(DEST_TYPES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
         </Select>
-        <input type="search" placeholder="Tìm PO, BCT, mã hàng, số cont, khách, kho, số đơn…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Select value={itemF} searchable onChange={(e) => setItemF(e.target.value)} placeholder="Mọi mã hàng">
+          <option value="">Mọi mã hàng</option>{itemOpts.map(([c, nm]) => <option key={c} value={c}>{c}{nm ? ` – ${nm}` : ''}</option>)}
+        </Select>
+        <Select value={whF} searchable onChange={(e) => setWhF(e.target.value)} placeholder="Mọi kho">
+          <option value="">Mọi kho (nơi nhận / kho đến)</option>{whOpts.map((c) => <option key={c} value={c}>{whName.get(c) ? `${whName.get(c)} (${c})` : c}</option>)}
+        </Select>
+        <input type="search" style={{ flex: 1, minWidth: 260 }} placeholder="Tìm PO, BCT, mã / tên hàng, số cont, khách, tên kho, số đơn…" value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="actions" style={{ marginLeft: 'auto' }}>
           <button className="btn" onClick={exportExcel}>⬇ Excel</button>
           {canManage && <button className="btn cont-btn" onClick={() => setContAdd('new')} title="1 cont gồm nhiều mã hàng / nhiều dòng PO">📦 Lập cont nhiều mã hàng</button>}
@@ -436,6 +500,7 @@ function Plan({ allocs, orderMap, orders, allocated, pos, cats, co, setCo, canMa
       </div>
       {msg && <div className="ok-box" style={{ marginBottom: 10 }}>{msg}</div>}
       <ErrorBox error={err} />
+      <PlanSummary rows={rows} whName={whName} open={showSum} setOpen={setShowSum} onPick={(item, wh) => { setItemF(item); setWhF(wh); }} />
       <datalist id="dl-alloc-soldto">{(cats.soldto || []).filter((c) => c.active !== false).map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</datalist>
       <div className="table-wrap">
         {!rows.length ? <Empty text={filter === 'draft' ? 'Chưa có dòng kế hoạch nháp. Vào tab "Hàng mua chưa phân bổ" để chia dòng PO, hoặc bấm "＋ Cont nhiều mã hàng".' : 'Không có dòng nào.'} /> : (
@@ -506,8 +571,9 @@ function SharedCells({ v, edit, editCarrier = edit, save, cats, whs }) {
       <td>{edit ? <input type="date" style={{ width: 140 }} defaultValue={v.date} key={'d' + v.date} onBlur={blur('date')} /> : <span className="nowrap">{fmtDate(v.date)}</span>}{mixed('date')}</td>
       <td>{edit && (!v.fromWarehouse || chgFrom) ? (
         <WithAdd cat="warehouses" onAdded={(id) => { setChgFrom(false); save({ fromWarehouse: id, fromLocation: '' }); }}><Select value={v.fromWarehouse || ''} onChange={(e) => { setChgFrom(false); save({ fromWarehouse: e.target.value, fromLocation: '' }); }}>
-          <option value="">-- Kho --</option>{whs.map((w) => <option key={w.code} value={w.code}>{w.code}</option>)}
-        </Select></WithAdd>) : <span title="Lấy từ kho nhập của dòng PO">{v.fromWarehouse}{edit && <button type="button" className="btn ghost sm" title="Đổi nơi nhận" onClick={() => setChgFrom(true)}>✎</button>}</span>}
+          <option value="">-- Kho --</option>{whs.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
+        </Select></WithAdd>) : <span title="Lấy từ kho nhập của dòng PO"><b>{v.fromWarehouse}</b>{edit && <button type="button" className="btn ghost sm" title="Đổi nơi nhận" onClick={() => setChgFrom(true)}>✎</button>}</span>}
+        {v.fromWarehouse && whOf(v.fromWarehouse)?.name && <div className="small">{whOf(v.fromWarehouse).name}</div>}
         {mixed('fromWarehouse')}
         <LocCell wh={whOf(v.fromWarehouse)} value={v.fromLocation} edit={edit} locs={locs} onChange={(x) => save({ fromLocation: x })} mixed={v.mixed?.fromLocation} /></td>
       <td>{edit ? (
@@ -522,7 +588,7 @@ function SharedCells({ v, edit, editCarrier = edit, save, cats, whs }) {
         <WithAdd cat="warehouses" onAdded={(id) => save({ toWarehouse: id, toLocation: '' })}><Select value={v.toWarehouse || ''} onChange={(e) => save({ toWarehouse: e.target.value, toLocation: '' })}>
           <option value="">-- Kho đến --</option>{whs.filter((w) => w.code !== v.fromWarehouse).map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
         </Select></WithAdd>
-      ) : v.destType === 'customer' ? <>{v.partyCode}{v.partyName ? <div className="small">{v.partyName}</div> : null}</> : v.destType === 'warehouse' ? v.toWarehouse : v.destType === 'keep' ? <span className="small">Ở lại {v.fromWarehouse || 'kho nhận'}</span> : <span className="small">–</span>}
+      ) : v.destType === 'customer' ? <>{v.partyCode}{v.partyName ? <div className="small">{v.partyName}</div> : null}</> : v.destType === 'warehouse' ? <><b>{v.toWarehouse}</b>{whOf(v.toWarehouse)?.name && <div className="small">{whOf(v.toWarehouse).name}</div>}</> : v.destType === 'keep' ? <span className="small">Ở lại {whOf(v.fromWarehouse)?.name || v.fromWarehouse || 'kho nhận'}</span> : <span className="small">–</span>}
         {mixed(v.destType === 'warehouse' ? 'toWarehouse' : 'partyCode')}
         {v.destType === 'warehouse' && <LocCell wh={whOf(v.toWarehouse)} value={v.toLocation} edit={edit} locs={locs} onChange={(x) => save({ toLocation: x })} mixed={v.mixed?.toLocation} />}</td>
       <td>{edit && v.destType === 'customer' && v.partyCode ? (
