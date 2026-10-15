@@ -38,8 +38,11 @@ export function plannedByLine(plans, exceptId) {
   return m;
 }
 
+// Lập nhiều dự kiến liền nhau (1 xe nhiều SO): không để trùng số theo thời gian
+let lastT = 0;
 export async function createPlan(p, user) {
-  const id = `DK${Date.now().toString(36).toUpperCase()}`;
+  lastT = Math.max(Date.now(), lastT + 1);
+  const id = `DK${lastT.toString(36).toUpperCase()}`;
   const at = nowISO();
   await setDoc(doc(db, 'shipPlans', id), {
     ...p, id, status: 'open', lines: p.lines.map((l) => ({ ...l, doneKg: 0 })), movementIds: [],

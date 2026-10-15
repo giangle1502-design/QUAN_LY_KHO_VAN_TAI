@@ -51,6 +51,29 @@ async function itemsOf(codes) {
   return new Map(list.map((c, i) => [c, docs[i]]).filter(([, v]) => v));
 }
 
+// 1 xe nhiều SO: các phiếu xuất cùng mã gộp (groupId) in chung 1 bộ. Trả về phiếu gộp: số phiếu = phiếu đầu,
+// dòng hàng của mọi phiếu (mỗi dòng ghi số đơn), orderId = các SO nối nhau, orderIds = danh sách SO, groupMoves = các phiếu con
+export async function loadGroupMovement(m) {
+  if (!m?.groupId) return m;
+  const snap = await getDocs(query(collection(db, 'movements'), where('groupId', '==', m.groupId)));
+  let list = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+  const live = list.filter((x) => x.status !== 'cancelled');
+  if (live.length) list = live;
+  list.sort((a, b) => num(a.groupIndex) - num(b.groupIndex) || a.id.localeCompare(b.id));
+  if (list.length < 2) return m;
+  const first = list[0];
+  const orderIds = [...new Set(list.map((x) => x.orderId).filter(Boolean))];
+  const refs = [...new Set(list.map((x) => x.orderRef).filter(Boolean))];
+  return {
+    ...first,
+    orderId: orderIds.join(', '), orderRef: refs.join(', '), orderIds, groupMoves: list,
+    lines: list.flatMap((x) => (x.lines || []).map((l) => ({ ...l, orderId: x.orderId, orderRef: x.orderRef || '', moveId: x.id }))),
+    pallets: list.flatMap((x) => x.pallets || []),
+    status: list.some((x) => x.status === 'wait_release') ? 'wait_release' : first.status,
+    note: [...new Set(list.map((x) => x.note).filter(Boolean))].join('; '),
+  };
+}
+
 export async function loadMovementData(m) {
   const company = m.company || m.lines?.find((l) => l.company)?.company || '';
   const [co, wh, trip, party, supplier, order, items, shipto] = await Promise.all([
@@ -59,14 +82,16 @@ export async function loadMovementData(m) {
     one('trips', m.tripId),
     one('soldto', m.partyCode),
     one('suppliers', m.partyCode),
-    one('orders', m.orderId),
+    one('orders', m.orderIds ? m.orderIds[0] : m.orderId),
     itemsOf((m.lines || []).map((l) => l.item)),
     m.shipCode
       ? getDocs(query(collection(db, 'shipto'), where('shipCode', '==', m.shipCode), limit(5)))
         .then((s) => { const rows = s.docs.map((d) => d.data()); return rows.find((r) => r.customerCode === m.partyCode) || rows[0] || null; }).catch(() => null)
       : null,
   ]);
-  return { m, co: co || (company ? { code: company, name: company } : null), wh, trip, party, supplier, order, items, shipto, lines: m.lines || [],
+  // Phiếu gộp nhiều SO: dòng hàng tra đúng dòng của đơn mình
+  const orders = m.orderIds?.length > 1 ? new Map((await Promise.all(m.orderIds.map((id) => one('orders', id)))).map((o, i) => [m.orderIds[i], o]).filter(([, o]) => o)) : null;
+  return { m, co: co || (company ? { code: company, name: company } : null), wh, trip, party, supplier, order, orders, items, shipto, lines: m.lines || [],
     palletRows: m.palletMode === 'pallet' && ['in', 'out'].includes(m.type) && palletManaged(wh) && m.palletTracked !== false ? m.pallets || [] : [] };
 }
 

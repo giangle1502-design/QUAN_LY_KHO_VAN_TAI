@@ -187,10 +187,11 @@ export function fieldDefs(docType, fieldsOf) {
     { label: 'Số bao', key: 'bags', type: 'num', dec: 0, get: (d, l) => num(l.bags) },
     { label: 'Ghi chú dòng', key: 'lineNote', get: (d, l) => l.note },
     { label: 'Công ty dòng', key: 'lineCompany', get: (d, l) => l.company },
+    { label: 'Số đơn (SO) của dòng', key: 'lineOrderId', get: (d, l) => l.orderId || m(d).orderId },
     { label: 'Ô trống', key: 'blank', get: () => '' },
     { label: 'Ô tích ☐', key: 'checkbox', get: () => '☐' },
     ...catFields(fieldsOf, 'items', 'Mã hàng', 'Mã hàng', () => null).map((f) => ({ ...f, get: (d, l) => d.items?.get(l.item)?.[f.key.split('.')[1]] })),
-    ...orderFields(fieldsOf, 'Line', 'Dòng đơn', 'Dòng đơn', (d, l) => (d.order?.lines || []).find((x) => String(x.no) === String(l.orderLine))),
+    ...orderFields(fieldsOf, 'Line', 'Dòng đơn', 'Dòng đơn', (d, l) => (((l.orderId && d.orders?.get(l.orderId)) || d.order)?.lines || []).find((x) => String(x.no) === String(l.orderLine))),
   ];
   if (docType === 'nhan') {
     // Nhãn: mỗi pallet 1 nhãn, trường dòng hàng dùng trực tiếp trong nội dung nhãn

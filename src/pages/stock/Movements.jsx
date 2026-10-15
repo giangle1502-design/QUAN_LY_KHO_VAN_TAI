@@ -119,7 +119,7 @@ export default function Movements() {
                   <td className="nowrap">{fmtDate(m.date)}</td>
                   <td className="nowrap" title={st.title} onClick={(e) => e.stopPropagation()}>{m.status === 'pending' ? <Link className={'badge ' + st.tone} to={`/kho/nhan-hang/${m.id}`}>{st.label}</Link>
                     : m.status === 'wait_release' ? <Link className={'badge ' + st.tone} to="/kho/giai-chap">{st.label}</Link>
-                    : <span className={'badge ' + st.tone}>{st.label}</span>}</td><td>{m.warehouse}</td><td>{m.company || [...new Set((m.lines || []).map((l) => l.company).filter(Boolean))].join(', ')}</td><td className="mono">{m.plate ? <span className="plate">{m.plate}</span> : m.tripId}</td><td className="mono">{m.orderId}</td>
+                    : <span className={'badge ' + st.tone}>{st.label}</span>}</td><td>{m.warehouse}</td><td>{m.company || [...new Set((m.lines || []).map((l) => l.company).filter(Boolean))].join(', ')}</td><td className="mono">{m.plate ? <span className="plate">{m.plate}</span> : m.tripId}</td><td className="mono">{m.orderId}{m.groupId && <div className="small" title="1 xe giao nhiều đơn: in chung 1 phiếu soạn hàng, 1 phiếu giao hàng">🚚 gộp xe: {(m.groupOrders || []).filter((x) => x !== m.orderId).join(', ')}</div>}</td>
                   <td>{m.partyName || m.partyCode}</td><td>{[...new Set(m.lines.map((l) => l.item))].join(', ')}</td>
                   <td className="num">{qtyCell(m, 'bags')}</td><td className="num">{qtyCell(m, 'kg')}</td>
                   <td className="small">{m.createdByName || m.createdBy}</td>

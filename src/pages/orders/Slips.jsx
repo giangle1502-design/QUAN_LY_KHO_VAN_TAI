@@ -184,7 +184,7 @@ export default function SlipList({ kind, loai = '' }) {
     { key: 'date', label: 'Ngày', cls: 'nowrap', render: (r) => fmtDate(r.m.date) },
     { key: 'status', label: 'Tình trạng', locked: true, cls: 'nowrap', render: statusCell },
     ...(isDO ? [{ key: 'src', label: 'Nguồn lập', cls: 'nowrap small', render: (r) => <>{r.src.label}{r.src.ref ? <div className="mono">{r.src.ref}</div> : null}</> }] : []),
-    { key: 'order', label: 'Đơn', cls: 'mono nowrap', render: (r) => <><Link to={`/don-hang?tab=${r.type}&q=${r.m.orderId}`} onClick={(e) => e.stopPropagation()}>{r.m.orderId}</Link><div className="small">{r.type}{r.o?.refNo ? ` · ${r.o.refNo}` : ''}</div></> },
+    { key: 'order', label: 'Đơn', cls: 'mono nowrap', render: (r) => <><Link to={`/don-hang?tab=${r.type}&q=${r.m.orderId}`} onClick={(e) => e.stopPropagation()}>{r.m.orderId}</Link><div className="small">{r.type}{r.o?.refNo ? ` · ${r.o.refNo}` : ''}</div>{r.m.groupId && <div className="small" title="1 xe giao nhiều đơn: in chung 1 phiếu soạn hàng, 1 phiếu giao hàng">🚚 gộp xe: {(r.m.groupOrders || []).filter((x) => x !== r.m.orderId).join(', ')}</div>}</> },
     { key: 'refNo', label: 'Số Ecount / số đơn KH', hideDefault: true, cls: 'mono', render: (r) => r.o?.refNo || '' },
     { key: 'company', label: 'Công ty', hideDefault: true, render: (r) => r.o?.company || r.m.company || '' },
     { key: 'party', label: isDO ? 'Khách / tuyến' : 'NCC / tuyến', render: party },

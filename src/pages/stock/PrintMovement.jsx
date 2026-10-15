@@ -6,7 +6,7 @@ import { useApp } from '../../context/AppContext';
 import { MOVE_TYPES } from '../../lib/stock';
 import { fmtDate, fmtNum } from '../../lib/utils';
 import { docTypeOfMovement } from '../../lib/printTemplates';
-import { loadMovementData } from '../../lib/printData';
+import { loadGroupMovement, loadMovementData } from '../../lib/printData';
 import { TemplatePage, TemplateSheets, useTemplateChoice } from '../../components/PrintTemplate';
 import PalletChoice from '../../components/PalletChoice';
 import { ErrorBox } from '../../components/ui';
@@ -26,6 +26,8 @@ export default function PrintMovement({ pick = false }) {
   const { settings } = useApp();
   const [params, setParams] = useSearchParams();
   const nCopies = Math.min(3, Math.max(1, Number(params.get('lien') || 3)));
+  // 1 xe nhiều SO: mặc định in chung cả nhóm; ?rieng=1 in riêng phiếu này
+  const alone = params.get('rieng') === '1';
   const [ver, setVer] = useState(0);
   const reload = () => setVer((x) => x + 1);
   const [m, setM] = useState(undefined);
@@ -35,14 +37,15 @@ export default function PrintMovement({ pick = false }) {
 
   useEffect(() => {
     getDoc(doc(db, 'movements', id)).then(async (s) => {
-      const d = s.exists() ? s.data() : null;
+      const d0 = s.exists() ? s.data() : null;
+      const d = d0?.groupId && !alone ? await loadGroupMovement({ ...d0, id: s.id }).catch(() => d0) : d0;
       setM(d);
       if (d?.tripId) getDoc(doc(db, 'trips', d.tripId)).then((t) => t.exists() && setTrip(t.data())).catch(() => {});
       const c = d?.company || d?.lines?.find((l) => l.company)?.company;
       if (c) getDoc(doc(db, 'companies', c)).then((x) => setCo(x.exists() ? x.data() : { code: c, name: c })).catch(() => setCo({ code: c, name: c }));
       if (d?.warehouse) getDoc(doc(db, 'warehouses', d.warehouse)).then((w) => w.exists() && setWh(w.data())).catch(() => {});
     }).catch(() => setM(null));
-  }, [id, ver]);
+  }, [id, ver, alone]);
 
   // Kho không quản lý pallet: phiếu chỉ ghi Kiện / Xá, không có bảng pallet
   const managed = !!wh && palletManaged(wh) && m?.palletTracked !== false;
@@ -61,9 +64,12 @@ export default function PrintMovement({ pick = false }) {
           <option value="3">3 liên (mặc định)</option><option value="2">2 liên</option><option value="1">1 liên</option>
         </Select></label>
       )}
+      {m.groupId && <button className="btn" onClick={() => { const p = new URLSearchParams(params); if (alone) p.delete('rieng'); else p.set('rieng', '1'); setParams(p, { replace: true }); }}>
+        {alone ? `🚚 In chung cả xe (${m.groupOrders?.length || ''} đơn)` : `In riêng phiếu ${id}`}</button>}
       {choice.select}
     </>
   );
+  const multi = (m.orderIds?.length || 0) > 1;
   // Mẫu in tự thiết kế: phiếu giao hàng cũng in 3 liên; dòng pallet thêm vào bảng hàng, trường {{Liên}}, {{Pallet xuất kèm}}
   if (choice.tpl && m.type === 'out' && !pick) {
     const pals = (c) => (m.palletMode !== 'pallet' || !managed ? [] : (m.pallets || []).filter((p) => c.key !== 'customer' || p.to !== 'carrier'));
@@ -85,13 +91,27 @@ export default function PrintMovement({ pick = false }) {
   if (summary) {
     const g = new Map();
     for (const l of m.lines) {
-      const x = g.get(l.item) || { item: l.item, itemName: l.itemName, kg: 0, bags: 0 };
+      const x = g.get(l.item) || { item: l.item, itemName: l.itemName, kg: 0, bags: 0, bySO: new Map() };
       x.kg += Number(l.kg) || 0; x.bags += Number(l.bags) || 0; g.set(l.item, x);
+      if (l.orderId) x.bySO.set(l.orderId, (x.bySO.get(l.orderId) || 0) + (Number(l.kg) || 0));
     }
     groups.push(...g.values());
   }
   const hasDates = (m.lines || []).some((l) => l.mfgDate || l.expDate);
-  const pickLines = pick ? [...m.lines].sort((a, b) => String(a.location).localeCompare(String(b.location)) || String(a.item).localeCompare(String(b.item))) : [];
+  // Phiếu soạn hàng: cùng vị trí, mã hàng, lot, tình trạng (của nhiều SO trên cùng xe) gộp 1 dòng
+  const pickMerged = [];
+  if (pick) {
+    const g = new Map();
+    for (const l of m.lines) {
+      const k = [l.location, l.item, l.lot, l.goodsStatus, l.pledgee || '', l.mfgDate || '', l.expDate || ''].join('|');
+      const x = g.get(k) || { ...l, kg: 0, pallets: 0, bags: 0, sos: [] };
+      x.kg += Number(l.kg) || 0; x.pallets += Number(l.pallets) || 0; x.bags += Number(l.bags) || 0;
+      if (l.orderId && !x.sos.includes(l.orderId)) x.sos.push(l.orderId);
+      g.set(k, x);
+    }
+    pickMerged.push(...g.values());
+  }
+  const pickLines = pick ? [...pickMerged].sort((a, b) => String(a.location).localeCompare(String(b.location)) || String(a.item).localeCompare(String(b.item))) : [];
   const signs = pick ? ['Người soạn hàng', 'Thủ kho', 'Người kiểm tra']
     : m.type === 'out'
     ? ['Người lập phiếu', 'Thủ kho', 'Tài xế / Người nhận', 'Bảo vệ']
@@ -104,11 +124,11 @@ export default function PrintMovement({ pick = false }) {
     <>
       <div className="print-head">
         <div><b>{co?.name || settings.companyName}</b>{(co ? co.address : settings.companyAddress) ? <><br /><span className="small">{co ? co.address : settings.companyAddress}</span></> : null}{co?.taxCode ? <><br /><span className="small">MST {co.taxCode}</span></> : null}<br /><span className="small">{wh ? `${wh.name}${wh.address ? ' – ' + wh.address : ''}` : `Kho ${m.warehouse}`}</span></div>
-        <div style={{ textAlign: 'right' }}>Số: <b>{m.id}</b><br /><span className="small">Ngày {fmtDate(m.date)}</span></div>
+        <div style={{ textAlign: 'right' }}>Số: <b>{m.id}</b>{m.groupMoves && <><br /><span className="small">Gộp phiếu {m.groupMoves.map((x) => x.id).join(', ')}</span></>}<br /><span className="small">Ngày {fmtDate(m.date)}</span></div>
       </div>
       <h2 className="print-title">{pick ? 'PHIẾU SOẠN HÀNG' : `PHIẾU ${meta.label.toUpperCase()}`}</h2>
       {copy && <p className="print-copy-label">{copy.label}</p>}
-      {pick && <p className="small" style={{ textAlign: 'center', marginTop: -6 }}>Theo phiếu xuất kho {m.id} · sắp theo vị trí để đi lấy hàng</p>}
+      {pick && <p className="small" style={{ textAlign: 'center', marginTop: -6 }}>Theo phiếu xuất kho {m.groupMoves ? m.groupMoves.map((x) => x.id).join(', ') : m.id}{multi ? ` · 1 xe ${m.orderIds.length} đơn: ${m.orderIds.join(', ')}` : ''} · sắp theo vị trí để đi lấy hàng</p>}
       {m.status === 'cancelled' && <div className="error-box">PHIẾU ĐÃ HỦY: {m.cancelReason}</div>}
       {m.status === 'wait_release' && <p className="small" style={{ textAlign: 'center' }}>Phiếu chờ giải chấp hàng HTC: soạn hàng được, chỉ giao hàng khi đã lập lệnh giải chấp.</p>}
       {m.status === 'pending' && <p className="small" style={{ textAlign: 'center' }}>Phiếu chờ nhận hàng: thủ kho ghi số thực nhận, vị trí vào cột trống và xác nhận trên hệ thống.</p>}
@@ -119,26 +139,28 @@ export default function PrintMovement({ pick = false }) {
         {(m.carrier || m.carrierName) && <tr><td>Đơn vị vận tải</td><td>{m.carrierName || m.carrier}</td></tr>}
         {m.plate && <tr><td>Số xe</td><td>{m.plate}</td></tr>}
         {m.driverName && <tr><td>Tài xế</td><td>{m.driverName}{m.idCard ? ` · CCCD ${m.idCard}` : ''}{m.driverPhone ? ` · ĐT ${m.driverPhone}` : ''}</td></tr>}
-        {m.orderId && <tr><td>{m.orderType === 'STO' || String(m.orderId).startsWith('STO') ? 'Theo lệnh chuyển kho' : m.type === 'in' && m.orderType === 'SO' ? 'Hàng trả về theo đơn bán' : m.type === 'in' ? (m.source === 'direct' ? 'Nhập trực tiếp, đơn mua' : 'Theo đơn mua') : 'Theo đơn bán'}</td><td>{m.orderId}{m.orderRef ? ` (số ${m.source === 'direct' ? 'chứng từ NCC' : 'Ecount'} ${m.orderRef})` : ''}</td></tr>}
+        {m.orderId && <tr><td>{m.orderType === 'STO' || String(m.orderId).startsWith('STO') ? 'Theo lệnh chuyển kho' : m.type === 'in' && m.orderType === 'SO' ? 'Hàng trả về theo đơn bán' : m.type === 'in' ? (m.source === 'direct' ? 'Nhập trực tiếp, đơn mua' : 'Theo đơn mua') : multi ? `Theo ${m.orderIds.length} đơn bán (1 xe)` : 'Theo đơn bán'}</td><td>{m.orderId}{m.orderRef ? ` (số ${m.source === 'direct' ? 'chứng từ NCC' : 'Ecount'} ${m.orderRef})` : ''}</td></tr>}
         {trip && <tr><td>Xe</td><td>{trip.plate} · {trip.driverName} · CCCD {trip.idCard}{trip.carrierName ? ` · ${trip.carrierName}` : ''} · chuyến {m.tripId}{trip.dock ? ` · cửa ${trip.dock}` : ''}</td></tr>}
         {m.reason && <tr><td>Lý do</td><td>{m.reason}</td></tr>}
         {m.note && <tr><td>Ghi chú</td><td>{m.note}</td></tr>}
       </tbody></table>
       {summary ? (
       <table className="print-lines">
-        <thead><tr><th>STT</th><th>Mã hàng</th><th>Tên hàng</th><th className="num">Số lượng (kg)</th><th className="num">Số bao</th></tr></thead>
-        <tbody>{groups.map((g, i) => <tr key={g.item}><td>{i + 1}</td><td>{g.item}</td><td>{g.itemName}</td><td className="num">{fmtNum(g.kg, 2)}</td><td className="num">{fmtNum(g.bags)}</td></tr>)}
+        <thead><tr><th>STT</th><th>Mã hàng</th><th>Tên hàng</th>{multi && <th>Theo đơn bán (SO)</th>}<th className="num">Số lượng (kg)</th><th className="num">Số bao</th></tr></thead>
+        <tbody>{groups.map((g, i) => <tr key={g.item}><td>{i + 1}</td><td>{g.item}</td><td>{g.itemName}</td>
+          {multi && <td>{[...g.bySO].map(([so, k]) => <div key={so}>{so}{g.bySO.size > 1 ? `: ${fmtNum(k, 2)} kg` : ''}</div>)}</td>}
+          <td className="num">{fmtNum(g.kg, 2)}</td><td className="num">{fmtNum(g.bags)}</td></tr>)}
           </tbody>
-        <tfoot><tr><td colSpan={3}>Cộng</td><td className="num">{fmtNum(tot('kg'), 2)}<div className="small">= {fmtNum(tot('kg') / 1000, 3, 3)} tấn</div></td><td className="num">{fmtNum(tot('bags'))}</td></tr></tfoot>
+        <tfoot><tr><td colSpan={multi ? 4 : 3}>Cộng</td><td className="num">{fmtNum(tot('kg'), 2)}<div className="small">= {fmtNum(tot('kg') / 1000, 3, 3)} tấn</div></td><td className="num">{fmtNum(tot('bags'))}</td></tr></tfoot>
       </table>
       ) : pick ? (
       <table className="print-lines">
-        <thead><tr><th>STT</th><th>Vị trí</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th>{hasDates && <><th>NSX</th><th>HSD</th></>}<th>Tình trạng</th><th className="num">Số kg</th><th className="num">Pallet</th><th className="num">Số bao</th><th>Đã soạn</th></tr></thead>
+        <thead><tr><th>STT</th><th>Vị trí</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th>{hasDates && <><th>NSX</th><th>HSD</th></>}<th>Tình trạng</th>{multi && <th>Đơn (SO)</th>}<th className="num">Số kg</th><th className="num">Pallet</th><th className="num">Số bao</th><th>Đã soạn</th></tr></thead>
         <tbody>{pickLines.map((l, i) => (
           <tr key={i}><td>{i + 1}</td><td><b>{l.location}</b></td><td>{l.item}</td><td>{l.itemName}</td><td>{l.lot}</td>{hasDates && <><td>{fmtDate(l.mfgDate)}</td><td>{fmtDate(l.expDate)}</td></>}
-            <td>{l.goodsStatus}{l.pledgee ? ` (${l.pledgee})` : ''}</td><td className="num">{fmtNum(l.kg, 2)}</td><td className="num">{fmtNum(l.pallets, 2)}</td><td className="num">{fmtNum(l.bags)}</td><td style={{ textAlign: 'center' }}>☐</td></tr>
+            <td>{l.goodsStatus}{l.pledgee ? ` (${l.pledgee})` : ''}</td>{multi && <td className="small">{l.sos.join(', ')}</td>}<td className="num">{fmtNum(l.kg, 2)}</td><td className="num">{fmtNum(l.pallets, 2)}</td><td className="num">{fmtNum(l.bags)}</td><td style={{ textAlign: 'center' }}>☐</td></tr>
         ))}</tbody>
-        <tfoot><tr><td colSpan={hasDates ? 8 : 6}>Cộng</td><td className="num">{fmtNum(tot('kg'), 2)}<div className="small">= {fmtNum(tot('kg') / 1000, 3, 3)} tấn</div></td><td className="num">{fmtNum(tot('pallets'), 2)}</td><td className="num">{fmtNum(tot('bags'))}</td><td></td></tr></tfoot>
+        <tfoot><tr><td colSpan={(hasDates ? 8 : 6) + (multi ? 1 : 0)}>Cộng</td><td className="num">{fmtNum(tot('kg'), 2)}<div className="small">= {fmtNum(tot('kg') / 1000, 3, 3)} tấn</div></td><td className="num">{fmtNum(tot('pallets'), 2)}</td><td className="num">{fmtNum(tot('bags'))}</td><td></td></tr></tfoot>
       </table>
       ) : (
       <table className="print-lines">

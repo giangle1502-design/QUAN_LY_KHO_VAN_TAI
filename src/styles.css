@@ -609,3 +609,6 @@ select.ss-trigger { cursor: pointer; }
 .bell-head { display: flex; justify-content: space-between; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
 .bell-item { padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 13px; display: grid; gap: 4px; }
 .bell-item .btn { justify-self: start; }
+/* Bảng chọn dòng đơn (Tạo dự kiến xuất) */
+.plan-pick tr.row-on td { background: var(--accent-soft, #e8f1ff); }
+tr.row-bad td { background: #fdecec; }
