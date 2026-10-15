@@ -8,7 +8,7 @@ import { CATALOGS, GROUPS, roleLabel } from '../catalogs';
 import { REPORTS } from '../pages/reports/Reports';
 import { norm } from '../lib/utils';
 import { usePref } from '../lib/prefs';
-import { FAV_KEY, MenuEditor, itemId, useNavLayout } from './NavCustom';
+import { BarEditor, FAV_KEY, MenuEditor, itemId, useNavLayout } from './NavCustom';
 
 // Nhóm thu gọn sẵn lần đầu: các nhóm danh mục, quản trị dữ liệu
 const DEFAULT_CLOSED = ['quan-tri', ...GROUPS.map((g) => `dm:${g}`)];
@@ -155,11 +155,31 @@ export default function Layout() {
       .map((c) => ({ to: `/dm/${c.key}`, ico: c.icon, label: c.short })) })),
   ];
   // Menu theo ý từng người: yêu thích, thư mục tự tạo, thứ tự, ẩn mục (lưu trên trình duyệt)
-  // Yêu thích mặc định khi người dùng chưa tự chọn: công cụ tạo đơn cho Sale / kế toán, lập phiếu cho thủ kho
-  const defaultFav = role === 'thu_kho'
-    ? ['/kho/out', '/kho/nhan-hang', '/don-hang?tab=DO', '/don-hang?tab=STO&new=1', '/kho/ton']
-    : ['/don-hang?tab=SO&new=1', '/du-kien-xuat?new=1', '/don-hang?tab=PO&new=1', '/don-hang?tab=SO', '/don-hang?tab=DO', '/kho/ton'];
-  const [nav, navApi] = useNavLayout(sections.map((sec) => ({ ...sec, items: sec.items.filter((x) => x.show !== false) })), defaultFav);
+  // Danh mục công cụ mặc định trên thanh trên cùng (khi người dùng chưa tự tạo); mục không có quyền tự ẩn
+  const defaultBar = role === 'thu_kho' ? [
+    { key: 'c:xuat', title: '📤 Xuất kho', items: ['/don-hang?tab=DO', '/kho/out', '/kho/out?src=sto'] },
+    { key: 'c:nhap', title: '📥 Nhập kho', items: ['/don-hang?tab=cho-nhap', '/kho/nhan-hang', '/don-hang?tab=cho-nhap&loai=STO'] },
+    { key: 'c:kho', title: '🏭 Kho', items: ['/kho/ton', '/kho/phieu', '/kho/move', '/kho/kiem-ke'] },
+  ] : [
+    { key: 'c:ban', title: '🧾 Bán hàng', items: ['/don-hang?tab=SO&new=1', '/du-kien-xuat?new=1', '/don-hang?tab=SO', '/du-kien-xuat', '/don-hang?tab=DO'] },
+    { key: 'c:mua', title: '🛒 Mua hàng', items: ['/don-hang?tab=PO&new=1', '/don-hang?tab=PO', '/phan-bo', '/don-hang?tab=cho-nhap'] },
+    { key: 'c:sto', title: '🔁 Chuyển kho', items: ['/don-hang?tab=STO&new=1', '/don-hang?tab=STO', '/don-hang?tab=cho-nhap&loai=STO'] },
+    { key: 'c:kho', title: '🏭 Kho', items: ['/kho/out', '/kho/in', '/kho/ton', '/kho/phieu', '/don-hang?tab=can-doi'] },
+  ];
+  const [nav, navApi] = useNavLayout(sections.map((sec) => ({ ...sec, items: sec.items.filter((x) => x.show !== false) })), [], defaultBar);
+  const [editBar, setEditBar] = useState(false);
+  // Danh mục đang mở trên thanh trên cùng: đóng khi đổi trang hoặc bấm ra ngoài
+  const [barOpen, setBarOpen] = useState(null);
+  const topRef = useRef(null);
+  useEffect(() => setBarOpen(null), [loc.pathname, loc.search]);
+  useEffect(() => {
+    if (!barOpen) return undefined;
+    const off = (e) => { if (!topRef.current?.contains(e.target)) setBarOpen(null); };
+    document.addEventListener('mousedown', off);
+    return () => document.removeEventListener('mousedown', off);
+  }, [barOpen]);
+  const barCats = nav.bar.filter((c) => c.items.length);
+  const openCat = barCats.find((c) => c.key === barOpen);
   const fullMenu = !['tai_xe', 'van_tai', 'tpl'].includes(role);
   const [editMenu, setEditMenu] = useState(false);
   const shownSecs = [...(nav.fav.length ? [{ key: FAV_KEY, title: '⭐ Yêu thích', items: nav.fav }] : []), ...nav.secs];
@@ -272,18 +292,37 @@ export default function Layout() {
         </div>
       </aside>
       {open && <div className="side-bg" onClick={close} />}
+      {editBar && <BarEditor view={nav} api={navApi} onClose={() => setEditBar(false)} />}
       {editMenu && <MenuEditor view={nav} api={navApi} multi={multi} setMulti={setMulti} onClose={() => setEditMenu(false)} />}
       <main ref={mainRef}>
-        <div className={'topbar' + (fullMenu && nav.fav.length ? ' has-fav' : '')}>
+        <div className={'topwrap' + (fullMenu ? ' has-fav' : '')} ref={topRef}>
+        <div className="topbar">
           <button className="menu-btn" onClick={() => setOpen(true)}>☰</button>
-          {fullMenu && nav.fav.length > 0 && (
-            <div className="fav-bar" title="Thanh yêu thích: bấm ☆ cạnh mục bất kỳ trong menu để ghim lên đây">
-              {nav.fav.map((x) => (
-                <NavLink key={x.to} to={x.to} end={x.end} className={x.cls}>{x.ico} {x.label}</NavLink>
+          {fullMenu && (
+            <div className="fav-bar">
+              {barCats.map((c) => (
+                <button type="button" key={c.key} className={'bar-cat' + (barOpen === c.key ? ' on' : '') + (c.items.some((x) => here(x.to)) ? ' cur' : '')}
+                  onClick={() => setBarOpen(barOpen === c.key ? null : c.key)} aria-expanded={barOpen === c.key}>
+                  {c.title} <span className="caret">{barOpen === c.key ? '▴' : '▾'}</span>
+                </button>
               ))}
-              <button type="button" className="fav-edit" title="Sửa thanh yêu thích" onClick={() => setEditMenu(true)}>✎</button>
+              {nav.fav.map((x) => (
+                <NavLink key={x.to} to={x.to} end={x.end} className={x.cls} title="Yêu thích (bấm ☆ trong menu để ghim / bỏ)">{x.ico} {x.label}</NavLink>
+              ))}
+              <button type="button" className="fav-edit" title="Tạo / sửa danh mục công cụ của tôi" onClick={() => setEditBar(true)}>{barCats.length ? '⚙' : '+ Tạo danh mục công cụ'}</button>
             </div>
           )}
+        </div>
+        {openCat && (
+          <div className="bar-panel">
+            <div className="bar-panel-head"><b>{openCat.title}</b><button type="button" className="btn ghost sm" onClick={() => { setBarOpen(null); setEditBar(true); }}>⚙ Sửa danh mục</button></div>
+            <div className="bar-tools">
+              {openCat.items.map((x) => (
+                <NavLink key={x.to} to={x.to} end={x.end} className={x.cls} onClick={() => setBarOpen(null)}><span className="ico">{x.ico}</span>{x.label}</NavLink>
+              ))}
+            </div>
+          </div>
+        )}
         </div>
         <Outlet />
       </main>
