@@ -544,6 +544,10 @@ function Form({ type }) {
   const pickDriver = (v) => { const d = drivers.find((x) => x.idCard === v); setHead((h) => ({ ...h, idCard: v, ...(d ? { driverName: d.name || '', driverPhone: d.phone || '' } : {}) })); };
 
   const parties = type === 'in' && source !== 'SO' ? suppliers : soldto;
+  // Pháp nhân xuất hóa đơn theo hợp đồng của khách (VAP / PLA / VAP/PLA): nhắc trên phiếu xuất, lệch thì cảnh báo (không chặn)
+  const invEntity = type === 'out' && !isSTO ? soldto.find((x) => x.code === head.partyCode)?.invoiceEntity || '' : '';
+  const invOk = !invEntity || !head.company || invEntity.split('/').includes(head.company);
+  const invText = { VAP: 'Hóa đơn chỉ xuất pháp nhân VAP', PLA: 'Hóa đơn chỉ xuất pháp nhân PLA', 'VAP/PLA': 'Hóa đơn xuất cả hai pháp nhân VAP/PLA' }[invEntity] || invEntity;
   // Lập phiếu xuất từ Dự kiến xuất kho của Sale: ?plan=DK…&ship=mã giao → chọn sẵn đơn, số lượng từng dòng, mã giao
   // ?plans=DK1,DK2: 1 xe đi nhiều dự kiến (nhiều SO cùng khách, cùng công ty xuất): đơn đầu là đơn chính, các đơn sau gộp thêm
   const planParam = type === 'out' ? params.get('plans') || params.get('plan') || '' : '';
@@ -686,6 +690,7 @@ function Form({ type }) {
     // nhân viên lập lệnh giải chấp gộp nhiều đơn ở Kho → Đề nghị giải chấp → Chờ giải chấp, lúc đó phiếu mới ghi xuất kho
     // Chuyển pháp nhân: dòng lấy tồn của công ty khác công ty xuất. Phiếu giao vẫn mang tên công ty xuất;
     // hệ thống báo cho kế toán (chuông 🔔) để làm chuyển đổi trên phần mềm kế toán
+    if (!invOk && !window.confirm(`Khách ${head.partyCode}: ${invText}, nhưng công ty xuất của phiếu là ${head.company}.\nVẫn lập phiếu xuất với công ty ${head.company}?`)) return;
     const cross = type === 'out' && head.company ? out.filter((l) => l.company && l.company !== head.company) : [];
     if (cross.length) {
       const by = {};
@@ -939,6 +944,13 @@ function Form({ type }) {
       )}
       {shipPlan && shipPlan.orderId === head.orderId && <div className="ok-box" style={{ marginBottom: 10 }}>📅 Lập theo <Link to="/du-kien-xuat">dự kiến xuất {groupPlans.length > 1 ? groupPlans.map((p) => p.id).join(', ') : shipPlan.id}</Link> · ngày {shipPlan.date}{shipPlan.ship ? ` · mã giao ${shipPlan.ship}` : ''}: {(shipPlan.lines || []).filter((l) => planLeft(l) > 0.001 && (!shipPlan.ship || (l.shipCode || '') === shipPlan.ship)).map((l) => `${l.item} ${fmtNum(planLeft(l), 2)} kg${l.packing ? ` (${l.packing})` : ''}`).join(', ')}</div>}
       {fillNote && <div className="hint" style={{ marginBottom: 10 }}>{fillNote}</div>}
+      {invEntity && (
+        <div className={invOk ? 'ok-box' : 'error-box'} style={{ marginBottom: 10 }}>
+          🧾 Khách <b>{head.partyCode}</b>: <b>{invText}</b>.
+          {invOk ? ` Công ty xuất ${head.company || '(chưa chọn)'} khớp hợp đồng.`
+            : <> Công ty xuất của phiếu đang là <b>{head.company}</b>, không khớp hợp đồng: kiểm tra lại công ty của đơn trước khi xuất.</>}
+        </div>
+      )}
       {coShort.length > 0 && (
         <div className={crossCo ? 'warn-box' : 'error-box'} style={{ marginBottom: 10 }}>
           <b>⚠ {CO_SHORT_MSG}.</b>
