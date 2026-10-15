@@ -97,10 +97,10 @@ export default function Layout() {
     { key: 'ban', title: '🧾 Bán hàng (SO → xuất)', items: [
       { to: '/don-hang?tab=SO&new=1', cls: noActive, ico: '➕', label: 'Lập SO mới', show: canSO },
       { to: '/du-kien-xuat?new=1', cls: noActive, ico: '➕', label: 'Tạo dự kiến xuất', show: canSO },
-      { to: '/don-hang?tab=SO', cls: orderTab('SO'), ico: '🧾', label: 'Đơn bán (SO)' },
+      { to: '/don-hang?tab=SO', cls: orderTab('SO'), ico: '🧾', label: 'Danh sách SO đã tạo' },
       { to: '/du-kien-xuat', ico: '📅', label: 'Dự kiến xuất kho (Sale)' },
       { to: '/kho/out', cls: srcTab(false), ico: '📤', label: 'Lập phiếu xuất kho', show: hasRole('thu_kho') },
-      { to: '/don-hang?tab=DO', cls: slipTab('DO', ''), ico: '🚚', label: 'DO (lệnh giao hàng)' },
+      { to: '/don-hang?tab=DO', cls: slipTab('DO', ''), ico: '🚚', label: 'Danh sách đơn hàng xuất kho DO' },
       { to: '/xe/giao-hang', ico: '✅', label: 'Xác nhận giao hàng', show: isAdmin },
     ] },
     { key: 'mua', title: '🛒 Mua hàng (PO → nhập)', items: [
@@ -164,7 +164,7 @@ export default function Layout() {
     { key: 'c:nhap', title: '📥 Nhập kho', items: ['/don-hang?tab=cho-nhap', '/kho/nhan-hang', '/don-hang?tab=cho-nhap&loai=STO'] },
     { key: 'c:kho', title: '🏭 Kho', items: ['/kho/ton', '/kho/phieu', '/kho/move', '/kho/kiem-ke'] },
   ] : [
-    { key: 'c:ban', title: '🧾 Bán hàng', items: ['/don-hang?tab=SO&new=1', '/du-kien-xuat?new=1', '/don-hang?tab=SO', '/du-kien-xuat', '/don-hang?tab=DO'] },
+    { key: 'c:ban', title: '🧾 Bán hàng', items: ['/don-hang?tab=SO&new=1', '/du-kien-xuat?new=1', '/don-hang?tab=DO', '/du-kien-xuat', '/don-hang?tab=SO'] },
     { key: 'c:mua', title: '🛒 Mua hàng', items: ['/don-hang?tab=PO&new=1', '/don-hang?tab=PO', '/phan-bo', '/don-hang?tab=cho-nhap'] },
     { key: 'c:sto', title: '🔁 Chuyển kho', items: ['/don-hang?tab=STO&new=1', '/don-hang?tab=STO', '/don-hang?tab=cho-nhap&loai=STO'] },
     { key: 'c:kho', title: '🏭 Kho', items: ['/kho/out', '/kho/in', '/kho/ton', '/kho/phieu', '/don-hang?tab=can-doi'] },
