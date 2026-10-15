@@ -44,10 +44,12 @@ function Catalog({ cat }) {
     () => (cat.warehouseField && !isAdmin ? rows.filter((r) => inMyWarehouses(r[cat.warehouseField]))
       // Đơn vị vận tải chỉ thấy xe, tài xế của đơn vị mình
       : cat.carrierField && app.myCarrier ? rows.filter((r) => r[cat.carrierField] === app.myCarrier)
+      // Tài khoản 3PL chỉ GHA và quản trị gốc thấy
+      : cat.key === 'users' && !app.can3PL ? rows.filter((r) => r.role !== 'tpl')
       : custScope ? (cat.key === 'soldto' ? rows.filter((r) => saleSeesCustomer(r, email))
         : rows.filter((r) => { const c = custRows.find((x) => x.code === r.customerCode); return !c || saleSeesCustomer(c, email); }))
       : rows),
-    [rows, cat, isAdmin, inMyWarehouses, app.myCarrier, custScope, custRows, email]
+    [rows, cat, isAdmin, inMyWarehouses, app.myCarrier, app.can3PL, custScope, custRows, email]
   );
   // Dòng còn thiếu trường bắt buộc (vd. nhập Excel chưa đủ, bổ sung sau)
   const reqFields = fields.filter((f) => f.required && !f.computed && !f.system && !f.hidden);

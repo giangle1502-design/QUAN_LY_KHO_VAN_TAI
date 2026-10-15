@@ -38,7 +38,6 @@ export function AppProvider({ children }) {
     return () => { u1(); u2(); u3(); };
   }, [allowed]);
 
-  const fieldsOf = useCallback((key) => mergeFields(key, fieldConfig[key], choices[key]), [fieldConfig, choices]);
 
   // Kho người dùng được thao tác (mảng rỗng = tất cả)
   // Điều phối vận tải / tài xế thuộc 1 đơn vị vận tải
@@ -53,6 +52,15 @@ export function AppProvider({ children }) {
   }, [myCarrier]);
   // 3PL chỉ GHA (đơn vị vận tải được dùng 3PL) và quản trị gốc thấy, admin khách không thấy
   const can3PL = isSuper || (role === 'van_tai' && (carrierDoc?.uses3PL === true || carrierDoc?.kind === 'GHA'));
+  // 3PL chỉ GHA và quản trị gốc thấy: admin công ty (VAP / PLA / DAM) không thấy trường, lựa chọn, chú thích về 3PL
+  const fieldsOf = useCallback((key) => {
+    const fs = mergeFields(key, fieldConfig[key], choices[key]);
+    if (can3PL) return fs;
+    return fs.filter((f) => !f.only3PL).map((f) => (f.options3PL || f.labelsNo3PL || f.helpNo3PL ? {
+      ...f, options: (f.options || []).filter((o) => !(f.options3PL || []).includes(o)),
+      labels: { ...(f.labels || {}), ...(f.labelsNo3PL || {}) }, help: f.helpNo3PL || f.help,
+    } : f));
+  }, [fieldConfig, choices, can3PL]);
   const inMyWarehouses = useCallback((wh) => !myWarehouses.length || myWarehouses.includes(wh), [myWarehouses]);
 
   const canEdit = useCallback((cat, row) => {

@@ -33,7 +33,7 @@ export function StepModal({ t, step, onClose, plate = '', via3pl = false }) {
     setErr(''); setBusy(true);
     try {
       // Tài xế chỉ xác nhận giao nhận; cước do điều phối / kế toán nhập sau (kể cả xe nội bộ)
-      await doStep(t, step, { email, name }, { ...f, ...(showDrv ? {} : { idCard: '', driverName: '' }), photos });
+      await doStep(t, step, role === 'tpl' ? { email, name, as: t.carrierName || t.carrier || 'GHA' } : { email, name }, { ...f, ...(showDrv ? {} : { idCard: '', driverName: '' }), photos });
       onClose(true);
     } catch (e) { setErr(e.code === 'permission-denied' ? 'Bạn không có quyền thực hiện bước này cho chuyến này.' : e.message); }
     setBusy(false);
@@ -87,8 +87,10 @@ export function PhotoModal({ t, onClose }) {
   const loadImgs = (k) => Promise.all(Array.from({ length: k }, (_, i) => getDoc(doc(db, 'tripPhotos', `${t.id}_${i + 1}`))))
     .then((ss) => setImgs(ss.filter((s) => s.exists()).map((s) => ({ id: s.id, src: s.data().data })))).catch(() => setImgs([]));
   useEffect(() => { loadImgs(t.photoCount || 0); }, [t]); // eslint-disable-line react-hooks/exhaustive-deps
-  const log = (action, k) => updateDoc(doc(db, 'trips', t.id), { photoCount: k, updatedAt: new Date().toISOString(), updatedBy: email,
-    history: [...(t.history || []), { at: new Date().toISOString(), by: email, byName: name || email, action }] });
+  // 3PL: lịch sử ghi tên đơn vị (GHA), admin công ty không thấy tên 3PL
+  const who = role === 'tpl' ? t.carrierName || t.carrier || 'GHA' : null;
+  const log = (action, k) => updateDoc(doc(db, 'trips', t.id), { photoCount: k, updatedAt: new Date().toISOString(), updatedBy: who || email,
+    history: [...(t.history || []), { at: new Date().toISOString(), by: who || email, byName: who || name || email, action }] });
   const del = async (im) => {
     if (!window.confirm('Xóa ảnh này?')) return;
     setErr(''); setBusy(true);

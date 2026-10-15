@@ -13,7 +13,7 @@ import { OPEN_PLAN } from './shipPlans';
 export const KIND = { internal: 'Nội bộ', gha: 'GHA', service: 'Thuê ngoài', self: 'Khách tự lấy' };
 export const KIND_LABEL = {
   [KIND.internal]: 'Nhóm xe nội bộ (tài xế tự nhận chuyến)',
-  [KIND.gha]: 'GHA (xe nhà GHA + thuê 3PL)',
+  [KIND.gha]: 'GHA',
   [KIND.service]: 'Dịch vụ vận tải (tự nhập xe, tài xế, cước)',
   [KIND.self]: 'Khách tự lấy hàng',
 };

@@ -139,7 +139,7 @@ export default function Layout() {
       { to: '/xe/thu-kho', ico: '📦', label: 'Thủ kho điều phối', show: hasRole('thu_kho') },
       { to: '/xe/tong-quan', ico: '📊', label: 'Tổng quan chuyến xe' },
       { to: '/van-tai?tab=cho-giao', ico: '📥', label: 'Chờ giao vận tải', show: isAdmin },
-      { to: '/van-tai?tab=chuyen', ico: '🚛', label: 'Chuyến xe vận tải (xe, 3PL, cước)' },
+      { to: '/van-tai?tab=chuyen', ico: '🚛', label: can3PL ? 'Chuyến xe vận tải (xe, 3PL, cước)' : 'Chuyến xe vận tải (xe, cước)' },
       { to: '/van-tai?tab=tinh-trang', ico: '🚦', label: 'Báo cáo tình trạng xe' },
       { to: '/van-tai?tab=bang-ke', ico: '🧾', label: 'Bảng kê cước' },
     ] },

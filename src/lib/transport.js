@@ -69,8 +69,10 @@ export async function doStep(t, step, user, data = {}, database = db) {
     upd = { status: ST.COMPLETED, deliveryCompleteTime: at, driverDeliveredAt: at, photoCount: (t.photoCount || 0) + data.photos.length,
       lines: t.lines.map((l) => ({ ...l, delivered: true, deliveredTime: l.deliveredTime || at })) };
   }
-  await updateDoc(doc(database, 'trips', t.id), { ...upd, updatedAt: at, updatedBy: user.email,
-    history: hist(t, user, STEPS[step] + (data.note ? `: ${data.note}` : ''), upd.status) });
+  // 3PL làm bước: lịch sử chuyến ghi tên đơn vị (GHA), admin công ty không thấy tên / email 3PL
+  const shown = user.as ? { email: user.as, name: user.as } : user;
+  await updateDoc(doc(database, 'trips', t.id), { ...upd, updatedAt: at, updatedBy: shown.email,
+    history: hist(t, shown, STEPS[step] + (data.note ? `: ${data.note}` : ''), upd.status) });
 }
 
 // Cước gợi ý theo bảng giá cho 1 chuyến (lấy điểm giao của dòng đầu)
