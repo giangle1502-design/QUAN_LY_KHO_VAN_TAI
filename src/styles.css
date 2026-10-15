@@ -491,3 +491,13 @@ tr.picked td { background: var(--primary-soft); }
 .seg.seg-wrap { flex-wrap: wrap; }
 .seg button.dragging { opacity: .4; }
 .seg button[draggable] { cursor: grab; }
+
+/* Chuyến xe dạng thẻ (đơn vị vận tải / 3PL dùng điện thoại) */
+.trip-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.trip-card { display: flex; flex-direction: column; gap: 4px; font-size: 14px; line-height: 1.4; }
+.trip-card-head { display: flex; justify-content: space-between; gap: 8px; font-size: 15px; }
+.trip-card-items { margin: 4px 0; padding-left: 18px; }
+.trip-card-acts { margin-top: auto; padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.trip-card-more { display: flex; flex-wrap: wrap; gap: 4px; }
+.trip-card-more:empty { display: none; }
+@media (max-width: 600px) { .trip-cards { grid-template-columns: 1fr; } }

@@ -4,6 +4,7 @@ import { collection, doc, onSnapshot, query, setDoc, updateDoc, where } from 'fi
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { useCollection } from '../../lib/hooks';
+import { usePref } from '../../lib/prefs';
 import { OPEN_STATUSES } from '../../lib/orders';
 import { isGHA, isInternal, kindText, usesVehicleList } from '../../lib/dispatch';
 import Dispatch from './Dispatch';
@@ -210,6 +211,60 @@ function TripList({ trips, priv }) {
     } catch (e) { setErr(e.code === 'permission-denied' ? 'Không có quyền chỉ định 3PL.' : e.message); }
   };
   const statusText = (t) => (t.selfPickup && t.status === 'completed' ? 'Khách đã lấy xong' : STATUS_META[t.status]?.label);
+  // Đơn vị vận tải / 3PL làm trên điện thoại: mặc định xem dạng thẻ; quản trị mặc định dạng bảng
+  const [view, setView] = usePref('trips-view', isCarrier || isTpl ? 'card' : 'table');
+  const companies = useCollection('companies').rows;
+  const companyName = (code) => { const x = companies.find((c) => c.code === code); return x ? `${code} – ${x.name}` : code; };
+  // Nút thao tác của 1 chuyến (dùng chung cho bảng và thẻ)
+  const info = (t) => {
+    const st = nextStep(t); const blocked = st && stepBlocked(t, st);
+    const c = carOf(t); const p3 = priv[t.id];
+    const canStep = isAdmin || (isCarrier && t.carrier) || isTpl;
+    const open = !['completed', 'cancelled'].includes(t.status);
+    return { st, blocked, c, p3, canStep, open };
+  };
+  const actions = (t, big) => {
+    const { st, blocked, p3, canStep } = info(t);
+    const sz = big ? '' : ' sm';
+    return <>
+      {canStep && st && !blocked && <button className={'btn primary' + sz} style={big ? { width: '100%', padding: 10, fontSize: 15 } : undefined} onClick={() => setStep({ t, st })}>{STEPS[st]}</button>}{big ? null : ' '}
+      <span className={big ? 'trip-card-more' : ''}>
+        {canStep && st && st !== 'reg' && t.status === 'planned' && <button className="btn sm" onClick={() => setStep({ t, st: 'reg' })}>Sửa xe</button>}{' '}
+        {(isAdmin || isCarrier) && t.status === 'planned' && t.lines.length > 0 && <button className="btn sm" title="Hàng nhiều hơn 1 xe: tách bớt sang chuyến mới" onClick={() => setCut(t)}>✂ Tách</button>}{' '}
+        {t.photoCount > 0 && <button className="btn sm" onClick={() => setPhoto(t)}>📷 {t.photoCount}</button>}{' '}
+        {!isTpl && (isAdmin || isCarrier || hasRole('ke_toan')) && t.status === 'completed' && <button className="btn sm" onClick={() => setCost(t)}>💰 Chi phí</button>}{' '}
+        {(isTpl || can3PL) && p3?.threepl && t.status === 'completed' && <button className="btn sm" onClick={() => setCost3(t)}>💰 Cước 3PL</button>}{' '}
+        {(isAdmin || isCarrier) && t.status === 'planned' && <button className="btn ghost sm" onClick={() => cancel(t)}>Hủy</button>}
+      </span>
+    </>;
+  };
+  const sel3pl = (t) => <select value={priv[t.id]?.threepl || ''} onChange={(e) => set3pl(t, e.target.value)}><option value="">Xe nhà GHA</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</select>;
+  const mapUrl = (a) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a)}`;
+  // Thẻ chuyến (đơn vị vận tải, 3PL làm trên điện thoại)
+  const card = (t) => {
+    const { st, blocked, c, p3, open } = info(t);
+    const dests = [...new Map(t.lines.map((l) => [`${l.partyCode}|${l.shipCode}`, l])).values()];
+    return (
+      <div key={t.id} className="card trip-card" style={{ opacity: t.status === 'cancelled' ? 0.5 : 1 }}>
+        <div className="trip-card-head"><b className="mono">{t.id}</b><span>{fmtDate(t.plannedDate)}</span></div>
+        <div><span className={'badge ' + (STATUS_META[t.status]?.tone || '')}>{statusText(t)}</span>{t.selfPickup ? <span className="badge" style={{ marginLeft: 4 }}>khách tự lấy</span> : null}</div>
+        <div>Đơn hàng: <b>{(t.orderIds || []).join(', ')}</b></div>
+        {t.company && <div>Công ty xuất hàng: <b>{companyName(t.company)}</b></div>}
+        <div>Nơi nhận hàng: <b>{t.warehouseName || t.warehouse}</b></div>
+        {dests.map((l) => <div key={`${l.partyCode}${l.shipCode}`}>
+          <div>Khách hàng (nơi giao): <b>{l.partyCode ? `${l.partyCode} – ` : ''}{l.partyName}</b></div>
+          {l.address && <div>Địa chỉ giao hàng: {l.address}<div><a href={mapUrl(l.address)} target="_blank" rel="noreferrer">📍 Xem vị trí giao hàng trên bản đồ</a></div></div>}
+        </div>)}
+        <ul className="trip-card-items">{t.lines.map((l) => <li key={l.id}>{l.item}{l.itemName ? ` ${l.itemName}` : ''} — <b>{fmtNum(n(l.plannedKg))} kg</b></li>)}</ul>
+        <div>Xe: {t.plate ? <b>{t.plate}</b> : <span className="small">{isInternal(c) ? 'chờ tài xế nhóm nhận' : 'chưa có xe'}</span>}{t.driverName ? ` · ${t.driverName}` : ''}{t.driverPhone ? <> · <a href={`tel:${t.driverPhone}`}>{t.driverPhone}</a></> : null}</div>
+        {can3PL && isGHA(c) && <div>3PL: {open ? sel3pl(t) : <b>{p3?.threeplName || p3?.threepl || 'Xe nhà GHA'}</b>}</div>}
+        {[['driverArrivedAt', 'Đến điểm nhận'], ['driverLoadedAt', 'Lấy hàng xong'], ['driverAtDestAt', 'Đến điểm giao'], ['driverDeliveredAt', 'Hoàn thành']].some(([k]) => t[k]) &&
+          <div className="small">{[['driverArrivedAt', 'Đến điểm nhận'], ['driverLoadedAt', 'Lấy hàng xong'], ['driverAtDestAt', 'Đến điểm giao'], ['driverDeliveredAt', 'Hoàn thành']].filter(([k]) => t[k]).map(([k, l]) => `${l} ${fmtTime(t[k])}`).join(' · ')}</div>}
+        {st && blocked && <div className="small">⏳ {blocked}</div>}
+        <div className="trip-card-acts">{actions(t, true)}</div>
+      </div>
+    );
+  };
   return (
     <div>
       <div className="filters">
@@ -219,25 +274,22 @@ function TripList({ trips, priv }) {
           {Object.entries(STATUS_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}</select>
         {!isCarrier && !isTpl && <select value={f.carrier} onChange={(e) => setFF('carrier', e.target.value)}><option value="">Mọi đơn vị vận tải</option>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}</select>}
         <input type="search" placeholder="Tìm chuyến, xe, tài xế, đơn, khách…" value={f.q} onChange={(e) => setFF('q', e.target.value)} />
+        <span className="seg"><button type="button" className={'btn sm' + (view === 'card' ? ' primary' : '')} onClick={() => setView('card')}>▦ Thẻ</button><button type="button" className={'btn sm' + (view === 'table' ? ' primary' : '')} onClick={() => setView('table')}>☰ Bảng</button></span>
       </div>
       {isTpl && <p className="hint">Chuyến GHA đã chỉ định cho bạn: bấm <b>Nhập số xe</b> để ghi xe, tài xế; tài xế (hoặc bạn) bấm lần lượt Đến điểm nhận hàng → Nhận / lấy hàng xong → Đến điểm giao hàng → Hoàn thành; xong thì <b>💰 Cước 3PL</b> nhập cước với GHA.</p>}
       <ErrorBox error={err} />
+      {!list.length ? <Empty text="Không có chuyến nào." /> : view === 'card' ? <div className="trip-cards">{list.map(card)}</div> : (
       <div className="table-wrap">
-        {!list.length ? <Empty text="Không có chuyến nào." /> : (
           <table>
             <thead><tr><th>Chuyến</th><th>Ngày đi</th><th>Kho</th><th>Xe · tài xế</th>{!isCarrier && !isTpl && <th>Vận tải</th>}{can3PL && <th>3PL</th>}<th>Giao đến · hàng</th><th className="num">Tấn</th><th>Tiến độ</th>{!isTpl && <th>Chi phí</th>}{(can3PL || isTpl) && <th>Cước 3PL</th>}<th></th></tr></thead>
             <tbody>{list.map((t) => {
-              const st = nextStep(t); const blocked = st && stepBlocked(t, st);
-              const c = carOf(t); const p3 = priv[t.id];
-              const canStep = isAdmin || (isCarrier && t.carrier) || isTpl;
-              const open = !['completed', 'cancelled'].includes(t.status);
+              const { st, blocked, c, p3, open } = info(t);
               return (
                 <tr key={t.id} style={{ opacity: t.status === 'cancelled' ? 0.5 : 1 }}>
                   <td className="mono">{t.id}{t.selfPickup ? <div className="small">khách tự lấy</div> : null}</td><td className="nowrap">{fmtDate(t.plannedDate)}</td><td>{t.warehouse}</td>
                   <td>{t.plate ? <b>{t.plate}</b> : <span className="small">{isInternal(c) ? 'chờ tài xế nhóm nhận' : 'chưa có xe'}</span>}{t.driverName ? <div className="small">{t.driverName}{t.driverPhone ? ` · ${t.driverPhone}` : ''}</div> : null}</td>
                   {!isCarrier && !isTpl && <td>{t.carrierName || t.carrier}<div className="small">{kindText(c)}</div></td>}
-                  {can3PL && <td>{isGHA(c) ? (open ? <select value={p3?.threepl || ''} onChange={(e) => set3pl(t, e.target.value)}><option value="">Xe nhà GHA</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</select>
-                    : (p3?.threeplName || p3?.threepl || 'Xe nhà GHA')) : ''}</td>}
+                  {can3PL && <td>{isGHA(c) ? (open ? sel3pl(t) : (p3?.threeplName || p3?.threepl || 'Xe nhà GHA')) : ''}</td>}
                   <td className="small">{[...new Set(t.lines.map((l) => l.partyName || l.partyCode))].join(', ')}<div>{t.lines.map((l) => `${l.orderId} ${l.item}`).join('; ')}</div></td>
                   <td className="num">{t3(tripKg(t))}</td>
                   <td><span className={'badge ' + (STATUS_META[t.status]?.tone || '')}>{statusText(t)}</span>
@@ -245,21 +297,13 @@ function TripList({ trips, priv }) {
                     {st && <div className="small">Tiếp: <b>{STEPS[st]}</b>{blocked ? ` (${blocked})` : ''}</div>}</td>
                   {!isTpl && <td>{t.costs ? <><b>{vnd(costTotal(t.costs))}</b><div className="small">{COST[t.costStatus || '']?.[0]}</div></> : <span className="small">{t.status === 'completed' ? 'chưa nhập' : ''}</span>}</td>}
                   {(can3PL || isTpl) && <td>{p3?.threepl ? (p3.cost3pl ? <><b>{vnd(costTotal(p3.cost3pl))}</b><div className="small">{COST3[p3.cost3plStatus || '']?.[0]}</div></> : <span className="small">{t.status === 'completed' ? 'chưa nhập' : ''}</span>) : ''}</td>}
-                  <td className="nowrap">
-                    {canStep && st && !blocked && <button className="btn primary sm" onClick={() => setStep({ t, st })}>{STEPS[st]}</button>}{' '}
-                    {canStep && st && st !== 'reg' && t.status === 'planned' && <button className="btn sm" onClick={() => setStep({ t, st: 'reg' })}>Sửa xe</button>}{' '}
-                    {(isAdmin || isCarrier) && t.status === 'planned' && t.lines.length > 0 && <button className="btn sm" title="Hàng nhiều hơn 1 xe: tách bớt sang chuyến mới" onClick={() => setCut(t)}>✂ Tách</button>}{' '}
-                    {t.photoCount > 0 && <button className="btn sm" onClick={() => setPhoto(t)}>📷 {t.photoCount}</button>}{' '}
-                    {!isTpl && (isAdmin || isCarrier || hasRole('ke_toan')) && t.status === 'completed' && <button className="btn sm" onClick={() => setCost(t)}>💰 Chi phí</button>}{' '}
-                    {(isTpl || can3PL) && p3?.threepl && t.status === 'completed' && <button className="btn sm" onClick={() => setCost3(t)}>💰 Cước 3PL</button>}{' '}
-                    {(isAdmin || isCarrier) && t.status === 'planned' && <button className="btn ghost sm" onClick={() => cancel(t)}>Hủy</button>}
-                  </td>
+                  <td className="nowrap">{actions(t, false)}</td>
                 </tr>
               );
             })}</tbody>
           </table>
-        )}
       </div>
+      )}
       {step && <StepModal t={step.t} step={step.st} onClose={() => setStep(null)} />}
       {photo && <PhotoModal t={photo} onClose={() => setPhoto(null)} />}
       {cost && <CostModal t={trips.find((x) => x.id === cost.id) || cost} onClose={() => setCost(null)} />}
