@@ -23,6 +23,7 @@ import { useCollection, usePendingIn, useWaitingOut } from '../../lib/hooks';
 import { useShortfall } from '../../lib/shortfall';
 import { dragHeadProps, orderCols } from '../../lib/colOrder';
 import Select from '../../components/Select';
+import { salesFor, typesOf } from '../../lib/plasticSales';
 
 // Đơn vị chính là kg; tấn chỉ là quy đổi (dòng phụ)
 const t = (kg) => fmtNum(Number(kg) || 0, 2);
@@ -466,7 +467,7 @@ const HEAD = {
 const TEMPLATE = ['Công ty', 'Số đơn Ecount', 'Ngày đơn', 'Mã KH/NCC', 'Tên KH/NCC', 'Mã giao hàng', 'Kho', 'Hạn giao/ETA', 'Mã hàng', 'Số lượng (kg)', 'Dung sai (%)', 'Ghi chú'];
 
 function ImportOrders({ type, existing, onDone }) {
-  const { email, name } = useApp();
+  const { email, name, salesOnly } = useApp();
   const ref = useRef();
   const [busy, setBusy] = useState(false);
   const run = async (file) => {
@@ -512,6 +513,12 @@ function ImportOrders({ type, existing, onDone }) {
         if (!g.partyCode && !g.partyName) { errs.push(`Đơn ${g.refNo}: thiếu mã/tên đối tác.`); continue; }
         if (!g.company) { errs.push(`Đơn ${g.refNo}: thiếu công ty.`); continue; }
         if (type !== 'STO') Object.assign(g, summarizeLines(g.lines));
+        // SO: mỗi đơn một loại hạt nhựa; sale phụ trách theo khách hàng + loại
+        if (type === 'SO') {
+          const pts = typesOf(g.lines.map((l) => l.item), itemMap);
+          if (pts.length > 1) { errs.push(`Đơn ${g.refNo}: có cả ${pts.join(' và ')}, mỗi SO chỉ một loại hạt nhựa.`); continue; }
+          g.sales = salesOnly ? email : pts.length ? salesFor(partyMap.get(g.partyCode), pts[0]) : '';
+        }
         await createOrder(g, { email, name });
         made++;
       }

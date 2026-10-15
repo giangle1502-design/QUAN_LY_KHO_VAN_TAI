@@ -77,17 +77,19 @@ function ChoiceAdd({ field: f, disabled, onAdded, children }) {
 }
 
 // Danh sách bản ghi của danh mục được tham chiếu (lọc theo kho được giao nếu là danh sách kho)
-function useRefRows(refKey) {
+// role: chỉ lấy người dùng có vai trò này (vd. Sale phụ trách = Kinh doanh)
+function useRefRows(refKey, role) {
   const { rows } = useCollection(refKey);
   const { inMyWarehouses } = useApp();
   return useMemo(() => {
-    const list = refKey === 'warehouses' ? rows.filter((r) => inMyWarehouses(r.code)) : rows;
+    const list = refKey === 'warehouses' ? rows.filter((r) => inMyWarehouses(r.code))
+      : role ? rows.filter((r) => r.role === role && r.active !== false) : rows;
     return list.map((r) => ({ value: refValue(refKey, r), label: refLabel(r), row: r })).sort((a, b) => String(a.value).localeCompare(String(b.value)));
-  }, [rows, refKey, inMyWarehouses]);
+  }, [rows, refKey, inMyWarehouses, role]);
 }
 
 function RefInput({ field: f, value, onChange, disabled, onPick }) {
-  const opts = useRefRows(f.ref);
+  const opts = useRefRows(f.ref, f.refRole);
   const listId = `dl-${f.key}`;
   const known = !value || opts.some((o) => o.value === value);
   // Gõ mã trước khi danh mục tải xong: tự điền khi dữ liệu về

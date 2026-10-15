@@ -17,6 +17,7 @@ import { usePref } from '../../lib/prefs';
 import { vnDate } from '../../lib/trips';
 import { fmtNum } from '../../lib/utils';
 import Select from '../../components/Select';
+import { itemAllowed, saleSeesCustomer, saleTypes, salesFor, typesOf } from '../../lib/plasticSales';
 
 // Đơn bán (SO) / đơn mua (PO) gồm 2 phần:
 //  - Phần chung cho cả đơn: ngày tạo đơn, công ty xuất, khách hàng (+ trường tự thêm, có thể liên kết theo khách hàng / công ty)
@@ -129,6 +130,21 @@ export default function SOForm({ type = 'SO', order, onClose }) {
   const lineKeys = orderedLine.map((f) => f.key);
   const shownLine = orderedLine.filter((f) => f.required || !hiddenCols.includes(f.key));
   const myShips = shipto.filter((s) => s.customerCode === h.partyCode);
+  // Loại hạt nhựa (SO): sale chỉ thấy khách mình được gán, chỉ chọn mã hàng loại mình phụ trách; mỗi SO một loại
+  const isSO = type === 'SO';
+  const cust = isSO ? recOf.partyCode(h.partyCode) : null;
+  const partyOpts = isSO && salesOnly ? parties.filter((p) => saleSeesCustomer(p, email)) : parties;
+  const itemOpts = isSO && salesOnly ? items.filter((x) => itemAllowed(x, cust, email)) : items;
+  const soTypes = isSO ? typesOf(lines.map((l) => l.item), itemMap) : [];
+  const autoSale = isSO && soTypes.length === 1 ? salesFor(cust, soTypes[0]) : '';
+  // Quản trị lập SO: tự chọn sale phụ trách theo khách + loại hạt nhựa (đổi khách / mã hàng thì chọn lại, trừ khi đã chọn tay)
+  const [autoPicked, setAutoPicked] = useState(order ? null : '');
+  useEffect(() => {
+    if (!isSO || salesOnly || autoPicked === null || !autoSale || h.sales === autoSale) return;
+    if (h.sales && h.sales !== autoPicked) return;
+    setH((x) => ({ ...x, sales: autoSale }));
+    setAutoPicked(autoSale);
+  }, [autoSale]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setHead = (k, v, rec) => setH((x) => {
     const p = { [k]: v };
@@ -213,6 +229,12 @@ export default function SOForm({ type = 'SO', order, onClose }) {
     if (!sto && !h.partyCode.trim()) return setErr(`Chọn ${cfg.partyLabel}.`);
     if (usd && !(n(h.fxRate) > 0)) return setErr(`Đơn USD: nhập ${fxLabel}.`);
     if (finished && !editReason.trim()) return setErr('Nhập lý do sửa đơn (đơn đã hoàn tất / đã đóng).');
+    if (isSO && soTypes.length > 1) return setErr(`Mỗi SO chỉ một loại hạt nhựa: đơn đang có cả ${soTypes.join(' và ')}. Tách thành ${soTypes.length} SO.`);
+    if (isSO && salesOnly && cust && !saleSeesCustomer(cust, email)) return setErr(`Bạn không phụ trách khách hàng ${h.partyCode}.`);
+    if (isSO && salesOnly && cust) {
+      const bad = lines.find((l) => l.item && !itemAllowed(itemMap.get(l.item), cust, email));
+      if (bad) return setErr(`Mã hàng ${bad.item} là hạt nhựa ${itemMap.get(bad.item).plasticType}: bạn chỉ phụ trách ${saleTypes(cust, email).join(', ') || 'không loại nào'} của khách ${h.partyCode}.`);
+    }
     const headCustom = {};
     for (const f of headFields.filter((x) => !BUILTIN_HEAD.includes(x.key) && x.type !== 'formula')) {
       // Đơn VNĐ không lưu tỷ giá
@@ -280,11 +302,14 @@ export default function SOForm({ type = 'SO', order, onClose }) {
       </>
     );
     if (f.key === 'sales') return salesOnly ? <div className="readonly-val">{h.sales || email}</div> : (
-      <Select value={h.sales || ''} onChange={(e) => setHead('sales', e.target.value)}>
-        <option value="">-- Chưa giao sale --</option>
-        {h.sales && !salesUsers.some((u) => u.email === h.sales) && <option value={h.sales}>{h.sales}</option>}
-        {salesUsers.map((u) => <option key={u.email} value={u.email}>{u.name} ({u.email})</option>)}
-      </Select>
+      <div>
+        <Select value={h.sales || ''} onChange={(e) => setHead('sales', e.target.value)}>
+          <option value="">-- Chưa giao sale --</option>
+          {h.sales && !salesUsers.some((u) => u.email === h.sales) && <option value={h.sales}>{h.sales}</option>}
+          {salesUsers.map((u) => <option key={u.email} value={u.email}>{u.name} ({u.email})</option>)}
+        </Select>
+        {autoSale && <small className={h.sales === autoSale ? 'small' : 'req'}>Theo khách hàng, hạt nhựa {soTypes[0]}: {autoSale}</small>}
+      </div>
     );
     return (
       <div className="cell-add">
@@ -420,7 +445,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
         </div>
         <ErrorBox error={err} />
         <div className="form-actions"><button className="btn primary" disabled={busy}>{busy ? 'Đang lưu…' : order ? 'Lưu' : 'Lập đơn'}</button></div>
-        <datalist id="dl-so-party">{parties.filter((p) => p.active !== false).map((p) => <option key={p.code} value={p.code}>{p.name}</option>)}</datalist>
+        <datalist id="dl-so-party">{partyOpts.filter((p) => p.active !== false).map((p) => <option key={p.code} value={p.code}>{p.name}</option>)}</datalist>
         {stockAt != null && lines[stockAt] && (() => {
           const l = lines[stockAt];
           // STO chuyển được mọi tình trạng (kể cả HTC); SO không xuất được hàng bị khóa (HTC) và chỉ tính TTHH của dòng nếu có
@@ -434,7 +459,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
               onClose={() => setStockAt(null)} onPick={(c) => { setLine(stockAt, whKey, c); setStockAt(null); }} />
           );
         })()}
-        <datalist id="dl-so-item">{items.filter((x) => x.active !== false).map((x) => <option key={x.code} value={x.code}>{x.name}</option>)}</datalist>
+        <datalist id="dl-so-item">{itemOpts.filter((x) => x.active !== false).map((x) => <option key={x.code} value={x.code}>{x.name}{x.plasticType ? ` · ${x.plasticType}` : ''}</option>)}</datalist>
       </form>
     </Modal>
   );

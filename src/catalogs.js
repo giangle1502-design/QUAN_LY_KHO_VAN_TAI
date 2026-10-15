@@ -92,6 +92,10 @@ export const CATALOGS = [
       { key: 'taxAddress', label: 'Địa chỉ đăng ký thuế', type: 'textarea' },
       { key: 'phone', label: 'Điện thoại', type: 'text' },
       { key: 'email', label: 'Email', type: 'email' },
+      { key: 'salesVirgin', label: 'Sale phụ trách hạt nhựa nguyên sinh', type: 'ref', ref: 'users', refRole: 'kinh_doanh', noQuickAdd: true,
+        help: 'Sale được bán mã hàng loại Nguyên sinh cho khách này. Đã gán sale: chỉ sale được gán mới thấy khách. Chưa gán ai: mọi sale đều thấy' },
+      { key: 'salesRecycled', label: 'Sale phụ trách hạt nhựa tái sinh', type: 'ref', ref: 'users', refRole: 'kinh_doanh', noQuickAdd: true,
+        help: 'Sale được bán mã hàng loại Tái sinh cho khách này' },
       { key: 'note', label: 'Ghi chú', type: 'textarea' },
       { key: 'active', label: 'Đang giao dịch', type: 'checkbox', default: true },
     ],
@@ -117,6 +121,9 @@ export const CATALOGS = [
   {
     key: 'items', group: 'Hàng hóa', icon: '🏷️', title: 'Mã hàng', short: 'Mã hàng', idField: 'code', editRoles: ['kinh_doanh', 'ke_toan'],
     fields: [
+      { key: 'plasticType', label: 'Loại hạt nhựa', type: 'select', options: ['Nguyên sinh', 'Tái sinh'], fixedChoices: true,
+        help: 'Quyết định sale nào được bán (theo Sale phụ trách nguyên sinh / tái sinh của khách hàng). Mỗi SO chỉ một loại. Để trống: hàng khác, sale nào cũng chọn được' },
+      { key: 'property', label: 'Tính chất', type: 'text' },
       { key: 'code', label: 'Mã hàng', type: 'text', required: true, help: 'Nên trùng mã trên Ecount' },
       { key: 'name', label: 'Tên hàng', type: 'text', required: true },
       { key: 'unit', label: 'Đơn vị tính', type: 'select', options: ['Bao', 'Kg', 'Tấn', 'Jumbo'], default: 'Bao' },

@@ -17,6 +17,7 @@ import {
 } from '../../lib/allocations';
 import { WithAdd } from '../../components/FormTools';
 import Select from '../../components/Select';
+import { salesFor } from '../../lib/plasticSales';
 
 const n = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? 0 : Number(v));
 const kg = (v) => fmtNum(n(v), 2);
@@ -30,7 +31,7 @@ export default function Allocation() {
   const canManage = hasRole('kinh_doanh', 'ke_toan');
   const allocState = useCollection('allocations');
   const { rows: orders, error: oErr } = useOrders('');
-  const cats = useCollections(['soldto', 'shipto', 'warehouses', 'carriers', 'locations']);
+  const cats = useCollections(['soldto', 'shipto', 'warehouses', 'carriers', 'locations', 'items']);
   const [co, setCo] = useOpCompany();
   const user = { email, name };
   const orderMap = useMemo(() => new Map(orders.map((o) => [o.id, o])), [orders]);
@@ -670,10 +671,13 @@ function CreateOrders({ rows, cats, user, onClose }) {
   const { salesOnly, email } = useApp();
   const users = useCollection(salesOnly ? '' : 'users').rows.filter((u) => u.role === 'kinh_doanh' && u.active !== false);
   const [mode, setMode] = usePref('alloc-order-mode', 'cont');
-  const groups = useMemo(() => groupForOrders(rows, mode), [rows, mode]);
+  const itemType = useMemo(() => new Map((cats.items || []).map((i) => [i.code, i.plasticType || ''])), [cats.items]);
+  const groups = useMemo(() => groupForOrders(rows, mode, (c) => itemType.get(c)), [rows, mode, itemType]);
+  // Sale phụ trách mặc định theo khách hàng + loại hạt nhựa của SO
+  const autoSale = (g) => salesFor((cats.soldto || []).find((c) => c.code === g.partyCode), g.plasticType);
   const nConts = new Set(rows.map((a) => a.contNo || a._id)).size;
   const [salesMap, setSales] = useState({});
-  const sales = new Proxy(salesMap, { get: (m, k) => (k in m ? m[k] : salesOnly ? email : '') });
+  const sales = new Proxy(salesMap, { get: (m, k) => (k in m ? m[k] : salesOnly ? email : autoSale(groups.find((g) => g.key === k) || {}) || '') });
   const [done, setDone] = useState({});
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -702,7 +706,7 @@ function CreateOrders({ rows, cats, user, onClose }) {
         <div key={g.key} className="card" style={{ marginBottom: 10 }}>
           <div className="section-head">
             <span className={'badge ' + (g.type === 'SO' ? 'blue' : 'teal')}>{g.type === 'SO' ? 'Đơn bán (SO)' : 'Chuyển kho (STO)'}</span>
-            <b>{g.company}</b>{g.type === 'SO' ? <> · {g.partyCode} {g.partyName}</> : null}{g.contNo ? <> · cont <span className="mono">{g.contNo}</span></> : null}
+            <b>{g.company}</b>{g.type === 'SO' ? <> · {g.partyCode} {g.partyName}{g.plasticType ? <> · <span className="badge">{g.plasticType}</span></> : null}</> : null}{g.contNo ? <> · cont <span className="mono">{g.contNo}</span></> : null}
             <span className="small">· {g.rows.length} dòng · {kg(g.rows.reduce((s, a) => s + n(a.qtyKg), 0))} kg</span>
             {done[g.key] && <span className="badge green">Đã tạo {done[g.key]}</span>}
           </div>

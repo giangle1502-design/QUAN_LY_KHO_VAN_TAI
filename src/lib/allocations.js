@@ -116,13 +116,15 @@ export const updateAllocation = (id, patch, user) =>
 
 // Gom các dòng kế hoạch đã chọn thành đơn: SO theo công ty + khách, STO theo công ty
 // mode 'merge': gộp theo công ty (+ khách); 'cont': mỗi cont 1 đơn (cont về khác ngày → phiếu nhập / xuất riêng)
-export function groupForOrders(allocs, mode = 'merge') {
+// typeOf(mã hàng) = loại hạt nhựa: mỗi SO chỉ một loại (Nguyên sinh / Tái sinh) → tách SO theo loại
+export function groupForOrders(allocs, mode = 'merge', typeOf = () => '') {
   const groups = new Map();
   for (const a of allocs) {
     const so = a.destType === 'customer';
     const cont = mode === 'cont' ? `|${a.contNo || `#${a._id}`}` : '';
-    const k = (so ? `SO|${a.company}|${a.partyCode}` : `STO|${a.company}`) + cont;
-    if (!groups.has(k)) groups.set(k, { key: k, type: so ? 'SO' : 'STO', company: a.company, partyCode: so ? a.partyCode : '', partyName: so ? a.partyName : '', contNo: mode === 'cont' ? a.contNo || '' : '', rows: [] });
+    const pt = so ? typeOf(a.item) || '' : '';
+    const k = (so ? `SO|${a.company}|${a.partyCode}|${pt}` : `STO|${a.company}`) + cont;
+    if (!groups.has(k)) groups.set(k, { key: k, type: so ? 'SO' : 'STO', company: a.company, partyCode: so ? a.partyCode : '', partyName: so ? a.partyName : '', plasticType: pt, contNo: mode === 'cont' ? a.contNo || '' : '', rows: [] });
     groups.get(k).rows.push(a);
   }
   return [...groups.values()].map((g) => ({ ...g, rows: g.rows.sort((x, y) => String(x.date).localeCompare(String(y.date))) }));

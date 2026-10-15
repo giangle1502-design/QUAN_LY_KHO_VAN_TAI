@@ -6,6 +6,7 @@ import {
 import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
 import { useCollection } from '../lib/hooks';
+import { saleSeesCustomer } from '../lib/plasticSales';
 import { CATALOGS, catalogByKey, NUMERIC_TYPES } from '../catalogs';
 import { applyComputed, cleanValue, defaultsOf, docIdOf, keyFieldsOf } from '../lib/fields';
 import { exportSheets, exportTemplate, readFirstSheet, toNumber, toYmd } from '../lib/excel';
@@ -28,6 +29,9 @@ function Catalog({ cat }) {
   const fields = fieldsOf(cat.key);
   const shown = fields.filter((f) => !f.hidden);
   const { rows, loading, error } = useCollection(cat.key);
+  // Sale chỉ thấy khách hàng (và địa chỉ giao) mình được gán phụ trách
+  const custScope = app.salesOnly && ['soldto', 'shipto'].includes(cat.key);
+  const custRows = useCollection(custScope && cat.key === 'shipto' ? 'soldto' : '').rows;
   const [q, setQ] = useState('');
   const [onlyMissing, setOnlyMissing] = useState(false);
   const [editing, setEditing] = useState(null); // {} = thêm mới
@@ -39,8 +43,11 @@ function Catalog({ cat }) {
   const mine = useMemo(
     () => (cat.warehouseField && !isAdmin ? rows.filter((r) => inMyWarehouses(r[cat.warehouseField]))
       // Đơn vị vận tải chỉ thấy xe, tài xế của đơn vị mình
-      : cat.carrierField && app.myCarrier ? rows.filter((r) => r[cat.carrierField] === app.myCarrier) : rows),
-    [rows, cat, isAdmin, inMyWarehouses, app.myCarrier]
+      : cat.carrierField && app.myCarrier ? rows.filter((r) => r[cat.carrierField] === app.myCarrier)
+      : custScope ? (cat.key === 'soldto' ? rows.filter((r) => saleSeesCustomer(r, email))
+        : rows.filter((r) => { const c = custRows.find((x) => x.code === r.customerCode); return !c || saleSeesCustomer(c, email); }))
+      : rows),
+    [rows, cat, isAdmin, inMyWarehouses, app.myCarrier, custScope, custRows, email]
   );
   // Dòng còn thiếu trường bắt buộc (vd. nhập Excel chưa đủ, bổ sung sau)
   const reqFields = fields.filter((f) => f.required && !f.computed && !f.system && !f.hidden);
