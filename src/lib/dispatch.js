@@ -17,7 +17,8 @@ export const KIND_LABEL = {
   [KIND.service]: 'Dịch vụ vận tải (tự nhập xe, tài xế, cước)',
   [KIND.self]: 'Khách tự lấy hàng',
 };
-export const isGHA = (c) => !!c && (c.kind === KIND.gha || c.uses3PL === true);
+// GHA: loại GHA, hoặc tích 'Được dùng 3PL', hoặc mã GHA (danh mục cũ chưa chọn loại)
+export const isGHA = (c) => !!c && (c.kind === KIND.gha || c.uses3PL === true || String(c.code || '').toUpperCase() === 'GHA');
 export const isSelfPickup = (c) => !!c && c.kind === KIND.self;
 export const isInternal = (c) => !!c && c.kind === KIND.internal;
 // Xe trong danh mục Xe: chỉ xe nội bộ / xe nhà GHA

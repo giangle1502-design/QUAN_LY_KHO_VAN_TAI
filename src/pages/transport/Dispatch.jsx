@@ -5,7 +5,7 @@ import { useApp } from '../../context/AppContext';
 import { useCollection } from '../../lib/hooks';
 import { usePlans } from '../../lib/shipPlans';
 import { useMovesRange } from '../../lib/slips';
-import { KIND_LABEL, SRC_LABEL, isSelfPickup, kindText, pendingDispatch, usesVehicleList } from '../../lib/dispatch';
+import { KIND_LABEL, SRC_LABEL, isGHA, isSelfPickup, kindText, pendingDispatch, usesVehicleList } from '../../lib/dispatch';
 import { createPlannedTrips } from '../../lib/transport';
 import { fmtDate, fmtNum, norm, today } from '../../lib/utils';
 import { Empty, ErrorBox } from '../../components/ui';
@@ -19,7 +19,8 @@ const daysAgo = (k) => { const d = new Date(); d.setDate(d.getDate() - k); retur
 // nhưng chưa giao. Admin kiểm tra (đổi đơn vị nếu chỉ định sai) rồi bấm Giao vận tải từng chuyến hoặc toàn bộ.
 // Đơn vị vận tải chỉ thấy chuyến sau khi admin giao, nên chỉ định sai thì sửa được trước khi họ nhận.
 export default function Dispatch({ orders, trips, onSplit }) {
-  const { email, name } = useApp();
+  const { email, name, can3PL } = useApp();
+  const threepl = useCollection(can3PL ? 'threepl' : '').rows;
   const carriers = useCollection('carriers').rows;
   const warehouses = useCollection('warehouses').rows;
   const shipto = useCollection('shipto').rows;
@@ -37,7 +38,7 @@ export default function Dispatch({ orders, trips, onSplit }) {
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const car = (code) => carriers.find((c) => c.code === code);
-  const val = (r) => ({ carrier: r.carrier, date: r.date && r.date > today() ? r.date : today(), plate: '', driverName: '', ...(over[r.key] || {}) });
+  const val = (r) => ({ carrier: r.carrier, date: r.date && r.date > today() ? r.date : today(), plate: '', driverName: '', threepl: '', ...(over[r.key] || {}) });
   const setO = (k, p) => setOver((m) => ({ ...m, [k]: { ...(m[k] || {}), ...p } }));
   const rows = all.filter((r) => (!f.src || r.src === f.src) && (!f.carrier || val(r).carrier === f.carrier)
     && (!f.q || norm([r.srcLabel, r.orderId, r.partyCode, r.partyName, r.shipCode, r.warehouse, r.carrier, ...r.items.map((i) => `${i.item} ${i.itemName}`)].join(' ')).includes(norm(f.q))));
@@ -53,7 +54,8 @@ export default function Dispatch({ orders, trips, onSplit }) {
       for (const r of list) {
         const v = val(r);
         const wh = warehouses.find((w) => w.code === r.warehouse) || { code: r.warehouse };
-        await createPlannedTrips({ wh, carrier: car(v.carrier), trips: [{ date: v.date, plate: v.plate, driverName: v.driverName, company: r.company, lines: r.items }] }, { email, name }, 'Giao vận tải');
+        await createPlannedTrips({ wh, carrier: car(v.carrier), trips: [{ date: v.date, plate: v.plate, driverName: v.driverName, company: r.company, lines: r.items,
+          ...(v.threepl && isGHA(car(v.carrier)) ? { threepl: v.threepl, threeplName: threepl.find((x) => x.code === v.threepl)?.name || '' } : {}) }] }, { email, name }, 'Giao vận tải');
         done += 1;
       }
       setMsg(`Đã giao ${done} chuyến cho đơn vị vận tải.`);
@@ -86,7 +88,7 @@ export default function Dispatch({ orders, trips, onSplit }) {
         {!rows.length ? <Empty text="Không có hàng nào chờ giao vận tải." /> : (
           <table>
             <thead><tr><th><input type="checkbox" checked={chosen.length === rows.length} onChange={(e) => setSel(e.target.checked ? Object.fromEntries(rows.map((r) => [r.key, true])) : {})} /></th>
-              <th>Nguồn</th><th>Ngày đi</th><th>Kho xuất</th><th>Giao đến</th><th>Hàng</th><th className="num">Tấn</th><th>Đơn vị vận tải</th><th>Số xe (nếu biết)</th><th></th></tr></thead>
+              <th>Nguồn</th><th>Ngày đi</th><th>Kho xuất</th><th>Giao đến</th><th>Hàng</th><th className="num">Tấn</th><th>Đơn vị vận tải</th>{can3PL && <th>3PL (xe GHA)</th>}<th>Số xe (nếu biết)</th><th></th></tr></thead>
             <tbody>{rows.map((r) => {
               const v = val(r); const c = car(v.carrier);
               return (
@@ -101,6 +103,7 @@ export default function Dispatch({ orders, trips, onSplit }) {
                   <td><select value={v.carrier} onChange={(e) => setO(r.key, { carrier: e.target.value })} style={v.carrier !== r.carrier ? { borderColor: 'var(--amber)' } : undefined}>
                     <option value="">-- Chọn --</option>{carriers.filter((x) => x.active !== false || x.code === v.carrier).map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</select>
                     {c ? <div className="small" title={KIND_LABEL[c.kind] || ''}>{kindText(c)}{v.carrier !== r.carrier ? ` · đã đổi từ ${r.carrier}` : ''}</div> : null}</td>
+                  {can3PL && <td>{isGHA(c) ? <select value={v.threepl} onChange={(e) => setO(r.key, { threepl: e.target.value })}><option value="">Xe nhà GHA</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</select> : null}</td>}
                   <td><input list={`dl-dp-${v.carrier}`} value={v.plate} placeholder={isSelfPickup(c) ? 'xe khách' : ''} onChange={(e) => setO(r.key, { plate: e.target.value.toUpperCase() })} style={{ width: 110 }} /></td>
                   <td><button className="btn primary sm" disabled={busy} onClick={() => release([r])}>Giao</button></td>
                 </tr>
