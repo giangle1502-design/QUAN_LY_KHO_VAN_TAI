@@ -27,6 +27,15 @@ export const usesVehicleList = (c) => isInternal(c) || isGHA(c);
 export const needsDriverId = (c, via3pl = false) => usesVehicleList(c) && !via3pl;
 // Link riêng cho tài xế / đơn vị vận tải mở trên điện thoại (chưa đăng nhập thì hiện trang đăng nhập tài xế)
 export const driverLink = () => `${window.location.origin}/tai-xe`;
+// Vận tải không hiểu ký hiệu kho: hiện tên kho đầy đủ (+ địa chỉ kho) thay cho mã
+export const whOf = (code, whs = []) => whs.find((w) => w.code === code);
+export const whText = (code, whs = []) => { const w = whOf(code, whs); return w?.name ? `${w.name} (${code})` : code || ''; };
+// Nơi giao của 1 dòng chuyến: khách (tên + địa chỉ giao) hoặc kho nhận của STO (tên kho + địa chỉ kho)
+export function placeOf(l, whs = []) {
+  const ws = String(l.partyCode || '').split(',').map((x) => whOf(x.trim(), whs)).filter(Boolean);
+  if (ws.length) return { sto: true, name: `Kho ${ws.map((w) => w.name || w.code).join(', ')}`, address: l.address || ws.map((w) => w.address).filter(Boolean).join('; ') };
+  return { sto: false, name: `${l.partyCode ? `${l.partyCode} – ` : ''}${l.partyName || ''}`, short: l.partyName || l.partyCode, address: l.address || '' };
+}
 export const kindText = (c) => (isGHA(c) ? 'GHA' : isSelfPickup(c) ? 'Khách tự lấy' : isInternal(c) ? 'Nội bộ' : 'Dịch vụ');
 
 const n = (v) => (v === '' || v == null ? 0 : Number(v) || 0);

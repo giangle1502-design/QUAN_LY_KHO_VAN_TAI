@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { useCollection } from '../../lib/hooks';
 import { STAGES, ST, STATUS_META, fmtTime, vnDate } from '../../lib/trips';
 import { tripKg } from '../../lib/transport';
-import { kindText } from '../../lib/dispatch';
+import { kindText, placeOf } from '../../lib/dispatch';
 import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum } from '../../lib/utils';
 import { Pipeline, StatusBadge } from '../../components/TripBits';
@@ -32,6 +32,7 @@ export default function TripReport({ trips, priv }) {
   const { role, can3PL } = useApp();
   const scopedRole = ['van_tai', 'tpl'].includes(role);
   const carriers = useCollection('carriers').rows;
+  const warehouses = useCollection('warehouses').rows;
   const [preset, setPreset] = useState('month');
   const [custom, setCustom] = useState({ from: '', to: '' });
   const [statusF, setStatusF] = useState('');
@@ -48,7 +49,7 @@ export default function TripReport({ trips, priv }) {
   const rows = inScope.filter((t) => !statusF || t.status === statusF)
     .sort((a, b) => String(b.arrivalTime || b.plannedDate || '').localeCompare(String(a.arrivalTime || a.plannedDate || '')) || b.id.localeCompare(a.id));
   const setP = (p) => { setPreset(p); setCustom({ from: '', to: '' }); };
-  const parties = (t) => [...new Set((t.lines || []).map((l) => l.partyName || l.partyCode))].join(', ');
+  const parties = (t) => [...new Set((t.lines || []).map((l) => { const pl = placeOf(l, warehouses); return pl.sto ? pl.name : pl.short; }))].join(', ');
 
   const excel = () => exportSheets(`Bao_cao_tinh_trang_xe_${from || 'all'}_${to || ''}`, {
     'Tình trạng xe': rows.map((t) => ({

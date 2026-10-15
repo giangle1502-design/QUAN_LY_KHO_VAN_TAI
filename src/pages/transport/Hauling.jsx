@@ -6,7 +6,7 @@ import { useApp } from '../../context/AppContext';
 import { useCollection } from '../../lib/hooks';
 import { usePref } from '../../lib/prefs';
 import { OPEN_STATUSES } from '../../lib/orders';
-import { driverLink, isGHA, isInternal, kindText, usesVehicleList } from '../../lib/dispatch';
+import { driverLink, placeOf, whOf, whText, isGHA, isInternal, kindText, usesVehicleList } from '../../lib/dispatch';
 import Dispatch from './Dispatch';
 import Statements from './Statements';
 import TripReport from './Report';
@@ -218,6 +218,7 @@ function TripList({ trips, priv }) {
   // Đơn vị vận tải / 3PL làm trên điện thoại: mặc định xem dạng thẻ; quản trị mặc định dạng bảng
   const [view, setView] = usePref('trips-view', isCarrier || isTpl ? 'card' : 'table');
   const companies = useCollection('companies').rows;
+  const warehouses = useCollection('warehouses').rows;
   const companyName = (code) => { const x = companies.find((c) => c.code === code); return x ? `${code} – ${x.name}` : code; };
   // Nút thao tác của 1 chuyến (dùng chung cho bảng và thẻ)
   const info = (t) => {
@@ -254,11 +255,12 @@ function TripList({ trips, priv }) {
         <div><span className={'badge ' + (STATUS_META[t.status]?.tone || '')}>{statusText(t)}</span>{t.selfPickup ? <span className="badge" style={{ marginLeft: 4 }}>khách tự lấy</span> : null}</div>
         <div>Đơn hàng: <b>{(t.orderIds || []).join(', ')}</b></div>
         {t.company && <div>Công ty xuất hàng: <b>{companyName(t.company)}</b></div>}
-        <div>Nơi nhận hàng: <b>{t.warehouseName || t.warehouse}</b></div>
-        {dests.map((l) => <div key={`${l.partyCode}${l.shipCode}`}>
-          <div>Khách hàng (nơi giao): <b>{l.partyCode ? `${l.partyCode} – ` : ''}{l.partyName}</b></div>
-          {l.address && <div>Địa chỉ giao hàng: {l.address}<div><a href={mapUrl(l.address)} target="_blank" rel="noreferrer">📍 Xem vị trí giao hàng trên bản đồ</a></div></div>}
-        </div>)}
+        <div>Nơi nhận hàng: <b>{whText(t.warehouse, warehouses) || t.warehouseName}</b>
+          {whOf(t.warehouse, warehouses)?.address && <div className="small">{whOf(t.warehouse, warehouses).address} · <a href={mapUrl(whOf(t.warehouse, warehouses).address)} target="_blank" rel="noreferrer">📍 Bản đồ</a></div>}</div>
+        {dests.map((l) => { const pl = placeOf(l, warehouses); return <div key={`${l.partyCode}${l.shipCode}`}>
+          <div>{pl.sto ? 'Chuyển kho, giao đến' : 'Khách hàng (nơi giao)'}: <b>{pl.name}</b></div>
+          {pl.address && <div>Địa chỉ giao hàng: {pl.address}<div><a href={mapUrl(pl.address)} target="_blank" rel="noreferrer">📍 Xem vị trí giao hàng trên bản đồ</a></div></div>}
+        </div>; })}
         <ul className="trip-card-items">{t.lines.map((l) => <li key={l.id}>{l.item}{l.itemName ? ` ${l.itemName}` : ''} — <b>{fmtNum(n(l.plannedKg))} kg</b></li>)}</ul>
         <div>Xe: {t.plate ? <b>{t.plate}</b> : <span className="small">{isInternal(c) ? 'chờ tài xế nhóm nhận' : 'chưa có xe'}</span>}{t.driverName ? ` · ${t.driverName}` : ''}{t.driverPhone ? <> · <a href={`tel:${t.driverPhone}`}>{t.driverPhone}</a></> : null}</div>
         {can3PL && isGHA(c) && <div>3PL: {open ? sel3pl(t) : <b>{p3?.threeplName || p3?.threepl || 'Xe nhà GHA'}</b>}</div>}
@@ -295,7 +297,7 @@ function TripList({ trips, priv }) {
                   <td>{t.plate ? <b>{t.plate}</b> : <span className="small">{isInternal(c) ? 'chờ tài xế nhóm nhận' : 'chưa có xe'}</span>}{t.driverName ? <div className="small">{t.driverName}{t.driverPhone ? ` · ${t.driverPhone}` : ''}</div> : null}</td>
                   {!isCarrier && !isTpl && <td>{t.carrierName || t.carrier}<div className="small">{kindText(c)}</div></td>}
                   {can3PL && <td>{isGHA(c) ? (open ? sel3pl(t) : (p3?.threeplName || p3?.threepl || 'Xe nhà GHA')) : ''}</td>}
-                  <td className="small">{[...new Set(t.lines.map((l) => l.partyName || l.partyCode))].join(', ')}<div>{t.lines.map((l) => `${l.orderId} ${l.item}`).join('; ')}</div></td>
+                  <td className="small">{[...new Set(t.lines.map((l) => { const pl = placeOf(l, warehouses); return pl.sto ? pl.name : pl.short; }))].join(', ')}<div>{t.lines.map((l) => `${l.orderId} ${l.item}`).join('; ')}</div></td>
                   <td className="num">{t3(tripKg(t))}</td>
                   <td><span className={'badge ' + (STATUS_META[t.status]?.tone || '')}>{statusText(t)}</span>
                     <div className="small">{[['driverArrivedAt', 'đến kho'], ['driverLoadedAt', 'lấy xong'], ['driverAtDestAt', 'đến điểm giao'], ['driverDeliveredAt', 'giao xong']].filter(([k]) => t[k]).map(([k, l]) => `${l} ${fmtTime(t[k])}`).join(' · ')}</div>
