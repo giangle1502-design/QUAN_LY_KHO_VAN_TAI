@@ -10,7 +10,7 @@ import { fmtDate, fmtNum } from '../../lib/utils';
 import { Empty, ErrorBox } from '../../components/ui';
 import { StepModal } from '../../components/TripSteps';
 import { useCollection } from '../../lib/hooks';
-import { needsDriverId, placeOf, whText } from '../../lib/dispatch';
+import { navUrl, needsDriverId, placeOf, whText } from '../../lib/dispatch';
 
 // Trang tài xế (điện thoại): nhận chuyến của đơn vị, bấm lần lượt từng bước
 export default function Driver() {
@@ -37,7 +37,7 @@ export default function Driver() {
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
           <b className="mono">{t.id}</b><span className={'badge ' + (STATUS_META[t.status]?.tone || '')}>{STATUS_META[t.status]?.label}</span></div>
         <div className="small">Ngày {fmtDate(t.plannedDate)} · Kho <b>{whText(t.warehouse, warehouses)}</b> · {fmtNum(tripKg(t) / 1000, 3)} tấn{t.plate ? <> · Xe <b>{t.plate}</b></> : null}</div>
-        {t.lines.map((l) => { const pl = placeOf(l, warehouses); return <div key={l.id} className="small">→ {pl.sto ? pl.name : pl.short}{pl.address ? `, ${pl.address}` : ''} · {l.item} {fmtNum(n(l.plannedKg) / 1000, 3)} t</div>; })}
+        {t.lines.map((l) => { const pl = placeOf(l, warehouses); return <div key={l.id} className="small">→ {pl.sto ? pl.name : pl.short}{pl.address ? `, ${pl.address}` : ''}{l.contactPhone ? <> · <a href={`tel:${l.contactPhone}`}>📞 {l.contactPhone}</a></> : null}{navUrl({ mapLink: l.mapLink, address: pl.address }) ? <> · <a href={navUrl({ mapLink: l.mapLink, address: pl.address })} target="_blank" rel="noreferrer">📍 Chỉ đường</a></> : null} · {l.item} {fmtNum(n(l.plannedKg) / 1000, 3)} t</div>; })}
         <div className="small">{[['driverArrivedAt', 'Đến điểm nhận'], ['driverLoadedAt', 'Lấy hàng xong'], ['driverAtDestAt', 'Đến điểm giao'], ['driverDeliveredAt', 'Hoàn thành']].filter(([k]) => t[k]).map(([k, l]) => `${l} ${fmtTime(t[k])}`).join(' · ')}</div>
         {st && (blocked ? <p className="small" style={{ marginBottom: 0 }}>⏳ {blocked}</p>
           : <button className="btn primary" style={{ width: '100%', marginTop: 8, padding: 12, fontSize: 16 }} onClick={() => setStep({ t, st })}>{claim ? `✋ Nhận chuyến này${pk ? ` cho xe ${plate}` : ''}` : STEPS[st]}</button>)}

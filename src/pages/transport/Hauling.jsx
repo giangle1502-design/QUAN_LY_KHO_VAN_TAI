@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { collection, doc, onSnapshot, query, setDoc, updateDoc, where } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -6,7 +6,7 @@ import { useApp } from '../../context/AppContext';
 import { useCollection } from '../../lib/hooks';
 import { usePref } from '../../lib/prefs';
 import { OPEN_STATUSES } from '../../lib/orders';
-import { placeOf, whOf, whText, isGHA, isInternal, kindText, usesVehicleList } from '../../lib/dispatch';
+import { enrichLine, navUrl, placeOf, whOf, whText, isGHA, isInternal, kindText, usesVehicleList } from '../../lib/dispatch';
 import Dispatch from './Dispatch';
 import Statements from './Statements';
 import TripReport from './Report';
@@ -220,6 +220,22 @@ function TripList({ trips, priv }) {
   const [view, setView] = usePref('trips-view', isCarrier || isTpl ? 'card' : 'table');
   const companies = useCollection('companies').rows;
   const warehouses = useCollection('warehouses').rows;
+  const shiptoRows = useCollection(isAdmin || isCarrier ? 'shipto' : '').rows;
+  // Chuyến cũ chưa có địa chỉ / người nhận / định vị điểm giao: bổ sung từ danh mục để tài xế mở link thấy được
+  const filled = useRef(new Set());
+  useEffect(() => {
+    if (!(isAdmin || isCarrier) || !shiptoRows.length || !warehouses.length) return;
+    trips.filter((t) => !['completed', 'cancelled'].includes(t.status) && !filled.current.has(t.id)).forEach((t) => {
+      filled.current.add(t.id);
+      const lines = t.lines.map((l) => enrichLine(l, shiptoRows, warehouses));
+      const w = warehouses.find((x) => x.code === t.warehouse) || {};
+      const upd = {
+        ...(JSON.stringify(lines) !== JSON.stringify(t.lines) ? { lines } : {}),
+        ...(isAdmin && !t.warehouseAddress && (w.address || w.mapLink) ? { warehouseAddress: w.address || '', warehouseMap: w.mapLink || '' } : {}),
+      };
+      if (Object.keys(upd).length) updateDoc(doc(db, 'trips', t.id), upd).catch(() => {});
+    });
+  }, [trips, shiptoRows, warehouses, isAdmin, isCarrier]);
   const companyName = (code) => { const x = companies.find((c) => c.code === code); return x ? `${code} – ${x.name}` : code; };
   // Nút thao tác của 1 chuyến (dùng chung cho bảng và thẻ)
   const info = (t) => {
@@ -260,7 +276,10 @@ function TripList({ trips, priv }) {
           {whOf(t.warehouse, warehouses)?.address && <div className="small">{whOf(t.warehouse, warehouses).address} · <a href={mapUrl(whOf(t.warehouse, warehouses).address)} target="_blank" rel="noreferrer">📍 Bản đồ</a></div>}</div>
         {dests.map((l) => { const pl = placeOf(l, warehouses); return <div key={`${l.partyCode}${l.shipCode}`}>
           <div>{pl.sto ? 'Chuyển kho, giao đến' : 'Khách hàng (nơi giao)'}: <b>{pl.name}</b></div>
-          {pl.address && <div>Địa chỉ giao hàng: {pl.address}<div><a href={mapUrl(pl.address)} target="_blank" rel="noreferrer">📍 Xem vị trí giao hàng trên bản đồ</a></div></div>}
+          {l.shipCode && <div className="small">Mã giao hàng: <b>{l.shipCode}</b></div>}
+          {pl.address && <div>Địa chỉ giao hàng: {pl.address}</div>}
+          {(l.contact || l.contactPhone) && <div className="small">Người nhận: {l.contact}{l.contactPhone ? <> · <a href={`tel:${l.contactPhone}`}>📞 {l.contactPhone}</a></> : null}</div>}
+          {navUrl({ mapLink: l.mapLink, address: pl.address }) && <div><a href={navUrl({ mapLink: l.mapLink, address: pl.address })} target="_blank" rel="noreferrer">📍 Chỉ đường đến điểm giao{l.mapLink ? ' (đã ghim)' : ''}</a></div>}
         </div>; })}
         <ul className="trip-card-items">{t.lines.map((l) => <li key={l.id}>{l.item}{l.itemName ? ` ${l.itemName}` : ''} — <b>{fmtNum(n(l.plannedKg))} kg</b></li>)}</ul>
         <div>Xe: {t.plate ? <b>{t.plate}</b> : <span className="small">{isInternal(c) ? 'chờ tài xế nhóm nhận' : 'chưa có xe'}</span>}{t.driverName ? ` · ${t.driverName}` : ''}{t.driverPhone ? <> · <a href={`tel:${t.driverPhone}`}>{t.driverPhone}</a></> : null}</div>

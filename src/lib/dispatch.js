@@ -37,6 +37,25 @@ export function placeOf(l, whs = []) {
   if (ws.length) return { sto: true, name: `Kho ${ws.map((w) => w.name || w.code).join(', ')}`, address: l.address || ws.map((w) => w.address).filter(Boolean).join('; ') };
   return { sto: false, name: `${l.partyCode ? `${l.partyCode} – ` : ''}${l.partyName || ''}`, short: l.partyName || l.partyCode, address: l.address || '' };
 }
+// Chỉ đường cho tài xế: ưu tiên định vị đã ghim (link Google Maps / tọa độ), không có thì theo địa chỉ
+export function navUrl({ mapLink = '', address = '' } = {}) {
+  const m = String(mapLink).trim();
+  if (/^https?:\/\//i.test(m)) return m;
+  const ll = m.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+  const dest = ll ? `${ll[1]},${ll[2]}` : m || address;
+  return dest ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}` : '';
+}
+// Chép thông tin điểm giao vào dòng chuyến (địa chỉ, người nhận, điện thoại, định vị) để tài xế mở link
+// (không đăng nhập, không đọc được danh mục) vẫn thấy. Dòng STO: lấy địa chỉ kho nhận.
+export function enrichLine(l, shipto = [], whs = []) {
+  const s = l.shipCode ? shipto.find((x) => x.shipCode === l.shipCode) : null;
+  const w = !s && l.partyCode ? whs.find((x) => x.code === String(l.partyCode).split(',')[0].trim()) : null;
+  const src = s ? { address: s.address, contact: s.contact, contactPhone: s.phone, mapLink: s.mapLink }
+    : w ? { address: w.address, contact: w.manager, contactPhone: w.phone, mapLink: w.mapLink } : {};
+  const out = { ...l };
+  for (const [k, v] of Object.entries(src)) if (v && !out[k]) out[k] = v;
+  return out;
+}
 export const kindText = (c) => (isGHA(c) ? 'GHA' : isSelfPickup(c) ? 'Khách tự lấy' : isInternal(c) ? 'Nội bộ' : 'Dịch vụ');
 
 const n = (v) => (v === '' || v == null ? 0 : Number(v) || 0);

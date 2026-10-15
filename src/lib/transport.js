@@ -1,4 +1,5 @@
-import { doc, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
+import { enrichLine } from './dispatch';
 import { db } from '../firebase';
 import { ST, firstStatus, nowISO, reserveCodes, vnDate } from './trips';
 import { calcFreight, matchRate } from './freight';
@@ -96,6 +97,9 @@ export function splitLoads(lines, loadsKg) {
 
 // Tạo các chuyến đã chia (status 'planned')
 export async function createPlannedTrips({ wh, carrier, trips }, user, action = 'Chia xe') {
+  // Địa chỉ, người nhận, định vị điểm giao chép vào chuyến (tài xế mở link không đọc được danh mục)
+  const [shipto, whs] = await Promise.all(['shipto', 'warehouses'].map((c) => getDocs(collection(db, c)).then((q) => q.docs.map((d) => d.data())).catch(() => [])));
+  trips = trips.map((t) => ({ ...t, lines: t.lines.map((l) => enrichLine(l, shipto, whs)) }));
   const [first, ...rest] = await reserveCodes('GRP', trips.length);
   const gids = [first, ...rest];
   const sids = await reserveCodes('SP', trips.reduce((s, t) => s + t.lines.length, 0));
@@ -103,12 +107,12 @@ export async function createPlannedTrips({ wh, carrier, trips }, user, action = 
   for (const [i, t] of trips.entries()) {
     const id = gids[i];
     const trip = {
-      source: 'plan', purpose: 'export', warehouse: wh.code, warehouseName: wh.name || '', hasGuard: wh.hasGuard !== false,
+      source: 'plan', purpose: 'export', warehouse: wh.code, warehouseName: wh.name || '', warehouseAddress: wh.address || '', warehouseMap: wh.mapLink || '', hasGuard: wh.hasGuard !== false,
       carrier: carrier.code, carrierName: carrier.name || '', plate: (t.plate || '').trim().toUpperCase(), vehicleType: t.vehicleType || '',
       idCard: (t.idCard || '').trim(), driverName: (t.driverName || '').trim(), driverPhone: (t.driverPhone || '').trim(),
       plannedDate: t.date, arrivalDate: t.date, arrivalTime: null, note: t.note || '',
       lines: t.lines.map((l) => ({ id: sids[k++], orderId: l.orderId, orderLine: l.no, item: l.item, itemName: l.itemName || '', partyCode: l.partyCode || '', partyName: l.partyName || '',
-        shipCode: l.shipCode || '', address: l.address || '', plannedKg: l.kg, payload: Math.round(l.kg) / 1000, delivered: false, deliveredTime: null,
+        shipCode: l.shipCode || '', address: l.address || '', contact: l.contact || '', contactPhone: l.contactPhone || '', mapLink: l.mapLink || '', plannedKg: l.kg, payload: Math.round(l.kg) / 1000, delivered: false, deliveredTime: null,
         // Nguồn của phần hàng (để biết dự kiến xuất / phân bổ / phiếu xuất nào đã giao vận tải)
         ...(l.planId ? { planId: l.planId } : {}), ...(l.allocId ? { allocId: l.allocId } : {}), ...(l.movementId ? { movementId: l.movementId } : {}) })),
       company: t.company || '', carrierKind: carrier.kind || '', selfPickup: carrier.kind === 'Khách tự lấy',

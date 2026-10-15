@@ -5,6 +5,7 @@ import { txFirebase } from '../firebase';
 import { STATUS_META, fmtTime } from '../lib/trips';
 import { STEPS, compressImage, doStep, nextStep, plateKey, stepBlocked, tripKg } from '../lib/transport';
 import { fmtDate, fmtNum } from '../lib/utils';
+import { navUrl } from '../lib/dispatch';
 
 // ============================================================================
 // Link tài xế (gửi vào nhóm Zalo của đơn vị vận tải), không cần tài khoản:
@@ -89,10 +90,19 @@ export default function LinkDriver() {
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
           <b className="mono">{t.id}</b><span className={'badge ' + (STATUS_META[t.status]?.tone || '')}>{t.selfPickup && t.status === 'completed' ? 'Đã lấy xong' : STATUS_META[t.status]?.label}</span></div>
         <div>Ngày đi: <b>{fmtDate(t.plannedDate)}</b>{t.plate ? <> · Xe <b>{t.plate}</b></> : null}</div>
-        <div>Nơi nhận hàng: <b>{t.warehouseName || t.warehouse}</b></div>
-        {[...new Map(t.lines.map((l) => [`${l.partyCode}|${l.shipCode}`, l])).values()].map((l) => (
-          <div key={`${l.partyCode}${l.shipCode}`}>Giao đến: <b>{l.partyName || l.partyCode}</b>
-            {l.address ? <div className="small">{l.address} · <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(l.address)}`} target="_blank" rel="noreferrer">📍 Bản đồ</a></div> : null}</div>))}
+        <div>Nơi nhận hàng: <b>{t.warehouseName || t.warehouse}</b>
+          {(t.warehouseAddress || t.warehouseMap) && <div className="small">{t.warehouseAddress} {navUrl({ mapLink: t.warehouseMap, address: t.warehouseAddress }) && <a href={navUrl({ mapLink: t.warehouseMap, address: t.warehouseAddress })} target="_blank" rel="noreferrer">📍 Chỉ đường đến kho</a>}</div>}</div>
+        {[...new Map(t.lines.map((l) => [`${l.partyCode}|${l.shipCode}`, l])).values()].map((l) => {
+          const nav = navUrl({ mapLink: l.mapLink, address: l.address });
+          return (
+            <div key={`${l.partyCode}${l.shipCode}`} style={{ marginTop: 4 }}>Giao đến: <b>{l.partyName || l.partyCode}</b>
+              {l.shipCode && <div className="small">Mã giao hàng: <b>{l.shipCode}</b></div>}
+              {l.address && <div className="small">Địa chỉ: {l.address}</div>}
+              {(l.contact || l.contactPhone) && <div className="small">Người nhận: {l.contact}{l.contactPhone ? <> · <a href={`tel:${l.contactPhone}`}>📞 {l.contactPhone}</a></> : null}</div>}
+              {nav && <a className="btn" href={nav} target="_blank" rel="noreferrer" style={{ display: 'block', textAlign: 'center', marginTop: 6, padding: 10, fontSize: 16 }}>📍 Chỉ đường đến điểm giao</a>}
+            </div>
+          );
+        })}
         <div className="small">{t.lines.map((l) => `${l.item} ${fmtNum(n(l.plannedKg) / 1000, 3)} t`).join(' · ')} · Tổng {fmtNum(tripKg(t) / 1000, 3)} tấn</div>
         {t.driverName && <div className="small">Tài xế: {t.driverName}{t.driverPhone ? ` · ${t.driverPhone}` : ''}</div>}
         <div className="small">{[['driverArrivedAt', 'Đến điểm nhận'], ['driverLoadedAt', 'Lấy hàng xong'], ['driverAtDestAt', 'Đến điểm giao'], ['driverDeliveredAt', 'Hoàn thành']].filter(([k]) => t[k]).map(([k, l]) => `${l} ${fmtTime(t[k])}`).join(' · ')}</div>
