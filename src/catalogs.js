@@ -304,6 +304,18 @@ export const CATALOGS = [
       { key: 'carrier', label: 'Đơn vị vận tải', type: 'ref', ref: 'carriers' },
     ],
   },  {
+    key: 'pickupPoints', group: 'Vận tải', icon: '⚓', title: 'Điểm nhận hàng (cảng, kho ngoài…)', short: 'Điểm nhận hàng', idField: 'code', upperId: true, editRoles: ['van_tai', 'ke_toan'],
+    help: 'Nơi xe nhận hàng cụ thể, VD Cảng Cát Lái, Cảng Hiệp Phước, ICD Phước Long. Chọn trên chuyến để biết đúng tuyến và giá cước.',
+    fields: [
+      { key: 'code', label: 'Mã điểm nhận', type: 'text', required: true, help: 'VD CATLAI' },
+      { key: 'name', label: 'Tên điểm nhận', type: 'text', required: true, help: 'VD Cảng Cát Lái' },
+      { key: 'kind', label: 'Loại', type: 'select', options: ['Cảng', 'ICD / depot', 'Kho ngoài', 'Nhà máy', 'Khác'], default: 'Cảng' },
+      { key: 'address', label: 'Địa chỉ', type: 'textarea' },
+      { key: 'mapLink', label: 'Định vị', type: 'text', help: 'Link Google Maps hoặc tọa độ: tài xế bấm là mở chỉ đường' },
+      { key: 'active', label: 'Đang dùng', type: 'checkbox', default: true },
+    ],
+  },
+  {
     key: 'freightRates', group: 'Vận tải', icon: '💰', title: 'Bảng giá cước vận chuyển', short: 'Bảng giá cước', idField: 'code', upperId: true, editRoles: ['ke_toan'],
     help: 'Để trống một điều kiện = áp dụng cho mọi giá trị. Phiếu xuất lấy dòng giá khớp cụ thể nhất (địa chỉ giao > đơn vị vận tải > khách hàng / kho nhận > loại xe > kho đi).',
     fields: [
@@ -312,6 +324,7 @@ export const CATALOGS = [
       { key: 'price', label: 'Đơn giá (đ/tấn hoặc đ/chuyến)', type: 'currency', required: true },
       { key: 'minAmount', label: 'Cước tối thiểu mỗi chuyến (đ)', type: 'currency', help: 'Tính theo tấn mà thấp hơn mức này thì lấy mức này' },
       { key: 'carrier', label: 'Đơn vị vận tải', type: 'ref', ref: 'carriers' },
+      { key: 'fromPoint', label: 'Điểm nhận (cảng…)', type: 'ref', ref: 'pickupPoints', help: 'VD Cảng Cát Lái: mỗi cảng một giá' },
       { key: 'fromWarehouse', label: 'Kho đi', type: 'ref', ref: 'warehouses' },
       { key: 'toCustomer', label: 'Khách hàng', type: 'ref', ref: 'soldto' },
       { key: 'toShipCode', label: 'Địa chỉ giao (mã giao)', type: 'ref', ref: 'shipto' },

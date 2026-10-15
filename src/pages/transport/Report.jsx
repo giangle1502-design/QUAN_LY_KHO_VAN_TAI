@@ -54,7 +54,7 @@ export default function TripReport({ trips, priv }) {
 
   const excel = () => exportSheets(`Bao_cao_tinh_trang_xe_${from || 'all'}_${to || ''}`, {
     'Tình trạng xe': rows.map((t) => ({
-      'Mã chuyến': t.id, 'Ngày': dayOf(t), 'Số xe': t.plate || '', 'Tài xế': t.driverName || '', 'ĐT tài xế': t.driverPhone || '', CCCD: t.idCard || '',
+      'Mã chuyến': t.id, 'Ngày': dayOf(t), 'Công ty': t.company || '', 'Điểm nhận': t.pickupName || t.warehouseName || t.warehouse || '', 'Số xe': t.plate || '', 'Tài xế': t.driverName || '', 'ĐT tài xế': t.driverPhone || '', CCCD: t.idCard || '',
       'Đơn vị vận tải': t.carrierName || t.carrier || '', Loại: kindText(carOf(t)), ...(can3PL ? { '3PL': priv[t.id]?.threeplName || '' } : {}),
       Kho: t.warehouse, 'Đơn hàng': (t.orderIds || []).join(', '), 'Khách hàng / nơi giao': parties(t), 'Số tấn': +(tripKg(t) / 1000).toFixed(3), Cửa: t.dock || '',
       'Trạng thái': t.selfPickup && t.status === ST.COMPLETED ? 'Khách đã lấy xong' : STATUS_META[t.status]?.label || t.status,

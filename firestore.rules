@@ -157,7 +157,7 @@ service cloud.firestore {
         // Điều phối vận tải: sửa chuyến, làm thay tài xế, nhập chi phí
         || (hasRole('van_tai') && ownCarrierTrip() && stepStatus(true) && costOk(['entered'])
           && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(driverKeys().concat(costKeys()).concat(['plannedDate', 'note', 'cancelReason', 'cancelTime'])))
+            .hasOnly(driverKeys().concat(costKeys()).concat(['plannedDate', 'note', 'cancelReason', 'cancelTime', 'pickup', 'pickupName', 'pickupAddress', 'pickupMap'])))
         // Tài xế: nhập số xe (chuyến chưa có xe) hoặc chạy chuyến điều phối đã chỉ định cho xe đó, xác nhận từng bước;
         // không đổi được xe điều phối đã chỉ định, không nhập / sửa cước. Xe thuê ngoài không cần có trong danh mục, không cần CCCD
         || (hasRole('tai_xe') && ownCarrierTrip()
@@ -468,14 +468,16 @@ service cloud.firestore {
       allow read: if coll == 'vehicles' && txOk() && resource.data.get('carrier', '') == txCarrier();
       allow read: if isStaff() && coll in [
         'companies', 'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses',
-        'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'codeRules', 'freightRates', 'pallets'];
+        'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'codeRules', 'freightRates', 'pallets', 'pickupPoints'];
       allow create, update: if isAdmin() && coll in [
         'companies', 'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses',
-        'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'codeRules', 'freightRates', 'pallets'];
+        'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'codeRules', 'freightRates', 'pallets', 'pickupPoints'];
       // Kinh doanh, kế toán thêm/sửa nhanh khách hàng, địa chỉ giao, mã hàng ngay khi lập đơn (không xóa)
       allow create, update: if coll in ['soldto', 'shipto', 'items', 'suppliers'] && (hasRole('kinh_doanh') || hasRole('ke_toan'));
       // Kế toán quản lý bảng giá cước
       allow create, update: if coll == 'freightRates' && hasRole('ke_toan');
+      // Điểm nhận hàng (cảng…): điều phối vận tải, kế toán thêm nhanh khi nhập chuyến
+      allow create, update: if coll == 'pickupPoints' && (hasRole('ke_toan') || hasRole('van_tai'));
       // Đơn vị vận tải thêm / sửa xe, tài xế của đơn vị mình
       allow create, update: if coll in ['vehicles', 'drivers'] && hasRole('van_tai') && profile().get('carrier', '') != ''
         && request.resource.data.carrier == profile().get('carrier', '') && (resource == null || resource.data.carrier == profile().get('carrier', ''));

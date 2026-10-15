@@ -78,10 +78,11 @@ export async function doStep(t, step, user, data = {}, database = db) {
 // Cước gợi ý theo bảng giá cho 1 chuyến (lấy điểm giao của dòng đầu)
 export function suggestFreight(t, rates) {
   const l = t.lines?.[0] || {};
-  const m = { date: t.plannedDate || t.arrivalDate || '', carrier: t.carrier, warehouse: t.warehouse, partyCode: l.partyCode || '', shipCode: l.shipCode || '' };
+  const m = { date: t.plannedDate || t.arrivalDate || '', carrier: t.carrier, warehouse: t.warehouse, pickup: t.pickup || '', partyCode: l.partyCode || '', shipCode: l.shipCode || '' };
   return calcFreight(matchRate(rates, m, t.vehicleType || ''), tripKg(t));
 }
-export const costTotal = (c) => (c ? num(c.freight) + num(c.chiHo) + num(c.bocXep) + num(c.other) : 0);
+// Tổng chi phí: lấy tổng đã tính khi lưu (gồm % dầu, phụ thu, phí tự thêm); dữ liệu cũ cộng 4 khoản
+export const costTotal = (c) => (c ? (c.total != null ? num(c.total) : num(c.freight) + num(c.chiHo) + num(c.bocXep) + num(c.other)) : 0);
 
 // Chia số tấn của các dòng đơn thành nhiều chuyến theo tải trọng xe (xếp lần lượt từng dòng)
 export function splitLoads(lines, loadsKg) {
@@ -109,7 +110,8 @@ export async function createPlannedTrips({ wh, carrier, trips }, user, action = 
   for (const [i, t] of trips.entries()) {
     const id = gids[i];
     const trip = {
-      source: 'plan', purpose: 'export', warehouse: wh.code, warehouseName: wh.name || '', warehouseAddress: wh.address || '', warehouseMap: wh.mapLink || '', hasGuard: wh.hasGuard !== false,
+      source: 'plan', purpose: 'export', warehouse: wh.code, warehouseName: wh.name || '', warehouseAddress: wh.address || '', warehouseMap: wh.mapLink || '',
+      ...(t.pickup ? { pickup: t.pickup.code, pickupName: t.pickup.name || '', pickupAddress: t.pickup.address || '', pickupMap: t.pickup.mapLink || '' } : {}), hasGuard: wh.hasGuard !== false,
       carrier: carrier.code, carrierName: carrier.name || '', plate: (t.plate || '').trim().toUpperCase(), vehicleType: t.vehicleType || '',
       idCard: (t.idCard || '').trim(), driverName: (t.driverName || '').trim(), driverPhone: (t.driverPhone || '').trim(),
       plannedDate: t.date, arrivalDate: t.date, arrivalTime: null, note: t.note || '',

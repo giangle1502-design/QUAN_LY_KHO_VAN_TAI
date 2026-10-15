@@ -14,6 +14,7 @@ export function matchRate(rates, m, vehType = '') {
     if (r.toDate && d > r.toDate) continue;
     const conds = [
       [r.toShipCode, (v) => v === m.shipCode, 32],
+      [r.fromPoint, (v) => v === m.pickup, 24],
       [r.carrier, (v) => v === m.carrier, 16],
       [r.toCustomer, (v) => v === m.partyCode, 8],
       [r.toWarehouse, (v) => dest.includes(v), 8],

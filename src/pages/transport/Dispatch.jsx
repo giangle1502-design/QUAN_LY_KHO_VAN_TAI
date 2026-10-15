@@ -25,6 +25,7 @@ export default function Dispatch({ orders, trips, onSplit }) {
   const warehouses = useCollection('warehouses').rows;
   const shipto = useCollection('shipto').rows;
   const vehicles = useCollection('vehicles').rows;
+  const points = useCollection('pickupPoints').rows;
   const plans = usePlans().rows;
   const moves = useMovesRange(daysAgo(30), '9999').rows;
   const [allocs, setAllocs] = useState([]);
@@ -54,7 +55,7 @@ export default function Dispatch({ orders, trips, onSplit }) {
       for (const r of list) {
         const v = val(r);
         const wh = warehouses.find((w) => w.code === r.warehouse) || { code: r.warehouse };
-        await createPlannedTrips({ wh, carrier: car(v.carrier), trips: [{ date: v.date, plate: v.plate, driverName: v.driverName, company: r.company, lines: r.items, }] }, { email, name }, 'Giao vận tải');
+        await createPlannedTrips({ wh, carrier: car(v.carrier), trips: [{ date: v.date, plate: v.plate, driverName: v.driverName, company: r.company, pickup: points.find((x) => x.code === v.pickup), lines: r.items, }] }, { email, name }, 'Giao vận tải');
         done += 1;
       }
       setMsg(`Đã giao ${done} chuyến cho đơn vị vận tải.`);
@@ -87,7 +88,7 @@ export default function Dispatch({ orders, trips, onSplit }) {
         {!rows.length ? <Empty text="Không có hàng nào chờ giao vận tải." /> : (
           <table>
             <thead><tr><th><input type="checkbox" checked={chosen.length === rows.length} onChange={(e) => setSel(e.target.checked ? Object.fromEntries(rows.map((r) => [r.key, true])) : {})} /></th>
-              <th>Nguồn</th><th>Ngày đi</th><th>Kho xuất</th><th>Giao đến</th><th>Hàng</th><th className="num">Tấn</th><th>Đơn vị vận tải</th><th>Số xe (nếu biết)</th><th></th></tr></thead>
+              <th>Nguồn</th><th>Ngày đi</th><th>Kho xuất · điểm nhận</th><th>Giao đến</th><th>Hàng</th><th className="num">Tấn</th><th>Đơn vị vận tải</th><th>Số xe (nếu biết)</th><th></th></tr></thead>
             <tbody>{rows.map((r) => {
               const v = val(r); const c = car(v.carrier);
               return (
@@ -95,7 +96,8 @@ export default function Dispatch({ orders, trips, onSplit }) {
                   <td><input type="checkbox" checked={!!sel[r.key]} onChange={() => setSel((s) => ({ ...s, [r.key]: !s[r.key] }))} /></td>
                   <td className="small">{r.srcLabel}{r.src !== 'order' ? <div className="mono">{r.orderId}</div> : null}</td>
                   <td><input type="date" value={v.date} onChange={(e) => setO(r.key, { date: e.target.value })} />{r.date && r.date !== v.date ? <div className="small">kế hoạch {fmtDate(r.date)}</div> : null}</td>
-                  <td>{r.warehouse || <span className="small">chưa có kho</span>}</td>
+                  <td>{r.warehouse || <span className="small">chưa có kho</span>}
+                    {points.length > 0 && <Select value={v.pickup || ''} onChange={(e) => setO(r.key, { pickup: e.target.value })} style={{ display: 'block', marginTop: 2, maxWidth: 170 }}><option value="">Nhận tại kho</option>{points.filter((x) => x.active !== false).map((x) => <option key={x.code} value={x.code}>⚓ {x.name}</option>)}</Select>}</td>
                   <td>{r.partyName || r.partyCode}{r.shipCode ? <div className="small">{r.shipCode}{r.address ? ` · ${r.address}` : ''}</div> : null}</td>
                   <td className="small">{r.items.map((i) => <div key={`${i.no}${i.item}`}>{i.item} {t3(i.kg)} t</div>)}</td>
                   <td className="num"><b>{t3(r.kg)}</b></td>

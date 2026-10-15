@@ -17,6 +17,7 @@ import { fmtDate, fmtNum, today } from '../../lib/utils';
 import { Empty, ErrorBox, Modal } from '../../components/ui';
 import { DriverLinkBox, PhotoModal, StepModal } from '../../components/TripSteps';
 import { WithAdd } from '../../components/FormTools';
+import { BASE_COST_FIELDS, COST_GROUPS, calcCosts, freightTotalOf, useCostFields } from '../../lib/tripCosts';
 import Select from '../../components/Select';
 
 // Vận chuyển theo chuyến: đơn cần chia xe → chuyến xe (tài xế xác nhận từng bước) → chi phí & cước
@@ -265,7 +266,8 @@ function TripList({ trips, priv }) {
         <div><span className={'badge ' + (STATUS_META[t.status]?.tone || '')}>{statusText(t)}</span>{t.selfPickup ? <span className="badge" style={{ marginLeft: 4 }}>khách tự lấy</span> : null}</div>
         <div>Đơn hàng: <b>{(t.orderIds || []).join(', ')}</b></div>
         {t.company && <div>Công ty xuất hàng: <b>{companyName(t.company)}</b></div>}
-        <div>Nơi nhận hàng: <b>{whText(t.warehouse, warehouses) || t.warehouseName}</b>
+        {t.pickup && <div>Điểm nhận hàng: <b>{t.pickupName || t.pickup}</b>{t.pickupAddress ? <div className="small">{t.pickupAddress}</div> : null}</div>}
+        <div>{t.pickup ? 'Kho' : 'Nơi nhận hàng'}: <b>{whText(t.warehouse, warehouses) || t.warehouseName}</b>
           {whOf(t.warehouse, warehouses)?.address && <div className="small">{whOf(t.warehouse, warehouses).address} · <a href={mapUrl(whOf(t.warehouse, warehouses).address)} target="_blank" rel="noreferrer">📍 Bản đồ</a></div>}</div>
         {dests.map((l) => { const pl = placeOf(l, warehouses); return <div key={`${l.partyCode}${l.shipCode}`}>
           <div>{pl.sto ? 'Chuyển kho, giao đến' : 'Khách hàng (nơi giao)'}: <b>{pl.name}</b></div>
@@ -306,7 +308,7 @@ function TripList({ trips, priv }) {
               const { st, blocked, c, p3, open } = info(t);
               return (
                 <tr key={t.id} style={{ opacity: t.status === 'cancelled' ? 0.5 : 1 }}>
-                  <td className="mono">{t.id}{t.selfPickup ? <div className="small">khách tự lấy</div> : null}</td><td className="nowrap">{fmtDate(t.plannedDate)}</td><td>{t.warehouse}</td>
+                  <td className="mono">{t.id}{t.selfPickup ? <div className="small">khách tự lấy</div> : null}</td><td className="nowrap">{fmtDate(t.plannedDate)}</td><td>{t.warehouse}{t.pickup ? <div className="small">⚓ {t.pickupName || t.pickup}</div> : null}</td>
                   <td>{t.plate ? <b>{t.plate}</b> : <span className="small">{isInternal(c) ? 'chờ tài xế nhóm nhận' : 'chưa có xe'}</span>}{t.driverName ? <div className="small">{t.driverName}{t.driverPhone ? ` · ${t.driverPhone}` : ''}</div> : null}</td>
                   {!isCarrier && !isTpl && <td>{t.carrierName || t.carrier}<div className="small">{kindText(c)}</div></td>}
                   {can3PL && <td>{isGHA(c) ? (p3?.threeplName || p3?.threepl || 'Xe nhà GHA') : ''}</td>}
@@ -406,13 +408,18 @@ function Cost3plModal({ t, p, onClose }) {
   );
 }
 
-// Điều phối nhập cước, phí chi hộ, bốc xếp, số HĐ; kế toán chốt
+// Điều phối nhập cước, % hỗ trợ dầu, phụ thu, các phí, số HĐ; kế toán chốt. Chọn đúng điểm nhận (cảng…) để ra đúng giá
+const pickupOf = (t) => t.pickupName || t.warehouseName || t.warehouse || '';
+const destOf = (t, whs) => [...new Set((t.lines || []).map((l) => { const pl = placeOf(l, whs); return pl.sto ? pl.name : `${l.shipCode ? `${l.shipCode} · ` : ''}${l.partyName || l.partyCode}`; }))].join('; ');
 function CostModal({ t, onClose }) {
   const { email, name, role, hasRole, isAdmin } = useApp();
   const rates = useCollection('freightRates').rows;
-  const sug = suggestFreight(t, rates);
+  const points = useCollection('pickupPoints').rows;
+  const fields = useCostFields();
   const c = t.costs || {};
-  const [f, setF] = useState({ freight: c.freight ?? sug?.amount ?? '', chiHo: c.chiHo ?? '', bocXep: c.bocXep ?? '', other: c.other ?? '', invoiceNo: c.invoiceNo || '', invoiceDate: c.invoiceDate || '', note: c.note || '' });
+  const [pickup, setPickup] = useState(t.pickup || '');
+  const sug = suggestFreight({ ...t, pickup }, rates);
+  const [f, setF] = useState(() => ({ ...Object.fromEntries(fields.map((x) => [x.key, c[x.key] ?? ''])), freight: c.freight ?? sug?.amount ?? '', invoiceNo: c.invoiceNo || '', invoiceDate: c.invoiceDate || '', note: c.note || '' }));
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const approved = t.costStatus === 'approved';
@@ -420,81 +427,153 @@ function CostModal({ t, onClose }) {
   const canEdit = !approved && (isAdmin || role === 'van_tai' || hasRole('ke_toan'));
   const canApprove = hasRole('ke_toan') && t.costs && !approved;
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
-  // Bảng giá tải xong sau khi mở: điền sẵn cước gợi ý nếu chưa nhập
-  useEffect(() => { if (sug && c.freight == null) setF((x) => (x.freight === '' ? { ...x, freight: sug.amount } : x)); }, [sug?.amount]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Bảng giá tải xong sau khi mở / đổi điểm nhận: điền cước gợi ý nếu chưa nhập
+  useEffect(() => { if (sug && c.freight == null) setF((x) => ({ ...x, freight: sug.amount })); }, [sug?.amount]); // eslint-disable-line react-hooks/exhaustive-deps
   const write = async (upd, action) => {
     setErr(''); setBusy(true);
     try { await updateDoc(doc(db, 'trips', t.id), { ...upd, updatedAt: nowISO(), updatedBy: email, history: [...(t.history || []), { at: nowISO(), by: email, byName: name, action }] }); onClose(); }
-    catch (e) { setErr(e.code === 'permission-denied' ? 'Không có quyền.' : e.message); }
+    catch (e) { setErr(e.code === 'permission-denied' ? 'Không có quyền (dán lại firestore.rules mới).' : e.message); }
     setBusy(false);
   };
-  const costs = { freight: n(f.freight), chiHo: n(f.chiHo), bocXep: n(f.bocXep), other: n(f.other), invoiceNo: f.invoiceNo.trim(), invoiceDate: f.invoiceDate, note: f.note.trim(), rate: sug?.rate || '' };
+  const vals = Object.fromEntries(fields.map((x) => [x.key, n(f[x.key])]));
+  const sumc = calcCosts(vals, fields);
+  const costs = { ...vals, ...sumc, invoiceNo: f.invoiceNo.trim(), invoiceDate: f.invoiceDate, note: f.note.trim(), rate: sug?.rate || '' };
+  const pt = points.find((x) => x.code === pickup);
+  const pickUpd = pickup !== (t.pickup || '') ? { pickup, pickupName: pt?.name || '', pickupAddress: pt?.address || '', pickupMap: pt?.mapLink || '' } : {};
+  const input = (x) => (
+    <label key={x.key} className="field"><span>{x.label}{x.group === 'pct' ? ' (%)' : ' (đ)'}</span>
+      <input type="number" value={f[x.key]} disabled={!canEdit} onChange={(e) => set(x.key, e.target.value)} placeholder={x.group === 'pct' ? 'VD 5 = cộng 5% cước' : ''} /></label>);
   return (
-    <Modal title={`Chi phí chuyến ${t.id}`} onClose={onClose}>
-      <p className="small">{t.carrierName} · {t.plate} · {t3(tripKg(t))} tấn · {COST[t.costStatus || '']?.[0]}
-        {sug ? <> · Bảng giá <b>{sug.rate}</b>: {sug.basis === 'Theo chuyến' ? 'theo chuyến' : `${vnd(sug.price)} đ/tấn`} = <b>{vnd(sug.amount)} đ</b></> : ' · Chưa có giá khớp trong bảng giá cước'}</p>
+    <Modal title={`Chi phí chuyến ${t.id}`} onClose={onClose} wide>
+      <p className="small">{t.company ? `${t.company} · ` : ''}{fmtDate(t.plannedDate)} · {t.carrierName} · {t.plate} · {t3(tripKg(t))} tấn · {COST[t.costStatus || '']?.[0]}</p>
       <div className="form-grid">
-        {[['freight', 'Cước vận chuyển (đ)'], ['chiHo', 'Phí chi hộ (đ)'], ['bocXep', 'Phí bốc xếp (đ)'], ['other', 'Phí khác (đ)']].map(([k, l]) => (
-          <label key={k} className="field"><span>{l}</span><input type="number" value={f[k]} disabled={!canEdit} onChange={(e) => set(k, e.target.value)} /></label>))}
+        <label className="field"><span>Điểm nhận hàng</span><WithAdd cat="pickupPoints" onAdded={(id) => setPickup(id)}>
+          <Select value={pickup} disabled={!canEdit} onChange={(e) => setPickup(e.target.value)}><option value="">{t.warehouseName || t.warehouse} (kho xuất)</option>
+            {points.filter((x) => x.active !== false || x.code === pickup).map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</Select></WithAdd></label>
+        <div className="field full"><span>Điểm giao</span><b>{destOf(t, [])}</b></div>
+      </div>
+      <p className="small" style={{ margin: '6px 0' }}>{sug ? <>Bảng giá <b>{sug.rate}</b>: {sug.basis === 'Theo chuyến' ? 'theo chuyến' : `${vnd(sug.price)} đ/tấn`} = <b>{vnd(sug.amount)} đ</b></> : 'Chưa có giá khớp trong bảng giá cước (thêm giá theo điểm nhận → điểm giao ở Bảng giá cước).'}</p>
+      <div className="section-head">Cước vận chuyển</div>
+      <div className="form-grid">{fields.filter((x) => ['base', 'pct', 'surcharge'].includes(x.group)).map(input)}</div>
+      <p style={{ margin: '4px 0 10px' }}>Tổng cước vận chuyển = {vnd(vals.freight)} + hỗ trợ dầu {vnd(sumc.fuel)} + phụ thu {vnd(sumc.surcharge)} = <b>{vnd(sumc.freightTotal)} đ</b></p>
+      <div className="section-head">Phí khác</div>
+      <div className="form-grid">{fields.filter((x) => x.group === 'fee').map(input)}
         <label className="field"><span>Số hóa đơn</span><input value={f.invoiceNo} disabled={!canEdit} onChange={(e) => set('invoiceNo', e.target.value)} /></label>
         <label className="field"><span>Ngày hóa đơn</span><input type="date" value={f.invoiceDate} disabled={!canEdit} onChange={(e) => set('invoiceDate', e.target.value)} /></label>
         <label className="field full"><span>Ghi chú</span><input value={f.note} disabled={!canEdit} onChange={(e) => set('note', e.target.value)} /></label>
       </div>
-      <p>Tổng: <b>{vnd(costTotal(costs))} đ</b></p>
+      <p>Tổng chi phí = tổng cước {vnd(sumc.freightTotal)} + phí khác {vnd(sumc.fees)} = <b>{vnd(sumc.total)} đ</b></p>
       <ErrorBox error={err} />
       <div className="form-actions">
         <button className="btn" onClick={onClose}>Đóng</button>
-        {canEdit && <button className="btn primary" disabled={busy} onClick={() => write({ costs, costStatus: 'entered', costBy: email, costAt: nowISO() }, `Nhập chi phí ${vnd(costTotal(costs))} đ`)}>Lưu chi phí</button>}
+        {canEdit && <button className="btn primary" disabled={busy} onClick={() => write({ costs, costStatus: 'entered', costBy: email, costAt: nowISO(), ...pickUpd }, `Nhập chi phí ${vnd(sumc.total)} đ`)}>Lưu chi phí</button>}
         {canApprove && <button className="btn primary" disabled={busy} onClick={() => write({ costStatus: 'approved', costApprovedBy: email, costApprovedAt: nowISO() }, `Kế toán chốt chi phí ${vnd(costTotal(t.costs))} đ`)}>✓ Chốt chi phí</button>}
       </div>
     </Modal>
   );
 }
 
+// Quản trị thêm trường chi phí (VD Phí vệ sinh cont, Phí lưu bãi): nhóm Phụ thu cộng vào tổng cước, nhóm Phí cộng ngoài
+function CostFieldsModal({ onClose }) {
+  const { email } = useApp();
+  const [extra, setExtra] = useState(null);
+  const [f, setF] = useState({ label: '', group: 'fee' });
+  const [err, setErr] = useState('');
+  useEffect(() => onSnapshot(doc(db, 'settings', 'tripCostFields'), (s) => setExtra(s.exists() ? s.data().extra || [] : [])), []);
+  const save = async (list) => {
+    setErr('');
+    try { await setDoc(doc(db, 'settings', 'tripCostFields'), { extra: list, updatedAt: nowISO(), updatedBy: email }); } catch (e) { setErr(e.message); }
+  };
+  const add = () => { if (!f.label.trim()) return; save([...(extra || []), { key: `x${Date.now().toString(36)}`, label: f.label.trim(), group: f.group }]); setF({ label: '', group: f.group }); };
+  return (
+    <Modal title="Trường chi phí chuyến xe" onClose={onClose}>
+      <p className="small">Trường gốc: {BASE_COST_FIELDS.map((x) => x.label).join(', ')}. Thêm trường mới bên dưới; trường thêm hiện ở màn hình nhập chi phí, báo cáo và Excel.</p>
+      <div className="filters"><input placeholder="Tên trường, VD Phí lưu bãi" value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} style={{ flex: 1 }} />
+        <Select value={f.group} onChange={(e) => setF({ ...f, group: e.target.value })}>{Object.entries(COST_GROUPS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select>
+        <button type="button" className="btn primary" onClick={add}>+ Thêm</button></div>
+      <ErrorBox error={err} />
+      {(extra || []).map((x, i) => <div key={x.key} className="filters"><input value={x.label} onChange={(e) => setExtra((l) => l.map((y, j) => (j === i ? { ...y, label: e.target.value } : y)))} onBlur={() => save(extra)} style={{ flex: 1 }} />
+        <span className="small">{COST_GROUPS[x.group]}</span>
+        <button type="button" className="btn ghost sm" onClick={() => window.confirm(`Bỏ trường "${x.label}"? Số đã nhập vẫn giữ trong chuyến.`) && save(extra.filter((_, j) => j !== i))}>✕</button></div>)}
+      <div className="form-actions"><button className="btn" onClick={onClose}>Đóng</button></div>
+    </Modal>
+  );
+}
+
 // ---------------------------------------------------------------------------
-// Chi phí & cước theo đơn vị vận tải
+// Chi phí & cước: tổng theo đơn vị vận tải + bảng chi tiết từng chuyến (đủ cột cước, phụ thu, phí; Excel)
 function Costs({ trips, priv }) {
-  const { role, can3PL } = useApp();
+  const { role, can3PL, isAdmin } = useApp();
   const isCarrier = role === 'van_tai';
   const rates = useCollection('freightRates').rows;
-  const [f, setF] = useState({ from: monthStart(), to: '' });
-  const done = trips.filter((t) => t.status === 'completed' && (!f.from || (t.plannedDate || '') >= f.from) && (!f.to || (t.plannedDate || '') <= f.to));
+  const warehouses = useCollection('warehouses').rows;
+  const companies = useCollection('companies').rows;
+  const fields = useCostFields();
+  const [f, setF] = useState({ from: monthStart(), to: '', company: '', carrier: '', status: '' });
+  const [cost, setCost] = useState(null);
+  const [cfg, setCfg] = useState(false);
+  const done = trips.filter((t) => t.status === 'completed' && (!f.from || (t.plannedDate || '') >= f.from) && (!f.to || (t.plannedDate || '') <= f.to)
+    && (!f.company || t.company === f.company) && (!f.carrier || t.carrier === f.carrier)
+    && (!f.status || (f.status === 'missing' ? !t.costs : (t.costStatus || '') === f.status)));
   const g = new Map();
   for (const t of done) {
     const k = t.carrier || '';
-    const x = g.get(k) || { carrier: k, name: t.carrierName || '', trips: 0, kg: 0, freight: 0, chiHo: 0, bocXep: 0, other: 0, total: 0, missing: 0, approved: 0 };
+    const x = g.get(k) || { carrier: k, name: t.carrierName || '', trips: 0, kg: 0, freightTotal: 0, fees: 0, total: 0, missing: 0, approved: 0 };
     const c = t.costs || {};
-    x.trips += 1; x.kg += tripKg(t); x.freight += n(c.freight); x.chiHo += n(c.chiHo); x.bocXep += n(c.bocXep); x.other += n(c.other); x.total += costTotal(c);
+    x.trips += 1; x.kg += tripKg(t); x.freightTotal += freightTotalOf(c); x.total += costTotal(c); x.fees += costTotal(c) - freightTotalOf(c);
     if (!t.costs) x.missing += 1; if (t.costStatus === 'approved') x.approved += 1;
     g.set(k, x);
   }
   const sum = [...g.values()];
+  const pre = fields.filter((x) => ['pct', 'base', 'surcharge'].includes(x.group)).sort((a, b) => (a.group === 'pct' ? -1 : b.group === 'pct' ? 1 : 0));
+  const fees = fields.filter((x) => x.group === 'fee');
+  const row = (t) => {
+    const c = t.costs || {};
+    return {
+      'Công ty': t.company || '', 'Ngày vận chuyển': t.plannedDate || '', 'Chuyến': t.id, 'Điểm nhận': pickupOf(t), 'Điểm giao': destOf(t, warehouses),
+      'Đơn vị vận tải': t.carrierName || t.carrier, ...(can3PL ? { '3PL': priv[t.id]?.threeplName || '' } : {}), 'Số xe': t.plate || '', 'Số lượng (tấn)': +(tripKg(t) / 1000).toFixed(3),
+      ...Object.fromEntries(pre.map((x) => [x.label, n(c[x.key])])), 'Tổng cước vận chuyển': freightTotalOf(c),
+      ...Object.fromEntries(fees.map((x) => [x.label, n(c[x.key])])), 'Tổng chi phí': costTotal(c),
+      'Cước theo bảng giá': suggestFreight(t, rates)?.amount ?? '', 'Số HĐ': c.invoiceNo || '', 'Ngày HĐ': c.invoiceDate || '', 'Ghi chú': c.note || '', 'Trạng thái': t.costs ? COST[t.costStatus || '']?.[0] : 'Chưa nhập',
+    };
+  };
+  const rows = done.map(row);
+  const cols = rows.length ? Object.keys(rows[0]) : [];
+  const numCol = (k) => typeof rows[0]?.[k] === 'number';
   const excel = () => exportSheets(`Chi_phi_van_chuyen_${f.from}_${f.to}`, {
-    'Tổng theo đơn vị': sum.map((x) => ({ 'Đơn vị vận tải': x.carrier, 'Tên': x.name, 'Số chuyến': x.trips, 'Số tấn': +(x.kg / 1000).toFixed(3), 'Cước': x.freight, 'Chi hộ': x.chiHo, 'Bốc xếp': x.bocXep, 'Phí khác': x.other, 'Tổng': x.total, 'Chuyến chưa nhập chi phí': x.missing, 'Chuyến kế toán đã chốt': x.approved })),
-    'Chi tiết chuyến': done.map((t) => { const c = t.costs || {}; const s = suggestFreight(t, rates); return {
-      'Chuyến': t.id, 'Ngày đi': t.plannedDate, 'Kho': t.warehouse, 'Đơn vị vận tải': t.carrier, ...(can3PL ? { '3PL': priv[t.id]?.threeplName || priv[t.id]?.threepl || '' } : {}),
-      'Số xe': t.plate, 'Tài xế': t.driverName, 'CCCD': t.idCard, 'Đơn': (t.orderIds || []).join(', '), 'Giao đến': [...new Set(t.lines.map((l) => l.partyName || l.partyCode))].join(', '),
-      'Số tấn': +(tripKg(t) / 1000).toFixed(3), 'Giao xong lúc': t.driverDeliveredAt || t.deliveryCompleteTime || '', 'Cước theo bảng giá': s?.amount ?? '',
-      'Cước': n(c.freight), 'Chi hộ': n(c.chiHo), 'Bốc xếp': n(c.bocXep), 'Phí khác': n(c.other), 'Tổng': costTotal(c), 'Số HĐ': c.invoiceNo || '', 'Ngày HĐ': c.invoiceDate || '', 'Ghi chú': c.note || '', 'Trạng thái': COST[t.costStatus || '']?.[0] }; }),
+    'Chi tiết chuyến': rows,
+    'Tổng theo đơn vị': sum.map((x) => ({ 'Đơn vị vận tải': x.carrier, 'Tên': x.name, 'Số chuyến': x.trips, 'Số tấn': +(x.kg / 1000).toFixed(3), 'Tổng cước vận chuyển': x.freightTotal, 'Phí khác': x.fees, 'Tổng chi phí': x.total, 'Chuyến chưa nhập chi phí': x.missing, 'Chuyến kế toán đã chốt': x.approved })),
   });
+  const carriers = [...new Map(trips.map((t) => [t.carrier, t.carrierName])).entries()];
   return (
     <div>
       <div className="filters">
         <label>Từ <input type="date" value={f.from} onChange={(e) => setF((x) => ({ ...x, from: e.target.value }))} /></label>
         <label>Đến <input type="date" value={f.to} onChange={(e) => setF((x) => ({ ...x, to: e.target.value }))} /></label>
-        <button className="btn" onClick={excel}>⬇ Excel</button>
-        <span className="small">Chỉ tính chuyến đã giao xong. Nhập chi phí ở tab Chuyến xe → 💰 Chi phí.</span>
+        <Select value={f.company} onChange={(e) => setF((x) => ({ ...x, company: e.target.value }))}><option value="">Mọi công ty</option>{companies.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}</Select>
+        {!isCarrier && <Select value={f.carrier} onChange={(e) => setF((x) => ({ ...x, carrier: e.target.value }))}><option value="">Mọi đơn vị vận tải</option>{carriers.map(([k, v]) => <option key={k} value={k}>{k} – {v}</option>)}</Select>}
+        <Select value={f.status} onChange={(e) => setF((x) => ({ ...x, status: e.target.value }))}><option value="">Mọi trạng thái</option><option value="missing">Chưa nhập</option><option value="entered">Đã nhập, chờ chốt</option><option value="approved">Kế toán đã chốt</option></Select>
+        <button className="btn" onClick={excel} disabled={!rows.length}>⬇ Excel</button>
+        {isAdmin && <button className="btn ghost" onClick={() => setCfg(true)}>⚙ Trường chi phí</button>}
       </div>
-      <div className="table-wrap">
+      <p className="small">Chỉ tính chuyến đã giao xong. Tổng cước vận chuyển = Cước × (1 + % hỗ trợ dầu) + phụ thu vé + phụ thu hạ rỗng trái tuyến (+ phụ thu tự thêm). Tổng chi phí = Tổng cước + các phí khác. Bấm 💰 để nhập.</p>
+      <div className="table-wrap" style={{ marginBottom: 12 }}>
         {!sum.length ? <Empty text="Chưa có chuyến giao xong trong khoảng này." /> : (
           <table>
-            <thead><tr>{!isCarrier && <th>Đơn vị vận tải</th>}<th className="num">Chuyến</th><th className="num">Tấn</th><th className="num">Cước</th><th className="num">Chi hộ</th><th className="num">Bốc xếp</th><th className="num">Phí khác</th><th className="num">Tổng (đ)</th><th className="num">Chưa nhập</th><th className="num">Đã chốt</th></tr></thead>
+            <thead><tr>{!isCarrier && <th>Đơn vị vận tải</th>}<th className="num">Chuyến</th><th className="num">Tấn</th><th className="num">Tổng cước vận chuyển</th><th className="num">Phí khác</th><th className="num">Tổng chi phí (đ)</th><th className="num">Chưa nhập</th><th className="num">Đã chốt</th></tr></thead>
             <tbody>{sum.map((x) => (
-              <tr key={x.carrier}>{!isCarrier && <td><b>{x.carrier}</b> {x.name}</td>}<td className="num">{x.trips}</td><td className="num">{t3(x.kg)}</td><td className="num">{vnd(x.freight)}</td><td className="num">{vnd(x.chiHo)}</td>
-                <td className="num">{vnd(x.bocXep)}</td><td className="num">{vnd(x.other)}</td><td className="num"><b>{vnd(x.total)}</b></td><td className="num">{x.missing || ''}</td><td className="num">{x.approved}</td></tr>))}</tbody>
+              <tr key={x.carrier}>{!isCarrier && <td><b>{x.carrier}</b> {x.name}</td>}<td className="num">{x.trips}</td><td className="num">{t3(x.kg)}</td><td className="num">{vnd(x.freightTotal)}</td><td className="num">{vnd(x.fees)}</td>
+                <td className="num"><b>{vnd(x.total)}</b></td><td className="num">{x.missing || ''}</td><td className="num">{x.approved}</td></tr>))}</tbody>
           </table>
         )}
       </div>
+      {rows.length > 0 && <div className="table-wrap"><table className="cost-detail">
+        <thead><tr><th></th>{cols.map((k) => <th key={k} className={numCol(k) ? 'num' : ''}>{k}</th>)}</tr></thead>
+        <tbody>{done.map((t, i) => <tr key={t.id}><td><button className="btn sm" onClick={() => setCost(t)}>💰</button></td>
+          {cols.map((k) => <td key={k} className={numCol(k) ? 'num' : k === 'Điểm giao' ? 'small' : ''}>{numCol(k) ? (k === 'Số lượng (tấn)' ? t3(rows[i][k] * 1000) : (rows[i][k] ? (/%/.test(k) ? rows[i][k] : vnd(rows[i][k])) : '')) : rows[i][k]}</td>)}</tr>)}</tbody>
+      </table></div>}
+      {cost && <CostModal t={trips.find((x) => x.id === cost.id) || cost} onClose={() => setCost(null)} />}
+      {cfg && <CostFieldsModal onClose={() => setCfg(false)} />}
     </div>
   );
 }

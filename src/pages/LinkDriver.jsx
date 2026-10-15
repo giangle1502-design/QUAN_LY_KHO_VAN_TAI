@@ -90,8 +90,10 @@ export default function LinkDriver() {
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
           <b className="mono">{t.id}</b><span className={'badge ' + (STATUS_META[t.status]?.tone || '')}>{t.selfPickup && t.status === 'completed' ? 'Đã lấy xong' : STATUS_META[t.status]?.label}</span></div>
         <div>Ngày đi: <b>{fmtDate(t.plannedDate)}</b>{t.plate ? <> · Xe <b>{t.plate}</b></> : null}</div>
-        <div>Nơi nhận hàng: <b>{t.warehouseName || t.warehouse}</b>
-          {(t.warehouseAddress || t.warehouseMap) && <div className="small">{t.warehouseAddress} {navUrl({ mapLink: t.warehouseMap, address: t.warehouseAddress }) && <a href={navUrl({ mapLink: t.warehouseMap, address: t.warehouseAddress })} target="_blank" rel="noreferrer">📍 Chỉ đường đến kho</a>}</div>}</div>
+        {t.pickup ? <div>Nơi nhận hàng: <b>{t.pickupName || t.pickup}</b>
+          {(t.pickupAddress || t.pickupMap) && <div className="small">{t.pickupAddress} {navUrl({ mapLink: t.pickupMap, address: t.pickupAddress }) && <a href={navUrl({ mapLink: t.pickupMap, address: t.pickupAddress })} target="_blank" rel="noreferrer">📍 Chỉ đường đến điểm nhận</a>}</div>}</div>
+          : <div>Nơi nhận hàng: <b>{t.warehouseName || t.warehouse}</b>
+          {(t.warehouseAddress || t.warehouseMap) && <div className="small">{t.warehouseAddress} {navUrl({ mapLink: t.warehouseMap, address: t.warehouseAddress }) && <a href={navUrl({ mapLink: t.warehouseMap, address: t.warehouseAddress })} target="_blank" rel="noreferrer">📍 Chỉ đường đến kho</a>}</div>}</div>}
         {[...new Map(t.lines.map((l) => [`${l.partyCode}|${l.shipCode}`, l])).values()].map((l) => {
           const nav = navUrl({ mapLink: l.mapLink, address: l.address });
           return (
