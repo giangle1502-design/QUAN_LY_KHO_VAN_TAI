@@ -7,7 +7,7 @@ import { CATALOGS, FIELD_TYPES, FORM_DEFS, GROUPS, RESULT_TYPES, ROLES, catalogB
 import { checkFormula, formulaToKeys, formulaToLabels } from '../lib/formula';
 import { syncFieldPrivacy } from '../lib/orderSecrets';
 import { useCollection } from '../lib/hooks';
-import { DATE_DEFAULTS, HEIGHT_OPTS, WIDTH_OPTS, badChoices, canChoose, canDefault, keyFieldsOf, parseChoices } from '../lib/fields';
+import { DATE_DEFAULTS, HEIGHT_OPTS, WIDTH_OPTS, badChoices, canChoose, canDefault, clearChoices, keyFieldsOf, parseChoices } from '../lib/fields';
 import { norm } from '../lib/utils';
 import { ErrorBox, Modal } from '../components/ui';
 import Select from '../components/Select';
@@ -105,6 +105,7 @@ export default function FieldManager() {
         || !!before.find((b) => b.key === o.key)?.salesSees !== !!o.salesSees)) : [];
     try {
       await setDoc(doc(db, 'settings', 'fields'), { [catKey]: out }, { merge: true });
+      await clearChoices(catKey);
       let moved = 0;
       for (const o of changed) moved += await syncFieldPrivacy(catKey.slice(0, -4).toUpperCase(), catKey.endsWith('Head') ? 'head' : 'line', o.key, o.viewers || [], !!o.salesSees);
       setDirty(false); setMsg(`Đã lưu. Các form, bảng và Excel của danh mục này đã cập nhật.${changed.length ? ` Đã áp quyền xem cho ${changed.length} trường (${moved} đơn có dữ liệu).` : ''}`);

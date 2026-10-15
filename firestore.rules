@@ -46,6 +46,9 @@ service cloud.firestore {
       allow create, update: if isAdmin();
       // Người được cấp quyền "Thiết lập biểu mẫu" tự thêm / sửa trường
       allow create, update: if id == 'fields' && isActive() && profile().formDesigner == true;
+      // Nút (+) thêm lựa chọn cho trường danh sách chọn ngay trên form (vd. Hãng tàu)
+      allow create, update: if id == 'choices' && isActive()
+        && (profile().role in ['admin', 'kinh_doanh', 'ke_toan', 'thu_kho'] || profile().formDesigner == true);
     }
 
     // Mẫu in tự thiết kế: mọi người đọc để in; quản trị và người được thiết lập biểu mẫu tạo / sửa; xóa qua Duyệt xóa (quản trị gốc)

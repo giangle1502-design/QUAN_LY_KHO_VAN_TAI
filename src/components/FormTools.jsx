@@ -5,7 +5,7 @@ import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
 import { CATALOGS, FIELD_TYPES, RESULT_TYPES, catalogByKey } from '../catalogs';
 import { checkFormula, formulaToKeys, formulaToLabels } from '../lib/formula';
-import { CHOICE_TYPES, DATE_DEFAULTS, HEIGHT_OPTS, WIDTH_OPTS, badChoices, parseChoices, toStored } from '../lib/fields';
+import { CHOICE_TYPES, DATE_DEFAULTS, HEIGHT_OPTS, WIDTH_OPTS, badChoices, clearChoices, parseChoices, toStored } from '../lib/fields';
 import { dragHeadProps, orderCols } from '../lib/colOrder';
 
 const REF_TARGETS = CATALOGS.filter((c) => !['codeRules', 'users'].includes(c.key));
@@ -166,6 +166,7 @@ export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường'
     setBusy(true);
     try {
       await setDoc(doc(db, 'settings', 'fields'), patch, { merge: true });
+      await clearChoices(formKey);
       setOpen(false); setF(EMPTY); setEditing(null);
     } catch (e) { setErr(e.message); }
     setBusy(false);

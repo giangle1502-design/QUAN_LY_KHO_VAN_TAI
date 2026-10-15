@@ -11,6 +11,7 @@ export function AppProvider({ children }) {
   const [user, setUser] = useState(undefined); // undefined = đang tải
   const [userDoc, setUserDoc] = useState(undefined);
   const [fieldConfig, setFieldConfig] = useState({});
+  const [choices, setChoices] = useState({});
   const [settings, setSettings] = useState({ companyName: 'Hệ thống kho & vận tải' });
 
   useEffect(() => onAuthStateChanged(auth, (u) => setUser(u || null)), []);
@@ -33,10 +34,11 @@ export function AppProvider({ children }) {
     if (!allowed) return;
     const u1 = onSnapshot(doc(db, 'settings', 'fields'), (s) => setFieldConfig(s.exists() ? s.data() : {}));
     const u2 = onSnapshot(doc(db, 'settings', 'general'), (s) => s.exists() && setSettings((p) => ({ ...p, ...s.data() })));
-    return () => { u1(); u2(); };
+    const u3 = onSnapshot(doc(db, 'settings', 'choices'), (s) => setChoices(s.exists() ? s.data() : {}), () => {});
+    return () => { u1(); u2(); u3(); };
   }, [allowed]);
 
-  const fieldsOf = useCallback((key) => mergeFields(key, fieldConfig[key]), [fieldConfig]);
+  const fieldsOf = useCallback((key) => mergeFields(key, fieldConfig[key], choices[key]), [fieldConfig, choices]);
 
   // Kho người dùng được thao tác (mảng rỗng = tất cả)
   // Điều phối vận tải / tài xế thuộc 1 đơn vị vận tải

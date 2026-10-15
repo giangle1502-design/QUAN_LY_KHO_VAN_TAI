@@ -8,7 +8,8 @@ export function keyFieldsOf(cat) {
 
 // Gộp trường có sẵn trong code với cấu hình admin (settings/fields)
 // stored: [{ key, label, required, hidden, options, type, custom }] — thứ tự mảng = thứ tự hiển thị
-export function mergeFields(catKey, stored = []) {
+// extra: lựa chọn người dùng thêm nhanh bằng nút (+) trên form (settings/choices) — { [fieldKey]: [giá trị] }
+export function mergeFields(catKey, stored = [], extra = {}) {
   const cat = catalogByKey(catKey);
   const sys = new Map(cat.fields.map((f) => [f.key, f]));
   const keys = keyFieldsOf(cat);
@@ -45,6 +46,12 @@ export function mergeFields(catKey, stored = []) {
   });
   // Trường công thức trong danh mục: tự tính khi lưu như trường hệ thống
   for (const f of out) if (f.type === 'formula' && f.formula) f.computed = (r) => computeFormulas(out, r)[f.key];
+  for (const f of out) {
+    f.form = catKey;
+    // Trường có sẵn mà danh sách chọn cố định trong code (vd. Kiện / Xá) thì không thêm lựa chọn
+    if (f.builtin && sys.get(f.key)?.options) f.fixedChoices = true;
+    else if (canChoose(f) && extra?.[f.key]?.length) f.options = [...new Set([...(f.options || []), ...parseChoices(extra[f.key].join(','), f.type)])];
+  }
   return out;
 }
 
@@ -163,3 +170,16 @@ export function visibleFields(list, me, ...others) {
 // Lựa chọn độ rộng / cao trường (px). Rộng ≥ 900 = cả dòng
 export const WIDTH_OPTS = [[0, 'Tự động'], [120, 'Hẹp'], [200, 'Vừa'], [320, 'Rộng'], [480, 'Rất rộng (2 cột)'], [720, '3 cột'], [900, 'Cả dòng']];
 export const HEIGHT_OPTS = [[0, 'Tự động'], [38, '1 dòng'], [60, '2 dòng'], [84, '3 dòng'], [130, '5 dòng'], [200, '8 dòng']];
+
+// Lựa chọn thêm nhanh trên form (nút + cạnh ô danh sách chọn): ai nhập đơn / phiếu cũng thêm được, không phải vào Sửa trường
+export async function addChoice(f, value) {
+  const { doc, setDoc, arrayUnion } = await import('firebase/firestore');
+  const { db } = await import('../firebase');
+  await setDoc(doc(db, 'settings', 'choices'), { [f.form]: { [f.key]: arrayUnion(value) } }, { merge: true });
+}
+// Sau khi Sửa trường lưu danh sách chọn (đã gồm các lựa chọn thêm nhanh) thì bỏ phần thêm nhanh để xóa lựa chọn được
+export async function clearChoices(...forms) {
+  const { doc, setDoc, deleteField } = await import('firebase/firestore');
+  const { db } = await import('../firebase');
+  try { await setDoc(doc(db, 'settings', 'choices'), Object.fromEntries(forms.map((k) => [k, deleteField()])), { merge: true }); } catch { /* chưa có quyền: bỏ qua */ }
+}

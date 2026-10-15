@@ -5,6 +5,7 @@ import { catalogByKey, refLabel, refValue } from '../catalogs';
 import { QuickAdd } from './FormTools';
 import { fmtDate, fmtNum } from '../lib/utils';
 import Select from './Select';
+import { addChoice, canChoose } from '../lib/fields';
 
 // Ô nhập cho 1 trường theo kiểu dữ liệu
 // unit: đơn vị tiền của trường kiểu Tiền ('đ' mặc định, 'USD' trên đơn USD)
@@ -14,18 +15,22 @@ export default function FieldInput({ field: f, value, onChange, disabled, onPick
   if (f.type === 'multiref') return <MultiRefInput field={f} value={value} onChange={onChange} disabled={disabled} />;
   if (f.type === 'select')
     return (
-      <Select value={value ?? ''} onChange={(e) => onChange(e.target.value)} disabled={disabled}>
-        <option value="">-- Chọn --</option>
-        {(f.options || []).map((o) => <option key={o} value={o}>{f.labels?.[o] || o}</option>)}
-      </Select>
+      <ChoiceAdd field={f} disabled={disabled} onAdded={onChange}>
+        <Select value={value ?? ''} onChange={(e) => onChange(e.target.value)} disabled={disabled}>
+          <option value="">-- Chọn --</option>
+          {(f.options || []).map((o) => <option key={o} value={o}>{f.labels?.[o] || o}</option>)}
+        </Select>
+      </ChoiceAdd>
     );
   // Trường số / % / tiền / chữ có danh sách giá trị chọn sẵn (vd. VAT 5%, 8%, 10%)
   if (f.options?.length && ['number', 'percent', 'currency', 'text'].includes(f.type))
     return (
-      <Select value={value ?? ''} onChange={(e) => onChange(f.type === 'text' || e.target.value === '' ? e.target.value : Number(e.target.value))} disabled={disabled}>
-        <option value="">-- Chọn --</option>
-        {f.options.map((o) => <option key={o} value={o}>{f.type === 'percent' ? `${o}%` : f.type === 'currency' ? fmtNum(o) : o}</option>)}
-      </Select>
+      <ChoiceAdd field={f} disabled={disabled} onAdded={onChange}>
+        <Select value={value ?? ''} onChange={(e) => onChange(f.type === 'text' || e.target.value === '' ? e.target.value : Number(e.target.value))} disabled={disabled}>
+          <option value="">-- Chọn --</option>
+          {f.options.map((o) => <option key={o} value={o}>{f.type === 'percent' ? `${o}%` : f.type === 'currency' ? fmtNum(o) : o}</option>)}
+        </Select>
+      </ChoiceAdd>
     );
   if (f.type === 'checkbox') return <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} disabled={disabled} />;
   if (f.type === 'textarea' || (f.type === 'text' && Number(f.height) > 40 && !f.options?.length)) return <textarea rows={2} value={value ?? ''} onChange={(e) => onChange(e.target.value)} disabled={disabled} />;
@@ -46,6 +51,29 @@ export default function FieldInput({ field: f, value, onChange, disabled, onPick
       disabled={disabled}
     />
   );
+}
+
+// Ô danh sách chọn + nút (+) thêm lựa chọn mới ngay trên form (vd. Hãng tàu chưa có trong danh sách)
+function ChoiceAdd({ field: f, disabled, onAdded, children }) {
+  const { role, canDesign } = useApp();
+  const [busy, setBusy] = useState(false);
+  const can = !disabled && f.form && !f.fixedChoices && canChoose(f) && (canDesign || ['admin', 'kinh_doanh', 'ke_toan', 'thu_kho'].includes(role));
+  if (!can) return children;
+  const add = async () => {
+    const txt = window.prompt(`Thêm lựa chọn mới cho "${f.label}":`, '');
+    const raw = String(txt ?? '').trim().replace(/%$/, '').trim();
+    if (!raw) return;
+    const num = ['number', 'percent', 'currency'].includes(f.type);
+    if (num && !Number.isFinite(Number(raw))) return window.alert(`"${f.label}" là trường số, chỉ thêm được số.`);
+    const v = num ? Number(raw) : raw;
+    const dup = (f.options || []).find((o) => String(o).toLowerCase() === String(v).toLowerCase());
+    if (dup !== undefined) return onAdded(dup);
+    setBusy(true);
+    try { await addChoice(f, v); onAdded(v); }
+    catch (e) { window.alert(e.code === 'permission-denied' ? 'Chưa có quyền thêm lựa chọn: quản trị cần cập nhật Firestore rules (settings/choices).' : e.message); }
+    setBusy(false);
+  };
+  return <div className="cell-add">{children}<button type="button" className="btn sm quick-add" disabled={busy} title={`Thêm lựa chọn mới cho ${f.label}`} onClick={add}>+</button></div>;
 }
 
 // Danh sách bản ghi của danh mục được tham chiếu (lọc theo kho được giao nếu là danh sách kho)
