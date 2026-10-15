@@ -514,3 +514,34 @@ tr.picked td { background: var(--primary-soft); }
 .rep-info > div, .rep-times > div { display: flex; flex-direction: column; }
 @media (max-width: 600px) { .rep-pipe { margin-left: 0; width: 100%; } }
 @media (max-width: 600px) { .rep-stats { grid-template-columns: 1fr 1fr !important; gap: 6px; } .rep-stats .stat { padding: 8px 10px; } .rep-stats .stat-value { font-size: 20px; } }
+
+/* Menu gọn: hạng mục lớn → hạng mục con, mỗi lúc mở 1 nhóm (accordion), vừa màn hình */
+.side { height: 100dvh; }
+.side nav .nav-sec .nav-group { padding: 8px 10px; margin-top: 2px; font-size: 13px; text-transform: none; letter-spacing: 0; color: #e2e8f0; font-weight: 600; }
+.side nav .nav-sec.open > .nav-group { background: #ffffff0f; color: #fff; }
+.side nav .nav-head-r { display: inline-flex; align-items: center; gap: 6px; }
+.side nav .nav-count { font-size: 11px; font-weight: 500; color: #8fa3bf; background: #ffffff14; border-radius: 99px; padding: 0 7px; line-height: 18px; }
+.side nav .nav-sec > a { padding: 7px 10px 7px 18px; font-size: 13.5px; }
+.side nav .nav-sec.open:not(.nav-parent) { padding-bottom: 4px; }
+.side nav .nav-sub { margin-left: 10px; border-left: 1px solid #ffffff1f; }
+.side nav .nav-sub .nav-group { font-size: 12.5px; font-weight: 500; color: #cfd8e3; padding: 6px 10px; }
+.side nav .nav-sub > a { padding-left: 16px; }
+.side nav:not(.searching) .nav-sec.closed > .nav-sec { display: none; }
+.side nav.searching .nav-sec > .nav-group .nav-count { display: none; }
+.nav-mode { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 10px; background: var(--primary-soft); cursor: pointer; }
+.nav-mode input { margin-top: 3px; width: 16px; height: 16px; flex: none; }
+@media (max-width: 860px) {
+  .side { width: min(300px, 86vw); left: -320px; }
+  .side nav .nav-sec .nav-group { padding: 11px 10px; font-size: 14px; }
+  .side nav .nav-sec > a { padding: 10px 10px 10px 18px; font-size: 14.5px; }
+  .menu-btn { position: sticky; top: 8px; z-index: 30; box-shadow: 0 2px 8px #0002; }
+}
+.side nav .nav-sec .nav-group > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.side nav .nav-sec > a { line-height: 1.25; }
+.brand { padding: 12px 16px; }
+.me { flex-direction: row; align-items: center; justify-content: space-between; padding: 8px 12px; gap: 8px; }
+.me > div { min-width: 0; }
+.me b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.me .me-mail { display: none; }
+.me .btn { flex: none; }
+.side nav.searching .nav-group .caret { display: none; }

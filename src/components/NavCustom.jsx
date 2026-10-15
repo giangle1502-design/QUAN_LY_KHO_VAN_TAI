@@ -96,7 +96,7 @@ export function useNavLayout(sections) {
 }
 
 // Hộp thoại Tùy chỉnh menu
-export function MenuEditor({ view, api, onClose }) {
+export function MenuEditor({ view, api, multi, setMulti, onClose }) {
   const [name, setName] = useState('');
   const [onlyFolder, setOnlyFolder] = useState('');
   const targets = view.secs.map((s) => ({ key: s.key, title: s.title }));
@@ -104,6 +104,10 @@ export function MenuEditor({ view, api, onClose }) {
   return (
     <Modal title="⚙ Tùy chỉnh menu của tôi" onClose={onClose} wide>
       <p className="small" style={{ marginTop: 0 }}>Sắp xếp menu theo cách bạn làm việc: bấm ☆ để ghim mục lên <b>⭐ Yêu thích</b>, tạo thư mục rồi chọn “Chuyển vào” để gom các mục hay dùng (VD: SO, DO, PO, STO), ▲▼ để đổi thứ tự, 👁 để ẩn mục không dùng. Chỉ áp dụng cho tài khoản của bạn trên trình duyệt này.</p>
+      <label className="nav-mode">
+        <input type="checkbox" checked={!multi} onChange={(e) => setMulti(!e.target.checked)} />
+        <span><b>Menu gọn (vừa màn hình)</b> — mỗi lúc chỉ mở 1 nhóm, bấm nhóm khác thì nhóm cũ tự đóng; tự mở nhóm của trang đang xem. Bỏ chọn để mở nhiều nhóm cùng lúc.</span>
+      </label>
       <div className="filters">
         <input placeholder="Tên thư mục mới, VD: Việc hằng ngày" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addFolder()} />
         <button type="button" className="btn primary" onClick={addFolder}>📁 + Thư mục mới</button>

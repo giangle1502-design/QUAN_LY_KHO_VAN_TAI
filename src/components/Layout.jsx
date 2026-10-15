@@ -12,6 +12,9 @@ import { FAV_KEY, MenuEditor, itemId, useNavLayout } from './NavCustom';
 
 // Nhóm thu gọn sẵn lần đầu: các nhóm danh mục, quản trị dữ liệu
 const DEFAULT_CLOSED = ['quan-tri', ...GROUPS.map((g) => `dm:${g}`)];
+// Hạng mục lớn "Danh mục & thiết lập" gom các nhóm con: thiết lập chung, từng nhóm danh mục, quản trị dữ liệu
+const PARENT = { key: 'dm-all', title: '📚 Danh mục & thiết lập' };
+const isSub = (k) => k === 'thiet-lap' || k === 'quan-tri' || k.startsWith('dm:');
 
 export default function Layout() {
   const { name, email, role, isAdmin, isSuper, can3PL, canDesign, hasRole, logout, settings } = useApp();
@@ -30,7 +33,7 @@ export default function Layout() {
     const hit = (el) => { const t = norm(el.textContent); return words.every((w) => t.includes(w)); };
     let header = null, headerHas = false, groupHit = false, total = 0;
     const endGroup = () => { if (header) header.hidden = words.length > 0 && !headerHas; };
-    nav.querySelectorAll('a, .nav-group').forEach((el) => {
+    nav.querySelectorAll('a, .nav-group:not(.nav-parent-head)').forEach((el) => {
       if (el.classList.contains('nav-group')) {
         endGroup();
         header = el; headerHas = false; groupHit = words.length > 0 && hit(el);
@@ -41,6 +44,7 @@ export default function Layout() {
       if (show) { headerHas = true; total++; }
     });
     endGroup();
+    nav.querySelectorAll('.nav-parent').forEach((p) => { p.hidden = words.length > 0 && !p.querySelector('a:not([hidden])'); });
     const empty = nav.querySelector('.nav-empty');
     if (empty) empty.hidden = total > 0;
   });
@@ -65,9 +69,12 @@ export default function Layout() {
   const [nDel, setNDel] = useState(0);
   useEffect(() => (isSuper ? onSnapshot(query(collection(db, 'deleteRequests'), where('status', '==', 'pending')), (s) => setNDel(s.size), () => {}) : undefined), [isSuper]);
   // Menu theo nhóm công việc (bán: SO → dự kiến xuất → phiếu xuất; mua: PO → phân bổ → phiếu nhập …).
-  // Bấm tên nhóm để thu gọn / mở (nhớ trên trình duyệt); nhóm đang mở trang hiện tại luôn mở; khi tìm kiếm thì hiện hết.
+  // Mặc định "gọn": mỗi lúc chỉ mở 1 nhóm (bấm nhóm khác thì nhóm cũ tự đóng), tự mở nhóm của trang đang xem → menu vừa màn hình.
+  // Tắt chế độ gọn (⚙ Tùy chỉnh menu) thì mở / đóng từng nhóm tự do như trước. Khi tìm kiếm thì hiện hết.
   const [closed, setClosed] = usePref('nav-closed', DEFAULT_CLOSED);
-  const toggle = (k) => setClosed(closed.includes(k) ? closed.filter((x) => x !== k) : [...closed, k]);
+  const [multi, setMulti] = usePref('nav-multi', false);
+  const [acc, setAcc] = usePref('nav-acc', { top: null, sub: null });
+  const toggleClosed = (k) => setClosed(closed.includes(k) ? closed.filter((x) => x !== k) : [...closed, k]);
   const here = (to) => {
     const [path, qs] = to.split('?');
     if (path === '/' ? loc.pathname !== '/' : !(loc.pathname === path || loc.pathname.startsWith(path + '/'))) return false;
@@ -82,14 +89,14 @@ export default function Layout() {
   };
   const srcTab = (sto) => ({ isActive }) => (isActive && (new URLSearchParams(loc.search).get('src') === 'sto') === sto ? 'active' : '');
   const sections = [
-    { key: 'ban', title: '🧾 Bán hàng (SO → xuất kho)', items: [
+    { key: 'ban', title: '🧾 Bán hàng (SO → xuất)', items: [
       { to: '/don-hang?tab=SO', cls: orderTab('SO'), ico: '🧾', label: 'Đơn bán (SO)' },
       { to: '/du-kien-xuat', ico: '📅', label: 'Dự kiến xuất kho (Sale)' },
       { to: '/kho/out', cls: srcTab(false), ico: '📤', label: 'Lập phiếu xuất kho', show: hasRole('thu_kho') },
       { to: '/don-hang?tab=DO', cls: slipTab('DO', ''), ico: '🚚', label: 'DO (lệnh giao hàng)' },
       { to: '/xe/giao-hang', ico: '✅', label: 'Xác nhận giao hàng', show: isAdmin },
     ] },
-    { key: 'mua', title: '🛒 Mua hàng (PO → nhập kho)', items: [
+    { key: 'mua', title: '🛒 Mua hàng (PO → nhập)', items: [
       { to: '/don-hang?tab=PO', cls: orderTab('PO'), ico: '🛒', label: 'Đơn mua (PO)' },
       { to: '/phan-bo', ico: '📋', label: 'Kế hoạch phân bổ hàng mua' },
       { to: '/kho/in', cls: srcTab(false), ico: '📝', label: 'Lập phiếu nhập kho', show: isAdmin },
@@ -103,7 +110,7 @@ export default function Layout() {
       { to: '/don-hang?tab=DO&loai=STO', cls: slipTab('DO', 'STO'), ico: '🚚', label: 'DO chuyển kho (đã xuất)' },
       { to: '/don-hang?tab=cho-nhap&loai=STO', cls: slipTab('cho-nhap', 'STO'), ico: '⏳', label: 'STO chờ nhập (đang đi đường)' },
     ] },
-    { key: 'kho', title: '🏭 Tồn kho & vận hành kho', items: [
+    { key: 'kho', title: '🏭 Tồn kho & vận hành', items: [
       { to: '/kho/ton', ico: '🏭', label: 'Tồn kho' },
       { to: '/don-hang?tab=can-doi', cls: orderTab('can-doi'), ico: '⚖️', label: 'Cân đối theo mã hàng' },
       { to: '/kho/phieu', ico: '🧾', label: 'Phiếu kho (danh sách)' },
@@ -128,7 +135,7 @@ export default function Layout() {
       { to: '/van-tai?tab=bang-ke', ico: '🧾', label: 'Bảng kê cước' },
     ] },
     { key: 'bao-cao', title: '📊 Báo cáo', items: REPORTS.map(([k, ic, l]) => ({ to: `/bao-cao/${k}`, ico: ic, label: l })) },
-    { key: 'thiet-lap', title: '🧩 Danh mục & thiết lập', items: [
+    { key: 'thiet-lap', title: '🧩 Tổng quan & thiết lập', items: [
       { to: '/dm', end: true, ico: '🏠', label: 'Tổng quan danh mục' },
       { to: '/hang-muc', ico: '🧩', label: 'Quản lý trường (hạng mục)', show: canDesign },
       { to: '/mau-in', ico: '🖨️', label: 'Thiết kế mẫu in', show: canDesign },
@@ -144,6 +151,44 @@ export default function Layout() {
   const [nav, navApi] = useNavLayout(sections.map((sec) => ({ ...sec, items: sec.items.filter((x) => x.show !== false) })));
   const [editMenu, setEditMenu] = useState(false);
   const shownSecs = [...(nav.fav.length ? [{ key: FAV_KEY, title: '⭐ Yêu thích', items: nav.fav }] : []), ...nav.secs];
+  // Hạng mục lớn → hạng mục con: các nhóm danh mục / thiết lập / quản trị gom vào 1 mục lớn (đặt ở vị trí nhóm con đầu tiên)
+  const blocks = [];
+  let parent = null;
+  for (const s of shownSecs) {
+    if (!s.items.length) continue;
+    if (isSub(s.key)) {
+      if (!parent) { parent = { ...PARENT, subs: [] }; blocks.push(parent); }
+      parent.subs.push(s);
+    } else blocks.push(s);
+  }
+  const hasHere = (s) => (s.subs ? s.subs.some(hasHere) : s.items.some((x) => here(x.to)));
+  const curTop = blocks.find((b) => b.key !== FAV_KEY && hasHere(b));
+  const curSub = curTop?.subs?.find(hasHere);
+  // Đổi trang → mở đúng nhóm của trang đó (các nhóm khác đóng lại)
+  const curKey = `${curTop?.key || ''}|${curSub?.key || ''}`;
+  useEffect(() => {
+    if (multi || !curTop) return;
+    if (acc.top !== curTop.key || (curSub && acc.sub !== curSub.key)) setAcc({ top: curTop.key, sub: curSub?.key || acc.sub });
+  }, [curKey, multi]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Mục đang mở luôn nằm trong vùng nhìn thấy của menu
+  useEffect(() => { navRef.current?.querySelector('a.active')?.scrollIntoView?.({ block: 'nearest' }); }, [loc.pathname, loc.search, open]);
+  const isOpen = (s, sub) => {
+    if (multi || s.key === FAV_KEY) return !closed.includes(s.key) || (s.key !== FAV_KEY && hasHere(s));
+    return sub ? acc.sub === s.key : acc.top === s.key;
+  };
+  const toggle = (s, sub) => {
+    if (multi || s.key === FAV_KEY) return toggleClosed(s.key);
+    if (sub) setAcc({ ...acc, sub: acc.sub === s.key ? null : s.key });
+    else setAcc({ ...acc, top: acc.top === s.key ? null : s.key });
+  };
+  const countOf = (s) => (s.subs ? s.subs.reduce((n, x) => n + x.items.length, 0) : s.items.length);
+  const groupHead = (s, sub, opened, extra = '') => (
+    <div className={'nav-group' + extra} role="button" tabIndex={0} onClick={() => toggle(s, sub)} onKeyDown={(e) => e.key === 'Enter' && toggle(s, sub)}
+      title={opened ? 'Thu gọn nhóm' : 'Mở nhóm'} aria-expanded={opened}>
+      <span>{s.title}</span>
+      <span className="nav-head-r">{!opened && <span className="nav-count">{countOf(s)}</span>}<span className="caret">{opened ? '▾' : '▸'}</span></span>
+    </div>
+  );
   const navItem = (x) => (
     <NavLink key={x.to + x.label} to={x.to} end={x.end} className={x.cls} onClick={close}>
       <span className="ico">{x.ico}</span>{x.label}{x.badge ? <span className="badge red" style={{ marginLeft: 6 }}>{x.badge}</span> : null}
@@ -182,17 +227,26 @@ export default function Layout() {
         ) : (
         <nav className={q ? 'searching' : ''}>
           <NavLink to="/" end onClick={close}><span className="ico">📈</span>Tổng quan</NavLink>
-          {shownSecs.map((sec) => {
-            const items = sec.items;
-            if (!items.length) return null;
-            const isOpen = !closed.includes(sec.key) || items.some((x) => here(x.to));
+          {blocks.map((sec) => {
+            const op = isOpen(sec, false);
+            if (sec.subs) return (
+              <div key={sec.key} className={'nav-sec nav-parent' + (op ? ' open' : ' closed')}>
+                {groupHead(sec, false, op, ' nav-parent-head')}
+                {sec.subs.map((sub) => {
+                  const so = isOpen(sub, true);
+                  return (
+                    <div key={sub.key} className={'nav-sec nav-sub' + (so ? ' open' : ' closed')}>
+                      {groupHead(sub, true, so)}
+                      {sub.items.map(navItem)}
+                    </div>
+                  );
+                })}
+              </div>
+            );
             return (
-              <div key={sec.key} className={'nav-sec' + (isOpen ? '' : ' closed') + (sec.key === FAV_KEY ? ' nav-fav' : '')}>
-                <div className="nav-group" role="button" tabIndex={0} onClick={() => toggle(sec.key)} onKeyDown={(e) => e.key === 'Enter' && toggle(sec.key)}
-                  title={isOpen ? 'Thu gọn nhóm' : 'Mở nhóm'}>
-                  <span>{sec.title}</span><span className="caret">{isOpen ? '▾' : '▸'}</span>
-                </div>
-                {items.map(navItem)}
+              <div key={sec.key} className={'nav-sec' + (op ? ' open' : ' closed') + (sec.key === FAV_KEY ? ' nav-fav' : '')}>
+                {groupHead(sec, false, op)}
+                {sec.items.map(navItem)}
               </div>
             );
           })}
@@ -201,12 +255,12 @@ export default function Layout() {
         <div className="nav-empty" hidden>Không tìm thấy chức năng nào.</div>
         </div>
         <div className="me">
-          <div><b>{name}</b><small>{email}</small><small className="role">{roleLabel(role)}</small></div>
+          <div title={email}><b>{name}</b><small className="me-mail">{email}</small><small className="role">{roleLabel(role)}</small></div>
           <button className="btn ghost sm" onClick={logout}>Đăng xuất</button>
         </div>
       </aside>
       {open && <div className="side-bg" onClick={close} />}
-      {editMenu && <MenuEditor view={nav} api={navApi} onClose={() => setEditMenu(false)} />}
+      {editMenu && <MenuEditor view={nav} api={navApi} multi={multi} setMulti={setMulti} onClose={() => setEditMenu(false)} />}
       <main ref={mainRef}>
         <button className="menu-btn" onClick={() => setOpen(true)}>☰</button>
         <Outlet />
