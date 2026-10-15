@@ -101,8 +101,7 @@ export default function Dispatch({ orders, trips, onSplit }) {
                   <td><select value={v.carrier} onChange={(e) => setO(r.key, { carrier: e.target.value })} style={v.carrier !== r.carrier ? { borderColor: 'var(--amber)' } : undefined}>
                     <option value="">-- Chọn --</option>{carriers.filter((x) => x.active !== false || x.code === v.carrier).map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</select>
                     {c ? <div className="small" title={KIND_LABEL[c.kind] || ''}>{kindText(c)}{v.carrier !== r.carrier ? ` · đã đổi từ ${r.carrier}` : ''}</div> : null}</td>
-                  <td><input list={`dl-dp-${v.carrier}`} value={v.plate} placeholder={isSelfPickup(c) ? 'xe khách' : ''} onChange={(e) => setO(r.key, { plate: e.target.value.toUpperCase() })} style={{ width: 110 }} />
-                    {isSelfPickup(c) && <input value={v.driverName} placeholder="Tài xế" onChange={(e) => setO(r.key, { driverName: e.target.value })} style={{ width: 110, display: 'block', marginTop: 2 }} />}</td>
+                  <td><input list={`dl-dp-${v.carrier}`} value={v.plate} placeholder={isSelfPickup(c) ? 'xe khách' : ''} onChange={(e) => setO(r.key, { plate: e.target.value.toUpperCase() })} style={{ width: 110 }} /></td>
                   <td><button className="btn primary sm" disabled={busy} onClick={() => release([r])}>Giao</button></td>
                 </tr>
               );

@@ -22,6 +22,10 @@ export const isSelfPickup = (c) => !!c && c.kind === KIND.self;
 export const isInternal = (c) => !!c && c.kind === KIND.internal;
 // Xe trong danh mục Xe: chỉ xe nội bộ / xe nhà GHA
 export const usesVehicleList = (c) => isInternal(c) || isGHA(c);
+// Họ tên + CCCD tài xế chỉ khai cho xe nội bộ (nhóm xe) và xe nhà GHA; dịch vụ, 3PL, khách chỉ cần số xe
+export const needsDriverId = (c, via3pl = false) => usesVehicleList(c) && !via3pl;
+// Link riêng cho tài xế / đơn vị vận tải mở trên điện thoại (chưa đăng nhập thì hiện trang đăng nhập tài xế)
+export const driverLink = () => `${window.location.origin}/tai-xe`;
 export const kindText = (c) => (isGHA(c) ? 'GHA' : isSelfPickup(c) ? 'Khách tự lấy' : isInternal(c) ? 'Nội bộ' : 'Dịch vụ');
 
 const n = (v) => (v === '' || v == null ? 0 : Number(v) || 0);

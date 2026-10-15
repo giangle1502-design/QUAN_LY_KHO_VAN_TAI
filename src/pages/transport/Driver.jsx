@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
@@ -9,10 +10,11 @@ import { fmtDate, fmtNum } from '../../lib/utils';
 import { Empty, ErrorBox } from '../../components/ui';
 import { StepModal } from '../../components/TripSteps';
 import { useCollection } from '../../lib/hooks';
+import { needsDriverId } from '../../lib/dispatch';
 
 // Trang tài xế (điện thoại): nhận chuyến của đơn vị, bấm lần lượt từng bước
 export default function Driver() {
-  const { myCarrier, myIdCard, name } = useApp();
+  const { myCarrier, myIdCard, name, role } = useApp();
   const [trips, setTrips] = useState([]);
   const [error, setError] = useState('');
   const [step, setStep] = useState(null);
@@ -42,6 +44,9 @@ export default function Driver() {
       </div>
     );
   };
+  const myCar = useCollection(myCarrier ? 'carriers' : '').rows.find((c) => c.code === myCarrier);
+  // Điều phối / 3PL mở nhầm link tài xế: chuyển sang trang chuyến của đơn vị
+  if (role === 'van_tai' || role === 'tpl') return <Navigate to="/van-tai?tab=chuyen" replace />;
   return (
     <div style={{ maxWidth: 560 }}>
       <div className="page-head"><h1>🧑‍✈️ Chuyến của tôi</h1></div>
@@ -49,7 +54,7 @@ export default function Driver() {
       <label className="field" style={{ marginBottom: 10 }}><span>Số xe bạn đang chạy</span>
         <input list="dl-my-plates" value={plate} onChange={(e) => setPlate(e.target.value.toUpperCase())} placeholder="VD: 51C-12345" style={{ fontSize: 18, padding: 10 }} /></label>
       <datalist id="dl-my-plates">{myVehicles.map((v) => <option key={v.plate} value={v.plate}>{v.vehicleType}</option>)}</datalist>
-      <p className="small">Xin chào {name}. Bấm nút xanh theo thứ tự: Đến điểm nhận hàng → Nhận / lấy hàng xong → Đến điểm giao hàng → Hoàn thành (chụp phiếu giao).</p>
+      <p className="small">Xin chào {name}{needsDriverId(myCar) && myIdCard ? ` (CCCD ${myIdCard})` : ''}. Bấm nút xanh theo thứ tự: Đến điểm nhận hàng → Nhận / lấy hàng xong → Đến điểm giao hàng → Hoàn thành (chụp phiếu giao).</p>
       <ErrorBox error={error} />
       {mine.length ? mine.map((t) => card(t)) : <Empty text="Chưa có chuyến nào đang chạy." />}
       {!pk && !mine.length && <p className="small">Nhập số xe để thấy chuyến điều phối đã giao cho xe của bạn.</p>}

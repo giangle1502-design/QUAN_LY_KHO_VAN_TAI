@@ -18,6 +18,8 @@ export default function Login() {
   const [err, setErr] = useState('');
   const [info, setInfo] = useState('');
   const [busy, setBusy] = useState(false);
+  // Mở từ link tài xế (/tai-xe): trang đăng nhập riêng, to, dễ bấm trên điện thoại
+  const driver = window.location.pathname.startsWith('/tai-xe');
 
   const run = async (fn) => {
     setErr(''); setInfo(''); setBusy(true);
@@ -34,8 +36,10 @@ export default function Login() {
   return (
     <div className="center login">
       <form className="card narrow" onSubmit={submit}>
-        <h2>Hệ thống kho & vận tải</h2>
-        <p className="muted">{mode === 'login' ? 'Đăng nhập để tiếp tục' : 'Tạo mật khẩu cho email đã được quản lý cấp quyền'}</p>
+        <h2>{driver ? '🧑‍✈️ Đăng nhập tài xế' : 'Hệ thống kho & vận tải'}</h2>
+        <p className="muted">{mode === 'login' ? (driver ? 'Dùng email điều phối đã khai cho bạn. Đăng nhập xong nhập số xe để nhận chuyến.' : 'Đăng nhập để tiếp tục')
+          : 'Tạo mật khẩu cho email đã được quản lý cấp quyền'}</p>
+        {driver && mode === 'login' && <p className="small" style={{ marginTop: 0 }}>Lần đầu dùng: bấm <b>Lần đầu sử dụng? Đăng ký</b> ở dưới, nhập email đó và tự đặt mật khẩu, rồi mở email để xác nhận.</p>}
         <button type="button" className="btn google" disabled={busy} onClick={() => run(() => signInWithPopup(auth, googleProvider))}>
           Đăng nhập bằng Google
         </button>
