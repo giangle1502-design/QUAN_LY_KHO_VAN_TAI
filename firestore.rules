@@ -33,9 +33,11 @@ service cloud.firestore {
       allow read: if signedIn() && (email == me() || isStaff());
       allow create, update: if isAdmin();
       // Điều phối vận tải tạo / khóa tài khoản tài xế của đơn vị mình
+      // GHA tạo thêm tài khoản 3PL (thầu phụ) thuộc GHA
       allow create, update: if hasRole('van_tai') && myCarrier() != ''
-        && request.resource.data.role == 'tai_xe' && request.resource.data.carrier == myCarrier()
-        && (resource == null || (resource.data.get('role', '') == 'tai_xe' && resource.data.get('carrier', '') == myCarrier()));
+        && (request.resource.data.role == 'tai_xe' || (request.resource.data.role == 'tpl' && gha()))
+        && request.resource.data.carrier == myCarrier()
+        && (resource == null || (resource.data.get('role', '') in ['tai_xe', 'tpl'] && resource.data.get('carrier', '') == myCarrier()));
     }
 
     // Cấu hình hạng mục và cài đặt chung
@@ -97,7 +99,14 @@ service cloud.firestore {
     // GHA: đơn vị vận tải được dùng 3PL
     function gha() {
       return hasRole('van_tai') && myCarrier() != ''
-        && get(/databases/$(database)/documents/carriers/$(myCarrier())).data.get('uses3PL', false) == true;
+        && (get(/databases/$(database)/documents/carriers/$(myCarrier())).data.get('uses3PL', false) == true
+          || get(/databases/$(database)/documents/carriers/$(myCarrier())).data.get('kind', '') == 'GHA');
+    }
+    // 3PL (thầu phụ GHA): chuyến GHA đã chỉ định cho 3PL của tài khoản này
+    function myThreepl() { return profile().get('threepl', ''); }
+    function myTrip3pl(id) {
+      return myThreepl() != ''
+        && get(/databases/$(database)/documents/tripPrivate/$(id)).data.get('threepl', '') == myThreepl();
     }
     match /trips/{id} {
       allow read: if isStaff();
@@ -122,6 +131,10 @@ service cloud.firestore {
           && resource.data.get('plate', '') in ['', request.resource.data.get('plate', '')]
           && stepStatus(false)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(driverKeys()))
+        // 3PL: nhập số xe, tài xế, xác nhận các bước của chuyến GHA chỉ định cho mình (không sửa cước GHA)
+        || (hasRole('tpl') && ownCarrierTrip() && myTrip3pl(id)
+          && stepStatus(false)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(driverKeys()))
         // Kế toán nhập / sửa / chốt chi phí chuyến (xe nội bộ cập nhật cước sau)
         || (hasRole('ke_toan') && request.resource.data.get('costStatus', '') in ['entered', 'approved']
           && request.resource.data.diff(resource.data).affectedKeys()
@@ -131,12 +144,31 @@ service cloud.firestore {
     match /tripPhotos/{id} {
       allow read: if isStaff();
       allow create: if isStaff() && request.resource.data.by == me() && request.resource.data.data.size() < 900000
-        && (isAdmin() || ((hasRole('van_tai') || hasRole('tai_xe')) && request.resource.data.carrier == myCarrier()));
+        && (isAdmin() || ((hasRole('van_tai') || hasRole('tai_xe') || hasRole('tpl')) && request.resource.data.carrier == myCarrier()));
     }
     // 3PL của chuyến: chỉ GHA và quản trị gốc (admin khách không đọc được)
     match /tripPrivate/{id} {
-      allow read: if isSuper() || (gha() && resource.data.carrier == myCarrier());
+      allow read: if isSuper() || (gha() && resource.data.carrier == myCarrier())
+        || (hasRole('tpl') && myThreepl() != '' && resource.data.get('threepl', '') == myThreepl());
       allow create, update: if isSuper() || (gha() && request.resource.data.carrier == myCarrier());
+      // 3PL nhập cước 3PL ↔ GHA của chuyến mình (GHA chốt rồi thì không sửa)
+      allow update: if hasRole('tpl') && myThreepl() != '' && resource.data.get('threepl', '') == myThreepl()
+        && resource.data.get('cost3plStatus', '') != 'approved' && request.resource.data.get('cost3plStatus', '') == 'entered'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['cost3pl', 'cost3plStatus', 'cost3plBy', 'cost3plAt', 'updatedAt', 'updatedBy', 'updatedByName']);
+    }
+    // Bảng kê cước: đơn vị vận tải (cước với công ty) hoặc 3PL ↔ GHA; 2 bên cùng xem, bên kia xác nhận
+    function stmtOk(d) {
+      return (d.kind == 'carrier' && (isAdmin() || hasRole('ke_toan') || (hasRole('van_tai') && d.carrier == myCarrier())))
+        || (d.kind == '3pl' && (isSuper() || (gha() && d.carrier == myCarrier())));
+    }
+    function stmtMine3pl(d) { return hasRole('tpl') && myThreepl() != '' && d.kind == '3pl' && d.party == myThreepl(); }
+    match /statements/{id} {
+      allow read: if stmtOk(resource.data) || stmtMine3pl(resource.data);
+      allow create: if stmtOk(request.resource.data) && request.resource.data.createdBy == me();
+      allow update: if (stmtOk(resource.data) && stmtOk(request.resource.data))
+        || (stmtMine3pl(resource.data) && request.resource.data.status == 'confirmed'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'confirmedAt', 'confirmedBy', 'confirmedByName', 'total', 'count']));
     }
     match /threepl/{id} {
       allow read, create, update: if isSuper() || gha();

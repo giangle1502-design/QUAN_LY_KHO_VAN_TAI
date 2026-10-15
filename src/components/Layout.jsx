@@ -122,7 +122,9 @@ export default function Layout() {
       { to: '/xe/bao-ve', ico: '🛡️', label: 'Bảo vệ cổng', show: hasRole('bao_ve') },
       { to: '/xe/thu-kho', ico: '📦', label: 'Thủ kho điều phối', show: hasRole('thu_kho') },
       { to: '/xe/tong-quan', ico: '📊', label: 'Tổng quan chuyến xe' },
-      { to: '/van-tai', ico: '🚛', label: 'Vận chuyển (chia xe, cước)' },
+      { to: '/van-tai?tab=cho-giao', ico: '📥', label: 'Chờ giao vận tải', show: isAdmin },
+      { to: '/van-tai?tab=chuyen', ico: '🚛', label: 'Chuyến xe vận tải (xe, 3PL, cước)' },
+      { to: '/van-tai?tab=bang-ke', ico: '🧾', label: 'Bảng kê cước' },
     ] },
     { key: 'cong-no', title: '💳 Công nợ', items: [
       { to: '/cong-no?tab=tong-hop', ico: '💳', label: 'Theo dõi công nợ (MISA)', show: seesDebt },
@@ -157,16 +159,21 @@ export default function Layout() {
         <div className="brand">{settings.companyName}<small>Kho & vận tải</small></div>
         <div className="nav-search">
           <input ref={searchRef} type="search" placeholder="🔍 Tìm chức năng… (Ctrl+K)" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onSearchKey} />
-          {role !== 'tai_xe' && role !== 'van_tai' && <button type="button" className="nav-cfg" title="Tùy chỉnh menu: yêu thích, thư mục, thứ tự, ẩn mục" onClick={() => setEditMenu(true)}>⚙</button>}
+          {!['tai_xe', 'van_tai', 'tpl'].includes(role) && <button type="button" className="nav-cfg" title="Tùy chỉnh menu: yêu thích, thư mục, thứ tự, ẩn mục" onClick={() => setEditMenu(true)}>⚙</button>}
         </div>
         <div className="nav-wrap" ref={navRef}>
         {role === 'tai_xe' ? (
         <nav>
           <NavLink to="/tai-xe" onClick={close}><span className="ico">🧑‍✈️</span>Chuyến của tôi</NavLink>
         </nav>
+        ) : role === 'tpl' ? (
+        <nav>
+          <NavLink to="/van-tai?tab=chuyen" onClick={close}><span className="ico">🚛</span>Chuyến 3PL của tôi</NavLink>
+          <NavLink to="/van-tai?tab=bang-ke" onClick={close}><span className="ico">🧾</span>Bảng kê</NavLink>
+        </nav>
         ) : role === 'van_tai' ? (
         <nav>
-          <NavLink to="/van-tai?tab=don" onClick={close}><span className="ico">🚛</span>Vận chuyển</NavLink>
+          <NavLink to="/van-tai?tab=chuyen" onClick={close}><span className="ico">🚛</span>Vận chuyển</NavLink>
           <NavLink to="/dm/vehicles" onClick={close}><span className="ico">🚚</span>Xe của đơn vị</NavLink>
           <NavLink to="/dm/drivers" onClick={close}><span className="ico">🧑‍✈️</span>Tài xế của đơn vị</NavLink>
           {can3PL && <NavLink to="/dm/threepl" onClick={close}><span className="ico">🤝</span>3PL</NavLink>}

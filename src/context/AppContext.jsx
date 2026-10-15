@@ -40,7 +40,9 @@ export function AppProvider({ children }) {
 
   // Kho người dùng được thao tác (mảng rỗng = tất cả)
   // Điều phối vận tải / tài xế thuộc 1 đơn vị vận tải
-  const myCarrier = ['van_tai', 'tai_xe'].includes(role) ? userDoc?.carrier || '' : '';
+  const myCarrier = ['van_tai', 'tai_xe', 'tpl'].includes(role) ? userDoc?.carrier || '' : '';
+  // Tài khoản 3PL (thầu phụ của GHA): mã 3PL của mình
+  const myThreepl = role === 'tpl' ? userDoc?.threepl || '' : '';
   const myIdCard = role === 'tai_xe' ? userDoc?.idCard || '' : '';
   const [carrierDoc, setCarrierDoc] = useState(null);
   useEffect(() => {
@@ -48,7 +50,7 @@ export function AppProvider({ children }) {
     return onSnapshot(doc(db, 'carriers', myCarrier), (s) => setCarrierDoc(s.exists() ? s.data() : null), () => setCarrierDoc(null));
   }, [myCarrier]);
   // 3PL chỉ GHA (đơn vị vận tải được dùng 3PL) và quản trị gốc thấy, admin khách không thấy
-  const can3PL = isSuper || (role === 'van_tai' && carrierDoc?.uses3PL === true);
+  const can3PL = isSuper || (role === 'van_tai' && (carrierDoc?.uses3PL === true || carrierDoc?.kind === 'GHA'));
   const inMyWarehouses = useCallback((wh) => !myWarehouses.length || myWarehouses.includes(wh), [myWarehouses]);
 
   const canEdit = useCallback((cat, row) => {
@@ -72,12 +74,12 @@ export function AppProvider({ children }) {
   const seenFieldsOf = useCallback((key, ...others) => visibleFields(fieldsOf(key), { isAdmin, email, role }, ...others), [fieldsOf, isAdmin, email, role]);
 
   const value = useMemo(() => ({
-    user, email, role, isAdmin, isSuper, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, myCarrier, myIdCard, carrierDoc, can3PL, userDoc,
+    user, email, role, isAdmin, isSuper, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, myCarrier, myThreepl, myIdCard, carrierDoc, can3PL, userDoc,
     name: userDoc?.name || user?.displayName || email,
     fieldConfig, fieldsOf, settings, salesOnly, seesDebt, seeField, seenFieldsOf,
     loading: user === undefined || (!!user && userDoc === undefined && !isSuper),
     logout: () => signOut(auth),
-  }), [user, email, role, isAdmin, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, myCarrier, myIdCard, carrierDoc, can3PL, userDoc, fieldConfig, fieldsOf, settings, isSuper, salesOnly, seesDebt, seeField, seenFieldsOf]);
+  }), [user, email, role, isAdmin, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, myCarrier, myThreepl, myIdCard, carrierDoc, can3PL, userDoc, fieldConfig, fieldsOf, settings, isSuper, salesOnly, seesDebt, seeField, seenFieldsOf]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

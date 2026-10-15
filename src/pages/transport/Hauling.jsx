@@ -4,7 +4,10 @@ import { collection, doc, onSnapshot, query, setDoc, updateDoc, where } from 'fi
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { useCollection } from '../../lib/hooks';
-import { OPEN_STATUSES, leftKg, lineDue, lineShip, lineTo, lineWh } from '../../lib/orders';
+import { OPEN_STATUSES } from '../../lib/orders';
+import { isGHA, isInternal, kindText, usesVehicleList } from '../../lib/dispatch';
+import Dispatch from './Dispatch';
+import Statements from './Statements';
 import { STATUS_META, fmtTime, nowISO } from '../../lib/trips';
 import { STEPS, costTotal, createPlannedTrips, nextStep, splitLoads, stepBlocked, suggestFreight, tripKg } from '../../lib/transport';
 import { exportSheets } from '../../lib/excel';
@@ -18,115 +21,65 @@ const n = (v) => (v === '' || v == null ? 0 : Number(v) || 0);
 const t3 = (kg) => fmtNum(n(kg) / 1000, 3);
 const vnd = (v) => (v == null || v === '' ? '' : fmtNum(n(v)));
 const COST = { '': ['Chưa nhập chi phí', ''], entered: ['Đã nhập · chờ kế toán chốt', 'amber'], approved: ['Kế toán đã chốt', 'green'] };
+const COST3 = { '': ['Chưa nhập cước', ''], entered: ['3PL đã nhập · chờ GHA chốt', 'amber'], approved: ['GHA đã chốt', 'green'] };
 const monthStart = () => today().slice(0, 8) + '01';
 
 export default function Hauling() {
-  const { role, isAdmin, hasRole, myCarrier, can3PL, isSuper } = useApp();
+  const { role, isAdmin, hasRole, myCarrier, myThreepl, can3PL, isSuper } = useApp();
   const isCarrier = role === 'van_tai';
-  const canPlan = isAdmin || isCarrier;
-  const tabs = [...(canPlan ? [['don', 'Đơn cần chia xe']] : []), ['chuyen', 'Chuyến xe'], ['chi-phi', 'Chi phí & cước'], ...(canPlan ? [['tai-xe', 'Tài khoản tài xế']] : [])];
+  const isTpl = role === 'tpl';
+  const tabs = [...(isAdmin ? [['cho-giao', 'Chờ giao vận tải']] : []), ['chuyen', isTpl ? 'Chuyến 3PL của tôi' : 'Chuyến xe'], ...(isTpl ? [] : [['chi-phi', 'Chi phí & cước']]),
+    ['bang-ke', 'Bảng kê'], ...(isAdmin || isCarrier ? [['tai-xe', can3PL ? 'Tài khoản tài xế / 3PL' : 'Tài khoản tài xế']] : [])];
   const [sp, setSp] = useSearchParams();
   const tab = tabs.some(([k]) => k === sp.get('tab')) ? sp.get('tab') : tabs[0][0];
   const [orders, setOrders] = useState([]);
-  const [trips, setTrips] = useState([]);
+  const [allTrips, setTrips] = useState([]);
   const [priv, setPriv] = useState({});
   const [error, setError] = useState('');
-  useEffect(() => onSnapshot(isCarrier ? query(collection(db, 'orders'), where('carriers', 'array-contains', myCarrier || '-')) : query(collection(db, 'orders'), where('status', 'in', OPEN_STATUSES)),
-    (s) => setOrders(s.docs.map((d) => d.data())), (e) => setError(e.message)), [isCarrier, myCarrier]);
-  useEffect(() => onSnapshot(isCarrier ? query(collection(db, 'trips'), where('carrier', '==', myCarrier || '-')) : query(collection(db, 'trips'), where('source', '==', 'plan')),
+  const [split, setSplit] = useState(null);
+  // Đơn đang mở: chỉ quản trị cần (Chờ giao vận tải). Đơn vị vận tải chỉ thấy chuyến đã được giao
+  useEffect(() => (isAdmin ? onSnapshot(query(collection(db, 'orders'), where('status', 'in', OPEN_STATUSES)),
+    (s) => setOrders(s.docs.map((d) => d.data())), (e) => setError(e.message)) : undefined), [isAdmin]);
+  useEffect(() => onSnapshot(isCarrier || isTpl ? query(collection(db, 'trips'), where('carrier', '==', myCarrier || '-')) : query(collection(db, 'trips'), where('source', '==', 'plan')),
     (s) => setTrips(s.docs.map((d) => ({ ...d.data(), id: d.id })).filter((x) => x.source === 'plan').sort((a, b) => String(b.plannedDate + b.id).localeCompare(String(a.plannedDate + a.id)))),
-    (e) => setError(e.message)), [isCarrier, myCarrier]);
-  // 3PL lưu riêng, chỉ GHA và quản trị gốc đọc được
+    (e) => setError(e.message)), [isCarrier, isTpl, myCarrier]);
+  // 3PL lưu riêng: GHA và quản trị gốc đọc tất cả của GHA, 3PL chỉ đọc chuyến của mình
   useEffect(() => {
-    if (!can3PL) { setPriv({}); return undefined; }
-    return onSnapshot(isSuper ? collection(db, 'tripPrivate') : query(collection(db, 'tripPrivate'), where('carrier', '==', myCarrier)),
-      (s) => setPriv(Object.fromEntries(s.docs.map((d) => [d.id, d.data()]))), () => setPriv({}));
-  }, [can3PL, isSuper, myCarrier]);
+    if (!can3PL && !isTpl) { setPriv({}); return undefined; }
+    const q = isSuper ? collection(db, 'tripPrivate') : isTpl ? query(collection(db, 'tripPrivate'), where('threepl', '==', myThreepl || '-')) : query(collection(db, 'tripPrivate'), where('carrier', '==', myCarrier));
+    return onSnapshot(q, (s) => setPriv(Object.fromEntries(s.docs.map((d) => [d.id, d.data()]))), () => setPriv({}));
+  }, [can3PL, isTpl, isSuper, myCarrier, myThreepl]);
+  const trips = isTpl ? allTrips.filter((t) => priv[t.id]?.threepl === myThreepl) : allTrips;
 
   return (
     <div>
       <div className="page-head"><h1>🚛 Vận chuyển</h1>
         <div className="actions">{(isAdmin || hasRole('ke_toan')) && <Link className="btn" to="/dm/freightRates">💰 Bảng giá cước</Link>}</div></div>
-      {isCarrier && !myCarrier && <div className="error-box">Tài khoản chưa gắn đơn vị vận tải. Báo quản trị vào Phân quyền chọn "Thuộc đơn vị vận tải".</div>}
+      {(isCarrier || isTpl) && !myCarrier && <div className="error-box">Tài khoản chưa gắn đơn vị vận tải. Báo quản trị vào Phân quyền chọn "Thuộc đơn vị vận tải".</div>}
+      {isTpl && !myThreepl && <div className="error-box">Tài khoản 3PL chưa gắn mã 3PL. Báo GHA vào Tài khoản tài xế / 3PL để chọn.</div>}
       <div className="seg" style={{ marginBottom: 12 }}>
         {tabs.map(([k, l]) => <button key={k} type="button" className={'btn sm' + (tab === k ? ' primary' : '')} onClick={() => setSp({ tab: k })}>{l}</button>)}
       </div>
       <ErrorBox error={error} />
-      {tab === 'don' && <ToPlan orders={orders} trips={trips} />}
+      {tab === 'cho-giao' && <Dispatch orders={orders} trips={allTrips} onSplit={setSplit} />}
       {tab === 'chuyen' && <TripList trips={trips} priv={priv} />}
       {tab === 'chi-phi' && <Costs trips={trips} priv={priv} />}
+      {tab === 'bang-ke' && <Statements trips={trips} priv={priv} />}
       {tab === 'tai-xe' && <DriverAccounts />}
+      {split && <SplitModal {...split} onClose={(ok) => { setSplit(null); if (ok) split.done?.(); }} />}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Đơn cần chia xe: dòng SO / STO đã giao cho đơn vị vận tải, còn số tấn chưa chia
-function ToPlan({ orders, trips }) {
-  const { isAdmin, myCarrier } = useApp();
-  const carriers = useCollection('carriers').rows;
-  const shipto = useCollection('shipto').rows;
-  const [q, setQ] = useState('');
-  const [sel, setSel] = useState({});
-  const [split, setSplit] = useState(null);
-  const planned = useMemo(() => {
-    const m = new Map();
-    for (const tr of trips) if (tr.status !== 'cancelled') for (const l of tr.lines || []) if (l.orderId) m.set(`${l.orderId}#${l.orderLine}`, (m.get(`${l.orderId}#${l.orderLine}`) || 0) + n(l.plannedKg));
-    return m;
-  }, [trips]);
-  const rows = useMemo(() => orders.filter((o) => ['SO', 'STO'].includes(o.type) && OPEN_STATUSES.includes(o.status)).flatMap((o) => (o.lines || [])
-    .filter((l) => l.carrier && (isAdmin || l.carrier === myCarrier))
-    .map((l) => {
-      const ship = o.type === 'SO' ? lineShip(o, l) : '';
-      const st = shipto.find((s) => s.shipCode === ship);
-      const done = n(planned.get(`${o.id}#${l.no}`));
-      return { key: `${o.id}#${l.no}`, orderId: o.id, no: l.no, type: o.type, item: l.item, itemName: l.itemName, carrier: l.carrier, warehouse: lineWh(o, l, 'out'), due: lineDue(o, l),
-        partyCode: o.type === 'STO' ? lineTo(o, l) : o.partyCode, partyName: o.type === 'STO' ? `Kho ${lineTo(o, l)}` : o.partyName, shipCode: ship, address: st?.address || '',
-        planned: done, rest: Math.max(0, Math.min(n(l.qtyKg) - done, leftKg(l))) };
-    }))
-    .filter((r) => r.rest > 0.5)
-    .filter((r) => !q || [r.orderId, r.item, r.itemName, r.partyCode, r.partyName, r.shipCode, r.warehouse, r.carrier].join(' ').toLowerCase().includes(q.toLowerCase()))
-    .sort((a, b) => String(a.due).localeCompare(String(b.due))), [orders, isAdmin, myCarrier, planned, shipto, q]);
-  const chosen = rows.filter((r) => sel[r.key]);
-  const lock = chosen[0];
-  const total = chosen.reduce((s, r) => s + r.rest, 0);
-  return (
-    <div>
-      <p className="hint">Tích các dòng cùng kho xuất{isAdmin ? ' và cùng đơn vị vận tải' : ''} rồi bấm <b>Chia xe</b>: app gợi ý số chuyến theo tải trọng xe, mỗi chuyến nhập số xe (tài xế bổ sung sau cũng được).</p>
-      <div className="filters">
-        <input type="search" placeholder="Tìm số đơn, mã hàng, khách, kho, mã giao…" value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: 1 }} />
-        <button className="btn primary" disabled={!chosen.length} onClick={() => setSplit({ rows: chosen, carrier: carriers.find((c) => c.code === lock.carrier) || { code: lock.carrier } })}>
-          🚚 Chia xe{chosen.length ? ` (${chosen.length} dòng · ${t3(total)} tấn)` : ''}</button>
-      </div>
-      <div className="table-wrap">
-        {!rows.length ? <Empty text="Không còn dòng đơn nào cần chia xe." /> : (
-          <table className="picker">
-            <thead><tr><th></th><th>Đơn</th><th>Ngày giao</th><th>Kho xuất</th><th>Giao đến</th><th>Mã giao</th><th>Mã hàng</th>{isAdmin && <th>Vận tải</th>}<th className="num">Đã chia (tấn)</th><th className="num">Còn phải chia (tấn)</th></tr></thead>
-            <tbody>{rows.map((r) => {
-              const locked = lock && !sel[r.key] && (r.warehouse !== lock.warehouse || r.carrier !== lock.carrier);
-              return (
-                <tr key={r.key} className={locked ? 'locked' : sel[r.key] ? 'picked' : ''} onClick={() => !locked && setSel((s) => ({ ...s, [r.key]: !s[r.key] }))} style={{ cursor: locked ? 'not-allowed' : 'pointer' }}>
-                  <td><input type="checkbox" checked={!!sel[r.key]} disabled={locked} readOnly /></td>
-                  <td className="mono">{r.orderId}</td><td className="nowrap">{fmtDate(r.due)}</td><td>{r.warehouse}</td><td>{r.partyName || r.partyCode}</td><td>{r.shipCode}</td><td>{r.item} {r.itemName}</td>
-                  {isAdmin && <td>{r.carrier}</td>}<td className="num">{t3(r.planned)}</td><td className="num"><b>{t3(r.rest)}</b></td>
-                </tr>
-              );
-            })}</tbody>
-          </table>
-        )}
-      </div>
-      {split && <SplitModal {...split} onClose={(ok) => { setSplit(null); if (ok) setSel({}); }} />}
-    </div>
-  );
-}
-
 // Chia xe dạng bảng: mỗi chuyến (dòng) × mỗi mã hàng / dòng đơn (cột) nhập số tấn; tổng chuyến không vượt tải trọng xe
-function SplitModal({ rows, carrier, onClose }) {
+function SplitModal({ rows, carrier, onClose, action = 'Chia xe' }) {
   const { email, name, can3PL } = useApp();
-  const vehicles = useCollection('vehicles').rows.filter((v) => v.carrier === carrier.code);
+  // Danh mục xe chỉ dùng cho xe nội bộ / xe nhà GHA; xe thuê ngoài gõ tự do
+  const vehicles = useCollection(usesVehicleList(carrier) ? 'vehicles' : '').rows.filter((v) => v.carrier === carrier.code);
   const drivers = useCollection('drivers').rows.filter((d) => d.carrier === carrier.code);
   const warehouses = useCollection('warehouses').rows;
-  const threepl = useCollection(can3PL && carrier.uses3PL ? 'threepl' : '').rows;
+  const threepl = useCollection(can3PL && isGHA(carrier) ? 'threepl' : '').rows;
   const [need, setNeed] = useState(() => Object.fromEntries(rows.map((r) => [r.key, r.rest])));
   const total = rows.reduce((s, r) => s + n(need[r.key]), 0);
   const [cap, setCap] = useState(30);
@@ -169,8 +122,8 @@ function SplitModal({ rows, carrier, onClose }) {
     setBusy(true);
     try {
       const wh = warehouses.find((w) => w.code === rows[0].warehouse) || { code: rows[0].warehouse };
-      await createPlannedTrips({ wh, carrier, trips: used.map((l) => ({ ...l, date, lines: rows.filter((r) => n(l.q[r.key]) > 0).map((r) => ({ ...r, kg: n(l.q[r.key]) })),
-        threeplName: threepl.find((x) => x.code === l.threepl)?.name || '' })) }, { email, name });
+      await createPlannedTrips({ wh, carrier, trips: used.map((l) => ({ ...l, date, company: rows[0].company || '', lines: rows.filter((r) => n(l.q[r.key]) > 0).map((r) => ({ ...r, kg: n(l.q[r.key]) })),
+        threeplName: threepl.find((x) => x.code === l.threepl)?.name || '' })) }, { email, name }, action);
       onClose(true);
     } catch (e) { setErr(e.code === 'permission-denied' ? 'Không có quyền tạo chuyến (kiểm tra phân quyền / firestore.rules).' : e.message); }
     setBusy(false);
@@ -228,22 +181,35 @@ function SplitModal({ rows, carrier, onClose }) {
 function TripList({ trips, priv }) {
   const { isAdmin, role, hasRole, can3PL, email, name } = useApp();
   const isCarrier = role === 'van_tai';
+  const isTpl = role === 'tpl';
   const carriers = useCollection('carriers').rows;
+  const threepl = useCollection(can3PL ? 'threepl' : '').rows;
   const [f, setF] = useState({ from: monthStart(), to: '', status: 'active', carrier: '', q: '' });
   const [step, setStep] = useState(null);
   const [photo, setPhoto] = useState(null);
   const [cost, setCost] = useState(null);
+  const [cost3, setCost3] = useState(null);
+  const [cut, setCut] = useState(null);
   const [err, setErr] = useState('');
+  const carOf = (t) => carriers.find((c) => c.code === t.carrier) || { code: t.carrier, kind: t.carrierKind };
   const list = trips.filter((t) => (!f.from || (t.plannedDate || '') >= f.from || ['planned'].includes(t.status)) && (!f.to || (t.plannedDate || '') <= f.to)
     && (f.status === '' || (f.status === 'active' ? !['completed', 'cancelled'].includes(t.status) : t.status === f.status))
     && (!f.carrier || t.carrier === f.carrier)
-    && (!f.q || [t.id, t.plate, t.driverName, t.idCard, t.warehouse, ...(t.lines || []).flatMap((l) => [l.orderId, l.partyName, l.item, l.shipCode])].join(' ').toLowerCase().includes(f.q.toLowerCase())));
+    && (!f.q || [t.id, t.plate, t.driverName, t.idCard, t.warehouse, priv[t.id]?.threeplName, ...(t.lines || []).flatMap((l) => [l.orderId, l.partyName, l.item, l.shipCode])].join(' ').toLowerCase().includes(f.q.toLowerCase())));
   const setFF = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const cancel = async (t) => {
     const reason = window.prompt(`Hủy chuyến ${t.id}? Lý do:`, ''); if (!reason) return;
     try { await updateDoc(doc(db, 'trips', t.id), { status: 'cancelled', cancelReason: reason, cancelTime: nowISO(), updatedAt: nowISO(), updatedBy: email,
       history: [...(t.history || []), { at: nowISO(), by: email, byName: name, action: `Hủy chuyến: ${reason}`, status: 'cancelled' }] }); } catch (e) { setErr(e.message); }
   };
+  // GHA chỉ định 3PL cho chuyến (lưu riêng, admin khách không thấy)
+  const set3pl = async (t, code) => {
+    setErr('');
+    try {
+      await setDoc(doc(db, 'tripPrivate', t.id), { tripId: t.id, carrier: t.carrier, threepl: code, threeplName: threepl.find((x) => x.code === code)?.name || '', by: email, at: nowISO() }, { merge: true });
+    } catch (e) { setErr(e.code === 'permission-denied' ? 'Không có quyền chỉ định 3PL.' : e.message); }
+  };
+  const statusText = (t) => (t.selfPickup && t.status === 'completed' ? 'Khách đã lấy xong' : STATUS_META[t.status]?.label);
   return (
     <div>
       <div className="filters">
@@ -251,35 +217,42 @@ function TripList({ trips, priv }) {
         <label>Đến <input type="date" value={f.to} onChange={(e) => setFF('to', e.target.value)} /></label>
         <select value={f.status} onChange={(e) => setFF('status', e.target.value)}><option value="active">Đang chạy</option><option value="">Tất cả</option>
           {Object.entries(STATUS_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}</select>
-        {!isCarrier && <select value={f.carrier} onChange={(e) => setFF('carrier', e.target.value)}><option value="">Mọi đơn vị vận tải</option>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}</select>}
+        {!isCarrier && !isTpl && <select value={f.carrier} onChange={(e) => setFF('carrier', e.target.value)}><option value="">Mọi đơn vị vận tải</option>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}</select>}
         <input type="search" placeholder="Tìm chuyến, xe, tài xế, đơn, khách…" value={f.q} onChange={(e) => setFF('q', e.target.value)} />
       </div>
+      {isTpl && <p className="hint">Chuyến GHA đã chỉ định cho bạn: bấm <b>Nhập số xe</b> để ghi xe, tài xế; tài xế (hoặc bạn) bấm lần lượt Đến điểm nhận hàng → Nhận / lấy hàng xong → Đến điểm giao hàng → Hoàn thành; xong thì <b>💰 Cước 3PL</b> nhập cước với GHA.</p>}
       <ErrorBox error={err} />
       <div className="table-wrap">
         {!list.length ? <Empty text="Không có chuyến nào." /> : (
           <table>
-            <thead><tr><th>Chuyến</th><th>Ngày đi</th><th>Kho</th><th>Xe · tài xế</th>{!isCarrier && <th>Vận tải</th>}{can3PL && <th>3PL</th>}<th>Giao đến · hàng</th><th className="num">Tấn</th><th>Tiến độ</th><th>Chi phí</th><th></th></tr></thead>
+            <thead><tr><th>Chuyến</th><th>Ngày đi</th><th>Kho</th><th>Xe · tài xế</th>{!isCarrier && !isTpl && <th>Vận tải</th>}{can3PL && <th>3PL</th>}<th>Giao đến · hàng</th><th className="num">Tấn</th><th>Tiến độ</th>{!isTpl && <th>Chi phí</th>}{(can3PL || isTpl) && <th>Cước 3PL</th>}<th></th></tr></thead>
             <tbody>{list.map((t) => {
               const st = nextStep(t); const blocked = st && stepBlocked(t, st);
-              const canStep = isAdmin || (isCarrier && t.carrier);
+              const c = carOf(t); const p3 = priv[t.id];
+              const canStep = isAdmin || (isCarrier && t.carrier) || isTpl;
+              const open = !['completed', 'cancelled'].includes(t.status);
               return (
                 <tr key={t.id} style={{ opacity: t.status === 'cancelled' ? 0.5 : 1 }}>
-                  <td className="mono">{t.id}</td><td className="nowrap">{fmtDate(t.plannedDate)}</td><td>{t.warehouse}</td>
-                  <td>{t.plate ? <b>{t.plate}</b> : <span className="small">chưa có xe</span>}{t.driverName ? <div className="small">{t.driverName}{t.idCard ? ` · ${t.idCard}` : ''}</div> : null}</td>
-                  {!isCarrier && <td>{t.carrierName || t.carrier}</td>}
-                  {can3PL && <td>{priv[t.id]?.threeplName || priv[t.id]?.threepl || ''}</td>}
+                  <td className="mono">{t.id}{t.selfPickup ? <div className="small">khách tự lấy</div> : null}</td><td className="nowrap">{fmtDate(t.plannedDate)}</td><td>{t.warehouse}</td>
+                  <td>{t.plate ? <b>{t.plate}</b> : <span className="small">{isInternal(c) ? 'chờ tài xế nhóm nhận' : 'chưa có xe'}</span>}{t.driverName ? <div className="small">{t.driverName}{t.driverPhone ? ` · ${t.driverPhone}` : ''}</div> : null}</td>
+                  {!isCarrier && !isTpl && <td>{t.carrierName || t.carrier}<div className="small">{kindText(c)}</div></td>}
+                  {can3PL && <td>{isGHA(c) ? (open ? <select value={p3?.threepl || ''} onChange={(e) => set3pl(t, e.target.value)}><option value="">Xe nhà GHA</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</select>
+                    : (p3?.threeplName || p3?.threepl || 'Xe nhà GHA')) : ''}</td>}
                   <td className="small">{[...new Set(t.lines.map((l) => l.partyName || l.partyCode))].join(', ')}<div>{t.lines.map((l) => `${l.orderId} ${l.item}`).join('; ')}</div></td>
                   <td className="num">{t3(tripKg(t))}</td>
-                  <td><span className={'badge ' + (STATUS_META[t.status]?.tone || '')}>{STATUS_META[t.status]?.label}</span>
+                  <td><span className={'badge ' + (STATUS_META[t.status]?.tone || '')}>{statusText(t)}</span>
                     <div className="small">{[['driverArrivedAt', 'đến kho'], ['driverLoadedAt', 'lấy xong'], ['driverAtDestAt', 'đến điểm giao'], ['driverDeliveredAt', 'giao xong']].filter(([k]) => t[k]).map(([k, l]) => `${l} ${fmtTime(t[k])}`).join(' · ')}</div>
                     {st && <div className="small">Tiếp: <b>{STEPS[st]}</b>{blocked ? ` (${blocked})` : ''}</div>}</td>
-                  <td>{t.costs ? <><b>{vnd(costTotal(t.costs))}</b><div className="small">{COST[t.costStatus || '']?.[0]}</div></> : <span className="small">{t.status === 'completed' ? 'chưa nhập' : ''}</span>}</td>
+                  {!isTpl && <td>{t.costs ? <><b>{vnd(costTotal(t.costs))}</b><div className="small">{COST[t.costStatus || '']?.[0]}</div></> : <span className="small">{t.status === 'completed' ? 'chưa nhập' : ''}</span>}</td>}
+                  {(can3PL || isTpl) && <td>{p3?.threepl ? (p3.cost3pl ? <><b>{vnd(costTotal(p3.cost3pl))}</b><div className="small">{COST3[p3.cost3plStatus || '']?.[0]}</div></> : <span className="small">{t.status === 'completed' ? 'chưa nhập' : ''}</span>) : ''}</td>}
                   <td className="nowrap">
                     {canStep && st && !blocked && <button className="btn primary sm" onClick={() => setStep({ t, st })}>{STEPS[st]}</button>}{' '}
                     {canStep && st && st !== 'reg' && t.status === 'planned' && <button className="btn sm" onClick={() => setStep({ t, st: 'reg' })}>Sửa xe</button>}{' '}
+                    {(isAdmin || isCarrier) && t.status === 'planned' && t.lines.length > 0 && <button className="btn sm" title="Hàng nhiều hơn 1 xe: tách bớt sang chuyến mới" onClick={() => setCut(t)}>✂ Tách</button>}{' '}
                     {t.photoCount > 0 && <button className="btn sm" onClick={() => setPhoto(t)}>📷 {t.photoCount}</button>}{' '}
-                    {(canStep || hasRole('ke_toan')) && t.status === 'completed' && <button className="btn sm" onClick={() => setCost(t)}>💰 Chi phí</button>}{' '}
-                    {canStep && t.status === 'planned' && <button className="btn ghost sm" onClick={() => cancel(t)}>Hủy</button>}
+                    {!isTpl && (isAdmin || isCarrier || hasRole('ke_toan')) && t.status === 'completed' && <button className="btn sm" onClick={() => setCost(t)}>💰 Chi phí</button>}{' '}
+                    {(isTpl || can3PL) && p3?.threepl && t.status === 'completed' && <button className="btn sm" onClick={() => setCost3(t)}>💰 Cước 3PL</button>}{' '}
+                    {(isAdmin || isCarrier) && t.status === 'planned' && <button className="btn ghost sm" onClick={() => cancel(t)}>Hủy</button>}
                   </td>
                 </tr>
               );
@@ -290,7 +263,82 @@ function TripList({ trips, priv }) {
       {step && <StepModal t={step.t} step={step.st} onClose={() => setStep(null)} />}
       {photo && <PhotoModal t={photo} onClose={() => setPhoto(null)} />}
       {cost && <CostModal t={trips.find((x) => x.id === cost.id) || cost} onClose={() => setCost(null)} />}
+      {cost3 && <Cost3plModal t={cost3} p={priv[cost3.id] || {}} onClose={() => setCost3(null)} />}
+      {cut && <CutModal t={cut} p3={priv[cut.id]} onClose={() => setCut(null)} />}
     </div>
+  );
+}
+
+// Tách bớt hàng của 1 chuyến sang chuyến mới (hàng nhiều hơn 1 xe)
+function CutModal({ t, p3, onClose }) {
+  const { email, name, can3PL } = useApp();
+  const [q, setQ] = useState(() => Object.fromEntries(t.lines.map((l) => [l.id, ''])));
+  const [plate, setPlate] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setErr('');
+    const moved = t.lines.map((l) => ({ l, kg: Math.round(n(q[l.id]) * 1000) })).filter((x) => x.kg > 0);
+    if (!moved.length) return setErr('Nhập số tấn chuyển sang chuyến mới.');
+    const over = moved.find((x) => x.kg > n(x.l.plannedKg) + 1);
+    if (over) return setErr(`${over.l.item}: chuyến chỉ có ${t3(over.l.plannedKg)} tấn.`);
+    setBusy(true);
+    try {
+      const [id] = await createPlannedTrips({ wh: { code: t.warehouse, name: t.warehouseName, hasGuard: t.hasGuard }, carrier: { code: t.carrier, name: t.carrierName, kind: t.carrierKind || '' },
+        trips: [{ date: t.plannedDate, plate, company: t.company || '', note: t.note || '', lines: moved.map(({ l, kg }) => ({ ...l, no: l.orderLine, kg })) }] }, { email, name }, `Tách từ chuyến ${t.id}`);
+      const left = t.lines.map((l) => { const m = moved.find((x) => x.l.id === l.id); const kg = n(l.plannedKg) - (m?.kg || 0); return { ...l, plannedKg: kg, payload: Math.round(kg) / 1000 }; }).filter((l) => l.plannedKg > 0.5);
+      await updateDoc(doc(db, 'trips', t.id), { lines: left, updatedAt: nowISO(), updatedBy: email,
+        history: [...(t.history || []), { at: nowISO(), by: email, byName: name, action: `Tách ${t3(moved.reduce((s, x) => s + x.kg, 0))} tấn sang chuyến ${id}` }] });
+      if (can3PL && p3?.threepl) await setDoc(doc(db, 'tripPrivate', id), { tripId: id, carrier: t.carrier, threepl: p3.threepl, threeplName: p3.threeplName || '', by: email, at: nowISO() });
+      onClose();
+    } catch (e) { setErr(e.code === 'permission-denied' ? 'Không có quyền tách chuyến.' : e.message); }
+    setBusy(false);
+  };
+  return (
+    <Modal title={`✂ Tách chuyến ${t.id}`} onClose={onClose}>
+      <p className="small">Nhập số tấn chuyển sang 1 chuyến mới (cùng kho, cùng ngày). Chuyến {t.id} giữ phần còn lại.</p>
+      <table><thead><tr><th>Hàng</th><th className="num">Trên chuyến (tấn)</th><th className="num">Chuyển sang chuyến mới (tấn)</th></tr></thead>
+        <tbody>{t.lines.map((l) => <tr key={l.id}><td>{l.orderId} · {l.item}<div className="small">{l.partyName}</div></td><td className="num">{t3(l.plannedKg)}</td>
+          <td className="num"><input type="number" step="0.001" value={q[l.id]} onChange={(e) => setQ((m) => ({ ...m, [l.id]: e.target.value }))} style={{ width: 100 }} /></td></tr>)}</tbody></table>
+      <label className="field" style={{ marginTop: 8 }}><span>Số xe chuyến mới (nếu biết)</span><input value={plate} onChange={(e) => setPlate(e.target.value.toUpperCase())} /></label>
+      <ErrorBox error={err} />
+      <div className="form-actions"><button className="btn" onClick={onClose}>Thôi</button><button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Đang tách…' : 'Tách chuyến'}</button></div>
+    </Modal>
+  );
+}
+
+// Cước 3PL ↔ GHA (lưu riêng trong tripPrivate): 3PL nhập, GHA sửa / chốt
+function Cost3plModal({ t, p, onClose }) {
+  const { email, name, can3PL, role } = useApp();
+  const c = p.cost3pl || {};
+  const [f, setF] = useState({ freight: c.freight ?? '', chiHo: c.chiHo ?? '', bocXep: c.bocXep ?? '', other: c.other ?? '', note: c.note || '' });
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const approved = p.cost3plStatus === 'approved';
+  const canEdit = !approved && (can3PL || role === 'tpl');
+  const costs = { freight: n(f.freight), chiHo: n(f.chiHo), bocXep: n(f.bocXep), other: n(f.other), note: f.note.trim() };
+  const write = async (upd) => {
+    setErr(''); setBusy(true);
+    try { await updateDoc(doc(db, 'tripPrivate', t.id), { ...upd, updatedAt: nowISO(), updatedBy: email, updatedByName: name }); onClose(); }
+    catch (e) { setErr(e.code === 'permission-denied' ? 'Không có quyền.' : e.message); }
+    setBusy(false);
+  };
+  return (
+    <Modal title={`Cước 3PL · chuyến ${t.id}`} onClose={onClose}>
+      <p className="small">{p.threeplName || p.threepl} · {t.plate} · {t3(tripKg(t))} tấn · {COST3[p.cost3plStatus || '']?.[0]}. Cước này chỉ GHA và 3PL thấy.</p>
+      <div className="form-grid">
+        {[['freight', 'Cước vận chuyển (đ)'], ['chiHo', 'Phí chi hộ (đ)'], ['bocXep', 'Phí bốc xếp (đ)'], ['other', 'Phí khác (đ)']].map(([k, l]) => (
+          <label key={k} className="field"><span>{l}</span><input type="number" value={f[k]} disabled={!canEdit} onChange={(e) => setF((x) => ({ ...x, [k]: e.target.value }))} /></label>))}
+        <label className="field full"><span>Ghi chú</span><input value={f.note} disabled={!canEdit} onChange={(e) => setF((x) => ({ ...x, note: e.target.value }))} /></label>
+      </div>
+      <p>Tổng: <b>{vnd(costTotal(costs))} đ</b></p>
+      <ErrorBox error={err} />
+      <div className="form-actions">
+        <button className="btn" onClick={onClose}>Đóng</button>
+        {canEdit && <button className="btn primary" disabled={busy} onClick={() => write({ cost3pl: costs, cost3plStatus: 'entered', cost3plBy: email, cost3plAt: nowISO() })}>Lưu cước 3PL</button>}
+        {can3PL && p.cost3pl && !approved && <button className="btn primary" disabled={busy} onClick={() => write({ cost3plStatus: 'approved', cost3plApprovedBy: email, cost3plApprovedAt: nowISO() })}>✓ GHA chốt</button>}
+      </div>
+    </Modal>
   );
 }
 
@@ -390,25 +438,28 @@ function Costs({ trips, priv }) {
 // ---------------------------------------------------------------------------
 // Điều phối tạo tài khoản cho tài xế của đơn vị mình (tài xế đăng nhập bằng email này)
 function DriverAccounts() {
-  const { isAdmin, myCarrier, email } = useApp();
+  const { isAdmin, myCarrier, email, can3PL } = useApp();
   const carriers = useCollection('carriers').rows;
+  const threepl = useCollection(can3PL ? 'threepl' : '').rows;
   const [rows, setRows] = useState([]);
-  const [f, setF] = useState({ email: '', name: '', idCard: '', phone: '', carrier: myCarrier });
+  const [f, setF] = useState({ email: '', name: '', idCard: '', phone: '', carrier: myCarrier, role: 'tai_xe', threepl: '' });
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
-  useEffect(() => onSnapshot(query(collection(db, 'users'), where('role', '==', 'tai_xe')),
-    (s) => setRows(s.docs.map((d) => d.data()).filter((u) => isAdmin || u.carrier === myCarrier)), (e) => setErr(e.message)), [isAdmin, myCarrier]);
+  useEffect(() => onSnapshot(query(collection(db, 'users'), where('role', 'in', can3PL ? ['tai_xe', 'tpl'] : ['tai_xe'])),
+    (s) => setRows(s.docs.map((d) => d.data()).filter((u) => isAdmin || u.carrier === myCarrier)), (e) => setErr(e.message)), [isAdmin, myCarrier, can3PL]);
+  const tpl = f.role === 'tpl';
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const save = async (e) => {
     e.preventDefault(); setErr(''); setMsg('');
     const em = f.email.trim().toLowerCase();
     if (!em.includes('@') || !f.name.trim() || !f.carrier) return setErr('Nhập email, họ tên và đơn vị vận tải.');
+    if (tpl && !f.threepl) return setErr('Chọn 3PL cho tài khoản 3PL.');
     const at = nowISO();
     try {
-      await setDoc(doc(db, 'users', em), { email: em, name: f.name.trim(), role: 'tai_xe', carrier: f.carrier, idCard: f.idCard.trim(), phone: f.phone.trim(), warehouses: [], active: true, updatedAt: at, updatedBy: email }, { merge: true });
-      if (f.idCard.trim()) await setDoc(doc(db, 'drivers', f.idCard.trim()), { idCard: f.idCard.trim(), name: f.name.trim(), phone: f.phone.trim(), carrier: f.carrier, loginEmail: em, updatedAt: at, updatedBy: email }, { merge: true });
-      setMsg(`Đã tạo tài khoản ${em}. Tài xế mở app, đăng nhập bằng Google hoặc tạo mật khẩu với email này.`);
-      setF({ email: '', name: '', idCard: '', phone: '', carrier: myCarrier });
+      await setDoc(doc(db, 'users', em), { email: em, name: f.name.trim(), role: tpl ? 'tpl' : 'tai_xe', ...(tpl ? { threepl: f.threepl } : {}), carrier: f.carrier, idCard: f.idCard.trim(), phone: f.phone.trim(), warehouses: [], active: true, updatedAt: at, updatedBy: email }, { merge: true });
+      if (!tpl && f.idCard.trim()) await setDoc(doc(db, 'drivers', f.idCard.trim()), { idCard: f.idCard.trim(), name: f.name.trim(), phone: f.phone.trim(), carrier: f.carrier, loginEmail: em, updatedAt: at, updatedBy: email }, { merge: true });
+      setMsg(`Đã tạo tài khoản ${em}. ${tpl ? '3PL' : 'Tài xế'} mở app, đăng nhập bằng Google hoặc tạo mật khẩu với email này.`);
+      setF({ email: '', name: '', idCard: '', phone: '', carrier: myCarrier, role: f.role, threepl: '' });
     } catch (e2) { setErr(e2.code === 'permission-denied' ? 'Không có quyền tạo tài khoản (email này có thể đang là tài khoản vai trò khác).' : e2.message); }
   };
   const toggle = async (u) => {
@@ -417,8 +468,10 @@ function DriverAccounts() {
   return (
     <div>
       <form className="card" onSubmit={save} style={{ marginBottom: 12 }}>
-        <div className="section-head">Thêm tài khoản tài xế</div>
+        <div className="section-head">Thêm tài khoản {can3PL ? 'tài xế / 3PL' : 'tài xế'}</div>
         <div className="form-grid">
+          {can3PL && <label className="field"><span>Loại tài khoản</span><select value={f.role} onChange={(e) => set('role', e.target.value)}><option value="tai_xe">Tài xế</option><option value="tpl">3PL (thầu phụ GHA)</option></select></label>}
+          {tpl && <label className="field"><span>3PL *</span><select value={f.threepl} onChange={(e) => set('threepl', e.target.value)}><option value="">--</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</select></label>}
           <label className="field"><span>Email đăng nhập *</span><input value={f.email} onChange={(e) => set('email', e.target.value)} /></label>
           <label className="field"><span>Họ tên *</span><input value={f.name} onChange={(e) => set('name', e.target.value)} /></label>
           <label className="field"><span>CCCD (không bắt buộc)</span><input value={f.idCard} onChange={(e) => set('idCard', e.target.value)} /></label>
@@ -432,7 +485,7 @@ function DriverAccounts() {
       <div className="table-wrap">
         {!rows.length ? <Empty text="Chưa có tài khoản tài xế." /> : (
           <table><thead><tr><th>Email</th><th>Họ tên</th><th>CCCD</th><th>Điện thoại</th>{isAdmin && <th>Đơn vị</th>}<th>Trạng thái</th><th></th></tr></thead>
-            <tbody>{rows.map((u) => <tr key={u.email}><td>{u.email}</td><td>{u.name}</td><td>{u.idCard}</td><td>{u.phone}</td>{isAdmin && <td>{u.carrier}</td>}
+            <tbody>{rows.map((u) => <tr key={u.email}><td>{u.email}{u.role === 'tpl' ? <div className="small">3PL {u.threepl}</div> : null}</td><td>{u.name}</td><td>{u.idCard}</td><td>{u.phone}</td>{isAdmin && <td>{u.carrier}</td>}
               <td>{u.active === false ? <span className="badge red">Đã khóa</span> : <span className="badge green">Hoạt động</span>}</td>
               <td><button className="btn sm" onClick={() => toggle(u)}>{u.active === false ? 'Mở khóa' : 'Khóa'}</button></td></tr>)}</tbody></table>
         )}

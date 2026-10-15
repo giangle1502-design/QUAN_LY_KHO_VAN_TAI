@@ -57,7 +57,7 @@ export default function App() {
       <Route path="kho/kiem-ke/:id/in" element={<PrintCount />} />
       <Route path="kho/giai-chap/:id/in" element={<PrintRelease />} />
       <Route element={<Layout />}>
-        <Route index element={role === 'van_tai' ? <Navigate to="/van-tai" /> : role === 'tai_xe' ? <Navigate to="/tai-xe" /> : <Dashboard />} />
+        <Route index element={role === 'van_tai' || role === 'tpl' ? <Navigate to="/van-tai" /> : role === 'tai_xe' ? <Navigate to="/tai-xe" /> : <Dashboard />} />
         <Route path="van-tai" element={<Hauling />} />
         <Route path="tai-xe" element={<Driver />} />
         <Route path="dm" element={<Home />} />

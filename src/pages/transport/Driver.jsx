@@ -8,6 +8,7 @@ import { usePref } from '../../lib/prefs';
 import { fmtDate, fmtNum } from '../../lib/utils';
 import { Empty, ErrorBox } from '../../components/ui';
 import { StepModal } from '../../components/TripSteps';
+import { useCollection } from '../../lib/hooks';
 
 // Trang tài xế (điện thoại): nhận chuyến của đơn vị, bấm lần lượt từng bước
 export default function Driver() {
@@ -20,6 +21,8 @@ export default function Driver() {
     (e) => setError(e.message)), [myCarrier]);
   // Tài xế chỉ cần nhập số xe: thấy các chuyến điều phối đã chỉ định cho xe đó, và chuyến chưa có xe để nhận
   const [plate, setPlate] = usePref('driver-plate', '');
+  // Xe nội bộ của nhóm: gợi ý số xe trong danh mục (xe ngoài gõ tự do)
+  const myVehicles = useCollection(myCarrier ? 'vehicles' : '').rows.filter((v) => v.carrier === myCarrier);
   const pk = plateKey(plate);
   const isMine = (t) => (pk && plateKey(t.plate) === pk) || (myIdCard && t.idCard === myIdCard);
   const mine = trips.filter((t) => isMine(t) && !['completed', 'cancelled'].includes(t.status));
@@ -44,7 +47,8 @@ export default function Driver() {
       <div className="page-head"><h1>🧑‍✈️ Chuyến của tôi</h1></div>
       {!myCarrier ? <div className="error-box">Tài khoản chưa gắn đơn vị vận tải. Báo điều phối vận tải.</div> : null}
       <label className="field" style={{ marginBottom: 10 }}><span>Số xe bạn đang chạy</span>
-        <input value={plate} onChange={(e) => setPlate(e.target.value.toUpperCase())} placeholder="VD: 51C-12345" style={{ fontSize: 18, padding: 10 }} /></label>
+        <input list="dl-my-plates" value={plate} onChange={(e) => setPlate(e.target.value.toUpperCase())} placeholder="VD: 51C-12345" style={{ fontSize: 18, padding: 10 }} /></label>
+      <datalist id="dl-my-plates">{myVehicles.map((v) => <option key={v.plate} value={v.plate}>{v.vehicleType}</option>)}</datalist>
       <p className="small">Xin chào {name}. Bấm nút xanh theo thứ tự: Đến điểm nhận hàng → Nhận / lấy hàng xong → Đến điểm giao hàng → Hoàn thành (chụp phiếu giao).</p>
       <ErrorBox error={error} />
       {mine.length ? mine.map((t) => card(t)) : <Empty text="Chưa có chuyến nào đang chạy." />}

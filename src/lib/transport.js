@@ -27,6 +27,8 @@ export function nextStep(t) {
   // Chỉ cần số xe (xe thuê ngoài không có trong danh mục, không cần CCCD)
   if (!t.plate) return 'reg';
   if (t.status === ST.PLANNED) return 'arrive';
+  // Khách tự lấy: xe ra cổng / xuất xong là hoàn thành, không có bước giao hàng
+  if (t.selfPickup) return null;
   if (!t.driverLoadedAt) return 'loaded';
   if (!t.driverAtDestAt) return 'atDest';
   return 'delivered';
@@ -92,7 +94,7 @@ export function splitLoads(lines, loadsKg) {
 }
 
 // Tạo các chuyến đã chia (status 'planned')
-export async function createPlannedTrips({ wh, carrier, trips }, user) {
+export async function createPlannedTrips({ wh, carrier, trips }, user, action = 'Chia xe') {
   const [first, ...rest] = await reserveCodes('GRP', trips.length);
   const gids = [first, ...rest];
   const sids = await reserveCodes('SP', trips.reduce((s, t) => s + t.lines.length, 0));
@@ -105,11 +107,14 @@ export async function createPlannedTrips({ wh, carrier, trips }, user) {
       idCard: (t.idCard || '').trim(), driverName: (t.driverName || '').trim(), driverPhone: (t.driverPhone || '').trim(),
       plannedDate: t.date, arrivalDate: t.date, arrivalTime: null, note: t.note || '',
       lines: t.lines.map((l) => ({ id: sids[k++], orderId: l.orderId, orderLine: l.no, item: l.item, itemName: l.itemName || '', partyCode: l.partyCode || '', partyName: l.partyName || '',
-        shipCode: l.shipCode || '', address: l.address || '', plannedKg: l.kg, payload: Math.round(l.kg) / 1000, delivered: false, deliveredTime: null })),
+        shipCode: l.shipCode || '', address: l.address || '', plannedKg: l.kg, payload: Math.round(l.kg) / 1000, delivered: false, deliveredTime: null,
+        // Nguồn của phần hàng (để biết dự kiến xuất / phân bổ / phiếu xuất nào đã giao vận tải)
+        ...(l.planId ? { planId: l.planId } : {}), ...(l.allocId ? { allocId: l.allocId } : {}), ...(l.movementId ? { movementId: l.movementId } : {}) })),
+      company: t.company || '', carrierKind: carrier.kind || '', selfPickup: carrier.kind === 'Khách tự lấy',
       orderIds: [...new Set(t.lines.map((l) => l.orderId))],
       status: ST.PLANNED, gateConfirmTime: null, dock: null, dockAssignTime: null, processDoneTime: null, gateExitTime: null, deliveryCompleteTime: null,
       createdBy: user.email, createdAt: at,
-      history: [{ at, by: user.email, byName: user.name || user.email, action: `Chia xe: ${fmtT(t.lines.reduce((s, l) => s + l.kg, 0))} tấn`, status: ST.PLANNED }],
+      history: [{ at, by: user.email, byName: user.name || user.email, action: `${action}: ${fmtT(t.lines.reduce((s, l) => s + l.kg, 0))} tấn`, status: ST.PLANNED }],
     };
     await setDoc(doc(db, 'trips', id), trip);
     // 3PL chỉ GHA thấy: lưu riêng

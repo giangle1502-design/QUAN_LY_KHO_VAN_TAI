@@ -552,7 +552,7 @@ function AssignCarrier({ o: view, onClose }) {
   const opts = <>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}{c.kind === 'Nội bộ' ? ' (nội bộ)' : ''}</option>)}</>;
   return (
     <Modal title={`Giao đơn vị vận tải · ${o.id}`} onClose={onClose} wide>
-      <p className="hint">Đơn vị vận tải được giao sẽ thấy các dòng này ở mục <b>Vận chuyển</b> và tự chia xe theo tải trọng.</p>
+      <p className="hint">Chỉ định xong, các dòng này vào <b>Vận chuyển → Chờ giao vận tải</b>. Admin kiểm tra rồi bấm Giao vận tải thì đơn vị vận tải mới thấy chuyến.</p>
       <div className="filters">Áp cho tất cả dòng:
         <WithAdd cat="carriers" onAdded={(id) => { setAll(id); setMap(Object.fromEntries(o.lines.map((l) => [l.no, id]))); }}><select value={all} onChange={(e) => { setAll(e.target.value); setMap(Object.fromEntries(o.lines.map((l) => [l.no, e.target.value]))); }}><option value="">-- Chọn --</option>{opts}</select></WithAdd></div>
       <div className="table-wrap"><table>

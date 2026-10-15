@@ -141,7 +141,8 @@ export default function ShipPlans() {
                       <td rowSpan={ls.length}><span className={'badge ' + (PLAN_STATUS[p.status]?.tone || '')}>{PLAN_STATUS[p.status]?.label || p.status}</span>
                         {waitIds.length > 0 && <div><Link className="badge amber" to="/kho/giai-chap" title={`Phiếu xuất chờ giải chấp: ${waitIds.join(', ')}`}>⏳ Chờ giải chấp ({waitIds.length})</Link></div>}
                         {(p.movementIds || []).length > 0 && <div className="small">{p.movementIds.map((m) => <Link key={m} className="mono" to={`/kho/phieu/${m}/in`} target="_blank" style={{ marginRight: 4 }}>{m}</Link>)}</div>}
-                        {p.cancelReason && <div className="small">{p.cancelReason}</div>}</td>
+                        {p.cancelReason && <div className="small">{p.cancelReason}</div>}
+                        {p.carrier && <div className="small" title="Đơn vị vận tải (admin giao ở Vận chuyển → Chờ giao vận tải)">🚚 {p.carrier}</div>}</td>
                       <td rowSpan={ls.length} className="small">{saleName(p)}</td>
                       <td rowSpan={ls.length} style={{ whiteSpace: 'nowrap' }}>
                         {open && canOut && ships.map((s) => (blocked(s)
@@ -175,12 +176,17 @@ function PlanForm({ plan, orderId, plans, onClose }) {
   const [oid, setOid] = useState(plan?.orderId || orderId || '');
   const [date, setDate] = useState(plan?.date || vnDate());
   const [note, setNote] = useState(plan?.note || '');
+  // Đơn vị vận tải: chỉ định ở đây thì chuyến tự vào Vận chuyển → Chờ giao vận tải để admin kiểm tra, giao
+  const carriers = useCollection('carriers').rows.filter((c) => c.active !== false);
+  const [carrier, setCarrier] = useState(plan?.carrier ?? null);
   const [qty, setQty] = useState(() => Object.fromEntries((plan?.lines || []).map((l) => [l.orderLine, String(l.qtyKg)])));
   const [ship, setShip] = useState(() => Object.fromEntries((plan?.lines || []).map((l) => [l.orderLine, l.shipCode || ''])));
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const planned = useMemo(() => plannedByLine(plans, plan?.id), [plans, plan]);
   const order = orders.find((o) => o.id === oid);
+  const soCarriers = [...new Set((order?.lines || []).map((l) => l.carrier).filter(Boolean))];
+  const carrierVal = carrier ?? (soCarriers.length === 1 ? soCarriers[0] : '');
   const myShips = shipto.filter((s) => s.customerCode === order?.partyCode);
   const rows = (order?.lines || []).map((l) => {
     const left = leftKg(l);
@@ -220,7 +226,7 @@ function PlanForm({ plan, orderId, plans, onClose }) {
     setBusy(true);
     try {
       const head = { orderId: order.id, orderRef: order.refNo || '', company: order.company || '', partyCode: order.partyCode || '', partyName: order.partyName || '',
-        sales: order.sales || '', salesName: order.salesName || '', date, note: note.trim() };
+        sales: order.sales || '', salesName: order.salesName || '', date, note: note.trim(), carrier: carrierVal };
       if (plan) await updatePlan(plan.id, { ...head, lines: lines.map((l) => ({ ...l, doneKg: 0 })) }, { email, name });
       else await createPlan({ ...head, lines }, { email, name });
       onClose();
@@ -240,6 +246,8 @@ function PlanForm({ plan, orderId, plans, onClose }) {
           </select>
         </Field>
         <Field label="Ngày dự kiến xuất" required><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+        <Field label="Đơn vị vận tải"><WithAdd cat="carriers" onAdded={(id) => setCarrier(id)}><select value={carrierVal} onChange={(e) => setCarrier(e.target.value)}>
+          <option value="">-- Chưa chỉ định --</option>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}</select></WithAdd></Field>
         <Field label="Ghi chú"><input value={note} onChange={(e) => setNote(e.target.value)} /></Field>
       </div>
       {order && (

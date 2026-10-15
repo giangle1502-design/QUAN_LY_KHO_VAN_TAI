@@ -1,0 +1,153 @@
+import { useEffect, useMemo, useState } from 'react';
+import { collection, doc, onSnapshot, query, setDoc, updateDoc, where } from 'firebase/firestore';
+import { db } from '../../firebase';
+import { useApp } from '../../context/AppContext';
+import { useCollection, useCompanies } from '../../lib/hooks';
+import { costTotal, tripKg } from '../../lib/transport';
+import { nowISO } from '../../lib/trips';
+import { exportSheets } from '../../lib/excel';
+import { fmtDate, fmtNum, today } from '../../lib/utils';
+import { Empty, ErrorBox } from '../../components/ui';
+
+// ============================================================================
+// Bảng kê cước: chọn đơn vị vận tải (cước với VAP / PLA / DAM… theo công ty) hoặc 3PL (cước 3PL ↔ GHA),
+// khoảng ngày → các chuyến đã hoàn thành, bỏ chọn chuyến không muốn, cộng tiền các chuyến còn lại, in / Excel.
+// Lưu bảng kê để 2 bên cùng xem: 3PL mở bảng kê của mình, đối chiếu và bấm Xác nhận.
+// ============================================================================
+const n = (v) => (v === '' || v == null ? 0 : Number(v) || 0);
+const t3 = (kg) => fmtNum(n(kg) / 1000, 3);
+const vnd = (v) => fmtNum(n(v));
+const monthStart = () => today().slice(0, 8) + '01';
+const BK_STATUS = { draft: ['Đang đối chiếu', 'amber'], confirmed: ['Đã xác nhận', 'green'] };
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+export default function Statements({ trips, priv }) {
+  const { isAdmin, role, hasRole, can3PL, myCarrier, myThreepl, email, name } = useApp();
+  const isTpl = role === 'tpl';
+  const isCarrier = role === 'van_tai';
+  const carriers = useCollection('carriers').rows;
+  const threepl = useCollection(can3PL ? 'threepl' : '').rows;
+  const companies = useCompanies();
+  const modes = [...(isTpl ? [] : [['carrier', 'Đơn vị vận tải']]), ...(can3PL || isTpl ? [['3pl', '3PL ↔ GHA']] : [])];
+  const [f, setF] = useState({ mode: modes[0][0], party: isCarrier ? myCarrier : isTpl ? myThreepl : '', company: '', from: monthStart(), to: today() });
+  const [off, setOff] = useState({}); // chuyến bỏ chọn
+  const [open, setOpen] = useState(null); // bảng kê đã lưu đang mở
+  const [saved, setSaved] = useState([]);
+  const [err, setErr] = useState('');
+  const [msg, setMsg] = useState('');
+  const is3 = f.mode === '3pl';
+  const fixedParty = (isCarrier && !is3) || isTpl;
+  const party = fixedParty ? (isTpl ? myThreepl : myCarrier) : f.party;
+  const set = (k, v) => { setF((x) => ({ ...x, [k]: v, ...(k === 'mode' ? { party: '' } : {}) })); setOpen(null); setOff({}); };
+
+  // Bảng kê đã lưu (truy vấn đúng phạm vi được đọc)
+  useEffect(() => {
+    const cs = [where('kind', '==', f.mode)];
+    if (isTpl) cs.push(where('party', '==', myThreepl || '-'));
+    else if (isCarrier) cs.push(where('carrier', '==', myCarrier || '-'));
+    return onSnapshot(query(collection(db, 'statements'), ...cs), (s) => setSaved(s.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))),
+      () => setSaved([]));
+  }, [f.mode, isTpl, isCarrier, myThreepl, myCarrier]);
+
+  const costOf = (t) => (is3 ? priv[t.id]?.cost3pl : t.costs);
+  const list = useMemo(() => {
+    if (open) return trips.filter((t) => open.tripIds.includes(t.id));
+    return trips.filter((t) => t.status === 'completed' && (!f.from || (t.plannedDate || '') >= f.from) && (!f.to || (t.plannedDate || '') <= f.to)
+      && (is3 ? !!priv[t.id]?.threepl && (!party || priv[t.id].threepl === party) : (!party || t.carrier === party))
+      && (!f.company || t.company === f.company));
+  }, [trips, priv, f, party, is3, open]);
+  const picked = list.filter((t) => !off[t.id]);
+  const sum = picked.reduce((s, t) => { const c = costOf(t) || {}; return { kg: s.kg + tripKg(t), freight: s.freight + n(c.freight), chiHo: s.chiHo + n(c.chiHo), bocXep: s.bocXep + n(c.bocXep), other: s.other + n(c.other), total: s.total + costTotal(c) }; },
+    { kg: 0, freight: 0, chiHo: 0, bocXep: 0, other: 0, total: 0 });
+  const missing = picked.filter((t) => !costOf(t)).length;
+  const partyName = is3 ? (priv[list[0]?.id]?.threeplName || threepl.find((x) => x.code === party)?.name || party) : (carriers.find((c) => c.code === party)?.name || party);
+  const route = (t) => `${t.warehouse} → ${[...new Set(t.lines.map((l) => l.partyName || l.partyCode))].join(', ')}`;
+  const title = `BẢNG KÊ CƯỚC VẬN CHUYỂN${is3 ? ' 3PL' : ''}`;
+  const sub = `${is3 ? '3PL' : 'Đơn vị vận tải'}: ${party ? `${party} – ${partyName}` : 'tất cả'}${f.company ? ` · Công ty: ${f.company}` : ''} · Từ ${fmtDate(open?.from || f.from)} đến ${fmtDate(open?.to || f.to)}`;
+
+  const print = () => {
+    const w = window.open('', '_blank');
+    if (!w) return setErr('Trình duyệt chặn cửa sổ in. Cho phép pop-up rồi bấm lại.');
+    const rows = picked.map((t, i) => { const c = costOf(t) || {}; return `<tr><td>${i + 1}</td><td>${esc(fmtDate(t.plannedDate))}</td><td>${esc(t.id)}</td><td>${esc(t.plate)}</td><td>${esc(t.driverName)}</td><td>${esc(route(t))}</td>
+      <td>${esc(t.lines.map((l) => l.item).join(', '))}</td><td class="n">${t3(tripKg(t))}</td><td class="n">${vnd(c.freight)}</td><td class="n">${vnd(c.chiHo)}</td><td class="n">${vnd(c.bocXep)}</td><td class="n">${vnd(c.other)}</td><td class="n"><b>${vnd(costTotal(c))}</b></td></tr>`; }).join('');
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Arial,sans-serif;font-size:12px;margin:16px}h2{text-align:center;margin:0}p{text-align:center;margin:4px 0 12px}
+      table{border-collapse:collapse;width:100%}td,th{border:1px solid #333;padding:4px}th{background:#eee}.n{text-align:right}.sign{display:flex;justify-content:space-around;margin-top:30px;text-align:center}@page{size:A4 landscape;margin:10mm}</style></head><body>
+      <h2>${esc(title)}</h2><p>${esc(sub)}${open ? ` · Số: ${esc(open.id)}` : ''}</p>
+      <table><thead><tr><th>#</th><th>Ngày</th><th>Chuyến</th><th>Số xe</th><th>Tài xế</th><th>Tuyến</th><th>Hàng</th><th>Tấn</th><th>Cước</th><th>Chi hộ</th><th>Bốc xếp</th><th>Phí khác</th><th>Thành tiền</th></tr></thead>
+      <tbody>${rows}</tbody><tfoot><tr><th colspan="7">Cộng ${picked.length} chuyến</th><th class="n">${t3(sum.kg)}</th><th class="n">${vnd(sum.freight)}</th><th class="n">${vnd(sum.chiHo)}</th><th class="n">${vnd(sum.bocXep)}</th><th class="n">${vnd(sum.other)}</th><th class="n">${vnd(sum.total)}</th></tr></tfoot></table>
+      <div class="sign"><div><b>${is3 ? 'GHA' : 'Bên thuê vận chuyển'}</b><br/><i>(ký, ghi rõ họ tên)</i></div><div><b>${is3 ? '3PL' : 'Đơn vị vận tải'}</b><br/><i>(ký, ghi rõ họ tên)</i></div></div>
+      <script>window.onload=()=>window.print()</script></body></html>`);
+    w.document.close();
+  };
+  const excel = () => exportSheets(`Bang_ke_${is3 ? '3PL' : 'van_tai'}_${party || 'all'}_${f.from}_${f.to}`, {
+    'Bảng kê': picked.map((t, i) => { const c = costOf(t) || {}; return { '#': i + 1, 'Ngày': t.plannedDate, 'Chuyến': t.id, 'Số xe': t.plate || '', 'Tài xế': t.driverName || '', 'Tuyến': route(t),
+      'Hàng': t.lines.map((l) => l.item).join(', '), 'Đơn': (t.orderIds || []).join(', '), 'Công ty': t.company || '', 'Tấn': +(tripKg(t) / 1000).toFixed(3),
+      'Cước': n(c.freight), 'Chi hộ': n(c.chiHo), 'Bốc xếp': n(c.bocXep), 'Phí khác': n(c.other), 'Thành tiền': costTotal(c), 'Ghi chú': c.note || '' }; }),
+  });
+  const save = async () => {
+    setErr(''); setMsg('');
+    if (!party) return setErr(`Chọn ${is3 ? '3PL' : 'đơn vị vận tải'} trước khi lưu bảng kê.`);
+    if (!picked.length) return setErr('Chưa chọn chuyến nào.');
+    const id = `BK${Date.now().toString(36).toUpperCase()}`;
+    try {
+      await setDoc(doc(db, 'statements', id), { id, kind: f.mode, party, partyName, carrier: is3 ? (priv[picked[0].id]?.carrier || myCarrier || picked[0].carrier) : party, company: f.company,
+        from: f.from, to: f.to, tripIds: picked.map((t) => t.id), count: picked.length, kg: sum.kg, total: sum.total, status: 'draft', createdAt: nowISO(), createdBy: email, createdByName: name });
+      setMsg(`Đã lưu bảng kê ${id}. ${is3 ? '3PL' : 'Đơn vị vận tải'} mở tab Bảng kê để đối chiếu và xác nhận.`);
+    } catch (e) { setErr(e.code === 'permission-denied' ? 'Không có quyền lưu bảng kê.' : e.message); }
+  };
+  const confirm = async (b) => {
+    try { await updateDoc(doc(db, 'statements', b.id), { status: 'confirmed', confirmedAt: nowISO(), confirmedBy: email, confirmedByName: name, total: sum.total, count: picked.length }); setOpen({ ...b, status: 'confirmed' }); }
+    catch (e) { setErr(e.code === 'permission-denied' ? 'Không có quyền xác nhận.' : e.message); }
+  };
+  const canEditCost = isAdmin || hasRole('ke_toan') || isCarrier || isTpl;
+
+  return (
+    <div>
+      <div className="filters">
+        {modes.length > 1 && <select value={f.mode} onChange={(e) => set('mode', e.target.value)}>{modes.map(([k, l]) => <option key={k} value={k}>Bảng kê {l}</option>)}</select>}
+        {!fixedParty && (is3
+          ? <select value={f.party} onChange={(e) => set('party', e.target.value)}><option value="">-- Chọn 3PL --</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</select>
+          : <select value={f.party} onChange={(e) => set('party', e.target.value)}><option value="">-- Chọn đơn vị vận tải --</option>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}</select>)}
+        {!is3 && <select value={f.company} onChange={(e) => set('company', e.target.value)} title="Cước của từng công ty (VAP, PLA, DAM…)"><option value="">Mọi công ty</option>{companies.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}</select>}
+        <label>Từ <input type="date" value={f.from} onChange={(e) => set('from', e.target.value)} /></label>
+        <label>Đến <input type="date" value={f.to} onChange={(e) => set('to', e.target.value)} /></label>
+        <button className="btn" onClick={print} disabled={!picked.length}>🖨 In bảng kê</button>
+        <button className="btn" onClick={excel} disabled={!picked.length}>⬇ Excel</button>
+        {!open && !isTpl && <button className="btn primary" onClick={save} disabled={!picked.length}>💾 Lưu bảng kê</button>}
+      </div>
+      <p className="small">Bỏ tích các chuyến không muốn đưa vào bảng kê; tiền cộng theo các chuyến còn tích. {canEditCost ? `Nhập / sửa cước ở tab Chuyến xe → 💰 ${is3 ? 'Cước 3PL' : 'Chi phí'}.` : ''}</p>
+      {open && <div className="ok-box" style={{ marginBottom: 10 }}>Đang xem bảng kê đã lưu <b>{open.id}</b> ({BK_STATUS[open.status]?.[0]}) · {open.count} chuyến · lập bởi {open.createdByName || open.createdBy}.
+        {' '}<button className="btn sm" onClick={() => { setOpen(null); setOff({}); }}>Đóng, quay về chọn chuyến</button>
+        {open.status !== 'confirmed' && <> <button className="btn primary sm" onClick={() => confirm(open)}>✓ Xác nhận bảng kê</button></>}</div>}
+      {msg && <div className="ok-box" style={{ marginBottom: 10 }}>{msg}</div>}
+      <ErrorBox error={err} />
+      <div className="table-wrap">
+        {!list.length ? <Empty text="Không có chuyến hoàn thành nào khớp bộ lọc." /> : (
+          <table>
+            <thead><tr><th><input type="checkbox" checked={!picked.length ? false : picked.length === list.length} onChange={(e) => setOff(e.target.checked ? {} : Object.fromEntries(list.map((t) => [t.id, true])))} /></th>
+              <th>Ngày</th><th>Chuyến</th><th>Số xe · tài xế</th><th>Tuyến</th>{!is3 && <th>Công ty</th>}<th className="num">Tấn</th><th className="num">Cước</th><th className="num">Chi hộ</th><th className="num">Bốc xếp</th><th className="num">Phí khác</th><th className="num">Thành tiền</th></tr></thead>
+            <tbody>{list.map((t) => { const c = costOf(t); return (
+              <tr key={t.id} className={off[t.id] ? '' : 'picked'} style={off[t.id] ? { opacity: 0.45 } : undefined}>
+                <td><input type="checkbox" checked={!off[t.id]} onChange={() => setOff((m) => ({ ...m, [t.id]: !m[t.id] }))} /></td>
+                <td className="nowrap">{fmtDate(t.plannedDate)}</td><td className="mono">{t.id}</td><td>{t.plate}<div className="small">{t.driverName}</div></td><td className="small">{route(t)}</td>{!is3 && <td>{t.company}</td>}
+                <td className="num">{t3(tripKg(t))}</td>
+                {c ? <><td className="num">{vnd(c.freight)}</td><td className="num">{vnd(c.chiHo)}</td><td className="num">{vnd(c.bocXep)}</td><td className="num">{vnd(c.other)}</td><td className="num"><b>{vnd(costTotal(c))}</b></td></>
+                  : <td colSpan={5} className="small" style={{ color: 'var(--amber)' }}>chưa nhập cước</td>}
+              </tr>); })}</tbody>
+            <tfoot><tr><td colSpan={is3 ? 5 : 6}><b>Cộng {picked.length}/{list.length} chuyến đã chọn</b>{missing ? <span className="small" style={{ color: 'var(--amber)' }}> · {missing} chuyến chưa nhập cước</span> : null}</td>
+              <td className="num"><b>{t3(sum.kg)}</b></td><td className="num">{vnd(sum.freight)}</td><td className="num">{vnd(sum.chiHo)}</td><td className="num">{vnd(sum.bocXep)}</td><td className="num">{vnd(sum.other)}</td><td className="num"><b>{vnd(sum.total)}</b></td></tr></tfoot>
+          </table>
+        )}
+      </div>
+      <div className="section-head" style={{ marginTop: 16 }}>Bảng kê đã lưu</div>
+      {!saved.length ? <Empty text="Chưa có bảng kê nào." /> : (
+        <div className="table-wrap"><table>
+          <thead><tr><th>Số</th><th>{f.mode === '3pl' ? '3PL' : 'Đơn vị vận tải'}</th><th>Công ty</th><th>Kỳ</th><th className="num">Chuyến</th><th className="num">Tổng tiền</th><th>Trạng thái</th><th></th></tr></thead>
+          <tbody>{saved.map((b) => <tr key={b.id}><td className="mono">{b.id}</td><td>{b.party} – {b.partyName}</td><td>{b.company}</td><td className="nowrap">{fmtDate(b.from)} – {fmtDate(b.to)}</td>
+            <td className="num">{b.count}</td><td className="num"><b>{vnd(b.total)}</b></td><td><span className={'badge ' + (BK_STATUS[b.status]?.[1] || '')}>{BK_STATUS[b.status]?.[0]}</span>{b.confirmedByName ? <div className="small">{b.confirmedByName}</div> : null}</td>
+            <td><button className="btn sm" onClick={() => { setOpen(b); setOff({}); }}>Mở</button></td></tr>)}</tbody>
+        </table></div>
+      )}
+    </div>
+  );
+}

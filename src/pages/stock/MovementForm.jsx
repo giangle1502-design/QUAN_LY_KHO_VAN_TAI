@@ -446,7 +446,8 @@ function Form({ type }) {
   const pickPlate = (v) => {
     const veh = vehicles.find((x) => x.plate === v.trim().toUpperCase());
     const car = veh && carriers.find((c) => c.code === veh.carrier);
-    setHead((h) => ({ ...h, plate: v.toUpperCase(), ...(veh ? { carrier: veh.carrier || h.carrier, carrierName: car?.name || h.carrierName } : {}) }));
+    // Xe thuê ngoài có thể trùng số với xe của đơn vị khác: chỉ điền đơn vị vận tải khi còn trống
+    setHead((h) => ({ ...h, plate: v.toUpperCase(), ...(veh && !h.carrier ? { carrier: veh.carrier || '', carrierName: car?.name || h.carrierName } : {}) }));
   };
   const pickCarrier = (v) => { const c = carriers.find((x) => x.code === v); setHead((h) => ({ ...h, carrier: v, carrierName: c ? c.name : h.carrierName, carrierAuto: false })); };
   // Đơn vị vận tải tự lấy từ đơn khi danh mục chưa tải xong: điền tên khi có

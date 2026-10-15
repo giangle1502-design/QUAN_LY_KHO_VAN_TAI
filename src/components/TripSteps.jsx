@@ -9,8 +9,9 @@ import { WithAdd } from './FormTools';
 
 // Thực hiện 1 bước của chuyến (tài xế, hoặc điều phối làm thay)
 export function StepModal({ t, step, onClose, plate = '' }) {
-  const { email, name, myIdCard, userDoc } = useApp();
-  const vehicles = useCollection('vehicles').rows.filter((v) => !t.carrier || v.carrier === t.carrier);
+  const { email, name, myIdCard, userDoc, role } = useApp();
+  // Danh mục xe chỉ là xe nội bộ / xe nhà GHA: 3PL không chọn từ đó
+  const vehicles = useCollection(role === 'tpl' ? '' : 'vehicles').rows.filter((v) => !t.carrier || v.carrier === t.carrier);
   const drivers = useCollection('drivers').rows.filter((d) => !t.carrier || d.carrier === t.carrier);
   const [f, setF] = useState(() => ({ plate: t.plate || plate || '', vehicleType: t.vehicleType || '', idCard: t.idCard || myIdCard || '',
     driverName: t.driverName || (myIdCard ? userDoc?.name || name : ''), driverPhone: t.driverPhone || (myIdCard ? userDoc?.phone || '' : ''), note: '' }));
