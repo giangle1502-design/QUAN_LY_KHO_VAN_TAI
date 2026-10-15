@@ -452,7 +452,7 @@ function CostModal({ t, onClose }) {
   return (
     <Modal title={`Chi phí chuyến ${t.id}`} onClose={onClose} wide>
       <p className="small">{t.company ? `${t.company} · ` : ''}{fmtDate(t.plannedDate)} · {t.carrierName} · {t.plate} · {t3(tripKg(t))} tấn · {COST[t.costStatus || '']?.[0]}
-        {isAdmin && <button type="button" className="btn sm" style={{ marginLeft: 8 }} onClick={() => setCfg(true)}>+ Thêm trường / công thức</button>}</p>
+        {isAdmin && <button type="button" className="btn sm" style={{ marginLeft: 8 }} onClick={() => setCfg(true)}>⚙ Cấu hình khoản phí / công thức</button>}</p>
       <div className="form-grid">
         <label className="field"><span>Điểm nhận hàng</span><WithAdd cat="pickupPoints" onAdded={(id) => setPickup(id)}>
           <Select value={pickup} disabled={!canEdit} onChange={(e) => setPickup(e.target.value)}><option value="">{t.warehouseName || t.warehouse} (kho xuất)</option>
@@ -484,55 +484,81 @@ function CostModal({ t, onClose }) {
   );
 }
 
-// Quản trị thêm / sửa trường chi phí (VD Phí cầu đường, Phí bảo dưỡng, Phí dịch vụ tờ khai), đặt công thức, đổi nhóm.
+// Quản trị cấu hình toàn bộ khoản chi phí chuyến (kể cả khoản có sẵn): thêm, đổi tên, đổi nhóm, đặt công thức, ẩn, sắp xếp.
 // Nhóm Phụ thu cộng vào tổng cước; Phí khác cộng ngoài; Chi hộ tách riêng (có cột tổng riêng)
 function CostFieldsModal({ onClose }) {
   const { email } = useApp();
   const cfgNow = useCostConfig();
-  const fields = costFieldsWith(cfgNow.extra, cfgNow.groups);
-  const EMPTY = { label: '', group: 'fee', formula: '' };
+  const all = costFieldsWith(cfgNow);
+  const live = all.filter((x) => !x.hidden);
+  const EMPTY = { label: '', group: 'fee', formula: '', hidden: false };
   const [f, setF] = useState(EMPTY);
-  const [editing, setEditing] = useState(null);
+  const [editing, setEditing] = useState(null); // trường đang sửa (gốc hoặc tự thêm)
   const [err, setErr] = useState('');
   const save = async (upd) => {
     setErr('');
-    try { await setDoc(doc(db, 'settings', 'tripCostFields'), { extra: cfgNow.extra, groups: cfgNow.groups, ...upd, updatedAt: nowISO(), updatedBy: email }); return true; } catch (e) { setErr(e.message); return false; }
+    try { await setDoc(doc(db, 'settings', 'tripCostFields'), { extra: cfgNow.extra, groups: cfgNow.groups, over: cfgNow.over, order: cfgNow.order, ...upd, updatedAt: nowISO(), updatedBy: email }); return true; } catch (e) { setErr(e.message); return false; }
   };
+  const fixed = (x) => ['base', 'pct'].includes(x.group);
   const submit = async () => {
     const label = f.label.trim();
     if (!label) return setErr('Nhập tên trường.');
-    if (fields.some((x) => x.label.toLowerCase() === label.toLowerCase() && x.key !== editing)) return setErr(`Đã có trường "${label}".`);
+    const key = editing?.key;
+    if (all.some((x) => x.label.toLowerCase() === label.toLowerCase() && x.key !== key)) return setErr(`Đã có trường "${label}".`);
     const formula = f.formula.trim().replace(/^=/, '');
-    if (formula) { const bad = checkCostFormula(formula, [...fields.filter((x) => x.key !== editing), { key: editing || '_new', label }], editing || '_new'); if (bad) return setErr(bad); }
-    const rec = { label, group: f.group, ...(formula ? { formula } : {}) };
-    const extra = editing ? cfgNow.extra.map((x) => (x.key === editing ? { key: x.key, ...rec } : x)) : [...cfgNow.extra, { key: `x${Date.now().toString(36)}`, ...rec }];
-    if (await save({ extra })) { setF(EMPTY); setEditing(null); }
+    if (formula) { const bad = checkCostFormula(formula, [...live.filter((x) => x.key !== key), { key: key || '_new', label }], key || '_new'); if (bad) return setErr(bad); }
+    let ok;
+    if (editing?.base) {
+      const o = { label, formula, hidden: !!f.hidden, ...(fixed(editing) ? {} : { group: f.group }) };
+      ok = await save({ over: { ...cfgNow.over, [key]: o } });
+    } else {
+      const rec = { label, group: f.group, ...(formula ? { formula } : {}), ...(f.hidden ? { hidden: true } : {}) };
+      ok = await save({ extra: key ? cfgNow.extra.map((x) => (x.key === key ? { key, ...rec } : x)) : [...cfgNow.extra, { key: `x${Date.now().toString(36)}`, ...rec }] });
+    }
+    if (ok) { setF(EMPTY); setEditing(null); }
   };
-  const isBase = (k) => BASE_COST_FIELDS.some((b) => b.key === k);
+  const edit = (x) => { setEditing(x); setErr(''); setF({ label: x.label, group: x.group, formula: x.formula || '', hidden: !!x.hidden }); };
+  // Đổi thứ tự trong cùng nhóm (form, báo cáo, bảng kê theo thứ tự này)
+  const move = (x, d) => {
+    const keys = all.map((y) => y.key);
+    const same = all.filter((y) => y.group === x.group).map((y) => y.key);
+    const j = same.indexOf(x.key) + d;
+    if (j < 0 || j >= same.length) return;
+    const a = keys.indexOf(x.key); const b = keys.indexOf(same[j]);
+    [keys[a], keys[b]] = [keys[b], keys[a]];
+    save({ order: keys });
+  };
+  const toggleHide = (x) => (x.base ? save({ over: { ...cfgNow.over, [x.key]: { ...(cfgNow.over[x.key] || {}), hidden: !x.hidden } } })
+    : save({ extra: cfgNow.extra.map((y) => (y.key === x.key ? { ...y, hidden: !x.hidden } : y)) }));
+  const groupName = (g) => (g === 'base' || g === 'pct' ? 'Cước vận chuyển' : COST_GROUPS[g]);
   return (
-    <Modal title="Trường chi phí chuyến xe" onClose={onClose} wide>
-      <p className="small">Thêm hạng mục mới (VD Phí cầu đường, Phí bảo dưỡng, Phí dịch vụ tờ khai). Mỗi trường là 1 cột riêng trong báo cáo, bảng kê và Excel.
-        Công thức (không bắt buộc) dùng tên trường trong ngoặc vuông, VD <code>[Số lượng (tấn)] * 30000</code> hoặc <code>[Cước vận chuyển] * 2 / 100</code>. Trường có công thức tự tính, không nhập tay.</p>
+    <Modal title="Cấu hình khoản chi phí chuyến xe" onClose={onClose} wide>
+      <p className="small">Mọi khoản (kể cả khoản có sẵn) đều đổi tên, đổi nhóm, đặt công thức, ẩn hoặc sắp xếp được. Mỗi khoản là 1 cột riêng trong báo cáo, bảng kê, Excel.
+        Công thức dùng tên khoản trong ngoặc vuông, VD <code>[Số lượng (tấn)] * 30000</code>, <code>[Cước vận chuyển] * 2 / 100</code>; khoản có công thức tự tính.
+        Tổng cước vận chuyển = Cước + Cước × % hỗ trợ dầu + nhóm Phụ thu; Tổng chi phí = Tổng cước + nhóm Phí khác + nhóm Chi hộ.</p>
+      <div className="section-head">{editing ? `Sửa khoản "${editing.label}"` : 'Thêm khoản mới'}</div>
       <div className="form-grid">
-        <label className="field"><span>Tên trường *</span><input value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} placeholder="VD Phí cầu đường" /></label>
-        <label className="field"><span>Nhóm</span><Select value={f.group} onChange={(e) => setF({ ...f, group: e.target.value })}>{Object.entries(COST_GROUPS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select></label>
-        <label className="field full"><span>Công thức (để trống = nhập tay)</span><input value={f.formula} onChange={(e) => setF({ ...f, formula: e.target.value })} placeholder="VD [Số lượng (tấn)] * 30000" /></label>
+        <label className="field"><span>Tên khoản *</span><input value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} placeholder="VD Phí cầu đường" /></label>
+        <label className="field"><span>Nhóm</span>{editing && fixed(editing) ? <input value="Cước vận chuyển" disabled />
+          : <Select value={f.group} onChange={(e) => setF({ ...f, group: e.target.value })}>{Object.entries(COST_GROUPS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select>}</label>
+        {editing?.group !== 'pct' && <label className="field full"><span>Công thức (để trống = nhập tay)</span><input value={f.formula} onChange={(e) => setF({ ...f, formula: e.target.value })} placeholder="VD [Số lượng (tấn)] * 30000" /></label>}
+        {editing && <label className="field"><span>Ẩn khoản này</span><input type="checkbox" checked={f.hidden} onChange={(e) => setF({ ...f, hidden: e.target.checked })} /></label>}
       </div>
-      <p className="small">Trường dùng được trong công thức: {[...fields, ...TRIP_VARS].map((x) => (
-        <button key={x.key} type="button" className="btn ghost sm" onClick={() => setF((y) => ({ ...y, formula: `${y.formula}[${x.label}]` }))}>[{x.label}]</button>))}</p>
+      {editing?.group !== 'pct' && <p className="small">Bấm để chèn vào công thức: {[...live, ...TRIP_VARS].filter((x) => x.key !== editing?.key).map((x) => (
+        <button key={x.key} type="button" className="btn ghost sm" onClick={() => setF((y) => ({ ...y, formula: `${y.formula}[${x.label}]` }))}>[{x.label}]</button>))}</p>}
       <ErrorBox error={err} />
-      <div className="form-actions">{editing && <button type="button" className="btn" onClick={() => { setEditing(null); setF(EMPTY); }}>Thôi sửa</button>}
-        <button type="button" className="btn primary" onClick={submit}>{editing ? 'Lưu trường' : '+ Thêm trường'}</button></div>
+      <div className="form-actions">{editing && <button type="button" className="btn" onClick={() => { setEditing(null); setF(EMPTY); setErr(''); }}>Thôi sửa</button>}
+        <button type="button" className="btn primary" onClick={submit}>{editing ? 'Lưu khoản' : '+ Thêm khoản'}</button></div>
       <div className="table-wrap"><table>
-        <thead><tr><th>Trường</th><th>Nhóm</th><th>Công thức</th><th></th></tr></thead>
-        <tbody>{fields.map((x) => <tr key={x.key}>
-          <td>{x.label}</td>
-          <td>{['base', 'pct'].includes(x.group) ? <span className="small">Cước vận chuyển</span>
-            : isBase(x.key) ? <Select value={x.group} onChange={(e) => save({ groups: { ...cfgNow.groups, [x.key]: e.target.value } })}>{Object.entries(COST_GROUPS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select>
-            : <span className="small">{COST_GROUPS[x.group]}</span>}</td>
+        <thead><tr><th>Thứ tự</th><th>Khoản</th><th>Nhóm</th><th>Công thức</th><th>Hiện</th><th></th></tr></thead>
+        <tbody>{all.map((x) => <tr key={x.key} style={x.hidden ? { opacity: 0.5 } : undefined}>
+          <td className="nowrap"><button type="button" className="btn ghost sm" onClick={() => move(x, -1)} title="Lên">▲</button><button type="button" className="btn ghost sm" onClick={() => move(x, 1)} title="Xuống">▼</button></td>
+          <td>{x.label}{x.base && x.label !== BASE_COST_FIELDS.find((b) => b.key === x.key)?.label ? <div className="small">gốc: {BASE_COST_FIELDS.find((b) => b.key === x.key)?.label}</div> : null}</td>
+          <td className="small">{groupName(x.group)}</td>
           <td className="small mono">{x.formula || ''}</td>
-          <td>{!isBase(x.key) && <><button type="button" className="btn sm" onClick={() => { setEditing(x.key); setF({ label: x.label, group: x.group, formula: x.formula || '' }); }}>Sửa</button>
-            <button type="button" className="btn ghost sm" onClick={() => window.confirm(`Bỏ trường "${x.label}"? Số đã nhập vẫn giữ trong chuyến.`) && save({ extra: cfgNow.extra.filter((y) => y.key !== x.key) })}>✕</button></>}</td>
+          <td><input type="checkbox" checked={!x.hidden} onChange={() => toggleHide(x)} title="Bỏ tích để ẩn khỏi form và báo cáo" /></td>
+          <td className="nowrap"><button type="button" className="btn sm" onClick={() => edit(x)}>Sửa</button>
+            {!x.base && <button type="button" className="btn ghost sm" onClick={() => window.confirm(`Xóa khoản "${x.label}"? Số đã nhập vẫn giữ trong chuyến.`) && save({ extra: cfgNow.extra.filter((y) => y.key !== x.key) })}>✕</button>}</td>
         </tr>)}</tbody>
       </table></div>
       <div className="form-actions"><button className="btn" onClick={onClose}>Đóng</button></div>
@@ -615,7 +641,7 @@ function Costs({ trips, priv }) {
         <Select value={f.status} onChange={(e) => setF((x) => ({ ...x, status: e.target.value }))}><option value="">Mọi trạng thái</option><option value="missing">Chưa nhập</option><option value="entered">Đã nhập, chờ chốt</option><option value="approved">Kế toán đã chốt</option></Select>
         <ColumnPicker cols={cols.map((x) => ({ key: x.key, label: x.label }))} hidden={hidden} setHidden={setHidden} order={order} setOrder={setOrder} />
         <button className="btn" onClick={excel} disabled={!done.length}>⬇ Excel</button>
-        {isAdmin && <button className="btn" onClick={() => setCfg(true)}>+ Thêm trường chi phí</button>}
+        {isAdmin && <button className="btn" onClick={() => setCfg(true)}>⚙ Cấu hình khoản chi phí</button>}
       </div>
       <p className="small">Chỉ tính chuyến đã giao xong. Tổng cước vận chuyển = Cước × (1 + % hỗ trợ dầu) + các phụ thu. Tổng chi phí = Tổng cước + phí khác{hasChiho ? ' + chi hộ' : ''}. Bấm 💰 để nhập. Kéo tiêu đề cột để đổi thứ tự.</p>
       <div className="table-wrap" style={{ marginBottom: 12 }}>

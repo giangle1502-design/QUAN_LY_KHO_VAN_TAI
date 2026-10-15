@@ -28,19 +28,31 @@ export const TRIP_VARS = [{ key: '_tons', label: 'Số lượng (tấn)' }, { ke
 const GROUPS = ['base', 'pct', 'surcharge', 'fee', 'chiho'];
 
 export function useCostConfig() {
-  const [cfg, setCfg] = useState({ extra: [], groups: {} });
-  useEffect(() => onSnapshot(doc(db, 'settings', 'tripCostFields'), (s) => setCfg(s.exists() ? { extra: s.data().extra || [], groups: s.data().groups || {} } : { extra: [], groups: {} }), () => {}), []);
+  const [cfg, setCfg] = useState({ extra: [], groups: {}, over: {}, order: [] });
+  useEffect(() => onSnapshot(doc(db, 'settings', 'tripCostFields'), (s) => {
+    const d = s.exists() ? s.data() : {};
+    setCfg({ extra: d.extra || [], groups: d.groups || {}, over: d.over || {}, order: d.order || [] });
+  }, () => {}), []);
   return cfg;
 }
-// Danh sách trường chi phí (gốc + tự thêm, theo nhóm: cước, %, phụ thu, phí khác, chi hộ)
+// Danh sách trường chi phí đang dùng (gốc + tự thêm; bỏ trường ẩn), theo nhóm: cước, %, phụ thu, phí khác, chi hộ
 export function useCostFields() {
   const cfg = useCostConfig();
-  return costFieldsWith(cfg.extra, cfg.groups);
+  return costFieldsWith(cfg).filter((f) => !f.hidden);
 }
-export function costFieldsWith(extra = [], groups = {}) {
-  const base = BASE_COST_FIELDS.map((f) => (['base', 'pct'].includes(f.group) || !COST_GROUPS[groups[f.key]] ? f : { ...f, group: groups[f.key] }));
+// Mọi trường (kể cả trường ẩn) sau khi áp cấu hình: đổi tên, đổi nhóm, công thức, ẩn, thứ tự
+export function costFieldsWith({ extra = [], groups = {}, over = {}, order = [] } = {}) {
+  const fixed = (f) => ['base', 'pct'].includes(f.group);
+  const base = BASE_COST_FIELDS.map((f) => {
+    const o = over[f.key] || {};
+    const g = o.group || groups[f.key];
+    return { ...f, base: true, label: String(o.label || '').trim() || f.label, ...(o.formula ? { formula: o.formula } : {}), hidden: !!o.hidden,
+      group: fixed(f) || !COST_GROUPS[g] ? f.group : g };
+  });
   const ex = extra.filter((f) => f.key && f.label && !BASE_COST_FIELDS.some((b) => b.key === f.key)).map((f) => ({ ...f, group: COST_GROUPS[f.group] ? f.group : 'fee' }));
-  return GROUPS.flatMap((g) => [...base.filter((f) => f.group === g), ...ex.filter((f) => f.group === g)]);
+  const idx = new Map(order.map((k, i) => [k, i]));
+  const all = [...base, ...ex].map((f, i) => ({ f, w: idx.has(f.key) ? idx.get(f.key) : 1000 + i })).sort((a, b) => a.w - b.w).map((x) => x.f);
+  return GROUPS.flatMap((g) => all.filter((f) => f.group === g));
 }
 
 // Kiểm tra công thức: trả về '' nếu đúng, ngược lại là lỗi
