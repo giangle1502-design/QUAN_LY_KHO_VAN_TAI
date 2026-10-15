@@ -12,6 +12,7 @@ import { Empty, ErrorBox } from '../../components/ui';
 import SalesAnalysis from './SalesAnalysis';
 import IOPlan from './IOPlan';
 import Overview from './Overview';
+import LegalTransfer from './LegalTransfer';
 
 // ============================================================================
 // Báo cáo: mỗi báo cáo = bộ lọc + 1 hoặc nhiều bảng; bảng nào cũng xuất Excel và in được.
@@ -28,6 +29,7 @@ export const REPORTS = [
   ['po-chua-nhap', '📥', 'Đơn mua chưa nhập kho'],
   ['tong-quan', '📊', 'Tổng quan mua – chuyển kho – bán'],
   ['phan-tich-ban-hang', '📈', 'Phân tích bán hàng'],
+  ['chuyen-phap-nhan', '🏛️', 'Chuyển pháp nhân (VAP / PLA / DAM)'],
 ];
 
 const n = (v) => Number(v) || 0;
@@ -79,7 +81,7 @@ export default function Reports() {
   const [q, setQ] = useState('');
   const props = { wh, co, q: norm(q) };
   const Body = { 'ton-theo-kho': ByWarehouse, 'ton-theo-vi-tri': ByLocation, 'ton-theo-trang-thai': ByStatus,
-    'ton-cho-sale': ForSales, 'don-chua-giao': OpenSO, 'po-chua-nhap': OpenPO, 'phan-tich-ban-hang': SalesAnalysis, 'ke-hoach-xuat-nhap': IOPlan, 'tong-quan': Overview }[cur[0]];
+    'ton-cho-sale': ForSales, 'don-chua-giao': OpenSO, 'po-chua-nhap': OpenPO, 'phan-tich-ban-hang': SalesAnalysis, 'ke-hoach-xuat-nhap': IOPlan, 'tong-quan': Overview, 'chuyen-phap-nhan': LegalTransfer }[cur[0]];
   return (
     <div className="report-page">
       <div className="page-head">

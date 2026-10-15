@@ -238,6 +238,15 @@ service cloud.firestore {
         && request.resource.data.id == resource.data.id && request.resource.data.warehouse == resource.data.warehouse;
     }
 
+    // ==== Thông báo cho kế toán (chuông 🔔): phiếu xuất lấy tồn công ty khác cùng chủ → chuyển pháp nhân ====
+    match /notices/{id} {
+      allow read: if isStaff();
+      allow create: if isStaff() && request.resource.data.createdBy == me()
+        && (request.resource.data.status == 'open' || (request.resource.data.status == 'done' && (isAdmin() || hasRole('ke_toan'))));
+      allow update: if (isAdmin() || hasRole('ke_toan'))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'doneBy', 'doneByName', 'doneAt', 'doneNote']);
+    }
+
     // ==== Pallet gỗ / nhựa: tồn theo kho, đang cho vận tải mượn, sổ nhập / trả / điều chỉnh ====
     match /palletStock/{id} {
       allow read: if isStaff();

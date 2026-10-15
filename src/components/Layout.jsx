@@ -8,6 +8,7 @@ import { CATALOGS, GROUPS, roleLabel } from '../catalogs';
 import { REPORTS } from '../pages/reports/Reports';
 import { norm } from '../lib/utils';
 import { usePref } from '../lib/prefs';
+import NoticeBell from './NoticeBell';
 import { BarEditor, FAV_KEY, MenuEditor, itemId, useNavLayout } from './NavCustom';
 
 // Nhóm thu gọn sẵn lần đầu: các nhóm danh mục, quản trị dữ liệu
@@ -312,6 +313,7 @@ export default function Layout() {
               <button type="button" className="fav-edit" title="Tạo / sửa danh mục công cụ của tôi" onClick={() => setEditBar(true)}>{barCats.length ? '⚙' : '+ Tạo danh mục công cụ'}</button>
             </div>
           )}
+          <NoticeBell />
         </div>
         {openCat && (
           <div className="bar-panel">
