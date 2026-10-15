@@ -43,7 +43,7 @@ export default function Overview() {
     return c;
   }, [scoped]);
   const list = useMemo(
-    () => scoped.filter((t) => (!statusF || t.status === statusF) && matchesTrip(t, q)).sort((a, b) => b.arrivalTime.localeCompare(a.arrivalTime)),
+    () => scoped.filter((t) => (!statusF || t.status === statusF) && matchesTrip(t, q)).sort((a, b) => String(b.arrivalTime || b.plannedDate || '').localeCompare(String(a.arrivalTime || a.plannedDate || ''))),
     [scoped, statusF, q]
   );
   const current = open && rows.find((t) => t.id === open);

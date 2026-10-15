@@ -9,6 +9,7 @@ import { OPEN_STATUSES } from '../../lib/orders';
 import { isGHA, isInternal, kindText, usesVehicleList } from '../../lib/dispatch';
 import Dispatch from './Dispatch';
 import Statements from './Statements';
+import TripReport from './Report';
 import { STATUS_META, fmtTime, nowISO } from '../../lib/trips';
 import { STEPS, costTotal, createPlannedTrips, nextStep, splitLoads, stepBlocked, suggestFreight, tripKg } from '../../lib/transport';
 import { exportSheets } from '../../lib/excel';
@@ -30,7 +31,7 @@ export default function Hauling() {
   const isCarrier = role === 'van_tai';
   const isTpl = role === 'tpl';
   const tabs = [...(isAdmin ? [['cho-giao', 'Chờ giao vận tải']] : []), ['chuyen', isTpl ? 'Chuyến 3PL của tôi' : 'Chuyến xe'], ...(isTpl ? [] : [['chi-phi', 'Chi phí & cước']]),
-    ['bang-ke', 'Bảng kê'], ...(isAdmin || isCarrier ? [['tai-xe', can3PL ? 'Tài khoản tài xế / 3PL' : 'Tài khoản tài xế']] : [])];
+    ['tinh-trang', 'Tình trạng xe'], ['bang-ke', 'Bảng kê'], ...(isAdmin || isCarrier ? [['tai-xe', can3PL ? 'Tài khoản tài xế / 3PL' : 'Tài khoản tài xế']] : [])];
   const [sp, setSp] = useSearchParams();
   const tab = tabs.some(([k]) => k === sp.get('tab')) ? sp.get('tab') : tabs[0][0];
   const [orders, setOrders] = useState([]);
@@ -65,6 +66,7 @@ export default function Hauling() {
       {tab === 'cho-giao' && <Dispatch orders={orders} trips={allTrips} onSplit={setSplit} />}
       {tab === 'chuyen' && <TripList trips={trips} priv={priv} />}
       {tab === 'chi-phi' && <Costs trips={trips} priv={priv} />}
+      {tab === 'tinh-trang' && <TripReport trips={trips} priv={priv} />}
       {tab === 'bang-ke' && <Statements trips={trips} priv={priv} />}
       {tab === 'tai-xe' && <DriverAccounts />}
       {split && <SplitModal {...split} onClose={(ok) => { setSplit(null); if (ok) split.done?.(); }} />}

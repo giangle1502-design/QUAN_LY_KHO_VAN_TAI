@@ -501,3 +501,16 @@ tr.picked td { background: var(--primary-soft); }
 .trip-card-more { display: flex; flex-wrap: wrap; gap: 4px; }
 .trip-card-more:empty { display: none; }
 @media (max-width: 600px) { .trip-cards { grid-template-columns: 1fr; } }
+
+/* Báo cáo tình trạng xe (giống app QLVT) */
+.rep-row { border-bottom: 1px solid var(--line); }
+.rep-row:last-child { border-bottom: 0; }
+.rep-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 10px 14px; cursor: pointer; }
+.rep-line:hover { background: #f8fafc; }
+.rep-pipe { margin-left: auto; width: 160px; }
+.rep-detail { background: #f8fafc; border-top: 1px solid var(--line); padding: 12px 14px; font-size: 13px; }
+.rep-info, .rep-times { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px 16px; }
+.rep-times { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+.rep-info > div, .rep-times > div { display: flex; flex-direction: column; }
+@media (max-width: 600px) { .rep-pipe { margin-left: 0; width: 100%; } }
+@media (max-width: 600px) { .rep-stats { grid-template-columns: 1fr 1fr !important; gap: 6px; } .rep-stats .stat { padding: 8px 10px; } .rep-stats .stat-value { font-size: 20px; } }

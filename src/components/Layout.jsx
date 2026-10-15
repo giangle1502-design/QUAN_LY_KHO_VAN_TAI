@@ -124,6 +124,7 @@ export default function Layout() {
       { to: '/xe/tong-quan', ico: '📊', label: 'Tổng quan chuyến xe' },
       { to: '/van-tai?tab=cho-giao', ico: '📥', label: 'Chờ giao vận tải', show: isAdmin },
       { to: '/van-tai?tab=chuyen', ico: '🚛', label: 'Chuyến xe vận tải (xe, 3PL, cước)' },
+      { to: '/van-tai?tab=tinh-trang', ico: '🚦', label: 'Báo cáo tình trạng xe' },
       { to: '/van-tai?tab=bang-ke', ico: '🧾', label: 'Bảng kê cước' },
     ] },
     { key: 'bao-cao', title: '📊 Báo cáo', items: REPORTS.map(([k, ic, l]) => ({ to: `/bao-cao/${k}`, ico: ic, label: l })) },
@@ -166,11 +167,13 @@ export default function Layout() {
         ) : role === 'tpl' ? (
         <nav>
           <NavLink to="/van-tai?tab=chuyen" onClick={close}><span className="ico">🚛</span>Chuyến 3PL của tôi</NavLink>
+          <NavLink to="/van-tai?tab=tinh-trang" onClick={close}><span className="ico">🚦</span>Tình trạng xe</NavLink>
           <NavLink to="/van-tai?tab=bang-ke" onClick={close}><span className="ico">🧾</span>Bảng kê</NavLink>
         </nav>
         ) : role === 'van_tai' ? (
         <nav>
           <NavLink to="/van-tai?tab=chuyen" onClick={close}><span className="ico">🚛</span>Vận chuyển</NavLink>
+          <NavLink to="/van-tai?tab=tinh-trang" onClick={close}><span className="ico">🚦</span>Tình trạng xe</NavLink>
           <NavLink to="/dm/vehicles" onClick={close}><span className="ico">🚚</span>Xe của đơn vị</NavLink>
           <NavLink to="/dm/drivers" onClick={close}><span className="ico">🧑‍✈️</span>Tài xế của đơn vị</NavLink>
           {can3PL && <NavLink to="/dm/threepl" onClick={close}><span className="ico">🤝</span>3PL</NavLink>}
