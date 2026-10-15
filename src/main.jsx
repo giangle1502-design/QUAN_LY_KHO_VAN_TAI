@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { configured } from './firebase';
 import { AppProvider } from './context/AppContext';
 import App from './App';
+import LinkDriver from './pages/LinkDriver';
 import './styles.css';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
@@ -16,6 +17,9 @@ if (!configured) {
       </div>
     </div>
   );
+} else if (window.location.pathname.startsWith('/tx/')) {
+  // Link tài xế: không cần tài khoản, không dùng phiên đăng nhập của app
+  root.render(<LinkDriver />);
 } else {
   root.render(
     <React.StrictMode>

@@ -25,8 +25,9 @@ export const isInternal = (c) => !!c && c.kind === KIND.internal;
 export const usesVehicleList = (c) => isInternal(c) || isGHA(c);
 // Họ tên + CCCD tài xế chỉ khai cho xe nội bộ (nhóm xe) và xe nhà GHA; dịch vụ, 3PL, khách chỉ cần số xe
 export const needsDriverId = (c, via3pl = false) => usesVehicleList(c) && !via3pl;
-// Link riêng cho tài xế / đơn vị vận tải mở trên điện thoại (chưa đăng nhập thì hiện trang đăng nhập tài xế)
-export const driverLink = () => `${window.location.origin}/tai-xe`;
+// Link tài xế của từng đơn vị vận tải (gửi nhóm Zalo; tài xế mở là dùng, không cần tài khoản)
+export const driverLink = (code, token) => `${window.location.origin}/tx/${encodeURIComponent(code)}/${token}`;
+export const newLinkToken = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(36).padStart(2, '0')).join('').slice(0, 20);
 // Vận tải không hiểu ký hiệu kho: hiện tên kho đầy đủ (+ địa chỉ kho) thay cho mã
 export const whOf = (code, whs = []) => whs.find((w) => w.code === code);
 export const whText = (code, whs = []) => { const w = whOf(code, whs); return w?.name ? `${w.name} (${code})` : code || ''; };

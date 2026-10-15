@@ -44,7 +44,7 @@ export function stepBlocked(t, step) {
 const hist = (t, user, action, status) => [...(t.history || []), { at: nowISO(), by: user.email, byName: user.name || user.email, action, ...(status ? { status } : {}) }];
 
 // Thực hiện 1 bước của tài xế (điều phối vận tải làm thay được)
-export async function doStep(t, step, user, data = {}) {
+export async function doStep(t, step, user, data = {}, database = db) {
   const at = nowISO();
   let upd = {};
   if (step === 'reg') {
@@ -52,6 +52,7 @@ export async function doStep(t, step, user, data = {}) {
       driverName: String(data.driverName || '').trim(), driverPhone: String(data.driverPhone || '').trim(), driverRegAt: at };
     if (!upd.plate) throw new Error('Nhập số xe.');
     if (t.plate && plateKey(t.plate) !== plateKey(upd.plate)) throw new Error(`Chuyến này điều phối đã chỉ định xe ${t.plate}.`);
+    if (t.plate) upd.plate = t.plate; // gõ 51C12345 hay 51C-123.45 đều là xe đã chỉ định
     // Giữ thông tin điều phối đã nhập nếu tài xế để trống
     for (const k of ['idCard', 'driverName', 'driverPhone', 'vehicleType']) if (!upd[k]) upd[k] = t[k] || '';
   } else if (step === 'arrive') {
@@ -62,12 +63,12 @@ export async function doStep(t, step, user, data = {}) {
   else if (step === 'delivered') {
     if (!data.photos?.length) throw new Error('Chụp ít nhất 1 ảnh phiếu giao hàng.');
     for (const [i, img] of data.photos.entries()) {
-      await setDoc(doc(db, 'tripPhotos', `${t.id}_${(t.photoCount || 0) + i + 1}`), { tripId: t.id, carrier: t.carrier || '', data: img, by: user.email, at });
+      await setDoc(doc(database, 'tripPhotos', `${t.id}_${(t.photoCount || 0) + i + 1}`), { tripId: t.id, carrier: t.carrier || '', data: img, by: user.email, at });
     }
     upd = { status: ST.COMPLETED, deliveryCompleteTime: at, driverDeliveredAt: at, photoCount: (t.photoCount || 0) + data.photos.length,
       lines: t.lines.map((l) => ({ ...l, delivered: true, deliveredTime: l.deliveredTime || at })) };
   }
-  await updateDoc(doc(db, 'trips', t.id), { ...upd, updatedAt: at, updatedBy: user.email,
+  await updateDoc(doc(database, 'trips', t.id), { ...upd, updatedAt: at, updatedBy: user.email,
     history: hist(t, user, STEPS[step] + (data.note ? `: ${data.note}` : ''), upd.status) });
 }
 

@@ -6,7 +6,7 @@ import { useApp } from '../../context/AppContext';
 import { useCollection } from '../../lib/hooks';
 import { usePref } from '../../lib/prefs';
 import { OPEN_STATUSES } from '../../lib/orders';
-import { driverLink, placeOf, whOf, whText, isGHA, isInternal, kindText, usesVehicleList } from '../../lib/dispatch';
+import { placeOf, whOf, whText, isGHA, isInternal, kindText, usesVehicleList } from '../../lib/dispatch';
 import Dispatch from './Dispatch';
 import Statements from './Statements';
 import TripReport from './Report';
@@ -31,7 +31,7 @@ export default function Hauling() {
   const isCarrier = role === 'van_tai';
   const isTpl = role === 'tpl';
   const tabs = [...(isAdmin ? [['cho-giao', 'Chờ giao vận tải']] : []), ['chuyen', isTpl ? 'Chuyến 3PL của tôi' : 'Chuyến xe'], ...(isTpl ? [] : [['chi-phi', 'Chi phí & cước']]),
-    ['tinh-trang', 'Tình trạng xe'], ['bang-ke', 'Bảng kê'], ...(isAdmin || isCarrier ? [['tai-xe', can3PL ? 'Tài khoản tài xế / 3PL' : 'Tài khoản tài xế']] : [])];
+    ['tinh-trang', 'Tình trạng xe'], ['bang-ke', 'Bảng kê'], ...(isAdmin || isCarrier ? [['tai-xe', can3PL ? 'Link tài xế / tài khoản 3PL' : 'Link tài xế']] : [])];
   const [sp, setSp] = useSearchParams();
   const tab = tabs.some(([k]) => k === sp.get('tab')) ? sp.get('tab') : tabs[0][0];
   const [orders, setOrders] = useState([]);
@@ -236,7 +236,7 @@ function TripList({ trips, priv }) {
       <span className={big ? 'trip-card-more' : ''}>
         {canStep && st && st !== 'reg' && t.status === 'planned' && <button className="btn sm" onClick={() => setStep({ t, st: 'reg' })}>Sửa xe</button>}{' '}
         {(isAdmin || isCarrier) && t.status === 'planned' && t.lines.length > 0 && <button className="btn sm" title="Hàng nhiều hơn 1 xe: tách bớt sang chuyến mới" onClick={() => setCut(t)}>✂ Tách</button>}{' '}
-        {t.photoCount > 0 && <button className="btn sm" onClick={() => setPhoto(t)}>📷 {t.photoCount}</button>}{' '}
+        {(t.photoCount > 0 || t.status === 'completed') && <button className="btn sm" onClick={() => setPhoto(t)}>📷 Ảnh</button>}{' '}
         {!isTpl && (isAdmin || isCarrier || hasRole('ke_toan')) && t.status === 'completed' && <button className="btn sm" onClick={() => setCost(t)}>💰 Chi phí</button>}{' '}
         {(isTpl || can3PL) && p3?.threepl && t.status === 'completed' && <button className="btn sm" onClick={() => setCost3(t)}>💰 Cước 3PL</button>}{' '}
         {(isAdmin || isCarrier) && t.status === 'planned' && <button className="btn ghost sm" onClick={() => cancel(t)}>Hủy</button>}
@@ -509,7 +509,7 @@ function DriverAccounts() {
     try {
       await setDoc(doc(db, 'users', em), { email: em, name: f.name.trim(), role: tpl ? 'tpl' : 'tai_xe', ...(tpl ? { threepl: f.threepl } : {}), carrier: f.carrier, idCard: f.idCard.trim(), phone: f.phone.trim(), warehouses: [], active: true, updatedAt: at, updatedBy: email }, { merge: true });
       if (!tpl && f.idCard.trim()) await setDoc(doc(db, 'drivers', f.idCard.trim()), { idCard: f.idCard.trim(), name: f.name.trim(), phone: f.phone.trim(), carrier: f.carrier, loginEmail: em, updatedAt: at, updatedBy: email }, { merge: true });
-      setMsg(`Đã tạo tài khoản ${em}. Gửi link ${driverLink()} cho ${tpl ? '3PL' : 'tài xế'}: mở trên điện thoại, đăng nhập bằng Google hoặc bấm Đăng ký để tự đặt mật khẩu với email này.`);
+      setMsg(`Đã tạo tài khoản ${em}. ${tpl ? '3PL' : 'Người này'} mở app, đăng nhập bằng Google hoặc tạo mật khẩu với email này.`);
       setF({ email: '', name: '', idCard: '', phone: '', carrier: myCarrier, role: f.role, threepl: '' });
     } catch (e2) { setErr(e2.code === 'permission-denied' ? 'Không có quyền tạo tài khoản (email này có thể đang là tài khoản vai trò khác).' : e2.message); }
   };
@@ -520,7 +520,7 @@ function DriverAccounts() {
     <div>
       <DriverLinkBox />
       <form className="card" onSubmit={save} style={{ marginBottom: 12 }}>
-        <div className="section-head">Thêm tài khoản {can3PL ? 'tài xế / 3PL' : 'tài xế'}</div>
+        <div className="section-head">Thêm tài khoản {can3PL ? '3PL / ' : ''}điều phối có đăng nhập (không bắt buộc với tài xế: tài xế dùng link ở trên)</div>
         <div className="form-grid">
           {can3PL && <label className="field"><span>Loại tài khoản</span><select value={f.role} onChange={(e) => set('role', e.target.value)}><option value="tai_xe">Tài xế</option><option value="tpl">3PL (thầu phụ GHA)</option></select></label>}
           {tpl && <label className="field"><span>3PL *</span><select value={f.threepl} onChange={(e) => set('threepl', e.target.value)}><option value="">--</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</select></label>}

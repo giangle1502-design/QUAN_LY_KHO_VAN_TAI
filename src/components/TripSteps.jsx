@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
 import { useCollection } from '../lib/hooks';
 import { STEPS, compressImage, doStep } from '../lib/transport';
 import { ErrorBox, Modal } from './ui';
 import { WithAdd } from './FormTools';
-import { driverLink, needsDriverId } from '../lib/dispatch';
+import { driverLink, isSelfPickup, needsDriverId, newLinkToken } from '../lib/dispatch';
 
 // Thực hiện 1 bước của chuyến (tài xế, hoặc điều phối làm thay)
 export function StepModal({ t, step, onClose, plate = '', via3pl = false }) {
@@ -75,41 +75,84 @@ export function StepModal({ t, step, onClose, plate = '', via3pl = false }) {
   );
 }
 
-// Xem ảnh phiếu giao hàng của chuyến
+// Xem ảnh phiếu giao hàng của chuyến; quản trị, điều phối vận tải, 3PL xóa ảnh chụp sai và thêm ảnh thay thế
 export function PhotoModal({ t, onClose }) {
+  const { isAdmin, role, email, name } = useApp();
+  const canEdit = isAdmin || role === 'van_tai' || role === 'tpl';
   const [imgs, setImgs] = useState(null);
-  useEffect(() => {
-    Promise.all(Array.from({ length: t.photoCount || 0 }, (_, i) => getDoc(doc(db, 'tripPhotos', `${t.id}_${i + 1}`))))
-      .then((ss) => setImgs(ss.filter((s) => s.exists()).map((s) => s.data().data))).catch(() => setImgs([]));
-  }, [t]);
+  const [count, setCount] = useState(t.photoCount || 0);
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const loadImgs = (k) => Promise.all(Array.from({ length: k }, (_, i) => getDoc(doc(db, 'tripPhotos', `${t.id}_${i + 1}`))))
+    .then((ss) => setImgs(ss.filter((s) => s.exists()).map((s) => ({ id: s.id, src: s.data().data })))).catch(() => setImgs([]));
+  useEffect(() => { loadImgs(t.photoCount || 0); }, [t]); // eslint-disable-line react-hooks/exhaustive-deps
+  const log = (action, k) => updateDoc(doc(db, 'trips', t.id), { photoCount: k, updatedAt: new Date().toISOString(), updatedBy: email,
+    history: [...(t.history || []), { at: new Date().toISOString(), by: email, byName: name || email, action }] });
+  const del = async (im) => {
+    if (!window.confirm('Xóa ảnh này?')) return;
+    setErr(''); setBusy(true);
+    try { await deleteDoc(doc(db, 'tripPhotos', im.id)); await log('Xóa ảnh phiếu giao', count); setImgs((x) => x.filter((y) => y.id !== im.id)); } catch (e) { setErr(e.code === 'permission-denied' ? 'Không có quyền xóa ảnh (dán lại firestore.rules mới).' : e.message); }
+    setBusy(false);
+  };
+  const add = async (files) => {
+    setErr(''); setBusy(true);
+    try {
+      let k = count;
+      for (const f of files) { k += 1; await setDoc(doc(db, 'tripPhotos', `${t.id}_${k}`), { tripId: t.id, carrier: t.carrier || '', data: await compressImage(f), by: email, at: new Date().toISOString() }); }
+      await log(`Thêm ảnh phiếu giao (${files.length})`, k); setCount(k); await loadImgs(k);
+    } catch (e) { setErr(e.code === 'permission-denied' ? 'Không có quyền thêm ảnh.' : e.message); }
+    setBusy(false);
+  };
   return (
     <Modal title={`Ảnh phiếu giao · ${t.id}`} onClose={onClose} wide>
+      {canEdit && <div style={{ marginBottom: 8 }}><label className="btn primary" style={{ display: 'inline-block' }}>{busy ? 'Đang lưu…' : '📷 Thêm ảnh thay thế'}
+        <input type="file" accept="image/*" multiple hidden disabled={busy} onChange={(e) => add([...e.target.files])} /></label>
+        <span className="small"> Tài xế chụp sai: xóa ảnh sai rồi thêm ảnh đúng.</span></div>}
+      <ErrorBox error={err} />
       {!imgs ? <p>Đang tải…</p> : !imgs.length ? <p>Chưa có ảnh.</p>
-        : imgs.map((src, i) => <a key={i} href={src} target="_blank" rel="noreferrer"><img src={src} alt="" style={{ maxWidth: '100%', marginBottom: 8, borderRadius: 6 }} /></a>)}
+        : imgs.map((im) => <div key={im.id} style={{ position: 'relative', marginBottom: 8 }}><a href={im.src} target="_blank" rel="noreferrer"><img src={im.src} alt="" style={{ maxWidth: '100%', borderRadius: 6 }} /></a>
+          {canEdit && <button type="button" className="btn sm" style={{ position: 'absolute', top: 6, right: 6, background: 'var(--red)', color: '#fff' }} disabled={busy} onClick={() => del(im)}>🗑 Xóa ảnh</button>}</div>)}
     </Modal>
   );
 }
 
-// Link riêng cho tài xế: gửi qua Zalo / tin nhắn, tài xế mở trên điện thoại rồi đăng nhập
+// Link tài xế của từng đơn vị vận tải: gửi vào nhóm Zalo của đơn vị, tài xế mở là dùng (không cần tài khoản).
+// Mỗi đơn vị 1 link; tài xế chạy cho nhiều đơn vị thì dùng link của đơn vị đang chạy. Đổi link: link cũ hết hiệu lực.
 export function DriverLinkBox({ compact = false }) {
+  const { isAdmin, role, myCarrier, email } = useApp();
+  const carriers = useCollection('carriers').rows.filter((c) => !isSelfPickup(c) && c.active !== false && (isAdmin || c.code === myCarrier));
+  const [links, setLinks] = useState({});
   const [ok, setOk] = useState('');
-  const url = driverLink();
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(url); setOk('Đã copy'); } catch { window.prompt('Copy link này gửi cho tài xế:', url); }
-    setTimeout(() => setOk(''), 2000);
+  const [err, setErr] = useState('');
+  const canMake = isAdmin || role === 'van_tai';
+  useEffect(() => {
+    if (isAdmin) return onSnapshot(collection(db, 'carrierLinks'), (s) => setLinks(Object.fromEntries(s.docs.map((d) => [d.id, d.data().token]))), () => {});
+    if (!myCarrier) return undefined;
+    return onSnapshot(doc(db, 'carrierLinks', myCarrier), (d) => setLinks(d.exists() ? { [myCarrier]: d.data().token } : {}), () => {});
+  }, [isAdmin, myCarrier]);
+  const copy = async (code) => {
+    const url = driverLink(code, links[code]);
+    try { await navigator.clipboard.writeText(url); setOk(code); setTimeout(() => setOk(''), 2000); } catch { window.prompt('Copy link này gửi nhóm Zalo:', url); }
   };
-  const share = () => navigator.share({ title: 'Link tài xế', text: 'Mở link, đăng nhập bằng email đã được cấp rồi nhập số xe:', url }).catch(() => {});
-  if (compact) return <button type="button" className="btn sm" onClick={copy} title={url}>🔗 {ok || 'Copy link tài xế'}</button>;
+  const make = async (code) => {
+    if (links[code] && !window.confirm(`Đổi link của ${code}? Link cũ sẽ không dùng được nữa, phải gửi lại link mới vào nhóm Zalo.`)) return;
+    setErr('');
+    try { await setDoc(doc(db, 'carrierLinks', code), { token: newLinkToken(), at: new Date().toISOString(), by: email }); } catch (e) { setErr(e.code === 'permission-denied' ? 'Không có quyền tạo link (dán lại firestore.rules mới).' : e.message); }
+  };
+  if (compact) {
+    const code = myCarrier;
+    return code && links[code] ? <button type="button" className="btn sm" onClick={() => copy(code)}>🔗 {ok === code ? 'Đã copy' : 'Copy link tài xế'}</button> : null;
+  }
   return (
-    <div className="card driver-link" style={{ marginBottom: 12 }}>
-      <div className="section-head">🔗 Link cho tài xế</div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input readOnly value={url} onFocus={(e) => e.target.select()} style={{ flex: 1, minWidth: 220, fontSize: 16 }} />
-        <button type="button" className="btn primary" onClick={copy}>{ok || '📋 Copy link'}</button>
-        {typeof navigator !== 'undefined' && navigator.share && <button type="button" className="btn" onClick={share}>📤 Gửi</button>}
-      </div>
-      <p className="small" style={{ marginBottom: 0 }}>Gửi link này cho tài xế (Zalo, tin nhắn). Tài xế mở trên điện thoại, đăng nhập bằng <b>email đã khai bên dưới</b> (Google, hoặc lần đầu bấm <b>Đăng ký</b> để tự đặt mật khẩu), rồi nhập <b>số xe</b> để nhận chuyến và bấm từng bước.
-        Họ tên, CCCD chỉ khai cho tài xế nhóm xe nội bộ (Sơn, Hậu, Quân…) và xe nhà GHA.</p>
+    <div className="card" style={{ marginBottom: 12 }}>
+      <div className="section-head">🔗 Link tài xế (gửi nhóm Zalo của đơn vị vận tải)</div>
+      <p className="small" style={{ marginTop: 0 }}>Tài xế bấm link → nhập <b>số xe</b> → (nhóm xe nội bộ, xe nhà GHA: ghi họ tên, CCCD nếu điều phối chưa nhập) → Đến điểm nhận hàng → Lấy hàng xong → Đến điểm giao hàng → Hoàn thành (chụp phiếu giao). <b>Không cần tài khoản, không cần đăng nhập.</b> Tài xế chạy cho nhiều đơn vị thì mở link của đơn vị đang chạy.</p>
+      <ErrorBox error={err} />
+      <div className="table-wrap"><table><tbody>{carriers.map((c) => (
+        <tr key={c.code}><td><b>{c.code}</b> – {c.name}</td>
+          <td className="small" style={{ wordBreak: 'break-all' }}>{links[c.code] ? driverLink(c.code, links[c.code]) : 'chưa có link'}</td>
+          <td className="nowrap">{links[c.code] && <button type="button" className="btn primary sm" onClick={() => copy(c.code)}>{ok === c.code ? 'Đã copy' : '📋 Copy link'}</button>}{' '}
+            {canMake && <button type="button" className="btn sm" onClick={() => make(c.code)}>{links[c.code] ? 'Đổi link' : 'Tạo link'}</button>}</td></tr>))}</tbody></table></div>
     </div>
   );
 }

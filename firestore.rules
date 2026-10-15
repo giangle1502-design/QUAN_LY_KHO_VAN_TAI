@@ -85,6 +85,14 @@ service cloud.firestore {
         || (resource.data.status == 'waiting_delivery' && request.resource.data.status == 'completed')
         || (canCancel && resource.data.status == 'planned' && request.resource.data.status == 'cancelled');
     }
+    // Link tài xế (không cần tài khoản): phiên ẩn danh gắn với 1 đơn vị vận tải qua mã bí mật carrierLinks/{đơn vị}.token
+    // (đổi mã trong app là link cũ hết hiệu lực)
+    function txPath() { return /databases/$(database)/documents/txSessions/$(request.auth.uid); }
+    function txCarrier() { return get(txPath()).data.carrier; }
+    function txOk() {
+      return request.auth != null && request.auth.token.get('email', null) == null && exists(txPath())
+        && get(/databases/$(database)/documents/carrierLinks/$(txCarrier())).data.get('token', '') == get(txPath()).data.token;
+    }
     function driverKeys() {
       return ['plate', 'vehicleType', 'idCard', 'driverName', 'driverPhone', 'status', 'arrivalTime', 'arrivalDate', 'gateConfirmTime',
         'driverRegAt', 'driverArrivedAt', 'driverLoadedAt', 'driverAtDestAt', 'driverDeliveredAt', 'deliveryCompleteTime', 'lines', 'photoCount',
@@ -108,8 +116,31 @@ service cloud.firestore {
       return myThreepl() != ''
         && get(/databases/$(database)/documents/tripPrivate/$(id)).data.get('threepl', '') == myThreepl();
     }
+    match /txSessions/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['carrier', 'token', 'at'])
+        && request.resource.data.token is string && request.resource.data.token.size() >= 16
+        && get(/databases/$(database)/documents/carrierLinks/$(request.resource.data.carrier)).data.get('token', '') == request.resource.data.token;
+    }
+    // Mã link tài xế của từng đơn vị: quản trị tạo / đổi; điều phối, 3PL của đơn vị đọc để gửi link
+    match /carrierLinks/{code} {
+      allow read: if isAdmin() || ((hasRole('van_tai') || hasRole('tpl')) && myCarrier() == code);
+      allow write: if isAdmin() || (hasRole('van_tai') && myCarrier() == code);
+    }
     match /trips/{id} {
       allow read: if isStaff();
+      // Link tài xế: thấy chuyến của đơn vị vận tải trên link
+      allow read: if txOk() && resource.data.get('carrier', '') == txCarrier();
+      // Tài xế mở link của đơn vị (không tài khoản): như tài xế, chỉ trong chuyến của đơn vị trên link
+      // (để riêng, trước các quy tắc khác, cho nhẹ phần tính quyền)
+      allow update: if request.auth != null && request.auth.token.get('email', null) == null
+        && resource.data.get('source', '') == 'plan' && request.resource.data.get('carrier', '') == resource.data.get('carrier', '')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(driverKeys())
+        && request.resource.data.get('plate', '') != ''
+        && resource.data.get('plate', '') in ['', request.resource.data.get('plate', '')]
+        && stepStatus(false)
+        && txOk() && resource.data.get('carrier', '') == txCarrier();
       allow create: if (isAdmin() || ((hasRole('bao_ve') || hasRole('thu_kho')) && inMyWarehouse(request.resource.data.warehouse)))
         && request.resource.data.status in ['arrived', 'waiting_gate']
         && request.resource.data.createdBy == me();
@@ -145,6 +176,9 @@ service cloud.firestore {
       allow read: if isStaff();
       allow create: if isStaff() && request.resource.data.by == me() && request.resource.data.data.size() < 900000
         && (isAdmin() || ((hasRole('van_tai') || hasRole('tai_xe') || hasRole('tpl')) && request.resource.data.carrier == myCarrier()));
+      allow create: if txOk() && request.resource.data.carrier == txCarrier() && request.resource.data.data.size() < 900000;
+      // Thay / xóa ảnh chụp sai: quản trị, điều phối vận tải, 3PL của đơn vị
+      allow delete: if isAdmin() || ((hasRole('van_tai') || hasRole('tpl')) && resource.data.carrier == myCarrier());
     }
     // 3PL của chuyến: chỉ GHA và quản trị gốc (admin khách không đọc được)
     match /tripPrivate/{id} {
@@ -385,6 +419,8 @@ service cloud.firestore {
 
     // Danh mục thủ kho được sửa trong kho của mình (không sửa tồn kho hiện tại)
     match /{coll}/{id} {
+      allow get: if coll == 'carriers' && txOk() && id == txCarrier();
+      allow read: if coll == 'vehicles' && txOk() && resource.data.get('carrier', '') == txCarrier();
       allow read: if isStaff() && coll in [
         'companies', 'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses',
         'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'codeRules', 'freightRates', 'pallets'];
