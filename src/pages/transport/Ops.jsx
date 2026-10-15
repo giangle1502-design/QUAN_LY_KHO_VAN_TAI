@@ -4,7 +4,7 @@ import { arrayUnion, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useOpWarehouse, useTrips } from '../../lib/hooks';
-import { ST, STATUS_META, afterExit, afterProcess, matchesTrip, nowISO } from '../../lib/trips';
+import { ST, STATUS_META, afterExit, afterProcess, matchesTrip, noYard, nowISO } from '../../lib/trips';
 import { TripCard, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox } from '../../components/ui';
 import Select from '../../components/Select';
@@ -58,7 +58,7 @@ export function Guard() {
   const [q, setQ] = useState('');
   const { rows, error } = useTrips([ST.ARRIVED, ST.WAITING_EXIT], wh);
   const [act, err] = useTripAction();
-  const list = rows.filter((t) => t.hasGuard && matchesTrip(t, q));
+  const list = rows.filter((t) => t.hasGuard && !noYard(t) && matchesTrip(t, q));
   const arrived = list.filter((t) => t.status === ST.ARRIVED).sort(byTime('arrivalTime'));
   const exiting = list.filter((t) => t.status === ST.WAITING_EXIT).sort(byTime('processDoneTime'));
   return (
@@ -94,7 +94,7 @@ export function Dock() {
   const docks = useCollection('docks').rows;
   const [act, err] = useTripAction();
   const [pick, setPick] = useState({});
-  const list = rows.filter((t) => matchesTrip(t, q));
+  const list = rows.filter((t) => !noYard(t) && matchesTrip(t, q));
   const waiting = list.filter((t) => t.status === ST.WAITING_GATE).sort(byTime('gateConfirmTime'));
   const processing = list.filter((t) => t.status === ST.PROCESSING).sort(byTime('dockAssignTime'));
   // Cửa đang có xe (để cảnh báo trùng)

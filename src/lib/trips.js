@@ -39,8 +39,13 @@ export const PURPOSES = [['export', 'Lấy hàng (xuất kho)'], ['import', 'Nh�
 export const purposeLabel = (p) => (p === 'import' ? 'Nhập hàng' : 'Lấy hàng');
 
 // Các bước chuyến xe sẽ đi qua (để vẽ thanh tiến trình)
+// Kho không có bảo vệ (= không có thủ kho) hoặc lấy hàng ở cảng / điểm nhận ngoài: chuyến theo kế hoạch không qua cổng, cửa, thủ kho
+export const noYard = (t) => t.source === 'plan' && (t.hasGuard === false || !!t.pickup);
+
 export function stagesOf(trip) {
+  const skipYard = noYard(trip);
   return STAGES.filter((s) => {
+    if (skipYard && [ST.ARRIVED, ST.WAITING_GATE, ST.PROCESSING, ST.WAITING_EXIT].includes(s)) return false;
     if (s === ST.PLANNED && trip.source !== 'plan') return false;
     if (!trip.hasGuard && (s === ST.ARRIVED || s === ST.WAITING_EXIT)) return false;
     if ((trip.purpose === 'import' || trip.selfPickup) && s === ST.WAITING_DELIVERY) return false;

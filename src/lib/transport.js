@@ -1,7 +1,7 @@
 import { collection, doc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
 import { enrichLine } from './dispatch';
 import { db } from '../firebase';
-import { ST, firstStatus, nowISO, reserveCodes, vnDate } from './trips';
+import { ST, firstStatus, noYard, nowISO, reserveCodes, vnDate } from './trips';
 import { calcFreight, matchRate } from './freight';
 
 // ============================================================================
@@ -29,13 +29,15 @@ export function nextStep(t) {
   if (!t.plate) return 'reg';
   if (t.status === ST.PLANNED) return 'arrive';
   // Khách tự lấy: xe ra cổng / xuất xong là hoàn thành, không có bước giao hàng
-  if (t.selfPickup) return null;
+  if (t.selfPickup && !noYard(t)) return null;
   if (!t.driverLoadedAt) return 'loaded';
+  if (t.selfPickup) return null;
   if (!t.driverAtDestAt) return 'atDest';
   return 'delivered';
 }
 // Bước chưa làm được vì còn chờ kho / bảo vệ
 export function stepBlocked(t, step) {
+  if (noYard(t)) return '';
   if (step === 'loaded' && [ST.ARRIVED, ST.WAITING_GATE].includes(t.status)) return t.status === ST.ARRIVED ? 'Chờ bảo vệ cho xe vào cổng' : 'Chờ thủ kho gọi vào cửa';
   if ((step === 'atDest' || step === 'delivered') && t.status !== ST.WAITING_DELIVERY)
     return t.status === ST.WAITING_EXIT ? 'Chờ bảo vệ xác nhận ra cổng' : 'Chờ thủ kho xuất hàng xong';
@@ -57,9 +59,13 @@ export async function doStep(t, step, user, data = {}, database = db) {
     // Giữ thông tin điều phối đã nhập nếu tài xế để trống
     for (const k of ['idCard', 'driverName', 'driverPhone', 'vehicleType']) if (!upd[k]) upd[k] = t[k] || '';
   } else if (step === 'arrive') {
-    const status = firstStatus(t.hasGuard !== false);
+    const status = noYard(t) ? ST.WAITING_DELIVERY : firstStatus(t.hasGuard !== false);
     upd = { status, arrivalTime: at, arrivalDate: vnDate(at), driverArrivedAt: at, ...(status === ST.WAITING_GATE ? { gateConfirmTime: at } : {}) };
-  } else if (step === 'loaded') upd = { driverLoadedAt: at };
+  } else if (step === 'loaded') {
+    upd = { driverLoadedAt: at };
+    // Không qua kho: lấy hàng xong là đi giao (khách tự lấy: xong luôn); chuyến cũ còn kẹt ở Chờ vào cửa cũng đi tiếp
+    if (noYard(t)) upd = { ...upd, ...(t.selfPickup ? { status: ST.COMPLETED, deliveryCompleteTime: at } : t.status !== ST.WAITING_DELIVERY ? { status: ST.WAITING_DELIVERY } : {}) };
+  }
   else if (step === 'atDest') upd = { driverAtDestAt: at };
   else if (step === 'delivered') {
     if (!data.photos?.length) throw new Error('Chụp ít nhất 1 ảnh phiếu giao hàng.');

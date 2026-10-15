@@ -86,6 +86,8 @@ service cloud.firestore {
       return request.resource.data.status == resource.data.status
         || (resource.data.status == 'planned' && request.resource.data.status in ['arrived', 'waiting_gate'])
         || (resource.data.status == 'waiting_delivery' && request.resource.data.status == 'completed')
+        || ((resource.data.get('hasGuard', true) == false || resource.data.get('pickup', '') != '')
+          && resource.data.status in ['planned', 'waiting_gate'] && request.resource.data.status in ['waiting_delivery', 'completed'])
         || (canCancel && resource.data.status == 'planned' && request.resource.data.status == 'cancelled');
     }
     // Link tài xế (không cần tài khoản): phiên ẩn danh gắn với 1 đơn vị vận tải qua mã bí mật carrierLinks/{đơn vị}.token

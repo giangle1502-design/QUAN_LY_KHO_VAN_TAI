@@ -5,7 +5,7 @@ import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
 import { useCollection, useOpWarehouse, useOrders, useStock, useTrips } from '../lib/hooks';
 import { orderTotals } from '../lib/orders';
-import { ACTIVE, ST, STATUS_META, fmtDuration, minutesBetween, nowISO, vnDate } from '../lib/trips';
+import { ACTIVE, ST, STATUS_META, fmtDuration, minutesBetween, noYard, nowISO, vnDate } from '../lib/trips';
 import { MOVE_TYPES } from '../lib/stock';
 import { fmtDate, fmtNum } from '../lib/utils';
 import { StatusBadge, WarehousePicker } from '../components/TripBits';
@@ -29,7 +29,7 @@ export default function Dashboard() {
   const todayMoves = moves.filter((m) => m.status === 'posted' && inMyWarehouses(m.warehouse) && (!wh || m.warehouse === wh));
 
   const now = nowISO();
-  const inYard = trips.filter((t) => [ST.WAITING_GATE, ST.PROCESSING].includes(t.status))
+  const inYard = trips.filter((t) => [ST.WAITING_GATE, ST.PROCESSING].includes(t.status) && !noYard(t))
     .sort((a, b) => String(a.gateConfirmTime).localeCompare(String(b.gateConfirmTime)));
   const full = locations.filter((l) => Number(l.usedPct) >= 85).sort((a, b) => b.usedPct - a.usedPct);
   const empty = locations.filter((l) => l.emptyBin !== false && !l.locked).length;

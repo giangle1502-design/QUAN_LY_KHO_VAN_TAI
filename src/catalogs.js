@@ -196,7 +196,7 @@ export const CATALOGS = [
       { key: 'code', label: 'Mã kho', type: 'text', required: true },
       { key: 'name', label: 'Tên kho', type: 'text', required: true },
       { key: 'hasGuard', label: 'Có bảo vệ', type: 'checkbox', default: true,
-        help: 'Kho không có bảo vệ: luồng xe bỏ qua bước Chờ vào cửa và Chờ ra cổng' },
+        help: 'Kho không có bảo vệ = không có thủ kho: chuyến xe bỏ qua bảo vệ, thủ kho chỉ định cửa, ra cổng; tài xế lấy hàng xong là đi giao' },
       { key: 'releaseStatus', label: 'TTHH khi giải chấp', type: 'select', options: ['DGC', 'KTC'],
         help: 'Hàng HTC ở kho này khi giải chấp chuyển sang tình trạng nào. Bỏ trống: kho có chữ "Cảng" → KTC, kho khác → DGC' },
       { key: 'planNoLocation', label: 'Kế hoạch phân bổ chỉ cần kho', type: 'checkbox',
