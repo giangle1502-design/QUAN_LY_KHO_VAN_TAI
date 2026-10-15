@@ -51,6 +51,8 @@ export default function ShipPlans() {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [edit, setEdit] = useState(params.get('so') ? { orderId: params.get('so') } : null);
+  // Mở thẳng form tạo dự kiến xuất từ menu / thanh yêu thích (?new=1)
+  useEffect(() => { if (params.get('new') === '1' && canPlan) setEdit({}); }, [params.get('new')]); // eslint-disable-line react-hooks/exhaustive-deps
   const [err, setErr] = useState('');
 
   const list = useMemo(() => {
@@ -164,7 +166,7 @@ export default function ShipPlans() {
         )}
       </div>
       {edit && <PlanForm plan={edit.id ? edit : null} orderId={edit.orderId || ''} plans={plans}
-        onClose={() => { setEdit(null); if (params.get('so')) setParams({}); }} />}
+        onClose={() => { setEdit(null); if (params.get('so') || params.get('new')) setParams({}); }} />}
     </div>
   );
 }

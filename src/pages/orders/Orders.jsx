@@ -122,12 +122,12 @@ export default function Orders() {
         </div>
       </div>
       {tab === 'can-doi' ? <Balance /> : tab === 'DO' ? <SlipList key={"DO" + (params.get('loai') || '')} kind="DO" loai={params.get('loai') || ''} /> : tab === 'cho-nhap' ? <SlipList key={"IN" + (params.get('loai') || '')} kind="IN" loai={params.get('loai') || ''} />
-        : <OrderList key={tab} type={tab} initialQ={params.get('q') || ''} />}
+        : <OrderList key={tab} type={tab} initialQ={params.get('q') || ''} startNew={params.get('new') === '1'} onNewDone={() => setParams({ tab })} />}
     </div>
   );
 }
 
-function OrderList({ type, initialQ = '' }) {
+function OrderList({ type, initialQ = '', startNew = false, onNewDone }) {
   const pendIn = usePendingIn();
   const waitOut = useWaitingOut();
   const meta = ORDER_TYPES[type];
@@ -160,6 +160,8 @@ function OrderList({ type, initialQ = '' }) {
   const [open, setOpen] = useState(null);
   const [edit, setEdit] = useState(null); // null | 'new' | order
   const [msg, setMsg] = useState('');
+  // Mở thẳng form lập đơn mới từ menu / thanh yêu thích (?new=1)
+  useEffect(() => { if (startNew && canManage) setEdit('new'); }, [startNew]); // eslint-disable-line react-hooks/exhaustive-deps
   const today = vnDate();
 
   const list = useMemo(() => {
@@ -293,7 +295,7 @@ function OrderList({ type, initialQ = '' }) {
         )}
       </div>
       {current && !edit && <OrderDetail o={current} onClose={() => setOpen(null)} onEdit={() => setEdit(current)} />}
-      {edit && <SOForm type={type} order={edit === 'new' ? null : edit} onClose={(id) => { setEdit(null); if (id) setOpen(id); }} />}
+      {edit && <SOForm type={type} order={edit === 'new' ? null : edit} onClose={(id) => { setEdit(null); if (id) setOpen(id); if (startNew) onNewDone?.(); }} />}
     </div>
   );
 }

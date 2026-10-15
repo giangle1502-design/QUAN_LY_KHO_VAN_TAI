@@ -88,8 +88,13 @@ export default function Layout() {
     return isActive && p.get('tab') === k && (p.get('loai') || '') === loai ? 'active' : '';
   };
   const srcTab = (sto) => ({ isActive }) => (isActive && (new URLSearchParams(loc.search).get('src') === 'sto') === sto ? 'active' : '');
+  // Mục "➕ Lập … mới": mở thẳng form tạo mới (?new=1), không tô sáng như trang đang xem
+  const noActive = () => '';
+  const canSO = hasRole('kinh_doanh', 'ke_toan');
   const sections = [
     { key: 'ban', title: '🧾 Bán hàng (SO → xuất)', items: [
+      { to: '/don-hang?tab=SO&new=1', cls: noActive, ico: '➕', label: 'Lập SO mới', show: canSO },
+      { to: '/du-kien-xuat?new=1', cls: noActive, ico: '➕', label: 'Tạo dự kiến xuất', show: canSO },
       { to: '/don-hang?tab=SO', cls: orderTab('SO'), ico: '🧾', label: 'Đơn bán (SO)' },
       { to: '/du-kien-xuat', ico: '📅', label: 'Dự kiến xuất kho (Sale)' },
       { to: '/kho/out', cls: srcTab(false), ico: '📤', label: 'Lập phiếu xuất kho', show: hasRole('thu_kho') },
@@ -97,6 +102,7 @@ export default function Layout() {
       { to: '/xe/giao-hang', ico: '✅', label: 'Xác nhận giao hàng', show: isAdmin },
     ] },
     { key: 'mua', title: '🛒 Mua hàng (PO → nhập)', items: [
+      { to: '/don-hang?tab=PO&new=1', cls: noActive, ico: '➕', label: 'Lập PO mới', show: canSO },
       { to: '/don-hang?tab=PO', cls: orderTab('PO'), ico: '🛒', label: 'Đơn mua (PO)' },
       { to: '/phan-bo', ico: '📋', label: 'Kế hoạch phân bổ hàng mua' },
       { to: '/kho/in', cls: srcTab(false), ico: '📝', label: 'Lập phiếu nhập kho', show: isAdmin },
@@ -104,6 +110,7 @@ export default function Layout() {
       { to: '/kho/nhan-hang', ico: '📥', label: 'Nhận hàng (chờ nhập)', show: hasRole('thu_kho') },
     ] },
     { key: 'sto', title: '🔁 Chuyển kho (STO)', items: [
+      { to: '/don-hang?tab=STO&new=1', cls: noActive, ico: '➕', label: 'Lập STO mới', show: hasRole('kinh_doanh', 'ke_toan', 'thu_kho') },
       { to: '/don-hang?tab=STO', cls: orderTab('STO'), ico: '🔁', label: 'Lệnh chuyển kho (STO)' },
       { to: '/kho/out?src=sto', cls: srcTab(true), ico: '📤', label: 'Xuất chuyển kho (kho đi)', show: hasRole('thu_kho') },
       { to: '/kho/in?src=sto', cls: srcTab(true), ico: '📥', label: 'Nhập chuyển kho (kho đến)', show: isAdmin },
@@ -148,7 +155,12 @@ export default function Layout() {
       .map((c) => ({ to: `/dm/${c.key}`, ico: c.icon, label: c.short })) })),
   ];
   // Menu theo ý từng người: yêu thích, thư mục tự tạo, thứ tự, ẩn mục (lưu trên trình duyệt)
-  const [nav, navApi] = useNavLayout(sections.map((sec) => ({ ...sec, items: sec.items.filter((x) => x.show !== false) })));
+  // Yêu thích mặc định khi người dùng chưa tự chọn: công cụ tạo đơn cho Sale / kế toán, lập phiếu cho thủ kho
+  const defaultFav = role === 'thu_kho'
+    ? ['/kho/out', '/kho/nhan-hang', '/don-hang?tab=DO', '/don-hang?tab=STO&new=1', '/kho/ton']
+    : ['/don-hang?tab=SO&new=1', '/du-kien-xuat?new=1', '/don-hang?tab=PO&new=1', '/don-hang?tab=SO', '/don-hang?tab=DO', '/kho/ton'];
+  const [nav, navApi] = useNavLayout(sections.map((sec) => ({ ...sec, items: sec.items.filter((x) => x.show !== false) })), defaultFav);
+  const fullMenu = !['tai_xe', 'van_tai', 'tpl'].includes(role);
   const [editMenu, setEditMenu] = useState(false);
   const shownSecs = [...(nav.fav.length ? [{ key: FAV_KEY, title: '⭐ Yêu thích', items: nav.fav }] : []), ...nav.secs];
   // Hạng mục lớn → hạng mục con: các nhóm danh mục / thiết lập / quản trị gom vào 1 mục lớn (đặt ở vị trí nhóm con đầu tiên)
@@ -173,11 +185,11 @@ export default function Layout() {
   // Mục đang mở luôn nằm trong vùng nhìn thấy của menu
   useEffect(() => { navRef.current?.querySelector('a.active')?.scrollIntoView?.({ block: 'nearest' }); }, [loc.pathname, loc.search, open]);
   const isOpen = (s, sub) => {
-    if (multi || s.key === FAV_KEY) return !closed.includes(s.key) || (s.key !== FAV_KEY && hasHere(s));
+    if (multi) return !closed.includes(s.key) || (s.key !== FAV_KEY && hasHere(s));
     return sub ? acc.sub === s.key : acc.top === s.key;
   };
   const toggle = (s, sub) => {
-    if (multi || s.key === FAV_KEY) return toggleClosed(s.key);
+    if (multi) return toggleClosed(s.key);
     if (sub) setAcc({ ...acc, sub: acc.sub === s.key ? null : s.key });
     else setAcc({ ...acc, top: acc.top === s.key ? null : s.key });
   };
@@ -262,7 +274,17 @@ export default function Layout() {
       {open && <div className="side-bg" onClick={close} />}
       {editMenu && <MenuEditor view={nav} api={navApi} multi={multi} setMulti={setMulti} onClose={() => setEditMenu(false)} />}
       <main ref={mainRef}>
-        <button className="menu-btn" onClick={() => setOpen(true)}>☰</button>
+        <div className={'topbar' + (fullMenu && nav.fav.length ? ' has-fav' : '')}>
+          <button className="menu-btn" onClick={() => setOpen(true)}>☰</button>
+          {fullMenu && nav.fav.length > 0 && (
+            <div className="fav-bar" title="Thanh yêu thích: bấm ☆ cạnh mục bất kỳ trong menu để ghim lên đây">
+              {nav.fav.map((x) => (
+                <NavLink key={x.to} to={x.to} end={x.end} className={x.cls}>{x.ico} {x.label}</NavLink>
+              ))}
+              <button type="button" className="fav-edit" title="Sửa thanh yêu thích" onClick={() => setEditMenu(true)}>✎</button>
+            </div>
+          )}
+        </div>
         <Outlet />
       </main>
     </div>

@@ -15,9 +15,10 @@ const byOrder = (order) => (a, b) => (order.indexOf(a) + 1 || 1e9) - (order.inde
 
 // sections: [{ key, title, items: [{ to, ico, label, … }] }] (đã lọc theo quyền)
 // → các nhóm đã sắp theo ý người dùng + các hàm sửa
-export function useNavLayout(sections) {
-  const [raw, setRaw] = usePref('nav-layout', EMPTY);
-  const lay = { ...EMPTY, ...raw };
+// defaultFav: các mục yêu thích khi người dùng chưa tự chọn (chưa từng bấm ☆)
+export function useNavLayout(sections, defaultFav = []) {
+  const [raw, setRaw] = usePref('nav-layout', null);
+  const lay = { ...EMPTY, ...(raw || {}), fav: raw?.fav ?? defaultFav };
   const set = (patch) => setRaw({ ...lay, ...patch });
 
   const view = useMemo(() => {
@@ -41,7 +42,7 @@ export function useNavLayout(sections) {
     secs.sort((a, b) => byOrder(lay.secOrder)(a.key, b.key) || defOrder.indexOf(a.key) - defOrder.indexOf(b.key));
     const fav = lay.fav.filter((id) => all.has(id)).map((id) => ({ ...all.get(id), fav: true }));
     return { secs, fav, all };
-  }, [sections, raw]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sections, raw, defaultFav.join()]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const api = {
     toggleFav: (id) => set({ fav: lay.fav.includes(id) ? lay.fav.filter((x) => x !== id) : [...lay.fav, id] }),
@@ -89,8 +90,8 @@ export function useNavLayout(sections) {
       const place = Object.fromEntries(Object.entries(lay.place).filter(([, v]) => v !== key));
       set({ folders: lay.folders.filter((f) => f.key !== key), place, secOrder: lay.secOrder.filter((k) => k !== key) });
     },
-    reset: () => setRaw(EMPTY),
-    changed: JSON.stringify(lay) !== JSON.stringify(EMPTY),
+    reset: () => setRaw(null),
+    changed: raw !== null,
   };
   return [view, api];
 }

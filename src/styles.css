@@ -534,7 +534,8 @@ tr.picked td { background: var(--primary-soft); }
   .side { width: min(300px, 86vw); left: -320px; }
   .side nav .nav-sec .nav-group { padding: 11px 10px; font-size: 14px; }
   .side nav .nav-sec > a { padding: 10px 10px 10px 18px; font-size: 14.5px; }
-  .menu-btn { position: sticky; top: 8px; z-index: 30; box-shadow: 0 2px 8px #0002; }
+  .topbar { position: sticky; top: 0; z-index: 30; background: var(--bg); margin: -12px -16px 10px; padding: 8px 16px; box-shadow: 0 1px 0 var(--line); flex-wrap: nowrap; }
+  .topbar .menu-btn { flex: none; }
 }
 .side nav .nav-sec .nav-group > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .side nav .nav-sec > a { line-height: 1.25; }
@@ -545,3 +546,19 @@ tr.picked td { background: var(--primary-soft); }
 .me .me-mail { display: none; }
 .me .btn { flex: none; }
 .side nav.searching .nav-group .caret { display: none; }
+
+/* Thanh yêu thích phía trên trang: lối tắt tới công cụ hay dùng (Lập SO, PO, Dự kiến xuất…) */
+.topbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+@media (min-width: 861px) { .topbar:not(.has-fav) { display: none; } }
+.topbar .menu-btn { margin-bottom: 0; }
+.fav-bar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; flex: 1; min-width: 0; }
+.fav-bar a { display: inline-flex; align-items: center; gap: 4px; padding: 5px 11px; border: 1px solid var(--line); border-radius: 99px; background: #fff; color: inherit; text-decoration: none; font-size: 13px; white-space: nowrap; }
+.fav-bar a:hover { border-color: var(--primary); color: var(--primary); }
+.fav-bar a.active { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); font-weight: 600; }
+.fav-edit { border: 1px dashed var(--line); background: none; border-radius: 99px; padding: 4px 10px; cursor: pointer; color: var(--muted); flex: none; }
+.fav-edit:hover { color: var(--primary); border-color: var(--primary); }
+@media print { .topbar { display: none !important; } }
+@media (max-width: 860px) {
+  .fav-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .fav-bar a { padding: 7px 12px; font-size: 14px; }
+}
