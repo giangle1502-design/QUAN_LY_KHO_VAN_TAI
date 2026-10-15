@@ -46,3 +46,16 @@ export function useShared(key, makeQuery) {
   // Ngay sau khi đổi truy vấn: coi như đang tải
   return st.key === key ? st : { snap: null, loading: !!key, error: '', key };
 }
+
+// Đọc 1 lần qua kết nối dùng chung (đã có sẵn thì không tốn lượt đọc; giữ kết nối thêm KEEP_MS cho lần sau)
+export function onceShared(key, makeQuery) {
+  return new Promise((resolve, reject) => {
+    let off = null; let done = false;
+    off = listenShared(key, makeQuery, (s) => {
+      if (done) return;
+      done = true;
+      setTimeout(() => off?.(), 0);
+      if (s.error) reject(new Error(s.error)); else resolve(s.snap);
+    });
+  });
+}

@@ -32,6 +32,8 @@ import Hauling from './pages/transport/Hauling';
 import Driver from './pages/transport/Driver';
 import ResetData from './pages/admin/ResetData';
 import PrintDesigner from './pages/PrintDesigner';
+import Chat from './pages/Chat';
+import ChatRules from './pages/admin/ChatRules';
 
 export default function App() {
   const { user, allowed, isAdmin, isSuper, role, canDesign, hasRole, loading, logout, email } = useApp();
@@ -87,6 +89,8 @@ export default function App() {
         {canDesign && <Route path="mau-in" element={<PrintDesigner />} />}
         {canDesign && <Route path="mau-in/:id" element={<PrintDesigner />} />}
         <Route path="quan-tri/xoa" element={<Deletes />} />
+        <Route path="tro-chuyen" element={<Chat />} />
+        {isAdmin && <Route path="quan-tri/tin-nhan" element={<ChatRules />} />}
         {isSuper && <Route path="quan-tri/du-lieu" element={<ResetData />} />}
         <Route path="*" element={<Navigate to="/" />} />
       </Route>

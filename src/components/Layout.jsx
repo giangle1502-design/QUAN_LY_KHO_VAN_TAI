@@ -9,6 +9,7 @@ import { REPORTS } from '../pages/reports/Reports';
 import { norm } from '../lib/utils';
 import { usePref } from '../lib/prefs';
 import NoticeBell from './NoticeBell';
+import ChatBell from './ChatBell';
 import { BarEditor, FAV_KEY, MenuEditor, itemId, useNavLayout } from './NavCustom';
 
 // Nhóm thu gọn sẵn lần đầu: các nhóm danh mục, quản trị dữ liệu
@@ -151,6 +152,7 @@ export default function Layout() {
     { key: 'quan-tri', title: '🗑️ Quản trị dữ liệu', items: [
       { to: '/quan-tri/xoa', ico: '🗑️', label: isSuper ? 'Duyệt xóa & lịch sử' : 'Yêu cầu xóa của tôi', badge: nDel },
       { to: '/quan-tri/du-lieu', ico: '🧹', label: 'Xóa dữ liệu chạy thử', show: isSuper },
+      { to: '/quan-tri/tin-nhan', ico: '💬', label: 'Cấu hình tin nhắn hệ thống', show: isAdmin },
     ] },
     ...GROUPS.map((g) => ({ key: `dm:${g}`, title: `📚 ${g}`, items: CATALOGS.filter((c) => c.group === g && (isAdmin || !c.adminOnly) && (!c.only3PL || can3PL))
       .map((c) => ({ to: `/dm/${c.key}`, ico: c.icon, label: c.short })) })),
@@ -241,12 +243,14 @@ export default function Layout() {
         {role === 'tai_xe' ? (
         <nav>
           <NavLink to="/tai-xe" onClick={close}><span className="ico">🧑‍✈️</span>Chuyến của tôi</NavLink>
+          <NavLink to="/tro-chuyen" onClick={close}><span className="ico">💬</span>Trò chuyện</NavLink>
         </nav>
         ) : role === 'tpl' ? (
         <nav>
           <NavLink to="/van-tai?tab=chuyen" onClick={close}><span className="ico">🚛</span>Chuyến 3PL của tôi</NavLink>
           <NavLink to="/van-tai?tab=tinh-trang" onClick={close}><span className="ico">🚦</span>Tình trạng xe</NavLink>
           <NavLink to="/van-tai?tab=bang-ke" onClick={close}><span className="ico">🧾</span>Bảng kê</NavLink>
+          <NavLink to="/tro-chuyen" onClick={close}><span className="ico">💬</span>Trò chuyện</NavLink>
         </nav>
         ) : role === 'van_tai' ? (
         <nav>
@@ -256,10 +260,12 @@ export default function Layout() {
           <NavLink to="/dm/drivers" onClick={close}><span className="ico">🧑‍✈️</span>Tài xế của đơn vị</NavLink>
           {can3PL && <NavLink to="/dm/threepl" onClick={close}><span className="ico">🤝</span>3PL</NavLink>}
           <NavLink to="/quan-tri/xoa" onClick={close}><span className="ico">🗑️</span>Yêu cầu xóa của tôi</NavLink>
+          <NavLink to="/tro-chuyen" onClick={close}><span className="ico">💬</span>Trò chuyện</NavLink>
         </nav>
         ) : (
         <nav className={q ? 'searching' : ''}>
           <NavLink to="/" end onClick={close}><span className="ico">📈</span>Tổng quan</NavLink>
+          <NavLink to="/tro-chuyen" onClick={close}><span className="ico">💬</span>Trò chuyện</NavLink>
           {blocks.map((sec) => {
             const op = isOpen(sec, false);
             if (sec.subs) return (
@@ -313,7 +319,7 @@ export default function Layout() {
               <button type="button" className="fav-edit" title="Tạo / sửa danh mục công cụ của tôi" onClick={() => setEditBar(true)}>{barCats.length ? '⚙' : '+ Tạo danh mục công cụ'}</button>
             </div>
           )}
-          <NoticeBell />
+          <div className="top-tools"><ChatBell /><NoticeBell /></div>
         </div>
         {openCat && (
           <div className="bar-panel">

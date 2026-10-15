@@ -1,3 +1,4 @@
+import { notifySlip } from '../../lib/chat';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -731,6 +732,8 @@ function Form({ type }) {
         ids.push(mvId);
         if (k === 0) setDonePO(typeof res === 'string' ? '' : res.orderId);
         const mvLines = pc.lines.map(({ _rel, ...l }) => l);
+        // Tin nhắn hệ thống: lập phiếu xuất / nhập (theo cấu hình, không chờ)
+        notifySlip({ id: mvId, type, orderId: oid, partyName: head.partyName.trim(), sales: pc.order?.sales || '', company: head.company || '', date: head.date, warehouse: wh.code, lines: mvLines }, { email, name });
         // Chuyển pháp nhân: dòng lấy tồn công ty khác công ty xuất → báo kế toán
         const crossHere = type === 'out' && head.company ? mvLines.filter((l) => l.company && l.company !== head.company) : [];
         if (crossHere.length) {

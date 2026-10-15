@@ -1,3 +1,4 @@
+import { sysNotify } from './chat';
 import { collection, doc, getDoc, getDocs, query, runTransaction, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { postMovement, postWaitingOut, stockId } from './stock';
@@ -18,7 +19,7 @@ export async function createRelease(data, user) {
   const prefix = ruleSnap?.exists() ? ruleSnap.data().prefix ?? 'HSGC' : 'HSGC';
   const digits = num(ruleSnap?.exists() && ruleSnap.data().digits) || 2;
   const cRef = doc(db, 'counters', `HSGC-${ymd}`);
-  return runTransaction(db, async (tx) => {
+  const rid = await runTransaction(db, async (tx) => {
     const c = await tx.get(cRef);
     const n = c.exists() ? num(c.data().next) || 1 : 1;
     const id = `${prefix}${ymd}${String(n).padStart(digits, '0')}`;
@@ -30,6 +31,9 @@ export async function createRelease(data, user) {
     });
     return id;
   });
+  sysNotify('release_new', { id: rid, orderId: (data.orderIds || []).join(', '), company: data.companyName || data.company, pledgee: data.pledgeeName || data.pledgee,
+    warehouse: data.warehouse, warehouses: data.warehouses || [], date: data.date, lines: data.lines || [], link: `/kho/giai-chap/${rid}/in` }, user);
+  return rid;
 }
 
 // Tình trạng sau giải chấp theo danh mục kho (TTHH khi giải chấp); bỏ trống: cảng → KTC, kho khác → DGC

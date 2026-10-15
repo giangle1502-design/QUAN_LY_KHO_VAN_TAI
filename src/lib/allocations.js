@@ -1,3 +1,4 @@
+import { notifyOrder } from './chat';
 import { collection, doc, runTransaction, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { createOrder, summarizeLines } from './orders';
@@ -149,7 +150,7 @@ export async function createOrderFromGroup(g, { sales, whName }, user) {
     carriers: [...new Set(lines.map((l) => l.carrier).filter(Boolean))], lines, ...sum,
   };
   const refs = g.rows.map((a) => doc(db, 'allocations', a._id));
-  return createOrder(data, user, {}, {
+  const created = createOrder(data, user, {}, {
     // Dòng kế hoạch có thể vừa được người khác tạo đơn: kiểm tra lại trước khi ghi
     read: async (tx) => {
       const snaps = [];
@@ -163,6 +164,9 @@ export async function createOrderFromGroup(g, { sales, whName }, user) {
       refs.forEach((r, i) => tx.update(r, { orderId: id, orderType: g.type, orderLine: created[i].no, status: 'ordered', updatedAt: at, updatedBy: user.email }));
     },
   });
+  const id = await created;
+  notifyOrder(id, data, user);
+  return id;
 }
 
 // Gắn dòng kế hoạch vào dòng SO có sẵn (sale đã lên đơn trước)

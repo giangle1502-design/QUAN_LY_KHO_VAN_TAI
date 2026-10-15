@@ -1,3 +1,4 @@
+import { notifyPlan } from './chat';
 import { useMemo } from 'react';
 import { collection, doc, getDocs, query, runTransaction, setDoc, updateDoc, where } from 'firebase/firestore';
 import { useShared } from './live';
@@ -48,6 +49,7 @@ export async function createPlan(p, user) {
     ...p, id, status: 'open', lines: p.lines.map((l) => ({ ...l, doneKg: 0 })), movementIds: [],
     createdAt: at, createdBy: user.email, createdByName: user.name || '', updatedAt: at, updatedBy: user.email,
   });
+  notifyPlan(id, p, user);
   return id;
 }
 

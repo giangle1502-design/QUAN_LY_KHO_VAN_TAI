@@ -1,3 +1,4 @@
+import { sysNotify } from './chat';
 import { collection, doc, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useShared } from './live';
@@ -42,7 +43,9 @@ export async function notifyLegalTransfer(m, user, extra = {}) {
     lines: crossLines(m).map((l) => ({ item: l.item, itemName: l.itemName || '', lot: l.lot || '', from: l.company, kg: Math.abs(n(l.kg)) })),
     shortWarned: !!extra.shortWarned,
     createdAt: serverTimestamp(), createdBy: user.email, createdByName: user.name || '',
-  });
+  });  // Tin nhắn hệ thống (mặc định gửi kế toán; quản trị đổi người nhận ở Cấu hình tin nhắn hệ thống)
+  if (!extra.silent) sysNotify('legal_transfer', { id: m.id, orderId: m.orderId || '', partyName: m.partyName || '', warehouse: m.warehouse || '', company: m.company,
+    from: froms.join(', '), date: m.date || '', lines: crossLines(m), link: '/bao-cao/chuyen-phap-nhan' }, user);
 }
 
 // Kế toán đánh dấu đã làm chuyển pháp nhân trên phần mềm kế toán (hoặc mở lại)
@@ -54,7 +57,7 @@ export async function setNoticeDone(id, done, user, note = '') {
 
 // Phiếu cũ chưa có thông báo: kế toán đánh dấu đã xử lý từ báo cáo
 export async function markMovementDone(m, user) {
-  await notifyLegalTransfer(m, user);
+  await notifyLegalTransfer(m, user, { silent: true });
   await setNoticeDone(`LT-${m.id}`, true, user);
 }
 

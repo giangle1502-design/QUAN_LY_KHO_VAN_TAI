@@ -1,3 +1,4 @@
+import { notifyOrder } from '../../lib/chat';
 import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useCollections, useMyWarehouses, useOpCompany } from '../../lib/hooks';
@@ -279,6 +280,8 @@ export default function SOForm({ type = 'SO', order, onClose }) {
     setBusy(true);
     try {
       const id = order ? (await saveOrder(order.id, data, { email, name }, sp.secrets, { reason: editReason, changes }), order.id) : await createOrder(data, { email, name }, sp.secrets);
+      // Đơn mới: tin nhắn hệ thống theo cấu hình (không chờ, lỗi không ảnh hưởng việc lập đơn)
+      if (!order) notifyOrder(id, data, { email, name });
       onClose(id);
     } catch (e2) {
       setErr(e2.code === 'permission-denied' ? 'Bạn không có quyền lập/sửa đơn.' : e2.message);

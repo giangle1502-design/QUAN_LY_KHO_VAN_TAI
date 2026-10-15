@@ -247,6 +247,39 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'doneBy', 'doneByName', 'doneAt', 'doneNote']);
     }
 
+    // ==== Trò chuyện: riêng (dm), nhóm (quản trị tạo), tin hệ thống (sys) ====
+    // members: email thành viên; ['*'] = kênh thông báo chung cho mọi người
+    function chatPath(cid) { return /databases/$(database)/documents/chats/$(cid); }
+    function inChat(d) { return me() in d.members || '*' in d.members; }
+    function lastKeys() { return ['lastText', 'lastAt', 'lastBy', 'lastByName', 'lastSys']; }
+    match /chats/{cid} {
+      allow read: if isStaff() && (me() in resource.data.members || '*' in resource.data.members);
+      allow read: if isAdmin() && resource.data.type == 'group';
+      // Trò chuyện riêng: 2 người, mình là 1 trong 2
+      allow create: if isStaff() && request.resource.data.type == 'dm' && request.resource.data.members.size() == 2
+        && me() in request.resource.data.members && request.resource.data.createdBy == me();
+      // Nhóm: quản trị tạo, sửa tên / thành viên
+      allow create, update: if isAdmin() && request.resource.data.type == 'group';
+      // Hộp thông báo hệ thống: riêng 1 người hoặc kênh chung; ai lập chứng từ cũng gửi được
+      allow create: if isStaff() && request.resource.data.type == 'sys' && request.resource.data.lastBy == me()
+        && (request.resource.data.members == ['*'] || request.resource.data.members.size() == 1);
+      // Tin mới: cập nhật dòng xem trước (cả tin hệ thống gửi vào nhóm mình không ở trong)
+      allow update: if isStaff() && request.resource.data.lastBy == me()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(lastKeys());
+      match /messages/{mid} {
+        allow read: if isStaff() && inChat(get(chatPath(cid)).data);
+        // Thành viên gửi tin (hộp hệ thống chỉ quản trị gửi vào kênh chung); tin hệ thống (sys) ai lập chứng từ cũng gửi được
+        allow create: if isStaff() && request.resource.data.by == me() && request.resource.data.keys().hasOnly(['text', 'by', 'byName', 'at', 'sys', 'event', 'ref', 'link'])
+          && request.resource.data.text is string && request.resource.data.text.size() <= 4000
+          && (request.resource.data.get('sys', false) == true
+            || (inChat(getAfter(chatPath(cid)).data) && (getAfter(chatPath(cid)).data.type != 'sys' || isAdmin())));
+      }
+    }
+    // Đã đọc tới đâu: mỗi người 1 tài liệu riêng
+    match /chatReads/{email} {
+      allow read, write: if isStaff() && email == me();
+    }
+
     // ==== Pallet gỗ / nhựa: tồn theo kho, đang cho vận tải mượn, sổ nhập / trả / điều chỉnh ====
     match /palletStock/{id} {
       allow read: if isStaff();
