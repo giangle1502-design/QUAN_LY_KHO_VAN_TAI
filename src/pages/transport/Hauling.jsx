@@ -16,8 +16,9 @@ import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum, today } from '../../lib/utils';
 import { Empty, ErrorBox, Modal } from '../../components/ui';
 import { DriverLinkBox, PhotoModal, StepModal } from '../../components/TripSteps';
-import { WithAdd } from '../../components/FormTools';
-import { BASE_COST_FIELDS, COST_GROUPS, calcCosts, freightTotalOf, useCostFields } from '../../lib/tripCosts';
+import { ColumnPicker, WithAdd } from '../../components/FormTools';
+import { dragHeadProps, orderCols } from '../../lib/colOrder';
+import { BASE_COST_FIELDS, COST_GROUPS, TRIP_VARS, calcCosts, checkCostFormula, costFieldsWith, freightTotalOf, groupTotalOf, useCostConfig, useCostFields } from '../../lib/tripCosts';
 import Select from '../../components/Select';
 
 // Vận chuyển theo chuyến: đơn cần chia xe → chuyến xe (tài xế xác nhận từng bước) → chi phí & cước
@@ -419,9 +420,10 @@ function CostModal({ t, onClose }) {
   const c = t.costs || {};
   const [pickup, setPickup] = useState(t.pickup || '');
   const sug = suggestFreight({ ...t, pickup }, rates);
-  const [f, setF] = useState(() => ({ ...Object.fromEntries(fields.map((x) => [x.key, c[x.key] ?? ''])), freight: c.freight ?? sug?.amount ?? '', invoiceNo: c.invoiceNo || '', invoiceDate: c.invoiceDate || '', note: c.note || '' }));
+  const [f, setF] = useState(() => ({ ...Object.fromEntries(BASE_COST_FIELDS.map((x) => [x.key, c[x.key] ?? ''])), freight: c.freight ?? sug?.amount ?? '', invoiceNo: c.invoiceNo || '', invoiceDate: c.invoiceDate || '', note: c.note || '' }));
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [cfg, setCfg] = useState(false);
   const approved = t.costStatus === 'approved';
   // Điều phối vận tải hoặc kế toán nhập cước (xe nội bộ: người tính cước cập nhật sau)
   const canEdit = !approved && (isAdmin || role === 'van_tai' || hasRole('ke_toan'));
@@ -435,17 +437,22 @@ function CostModal({ t, onClose }) {
     catch (e) { setErr(e.code === 'permission-denied' ? 'Không có quyền (dán lại firestore.rules mới).' : e.message); }
     setBusy(false);
   };
-  const vals = Object.fromEntries(fields.map((x) => [x.key, n(f[x.key])]));
-  const sumc = calcCosts(vals, fields);
+  // Trường mới thêm (chưa có trong f) lấy số đã lưu của chuyến
+  const raw = (k) => (f[k] !== undefined ? f[k] : c[k] ?? '');
+  const vals = Object.fromEntries(fields.filter((x) => !x.formula).map((x) => [x.key, n(raw(x.key))]));
+  const sumc = calcCosts(vals, fields, { kg: tripKg(t) });
   const costs = { ...vals, ...sumc, invoiceNo: f.invoiceNo.trim(), invoiceDate: f.invoiceDate, note: f.note.trim(), rate: sug?.rate || '' };
   const pt = points.find((x) => x.code === pickup);
   const pickUpd = pickup !== (t.pickup || '') ? { pickup, pickupName: pt?.name || '', pickupAddress: pt?.address || '', pickupMap: pt?.mapLink || '' } : {};
   const input = (x) => (
-    <label key={x.key} className="field"><span>{x.label}{x.group === 'pct' ? ' (%)' : ' (đ)'}</span>
-      <input type="number" value={f[x.key]} disabled={!canEdit} onChange={(e) => set(x.key, e.target.value)} placeholder={x.group === 'pct' ? 'VD 5 = cộng 5% cước' : ''} /></label>);
+    <label key={x.key} className="field"><span>{x.label}{x.group === 'pct' ? ' (%)' : ' (đ)'}{x.formula ? ' ƒ' : ''}</span>
+      {x.formula ? <input value={vnd(sumc[x.key])} disabled title={`Công thức: ${x.formula}`} />
+        : <input type="number" value={raw(x.key)} disabled={!canEdit} onChange={(e) => set(x.key, e.target.value)} placeholder={x.group === 'pct' ? 'VD 5 = cộng 5% cước' : ''} />}</label>);
+  const grp = (g) => fields.filter((x) => x.group === g);
   return (
     <Modal title={`Chi phí chuyến ${t.id}`} onClose={onClose} wide>
-      <p className="small">{t.company ? `${t.company} · ` : ''}{fmtDate(t.plannedDate)} · {t.carrierName} · {t.plate} · {t3(tripKg(t))} tấn · {COST[t.costStatus || '']?.[0]}</p>
+      <p className="small">{t.company ? `${t.company} · ` : ''}{fmtDate(t.plannedDate)} · {t.carrierName} · {t.plate} · {t3(tripKg(t))} tấn · {COST[t.costStatus || '']?.[0]}
+        {isAdmin && <button type="button" className="btn sm" style={{ marginLeft: 8 }} onClick={() => setCfg(true)}>+ Thêm trường / công thức</button>}</p>
       <div className="form-grid">
         <label className="field"><span>Điểm nhận hàng</span><WithAdd cat="pickupPoints" onAdded={(id) => setPickup(id)}>
           <Select value={pickup} disabled={!canEdit} onChange={(e) => setPickup(e.target.value)}><option value="">{t.warehouseName || t.warehouse} (kho xuất)</option>
@@ -457,51 +464,84 @@ function CostModal({ t, onClose }) {
       <div className="form-grid">{fields.filter((x) => ['base', 'pct', 'surcharge'].includes(x.group)).map(input)}</div>
       <p style={{ margin: '4px 0 10px' }}>Tổng cước vận chuyển = {vnd(vals.freight)} + hỗ trợ dầu {vnd(sumc.fuel)} + phụ thu {vnd(sumc.surcharge)} = <b>{vnd(sumc.freightTotal)} đ</b></p>
       <div className="section-head">Phí khác</div>
-      <div className="form-grid">{fields.filter((x) => x.group === 'fee').map(input)}
+      <div className="form-grid">{grp('fee').map(input)}</div>
+      {grp('chiho').length > 0 && <><div className="section-head">Chi hộ (tách riêng)</div>
+        <div className="form-grid">{grp('chiho').map(input)}</div></>}
+      <div className="form-grid">
         <label className="field"><span>Số hóa đơn</span><input value={f.invoiceNo} disabled={!canEdit} onChange={(e) => set('invoiceNo', e.target.value)} /></label>
         <label className="field"><span>Ngày hóa đơn</span><input type="date" value={f.invoiceDate} disabled={!canEdit} onChange={(e) => set('invoiceDate', e.target.value)} /></label>
         <label className="field full"><span>Ghi chú</span><input value={f.note} disabled={!canEdit} onChange={(e) => set('note', e.target.value)} /></label>
       </div>
-      <p>Tổng chi phí = tổng cước {vnd(sumc.freightTotal)} + phí khác {vnd(sumc.fees)} = <b>{vnd(sumc.total)} đ</b></p>
+      <p>Tổng chi phí = tổng cước {vnd(sumc.freightTotal)} + phí khác {vnd(sumc.fees)}{grp('chiho').length ? ` + chi hộ ${vnd(sumc.chiho)}` : ''} = <b>{vnd(sumc.total)} đ</b></p>
       <ErrorBox error={err} />
       <div className="form-actions">
         <button className="btn" onClick={onClose}>Đóng</button>
         {canEdit && <button className="btn primary" disabled={busy} onClick={() => write({ costs, costStatus: 'entered', costBy: email, costAt: nowISO(), ...pickUpd }, `Nhập chi phí ${vnd(sumc.total)} đ`)}>Lưu chi phí</button>}
         {canApprove && <button className="btn primary" disabled={busy} onClick={() => write({ costStatus: 'approved', costApprovedBy: email, costApprovedAt: nowISO() }, `Kế toán chốt chi phí ${vnd(costTotal(t.costs))} đ`)}>✓ Chốt chi phí</button>}
       </div>
+      {cfg && <CostFieldsModal onClose={() => setCfg(false)} />}
     </Modal>
   );
 }
 
-// Quản trị thêm trường chi phí (VD Phí vệ sinh cont, Phí lưu bãi): nhóm Phụ thu cộng vào tổng cước, nhóm Phí cộng ngoài
+// Quản trị thêm / sửa trường chi phí (VD Phí cầu đường, Phí bảo dưỡng, Phí dịch vụ tờ khai), đặt công thức, đổi nhóm.
+// Nhóm Phụ thu cộng vào tổng cước; Phí khác cộng ngoài; Chi hộ tách riêng (có cột tổng riêng)
 function CostFieldsModal({ onClose }) {
   const { email } = useApp();
-  const [extra, setExtra] = useState(null);
-  const [f, setF] = useState({ label: '', group: 'fee' });
+  const cfgNow = useCostConfig();
+  const fields = costFieldsWith(cfgNow.extra, cfgNow.groups);
+  const EMPTY = { label: '', group: 'fee', formula: '' };
+  const [f, setF] = useState(EMPTY);
+  const [editing, setEditing] = useState(null);
   const [err, setErr] = useState('');
-  useEffect(() => onSnapshot(doc(db, 'settings', 'tripCostFields'), (s) => setExtra(s.exists() ? s.data().extra || [] : [])), []);
-  const save = async (list) => {
+  const save = async (upd) => {
     setErr('');
-    try { await setDoc(doc(db, 'settings', 'tripCostFields'), { extra: list, updatedAt: nowISO(), updatedBy: email }); } catch (e) { setErr(e.message); }
+    try { await setDoc(doc(db, 'settings', 'tripCostFields'), { extra: cfgNow.extra, groups: cfgNow.groups, ...upd, updatedAt: nowISO(), updatedBy: email }); return true; } catch (e) { setErr(e.message); return false; }
   };
-  const add = () => { if (!f.label.trim()) return; save([...(extra || []), { key: `x${Date.now().toString(36)}`, label: f.label.trim(), group: f.group }]); setF({ label: '', group: f.group }); };
+  const submit = async () => {
+    const label = f.label.trim();
+    if (!label) return setErr('Nhập tên trường.');
+    if (fields.some((x) => x.label.toLowerCase() === label.toLowerCase() && x.key !== editing)) return setErr(`Đã có trường "${label}".`);
+    const formula = f.formula.trim().replace(/^=/, '');
+    if (formula) { const bad = checkCostFormula(formula, [...fields.filter((x) => x.key !== editing), { key: editing || '_new', label }], editing || '_new'); if (bad) return setErr(bad); }
+    const rec = { label, group: f.group, ...(formula ? { formula } : {}) };
+    const extra = editing ? cfgNow.extra.map((x) => (x.key === editing ? { key: x.key, ...rec } : x)) : [...cfgNow.extra, { key: `x${Date.now().toString(36)}`, ...rec }];
+    if (await save({ extra })) { setF(EMPTY); setEditing(null); }
+  };
+  const isBase = (k) => BASE_COST_FIELDS.some((b) => b.key === k);
   return (
-    <Modal title="Trường chi phí chuyến xe" onClose={onClose}>
-      <p className="small">Trường gốc: {BASE_COST_FIELDS.map((x) => x.label).join(', ')}. Thêm trường mới bên dưới; trường thêm hiện ở màn hình nhập chi phí, báo cáo và Excel.</p>
-      <div className="filters"><input placeholder="Tên trường, VD Phí lưu bãi" value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} style={{ flex: 1 }} />
-        <Select value={f.group} onChange={(e) => setF({ ...f, group: e.target.value })}>{Object.entries(COST_GROUPS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select>
-        <button type="button" className="btn primary" onClick={add}>+ Thêm</button></div>
+    <Modal title="Trường chi phí chuyến xe" onClose={onClose} wide>
+      <p className="small">Thêm hạng mục mới (VD Phí cầu đường, Phí bảo dưỡng, Phí dịch vụ tờ khai). Mỗi trường là 1 cột riêng trong báo cáo, bảng kê và Excel.
+        Công thức (không bắt buộc) dùng tên trường trong ngoặc vuông, VD <code>[Số lượng (tấn)] * 30000</code> hoặc <code>[Cước vận chuyển] * 2 / 100</code>. Trường có công thức tự tính, không nhập tay.</p>
+      <div className="form-grid">
+        <label className="field"><span>Tên trường *</span><input value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} placeholder="VD Phí cầu đường" /></label>
+        <label className="field"><span>Nhóm</span><Select value={f.group} onChange={(e) => setF({ ...f, group: e.target.value })}>{Object.entries(COST_GROUPS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select></label>
+        <label className="field full"><span>Công thức (để trống = nhập tay)</span><input value={f.formula} onChange={(e) => setF({ ...f, formula: e.target.value })} placeholder="VD [Số lượng (tấn)] * 30000" /></label>
+      </div>
+      <p className="small">Trường dùng được trong công thức: {[...fields, ...TRIP_VARS].map((x) => (
+        <button key={x.key} type="button" className="btn ghost sm" onClick={() => setF((y) => ({ ...y, formula: `${y.formula}[${x.label}]` }))}>[{x.label}]</button>))}</p>
       <ErrorBox error={err} />
-      {(extra || []).map((x, i) => <div key={x.key} className="filters"><input value={x.label} onChange={(e) => setExtra((l) => l.map((y, j) => (j === i ? { ...y, label: e.target.value } : y)))} onBlur={() => save(extra)} style={{ flex: 1 }} />
-        <span className="small">{COST_GROUPS[x.group]}</span>
-        <button type="button" className="btn ghost sm" onClick={() => window.confirm(`Bỏ trường "${x.label}"? Số đã nhập vẫn giữ trong chuyến.`) && save(extra.filter((_, j) => j !== i))}>✕</button></div>)}
+      <div className="form-actions">{editing && <button type="button" className="btn" onClick={() => { setEditing(null); setF(EMPTY); }}>Thôi sửa</button>}
+        <button type="button" className="btn primary" onClick={submit}>{editing ? 'Lưu trường' : '+ Thêm trường'}</button></div>
+      <div className="table-wrap"><table>
+        <thead><tr><th>Trường</th><th>Nhóm</th><th>Công thức</th><th></th></tr></thead>
+        <tbody>{fields.map((x) => <tr key={x.key}>
+          <td>{x.label}</td>
+          <td>{['base', 'pct'].includes(x.group) ? <span className="small">Cước vận chuyển</span>
+            : isBase(x.key) ? <Select value={x.group} onChange={(e) => save({ groups: { ...cfgNow.groups, [x.key]: e.target.value } })}>{Object.entries(COST_GROUPS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select>
+            : <span className="small">{COST_GROUPS[x.group]}</span>}</td>
+          <td className="small mono">{x.formula || ''}</td>
+          <td>{!isBase(x.key) && <><button type="button" className="btn sm" onClick={() => { setEditing(x.key); setF({ label: x.label, group: x.group, formula: x.formula || '' }); }}>Sửa</button>
+            <button type="button" className="btn ghost sm" onClick={() => window.confirm(`Bỏ trường "${x.label}"? Số đã nhập vẫn giữ trong chuyến.`) && save({ extra: cfgNow.extra.filter((y) => y.key !== x.key) })}>✕</button></>}</td>
+        </tr>)}</tbody>
+      </table></div>
       <div className="form-actions"><button className="btn" onClick={onClose}>Đóng</button></div>
     </Modal>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Chi phí & cước: tổng theo đơn vị vận tải + bảng chi tiết từng chuyến (đủ cột cước, phụ thu, phí; Excel)
+// Chi phí & cước: tổng theo đơn vị vận tải + bảng chi tiết từng chuyến (mỗi khoản 1 cột; chọn, kéo thứ tự cột; Excel)
 function Costs({ trips, priv }) {
   const { role, can3PL, isAdmin } = useApp();
   const isCarrier = role === 'van_tai';
@@ -515,34 +555,54 @@ function Costs({ trips, priv }) {
   const done = trips.filter((t) => t.status === 'completed' && (!f.from || (t.plannedDate || '') >= f.from) && (!f.to || (t.plannedDate || '') <= f.to)
     && (!f.company || t.company === f.company) && (!f.carrier || t.carrier === f.carrier)
     && (!f.status || (f.status === 'missing' ? !t.costs : (t.costStatus || '') === f.status)));
+  const hasChiho = fields.some((x) => x.group === 'chiho');
   const g = new Map();
   for (const t of done) {
     const k = t.carrier || '';
-    const x = g.get(k) || { carrier: k, name: t.carrierName || '', trips: 0, kg: 0, freightTotal: 0, fees: 0, total: 0, missing: 0, approved: 0 };
+    const x = g.get(k) || { carrier: k, name: t.carrierName || '', trips: 0, kg: 0, freightTotal: 0, fees: 0, chiho: 0, total: 0, missing: 0, approved: 0 };
     const c = t.costs || {};
-    x.trips += 1; x.kg += tripKg(t); x.freightTotal += freightTotalOf(c); x.total += costTotal(c); x.fees += costTotal(c) - freightTotalOf(c);
+    const ch = groupTotalOf(c, fields, 'chiho');
+    x.trips += 1; x.kg += tripKg(t); x.freightTotal += freightTotalOf(c); x.total += costTotal(c); x.chiho += ch; x.fees += costTotal(c) - freightTotalOf(c) - ch;
     if (!t.costs) x.missing += 1; if (t.costStatus === 'approved') x.approved += 1;
     g.set(k, x);
   }
   const sum = [...g.values()];
   const pre = fields.filter((x) => ['pct', 'base', 'surcharge'].includes(x.group)).sort((a, b) => (a.group === 'pct' ? -1 : b.group === 'pct' ? 1 : 0));
-  const fees = fields.filter((x) => x.group === 'fee');
-  const row = (t) => {
-    const c = t.costs || {};
-    return {
-      'Công ty': t.company || '', 'Ngày vận chuyển': t.plannedDate || '', 'Chuyến': t.id, 'Điểm nhận': pickupOf(t), 'Điểm giao': destOf(t, warehouses),
-      'Đơn vị vận tải': t.carrierName || t.carrier, ...(can3PL ? { '3PL': priv[t.id]?.threeplName || '' } : {}), 'Số xe': t.plate || '', 'Số lượng (tấn)': +(tripKg(t) / 1000).toFixed(3),
-      ...Object.fromEntries(pre.map((x) => [x.label, n(c[x.key])])), 'Tổng cước vận chuyển': freightTotalOf(c),
-      ...Object.fromEntries(fees.map((x) => [x.label, n(c[x.key])])), 'Tổng chi phí': costTotal(c),
-      'Cước theo bảng giá': suggestFreight(t, rates)?.amount ?? '', 'Số HĐ': c.invoiceNo || '', 'Ngày HĐ': c.invoiceDate || '', 'Ghi chú': c.note || '', 'Trạng thái': t.costs ? COST[t.costStatus || '']?.[0] : 'Chưa nhập',
-    };
-  };
-  const rows = done.map(row);
-  const cols = rows.length ? Object.keys(rows[0]) : [];
-  const numCol = (k) => typeof rows[0]?.[k] === 'number';
+  const money = (key, label, get) => ({ key, label, num: true, get });
+  const cv = (x) => money(`f:${x.key}`, x.label, (t) => n(t.costs?.[x.key]));
+  const cols = [
+    { key: 'company', label: 'Công ty', get: (t) => t.company || '' },
+    { key: 'date', label: 'Ngày vận chuyển', get: (t) => t.plannedDate || '' },
+    { key: 'trip', label: 'Chuyến', get: (t) => t.id },
+    { key: 'pickup', label: 'Điểm nhận', get: (t) => pickupOf(t) },
+    { key: 'dest', label: 'Điểm giao', cls: 'small', get: (t) => destOf(t, warehouses) },
+    { key: 'carrier', label: 'Đơn vị vận tải', get: (t) => t.carrierName || t.carrier },
+    ...(can3PL ? [{ key: '3pl', label: '3PL', get: (t) => priv[t.id]?.threeplName || '' }] : []),
+    { key: 'plate', label: 'Số xe', get: (t) => t.plate || '' },
+    { key: 'tons', label: 'Số lượng (tấn)', num: true, tons: true, get: (t) => +(tripKg(t) / 1000).toFixed(3) },
+    ...pre.map((x) => ({ ...cv(x), pct: x.group === 'pct' })),
+    money('freightTotal', 'Tổng cước vận chuyển', (t) => freightTotalOf(t.costs)),
+    ...fields.filter((x) => x.group === 'fee').map(cv),
+    money('feeTotal', 'Tổng phí khác', (t) => groupTotalOf(t.costs, fields, 'fee')),
+    ...fields.filter((x) => x.group === 'chiho').map(cv),
+    ...(hasChiho ? [money('chihoTotal', 'Tổng chi hộ', (t) => groupTotalOf(t.costs, fields, 'chiho'))] : []),
+    money('total', 'Tổng chi phí', (t) => costTotal(t.costs)),
+    money('rate', 'Cước theo bảng giá', (t) => suggestFreight(t, rates)?.amount ?? 0),
+    { key: 'invoiceNo', label: 'Số HĐ', get: (t) => t.costs?.invoiceNo || '' },
+    { key: 'invoiceDate', label: 'Ngày HĐ', get: (t) => t.costs?.invoiceDate || '' },
+    { key: 'note', label: 'Ghi chú', get: (t) => t.costs?.note || '' },
+    { key: 'status', label: 'Trạng thái', get: (t) => (t.costs ? COST[t.costStatus || '']?.[0] : 'Chưa nhập') },
+  ];
+  // Mỗi người tự chọn cột, kéo thứ tự (kéo tiêu đề hoặc ⚙ Cột hiển thị)
+  const [hidden, setHidden] = usePref('costs:hidden', ['rate', 'feeTotal']);
+  const [order, setOrder] = usePref('costs:cols', []);
+  const ordered = orderCols(cols, order);
+  const keys = ordered.map((x) => x.key);
+  const shown = ordered.filter((x) => !hidden.includes(x.key));
+  const cell = (x, t) => { const v = x.get(t); return x.num ? (x.tons ? t3(v * 1000) : v ? (x.pct ? v : vnd(v)) : '') : v; };
   const excel = () => exportSheets(`Chi_phi_van_chuyen_${f.from}_${f.to}`, {
-    'Chi tiết chuyến': rows,
-    'Tổng theo đơn vị': sum.map((x) => ({ 'Đơn vị vận tải': x.carrier, 'Tên': x.name, 'Số chuyến': x.trips, 'Số tấn': +(x.kg / 1000).toFixed(3), 'Tổng cước vận chuyển': x.freightTotal, 'Phí khác': x.fees, 'Tổng chi phí': x.total, 'Chuyến chưa nhập chi phí': x.missing, 'Chuyến kế toán đã chốt': x.approved })),
+    'Chi tiết chuyến': done.map((t) => Object.fromEntries(shown.map((x) => [x.label, x.get(t)]))),
+    'Tổng theo đơn vị': sum.map((x) => ({ 'Đơn vị vận tải': x.carrier, 'Tên': x.name, 'Số chuyến': x.trips, 'Số tấn': +(x.kg / 1000).toFixed(3), 'Tổng cước vận chuyển': x.freightTotal, 'Phí khác': x.fees, ...(hasChiho ? { 'Chi hộ': x.chiho } : {}), 'Tổng chi phí': x.total, 'Chuyến chưa nhập chi phí': x.missing, 'Chuyến kế toán đã chốt': x.approved })),
   });
   const carriers = [...new Map(trips.map((t) => [t.carrier, t.carrierName])).entries()];
   return (
@@ -553,24 +613,25 @@ function Costs({ trips, priv }) {
         <Select value={f.company} onChange={(e) => setF((x) => ({ ...x, company: e.target.value }))}><option value="">Mọi công ty</option>{companies.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}</Select>
         {!isCarrier && <Select value={f.carrier} onChange={(e) => setF((x) => ({ ...x, carrier: e.target.value }))}><option value="">Mọi đơn vị vận tải</option>{carriers.map(([k, v]) => <option key={k} value={k}>{k} – {v}</option>)}</Select>}
         <Select value={f.status} onChange={(e) => setF((x) => ({ ...x, status: e.target.value }))}><option value="">Mọi trạng thái</option><option value="missing">Chưa nhập</option><option value="entered">Đã nhập, chờ chốt</option><option value="approved">Kế toán đã chốt</option></Select>
-        <button className="btn" onClick={excel} disabled={!rows.length}>⬇ Excel</button>
-        {isAdmin && <button className="btn ghost" onClick={() => setCfg(true)}>⚙ Trường chi phí</button>}
+        <ColumnPicker cols={cols.map((x) => ({ key: x.key, label: x.label }))} hidden={hidden} setHidden={setHidden} order={order} setOrder={setOrder} />
+        <button className="btn" onClick={excel} disabled={!done.length}>⬇ Excel</button>
+        {isAdmin && <button className="btn" onClick={() => setCfg(true)}>+ Thêm trường chi phí</button>}
       </div>
-      <p className="small">Chỉ tính chuyến đã giao xong. Tổng cước vận chuyển = Cước × (1 + % hỗ trợ dầu) + phụ thu vé + phụ thu hạ rỗng trái tuyến (+ phụ thu tự thêm). Tổng chi phí = Tổng cước + các phí khác. Bấm 💰 để nhập.</p>
+      <p className="small">Chỉ tính chuyến đã giao xong. Tổng cước vận chuyển = Cước × (1 + % hỗ trợ dầu) + các phụ thu. Tổng chi phí = Tổng cước + phí khác{hasChiho ? ' + chi hộ' : ''}. Bấm 💰 để nhập. Kéo tiêu đề cột để đổi thứ tự.</p>
       <div className="table-wrap" style={{ marginBottom: 12 }}>
         {!sum.length ? <Empty text="Chưa có chuyến giao xong trong khoảng này." /> : (
           <table>
-            <thead><tr>{!isCarrier && <th>Đơn vị vận tải</th>}<th className="num">Chuyến</th><th className="num">Tấn</th><th className="num">Tổng cước vận chuyển</th><th className="num">Phí khác</th><th className="num">Tổng chi phí (đ)</th><th className="num">Chưa nhập</th><th className="num">Đã chốt</th></tr></thead>
+            <thead><tr>{!isCarrier && <th>Đơn vị vận tải</th>}<th className="num">Chuyến</th><th className="num">Tấn</th><th className="num">Tổng cước vận chuyển</th><th className="num">Phí khác</th>{hasChiho && <th className="num">Chi hộ</th>}<th className="num">Tổng chi phí (đ)</th><th className="num">Chưa nhập</th><th className="num">Đã chốt</th></tr></thead>
             <tbody>{sum.map((x) => (
-              <tr key={x.carrier}>{!isCarrier && <td><b>{x.carrier}</b> {x.name}</td>}<td className="num">{x.trips}</td><td className="num">{t3(x.kg)}</td><td className="num">{vnd(x.freightTotal)}</td><td className="num">{vnd(x.fees)}</td>
+              <tr key={x.carrier}>{!isCarrier && <td><b>{x.carrier}</b> {x.name}</td>}<td className="num">{x.trips}</td><td className="num">{t3(x.kg)}</td><td className="num">{vnd(x.freightTotal)}</td><td className="num">{vnd(x.fees)}</td>{hasChiho && <td className="num">{vnd(x.chiho)}</td>}
                 <td className="num"><b>{vnd(x.total)}</b></td><td className="num">{x.missing || ''}</td><td className="num">{x.approved}</td></tr>))}</tbody>
           </table>
         )}
       </div>
-      {rows.length > 0 && <div className="table-wrap"><table className="cost-detail">
-        <thead><tr><th></th>{cols.map((k) => <th key={k} className={numCol(k) ? 'num' : ''}>{k}</th>)}</tr></thead>
-        <tbody>{done.map((t, i) => <tr key={t.id}><td><button className="btn sm" onClick={() => setCost(t)}>💰</button></td>
-          {cols.map((k) => <td key={k} className={numCol(k) ? 'num' : k === 'Điểm giao' ? 'small' : ''}>{numCol(k) ? (k === 'Số lượng (tấn)' ? t3(rows[i][k] * 1000) : (rows[i][k] ? (/%/.test(k) ? rows[i][k] : vnd(rows[i][k])) : '')) : rows[i][k]}</td>)}</tr>)}</tbody>
+      {done.length > 0 && <div className="table-wrap"><table className="cost-detail">
+        <thead><tr><th></th>{shown.map((x) => <th key={x.key} className={x.num ? 'num' : ''} {...dragHeadProps(x.key, keys, setOrder)}>{x.label}</th>)}</tr></thead>
+        <tbody>{done.map((t) => <tr key={t.id}><td><button className="btn sm" onClick={() => setCost(t)}>💰</button></td>
+          {shown.map((x) => <td key={x.key} className={x.num ? 'num' : x.cls || ''}>{cell(x, t)}</td>)}</tr>)}</tbody>
       </table></div>}
       {cost && <CostModal t={trips.find((x) => x.id === cost.id) || cost} onClose={() => setCost(null)} />}
       {cfg && <CostFieldsModal onClose={() => setCfg(false)} />}

@@ -5,7 +5,7 @@ import { useApp } from '../../context/AppContext';
 import { useCollection, useCompanies } from '../../lib/hooks';
 import { costTotal, tripKg } from '../../lib/transport';
 import { nowISO } from '../../lib/trips';
-import { freightTotalOf } from '../../lib/tripCosts';
+import { freightTotalOf, useCostFields } from '../../lib/tripCosts';
 import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum, matchQ, today } from '../../lib/utils';
 import { Empty, ErrorBox } from '../../components/ui';
@@ -60,8 +60,12 @@ export default function Statements({ trips, priv }) {
       && (!f.company || t.company === f.company) && matchQ(q, t.id, t.plate, t.driverName, t.warehouse, (t.lines || []).map((l) => [l.partyCode, l.partyName, l.item, l.orderId]), t.company, t.carrier, t.carrierName));
   }, [trips, priv, f, party, is3, open, q]);
   // Tách cước / dầu + phụ thu / phí khác (chuyến cũ: phí khác = chi hộ + bốc xếp + khác)
+  const costFields = useCostFields();
   const parts = (c) => { const ft = freightTotalOf(c); return { ft, sur: ft - n(c.freight), fees: costTotal(c) - ft }; };
   const picked = list.filter((t) => !off[t.id]);
+  // Mỗi khoản phí / chi hộ có số là 1 cột riêng
+  const feeCols = costFields.filter((x) => ['fee', 'chiho'].includes(x.group) && list.some((t) => n(costOf(t)?.[x.key])));
+  const feeSum = (k) => picked.reduce((s, t) => s + n(costOf(t)?.[k]), 0);
   const sum = picked.reduce((s, t) => { const c = costOf(t) || {}; const x = parts(c); return { kg: s.kg + tripKg(t), freight: s.freight + n(c.freight), sur: s.sur + x.sur, ft: s.ft + x.ft, fees: s.fees + x.fees, total: s.total + costTotal(c) }; },
     { kg: 0, freight: 0, sur: 0, ft: 0, fees: 0, total: 0 });
   const missing = picked.filter((t) => !costOf(t)).length;
@@ -74,12 +78,12 @@ export default function Statements({ trips, priv }) {
     const w = window.open('', '_blank');
     if (!w) return setErr('Trình duyệt chặn cửa sổ in. Cho phép pop-up rồi bấm lại.');
     const rows = picked.map((t, i) => { const c = costOf(t) || {}; return `<tr><td>${i + 1}</td><td>${esc(fmtDate(t.plannedDate))}</td><td>${esc(t.id)}</td><td>${esc(t.plate)}</td><td>${esc(t.driverName)}</td><td>${esc(route(t))}</td>
-      <td>${esc(t.lines.map((l) => l.item).join(', '))}</td><td class="n">${t3(tripKg(t))}</td><td class="n">${vnd(c.freight)}</td><td class="n">${vnd(parts(c).sur)}</td><td class="n">${vnd(parts(c).ft)}</td><td class="n">${vnd(parts(c).fees)}</td><td class="n"><b>${vnd(costTotal(c))}</b></td></tr>`; }).join('');
+      <td>${esc(t.lines.map((l) => l.item).join(', '))}</td><td class="n">${t3(tripKg(t))}</td><td class="n">${vnd(c.freight)}</td><td class="n">${vnd(parts(c).sur)}</td><td class="n">${vnd(parts(c).ft)}</td>${feeCols.map((x) => `<td class="n">${vnd(c[x.key])}</td>`).join('')}<td class="n"><b>${vnd(costTotal(c))}</b></td></tr>`; }).join('');
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Arial,sans-serif;font-size:12px;margin:16px}h2{text-align:center;margin:0}p{text-align:center;margin:4px 0 12px}
       table{border-collapse:collapse;width:100%}td,th{border:1px solid #333;padding:4px}th{background:#eee}.n{text-align:right}.sign{display:flex;justify-content:space-around;margin-top:30px;text-align:center}@page{size:A4 landscape;margin:10mm}</style></head><body>
       <h2>${esc(title)}</h2><p>${esc(sub)}${open ? ` · Số: ${esc(open.id)}` : ''}</p>
-      <table><thead><tr><th>#</th><th>Ngày</th><th>Chuyến</th><th>Số xe</th><th>Tài xế</th><th>Tuyến</th><th>Hàng</th><th>Tấn</th><th>Cước</th><th>Dầu + phụ thu</th><th>Tổng cước VC</th><th>Phí khác</th><th>Thành tiền</th></tr></thead>
-      <tbody>${rows}</tbody><tfoot><tr><th colspan="7">Cộng ${picked.length} chuyến</th><th class="n">${t3(sum.kg)}</th><th class="n">${vnd(sum.freight)}</th><th class="n">${vnd(sum.sur)}</th><th class="n">${vnd(sum.ft)}</th><th class="n">${vnd(sum.fees)}</th><th class="n">${vnd(sum.total)}</th></tr></tfoot></table>
+      <table><thead><tr><th>#</th><th>Ngày</th><th>Chuyến</th><th>Số xe</th><th>Tài xế</th><th>Tuyến</th><th>Hàng</th><th>Tấn</th><th>Cước</th><th>Dầu + phụ thu</th><th>Tổng cước VC</th>${feeCols.map((x) => `<th>${esc(x.label)}</th>`).join('')}<th>Thành tiền</th></tr></thead>
+      <tbody>${rows}</tbody><tfoot><tr><th colspan="7">Cộng ${picked.length} chuyến</th><th class="n">${t3(sum.kg)}</th><th class="n">${vnd(sum.freight)}</th><th class="n">${vnd(sum.sur)}</th><th class="n">${vnd(sum.ft)}</th>${feeCols.map((x) => `<th class="n">${vnd(feeSum(x.key))}</th>`).join('')}<th class="n">${vnd(sum.total)}</th></tr></tfoot></table>
       <div class="sign"><div><b>${is3 ? 'GHA' : 'Bên thuê vận chuyển'}</b><br/><i>(ký, ghi rõ họ tên)</i></div><div><b>${is3 ? '3PL' : 'Đơn vị vận tải'}</b><br/><i>(ký, ghi rõ họ tên)</i></div></div>
       <script>window.onload=()=>window.print()</script></body></html>`);
     w.document.close();
@@ -87,7 +91,8 @@ export default function Statements({ trips, priv }) {
   const excel = () => exportSheets(`Bang_ke_${is3 ? '3PL' : 'van_tai'}_${party || 'all'}_${f.from}_${f.to}`, {
     'Bảng kê': picked.map((t, i) => { const c = costOf(t) || {}; return { '#': i + 1, 'Ngày': t.plannedDate, 'Chuyến': t.id, 'Số xe': t.plate || '', 'Tài xế': t.driverName || '', 'Tuyến': route(t),
       'Hàng': t.lines.map((l) => l.item).join(', '), 'Đơn': (t.orderIds || []).join(', '), 'Công ty': t.company || '', 'Tấn': +(tripKg(t) / 1000).toFixed(3),
-      'Điểm nhận': t.pickupName || t.warehouseName || t.warehouse, 'Cước': n(c.freight), '% hỗ trợ dầu': n(c.fuelPct), 'Dầu + phụ thu': parts(c).sur, 'Tổng cước vận chuyển': parts(c).ft, 'Phí khác': parts(c).fees, 'Thành tiền': costTotal(c), 'Ghi chú': c.note || '' }; }),
+      'Điểm nhận': t.pickupName || t.warehouseName || t.warehouse, 'Cước': n(c.freight), '% hỗ trợ dầu': n(c.fuelPct), 'Dầu + phụ thu': parts(c).sur, 'Tổng cước vận chuyển': parts(c).ft,
+      ...Object.fromEntries(costFields.filter((x) => !['base', 'pct'].includes(x.group) && list.some((y) => n(costOf(y)?.[x.key]))).map((x) => [x.label, n(c[x.key])])), 'Thành tiền': costTotal(c), 'Ghi chú': c.note || '' }; }),
   });
   const save = async () => {
     setErr(''); setMsg('');
@@ -131,17 +136,17 @@ export default function Statements({ trips, priv }) {
         {!list.length ? <Empty text="Không có chuyến hoàn thành nào khớp bộ lọc." /> : (
           <table>
             <thead><tr><th><input type="checkbox" checked={!picked.length ? false : picked.length === list.length} onChange={(e) => setOff(e.target.checked ? {} : Object.fromEntries(list.map((t) => [t.id, true])))} /></th>
-              <th>Ngày</th><th>Chuyến</th><th>Số xe · tài xế</th><th>Tuyến</th>{!is3 && <th>Công ty</th>}<th className="num">Tấn</th><th className="num">Cước</th><th className="num">Dầu + phụ thu</th><th className="num">Tổng cước VC</th><th className="num">Phí khác</th><th className="num">Thành tiền</th></tr></thead>
+              <th>Ngày</th><th>Chuyến</th><th>Số xe · tài xế</th><th>Tuyến</th>{!is3 && <th>Công ty</th>}<th className="num">Tấn</th><th className="num">Cước</th><th className="num">Dầu + phụ thu</th><th className="num">Tổng cước VC</th>{feeCols.map((x) => <th key={x.key} className="num">{x.label}</th>)}<th className="num">Thành tiền</th></tr></thead>
             <tbody>{list.map((t) => { const c = costOf(t); return (
               <tr key={t.id} className={off[t.id] ? '' : 'picked'} style={off[t.id] ? { opacity: 0.45 } : undefined}>
                 <td><input type="checkbox" checked={!off[t.id]} onChange={() => setOff((m) => ({ ...m, [t.id]: !m[t.id] }))} /></td>
                 <td className="nowrap">{fmtDate(t.plannedDate)}</td><td className="mono">{t.id}</td><td>{t.plate}<div className="small">{t.driverName}</div></td><td className="small">{route(t)}</td>{!is3 && <td>{t.company}</td>}
                 <td className="num">{t3(tripKg(t))}</td>
-                {c ? <><td className="num">{vnd(c.freight)}</td><td className="num">{vnd(parts(c).sur)}</td><td className="num">{vnd(parts(c).ft)}</td><td className="num">{vnd(parts(c).fees)}</td><td className="num"><b>{vnd(costTotal(c))}</b></td></>
-                  : <td colSpan={5} className="small" style={{ color: 'var(--amber)' }}>chưa nhập cước</td>}
+                {c ? <><td className="num">{vnd(c.freight)}</td><td className="num">{vnd(parts(c).sur)}</td><td className="num">{vnd(parts(c).ft)}</td>{feeCols.map((x) => <td key={x.key} className="num">{vnd(c[x.key])}</td>)}<td className="num"><b>{vnd(costTotal(c))}</b></td></>
+                  : <td colSpan={4 + feeCols.length} className="small" style={{ color: 'var(--amber)' }}>chưa nhập cước</td>}
               </tr>); })}</tbody>
             <tfoot><tr><td colSpan={is3 ? 5 : 6}><b>Cộng {picked.length}/{list.length} chuyến đã chọn</b>{missing ? <span className="small" style={{ color: 'var(--amber)' }}> · {missing} chuyến chưa nhập cước</span> : null}</td>
-              <td className="num"><b>{t3(sum.kg)}</b></td><td className="num">{vnd(sum.freight)}</td><td className="num">{vnd(sum.sur)}</td><td className="num">{vnd(sum.ft)}</td><td className="num">{vnd(sum.fees)}</td><td className="num"><b>{vnd(sum.total)}</b></td></tr></tfoot>
+              <td className="num"><b>{t3(sum.kg)}</b></td><td className="num">{vnd(sum.freight)}</td><td className="num">{vnd(sum.sur)}</td><td className="num">{vnd(sum.ft)}</td>{feeCols.map((x) => <td key={x.key} className="num">{vnd(feeSum(x.key))}</td>)}<td className="num"><b>{vnd(sum.total)}</b></td></tr></tfoot>
           </table>
         )}
       </div>
