@@ -11,6 +11,7 @@ import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum, norm } from '../../lib/utils';
 import { Empty, ErrorBox } from '../../components/ui';
 import { ReportTable, toSheet } from './Reports';
+import Select from '../../components/Select';
 
 // ============================================================================
 // Phân tích bán hàng theo tháng (giống trang Phân tích bán hàng của Sale_control),
@@ -245,18 +246,18 @@ export default function SalesAnalysis({ wh, co, q }) {
     <>
       <ErrorBox error={error} />
       <div className="filters no-print">
-        <select value={month} onChange={(e) => { setMonth(e.target.value); setCmp(null); }}>
+        <Select value={month} onChange={(e) => { setMonth(e.target.value); setCmp(null); }}>
           {[...months].reverse().map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
-        </select>
+        </Select>
         <span className="small">so với</span>
-        <select value={cmpM} onChange={(e) => setCmp(e.target.value)}>
+        <Select value={cmpM} onChange={(e) => setCmp(e.target.value)}>
           <option value="">(không so sánh)</option>
           {[...new Set([prevMonth(month || vnDate().slice(0, 7)), ...months.filter((m) => m < month)])].sort().reverse().map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
-        </select>
-        <select value={basis} onChange={(e) => setBasis(e.target.value)} title="Sản lượng tính theo">
+        </Select>
+        <Select value={basis} onChange={(e) => setBasis(e.target.value)} title="Sản lượng tính theo">
           <option value="order">Theo số lượng đặt</option>
           <option value="done">Theo số lượng đã giao</option>
-        </select>
+        </Select>
         <button className="btn ghost" onClick={() => setShowCfg((x) => !x)}>⚙ Cách tính doanh thu</button>
         <div style={{ flex: 1 }} />
         <button className="btn" onClick={excel} disabled={!months.length}>⬇ Excel</button>

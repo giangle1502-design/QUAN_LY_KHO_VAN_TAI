@@ -7,6 +7,7 @@ import { useCollection, useOpWarehouse, useTrips } from '../../lib/hooks';
 import { ST, STATUS_META, afterExit, afterProcess, matchesTrip, nowISO } from '../../lib/trips';
 import { TripCard, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox } from '../../components/ui';
+import Select from '../../components/Select';
 
 // Cập nhật chuyến xe + ghi lịch sử thao tác
 export function useTripAction() {
@@ -112,13 +113,13 @@ export function Dock() {
           return (
             <TripCard key={t.id} trip={t} timeLabel="Vào cổng" timeValue={t.gateConfirmTime}>
               {opts.length ? (
-                <select value={v} onChange={(e) => setPick({ ...pick, [t.id]: e.target.value })}>
+                <Select value={v} onChange={(e) => setPick({ ...pick, [t.id]: e.target.value })}>
                   <option value="">-- Chọn cửa --</option>
                   {opts.map((d) => {
                     const by = busy.get(`${t.warehouse}__${d.code}`);
                     return <option key={d.code} value={d.code}>{d.code}{d.name ? ` – ${d.name}` : ''}{by ? ` (đang có xe ${by})` : ''}</option>;
                   })}
-                </select>
+                </Select>
               ) : (
                 <input placeholder="Số cửa" value={v} onChange={(e) => setPick({ ...pick, [t.id]: e.target.value })} style={{ width: 110 }} />
               )}

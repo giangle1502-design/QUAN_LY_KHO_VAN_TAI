@@ -12,6 +12,7 @@ import { TemplateSheets } from '../components/PrintTemplate';
 import RichEditor from '../components/RichEditor';
 import { Empty, ErrorBox } from '../components/ui';
 import { norm, today } from '../lib/utils';
+import Select from '../components/Select';
 
 const TOKENS = [
   ['{{BẢNG HÀNG}}', '▦ Bảng hàng', 'Vị trí đặt bảng dòng hàng (cột chỉnh ở mục Bảng hàng)'],
@@ -290,9 +291,9 @@ function TemplateEditor({ id }) {
             <div className="grid2" style={{ marginBottom: 8 }}>
               <label className="field"><span>Tên mẫu *</span><input value={t.name} onChange={(e) => set({ name: e.target.value })} placeholder="VD: Phiếu xuất cho khách ABC" /></label>
               <label className="field"><span>Loại phiếu</span>
-                <select value={t.docType} disabled={!isNew} onChange={(e) => setT({ ...starterTemplate(e.target.value), name: t.name })}>
+                <Select value={t.docType} disabled={!isNew} onChange={(e) => setT({ ...starterTemplate(e.target.value), name: t.name })}>
                   {Object.entries(DOC_TYPES).map(([k, d]) => <option key={k} value={k}>{d.label}</option>)}
-                </select>
+                </Select>
                 {isNew && <small className="small">Đổi loại phiếu sẽ nạp lại nội dung mẫu ban đầu của loại đó.</small>}
               </label>
             </div>
@@ -339,18 +340,18 @@ function TemplateEditor({ id }) {
                   <tr key={i}>
                     <td>{i + 1}</td>
                     <td>
-                      <select value={c.formula !== undefined ? '__f' : c.field} onChange={(e) => (e.target.value === '__f'
+                      <Select value={c.formula !== undefined ? '__f' : c.field} onChange={(e) => (e.target.value === '__f'
                         ? setCol(i, { field: '', formula: c.formula || '[Số kg] / 1000' })
                         : setCol(i, { field: e.target.value, formula: undefined, header: c.header && c.header !== c.field ? c.header : e.target.value }))}>
                         {!lineOpts.some((f) => f.label === c.field) && c.formula === undefined && <option value={c.field}>{c.field || '— chọn —'} {c.field ? '(không còn)' : ''}</option>}
                         {lineOpts.map((f) => <option key={f.label} value={f.label}>{f.label}</option>)}
                         <option value="__f">ƒ Công thức…</option>
-                      </select>
+                      </Select>
                       {c.formula !== undefined && <input value={c.formula} onChange={(e) => setCol(i, { formula: e.target.value })} placeholder="[Số kg] * [Mã hàng: Trọng lượng bao (kg)]" title="Dùng [Tên cột dữ liệu], + - * / ( ), ROUND, MIN, MAX" />}
                     </td>
                     <td><input value={c.header ?? ''} onChange={(e) => setCol(i, { header: e.target.value })} /></td>
                     <td><input style={{ width: 70 }} value={c.width || ''} placeholder="tự động" onChange={(e) => setCol(i, { width: e.target.value })} title="vd. 10% hoặc 25mm" /></td>
-                    <td><select value={c.align || ''} onChange={(e) => setCol(i, { align: e.target.value })}><option value="">Tự động</option><option value="left">Trái</option><option value="center">Giữa</option><option value="right">Phải</option></select></td>
+                    <td><Select value={c.align || ''} onChange={(e) => setCol(i, { align: e.target.value })}><option value="">Tự động</option><option value="left">Trái</option><option value="center">Giữa</option><option value="right">Phải</option></Select></td>
                     <td><input type="number" min="0" max="6" style={{ width: 56 }} value={c.dec ?? ''} placeholder="—" onChange={(e) => setCol(i, { dec: e.target.value === '' ? undefined : Number(e.target.value) })} /></td>
                     <td style={{ textAlign: 'center' }}><input type="checkbox" checked={!!c.sum} onChange={(e) => setCol(i, { sum: e.target.checked })} /></td>
                     <td style={{ whiteSpace: 'nowrap' }}>
@@ -364,13 +365,13 @@ function TemplateEditor({ id }) {
               <button className="btn sm" style={{ marginTop: 8 }} onClick={() => setTable({ columns: [...cols, { field: 'Mã hàng', header: 'Mã hàng' }] })}>+ Thêm cột</button>
               <div className="grid2" style={{ marginTop: 12 }}>
                 <label className="field"><span>Gộp dòng</span>
-                  <select value={t.table?.groupBy || ''} onChange={(e) => setTable({ groupBy: e.target.value })}>
+                  <Select value={t.table?.groupBy || ''} onChange={(e) => setTable({ groupBy: e.target.value })}>
                     <option value="">Không gộp (mỗi dòng phiếu 1 dòng)</option><option value="item">Gộp theo mã hàng (cộng kg, bao, pallet)</option>
-                  </select></label>
+                  </Select></label>
                 <label className="field"><span>Sắp xếp theo</span>
-                  <select value={t.table?.sortBy || ''} onChange={(e) => setTable({ sortBy: e.target.value })}>
+                  <Select value={t.table?.sortBy || ''} onChange={(e) => setTable({ sortBy: e.target.value })}>
                     <option value="">Thứ tự trên phiếu</option>{lineOpts.filter((f) => f.key !== 'stt').map((f) => <option key={f.label} value={f.label}>{f.label}</option>)}
-                  </select></label>
+                  </Select></label>
                 <label className="field"><span>Dòng tổng cộng</span>
                   <span className="suffix-input"><input type="checkbox" style={{ flex: 'none' }} checked={!!t.table?.showTotal} onChange={(e) => setTable({ showTotal: e.target.checked })} />
                     <input value={t.table?.totalLabel ?? 'Cộng'} onChange={(e) => setTable({ totalLabel: e.target.value })} placeholder="Chữ ở ô tổng" /></span>
@@ -410,16 +411,16 @@ function TemplateEditor({ id }) {
             <div className="card">
               <div className="grid2">
                 <label className="field"><span>Khổ giấy</span>
-                  <select value={t.paper} onChange={(e) => set({ paper: e.target.value })}>{Object.keys(PAPERS).map((p) => <option key={p} value={p}>{p}{PAPERS[p] ? ` (${PAPERS[p][0]}×${PAPERS[p][1]} mm)` : ''}</option>)}</select></label>
+                  <Select value={t.paper} onChange={(e) => set({ paper: e.target.value })}>{Object.keys(PAPERS).map((p) => <option key={p} value={p}>{p}{PAPERS[p] ? ` (${PAPERS[p][0]}×${PAPERS[p][1]} mm)` : ''}</option>)}</Select></label>
                 <label className="field"><span>Hướng giấy</span>
-                  <select value={t.orientation || 'portrait'} onChange={(e) => set({ orientation: e.target.value })}><option value="portrait">Dọc</option><option value="landscape">Ngang</option></select></label>
+                  <Select value={t.orientation || 'portrait'} onChange={(e) => set({ orientation: e.target.value })}><option value="portrait">Dọc</option><option value="landscape">Ngang</option></Select></label>
                 {!PAPERS[t.paper] && <>
                   <label className="field"><span>Rộng (mm)</span><input type="number" value={t.width || ''} onChange={(e) => set({ width: Number(e.target.value) || '' })} /></label>
                   <label className="field"><span>Cao (mm)</span><input type="number" value={t.height || ''} onChange={(e) => set({ height: Number(e.target.value) || '' })} /></label>
                 </>}
                 <label className="field"><span>Lề giấy (mm)</span><input type="number" min="0" max="40" value={t.margin ?? 12} onChange={(e) => set({ margin: e.target.value === '' ? '' : Number(e.target.value) })} /></label>
                 <label className="field"><span>Phông chữ</span>
-                  <select value={t.fontFamily} onChange={(e) => set({ fontFamily: e.target.value })}>{FONTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+                  <Select value={t.fontFamily} onChange={(e) => set({ fontFamily: e.target.value })}>{FONTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></label>
                 <label className="field"><span>Cỡ chữ chung (px)</span><input type="number" min="7" max="30" value={t.fontSize || 13} onChange={(e) => set({ fontSize: Number(e.target.value) || 13 })} /></label>
                 <label className="field"><span>Giãn dòng</span><input type="number" step="0.05" min="1" max="3" value={t.lineHeight || 1.35} onChange={(e) => set({ lineHeight: Number(e.target.value) || 1.35 })} /></label>
               </div>
@@ -440,10 +441,10 @@ function TemplateEditor({ id }) {
         <div className="designer-right">
           <div className="toolbar" style={{ marginBottom: 6 }}>
             <b>Xem trước</b>
-            <select value={sample} onChange={(e) => setSample(e.target.value)} style={{ maxWidth: 340 }}>
+            <Select value={sample} onChange={(e) => setSample(e.target.value)} style={{ maxWidth: 340 }}>
               <option value="">Dữ liệu mẫu (giả lập)</option>
               {samples.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-            </select>
+            </Select>
           </div>
           <PreviewBox w={w}>
             {data ? <TemplateSheets tpl={t} data={data} preview max={4} /> : <p>Đang tải…</p>}

@@ -12,6 +12,7 @@ import { fmtDate, fmtNum, norm } from '../../lib/utils';
 import { Empty, ErrorBox } from '../../components/ui';
 import { ReportTable, toSheet } from './Reports';
 import MoneyConfig, { NoMoneyNote } from './MoneyConfig';
+import Select from '../../components/Select';
 
 // ============================================================================
 // Báo cáo tổng quan trong một khoảng ngày: Mua hàng (PO) · Chuyển kho & vận tải (STO, chuyến xe) · Bán hàng (SO)
@@ -206,11 +207,11 @@ export default function Overview({ wh, co, q }) {
       <ReportTable cols={pItemCols} rows={poByItem} empty="Không có đơn mua trong kỳ." />
 
       <div className="section-head" style={{ marginTop: 20 }}>🚚 Chuyển kho & vận tải
-        <select className="no-print" value={scope} onChange={(e) => setScope(e.target.value)} style={{ fontWeight: 400 }}>
+        <Select className="no-print" value={scope} onChange={(e) => setScope(e.target.value)} style={{ fontWeight: 400 }}>
           <option value="STO">Chuyến chở hàng chuyển kho (STO)</option>
           <option value="SO">Chuyến giao hàng bán (SO)</option>
           <option value="all">Mọi chuyến</option>
-        </select></div>
+        </Select></div>
       <div className="stats">
         <Stat label="Số chuyến" value={tk.n} sub={tk.missing ? `${tk.missing} chuyến chưa nhập cước` : 'Đã nhập cước đủ'} tone={tk.missing ? 'amber' : ''} />
         <Stat label="Đã chở" value={`${kgf(tk.kg)} kg`} sub={`= ${tan(tk.kg)} tấn`} tone="green" />

@@ -16,6 +16,7 @@ import { MovementDetail } from '../stock/Movements';
 import EditSlip, { canEditSlip } from '../../components/EditSlip';
 import { ColumnPicker } from '../../components/FormTools';
 import { dragHeadProps, orderCols } from '../../lib/colOrder';
+import Select from '../../components/Select';
 
 const n = (v) => Number(v) || 0;
 const kgOf = (m) => (m.lines || []).reduce((a, l) => a + n(l.kg), 0);
@@ -252,20 +253,20 @@ export default function SlipList({ kind, loai = '' }) {
         <input type="date" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} />
         <WarehousePicker value={wh} onChange={setWh} />
         <CompanyPicker value={co} onChange={setCo} />
-        <select value={oType} onChange={(e) => { setOTypeUrl(''); setOType(e.target.value); }}>
+        <Select value={oType} onChange={(e) => { setOTypeUrl(''); setOType(e.target.value); }}>
           <option value="">{isDO ? 'SO + STO' : 'PO + STO'}</option>
           {types.map((x) => <option key={x} value={x}>{x === 'SO' ? 'Đơn bán (SO)' : x === 'PO' ? 'Đơn mua (PO)' : 'Chuyển kho (STO)'}</option>)}
-        </select>
-        <select value={fStep} onChange={(e) => setFStep(e.target.value)}>
+        </Select>
+        <Select value={fStep} onChange={(e) => setFStep(e.target.value)}>
           <option value="">Mọi tình trạng</option>
           <option value="doing">{isDO ? 'Đang chờ (chờ lập phiếu xuất / chờ giải chấp)' : 'Đang chờ nhập'}</option>
           <option value="done">{isDO ? 'Đã xuất kho' : 'Đã nhập kho'}</option>
           <option value="cancelled">Đã hủy</option>
-        </select>
-        {isDO && <select value={fSrc} onChange={(e) => setFSrc(e.target.value)}>
+        </Select>
+        {isDO && <Select value={fSrc} onChange={(e) => setFSrc(e.target.value)}>
           <option value="">Mọi nguồn lập</option>
           {DO_SOURCES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-        </select>}
+        </Select>}
         <input type="search" placeholder="Tìm số phiếu, đơn, khách, mã hàng, số xe…" value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="actions" style={{ marginLeft: 'auto' }}>
           <ColumnPicker cols={cols.map((c) => ({ key: c.key, label: c.label, locked: c.locked }))} hidden={hidden} setHidden={setHidden} order={colOrder} setOrder={setColOrder} />

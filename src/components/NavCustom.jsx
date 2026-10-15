@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { usePref } from '../lib/prefs';
 import { Modal } from './ui';
+import Select from './Select';
 
 // ============================================================================
 // Menu tự sắp xếp theo từng người dùng (lưu trên trình duyệt, không đọc / ghi Firestore):
@@ -146,9 +147,9 @@ export function MenuEditor({ view, api, multi, setMulti, onClose }) {
                 <span className="nav-edit-btns"><button type="button" className="btn ghost sm" disabled={!i} onClick={() => api.moveItem(s.key, itemId(x), -1)}>▲</button><button type="button" className="btn ghost sm" disabled={i === s.allItems.length - 1} onClick={() => api.moveItem(s.key, itemId(x), 1)}>▼</button></span>
                 <button type="button" className="btn ghost sm star" title={x.fav ? 'Bỏ khỏi yêu thích' : 'Ghim vào Yêu thích'} onClick={() => api.toggleFav(itemId(x))}>{x.fav ? '★' : '☆'}</button>
                 <span className="grow">{x.ico} {x.label}</span>
-                <select value={s.key} onChange={(e) => api.placeItem(itemId(x), e.target.value)} title="Chuyển mục này sang nhóm / thư mục khác">
+                <Select value={s.key} onChange={(e) => api.placeItem(itemId(x), e.target.value)} title="Chuyển mục này sang nhóm / thư mục khác">
                   {targets.map((tg) => <option key={tg.key} value={tg.key}>{tg.key === s.key ? `Ở: ${tg.title}` : `Chuyển vào: ${tg.title}`}</option>)}
-                </select>
+                </Select>
                 <button type="button" className="btn ghost sm" title={x.hidden ? 'Hiện lại trên menu' : 'Ẩn khỏi menu'} onClick={() => api.toggleHidden(itemId(x))}>{x.hidden ? '🙈 Hiện lại' : '👁'}</button>
               </div>
             ))}
@@ -196,13 +197,13 @@ export function BarEditor({ view, api, onClose }) {
               </div>
             ))}
             <div className="nav-edit-item">
-              <select value="" onChange={(e) => e.target.value && upd(i, { items: [...c.items, e.target.value] })}>
+              <Select value="" onChange={(e) => e.target.value && upd(i, { items: [...c.items, e.target.value] })}>
                 <option value="">+ Thêm công cụ vào “{c.title}”…</option>
                 {view.sections.map((s) => {
                   const opts = s.items.filter((x) => !c.items.some((y) => itemId(y) === itemId(x)));
                   return opts.length ? <optgroup key={s.key} label={s.title}>{opts.map((x) => <option key={itemId(x)} value={itemId(x)}>{x.ico} {x.label}</option>)}</optgroup> : null;
                 })}
-              </select>
+              </Select>
             </div>
           </div>
         ))}

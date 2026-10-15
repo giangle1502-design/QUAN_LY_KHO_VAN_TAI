@@ -9,6 +9,7 @@ import { KIND_LABEL, SRC_LABEL, isGHA, isSelfPickup, kindText, pendingDispatch, 
 import { createPlannedTrips } from '../../lib/transport';
 import { fmtDate, fmtNum, norm, today } from '../../lib/utils';
 import { Empty, ErrorBox } from '../../components/ui';
+import Select from '../../components/Select';
 
 const n = (v) => (v === '' || v == null ? 0 : Number(v) || 0);
 const t3 = (kg) => fmtNum(n(kg) / 1000, 3);
@@ -76,8 +77,8 @@ export default function Dispatch({ orders, trips, onSplit }) {
       <p className="hint">Hàng đã chỉ định đơn vị vận tải ở <b>Dự kiến xuất kho</b>, <b>Kế hoạch phân bổ</b>, <b>SO / STO</b> hoặc <b>phiếu xuất</b> nằm ở đây chờ bạn kiểm tra. Đơn vị vận tải <b>chưa thấy</b> các dòng này: chỉ định sai thì đổi ngay trên dòng, đúng rồi bấm <b>Giao vận tải</b> (mỗi dòng 1 chuyến) hoặc <b>Chia nhiều xe</b>.</p>
       <div className="filters">
         <input type="search" placeholder="Tìm đơn, khách, mã giao, mã hàng, kho…" value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} style={{ flex: 1 }} />
-        <select value={f.src} onChange={(e) => setF({ ...f, src: e.target.value })}><option value="">Mọi nguồn</option>{Object.entries(SRC_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
-        <select value={f.carrier} onChange={(e) => setF({ ...f, carrier: e.target.value })}><option value="">Mọi đơn vị vận tải</option>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}</select>
+        <Select value={f.src} onChange={(e) => setF({ ...f, src: e.target.value })}><option value="">Mọi nguồn</option>{Object.entries(SRC_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select>
+        <Select value={f.carrier} onChange={(e) => setF({ ...f, carrier: e.target.value })}><option value="">Mọi đơn vị vận tải</option>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}</Select>
         <button className="btn primary" disabled={busy || !chosen.length} onClick={() => release(chosen)}>🚚 Giao vận tải{chosen.length ? ` (${chosen.length} chuyến)` : ''}</button>
         <button className="btn" disabled={busy || !chosen.length} onClick={split} title="Hàng nhiều hơn 1 xe: chia thành nhiều chuyến">✂ Chia nhiều xe</button>
         <button className="btn" disabled={busy || !rows.length} onClick={() => window.confirm(`Giao toàn bộ ${rows.length} chuyến đang hiển thị cho đơn vị vận tải?`) && release(rows)}>Giao toàn bộ ({rows.length})</button>
@@ -100,10 +101,10 @@ export default function Dispatch({ orders, trips, onSplit }) {
                   <td>{r.partyName || r.partyCode}{r.shipCode ? <div className="small">{r.shipCode}{r.address ? ` · ${r.address}` : ''}</div> : null}</td>
                   <td className="small">{r.items.map((i) => <div key={`${i.no}${i.item}`}>{i.item} {t3(i.kg)} t</div>)}</td>
                   <td className="num"><b>{t3(r.kg)}</b></td>
-                  <td><select value={v.carrier} onChange={(e) => setO(r.key, { carrier: e.target.value })} style={v.carrier !== r.carrier ? { borderColor: 'var(--amber)' } : undefined}>
-                    <option value="">-- Chọn --</option>{carriers.filter((x) => x.active !== false || x.code === v.carrier).map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</select>
+                  <td><Select value={v.carrier} onChange={(e) => setO(r.key, { carrier: e.target.value })} style={v.carrier !== r.carrier ? { borderColor: 'var(--amber)' } : undefined}>
+                    <option value="">-- Chọn --</option>{carriers.filter((x) => x.active !== false || x.code === v.carrier).map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</Select>
                     {c ? <div className="small" title={KIND_LABEL[c.kind] || ''}>{kindText(c)}{v.carrier !== r.carrier ? ` · đã đổi từ ${r.carrier}` : ''}</div> : null}</td>
-                  {can3PL && <td>{isGHA(c) ? <select value={v.threepl} onChange={(e) => setO(r.key, { threepl: e.target.value })}><option value="">Xe nhà GHA</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</select> : null}</td>}
+                  {can3PL && <td>{isGHA(c) ? <Select value={v.threepl} onChange={(e) => setO(r.key, { threepl: e.target.value })}><option value="">Xe nhà GHA</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</Select> : null}</td>}
                   <td><input list={`dl-dp-${v.carrier}`} value={v.plate} placeholder={isSelfPickup(c) ? 'xe khách' : ''} onChange={(e) => setO(r.key, { plate: e.target.value.toUpperCase() })} style={{ width: 110 }} /></td>
                   <td><button className="btn primary sm" disabled={busy} onClick={() => release([r])}>Giao</button></td>
                 </tr>

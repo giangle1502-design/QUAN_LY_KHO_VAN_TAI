@@ -7,6 +7,7 @@ import { STEPS, compressImage, doStep } from '../lib/transport';
 import { ErrorBox, Modal } from './ui';
 import { WithAdd } from './FormTools';
 import { driverLink, isSelfPickup, needsDriverId, newLinkToken } from '../lib/dispatch';
+import Select from './Select';
 
 // Thực hiện 1 bước của chuyến (tài xế, hoặc điều phối làm thay)
 export function StepModal({ t, step, onClose, plate = '', via3pl = false }) {
@@ -44,8 +45,8 @@ export function StepModal({ t, step, onClose, plate = '', via3pl = false }) {
           <p className="small full" style={{ margin: 0 }}>{showDrv ? 'Xe nội bộ: chọn số xe trong danh sách, ghi họ tên và CCCD tài xế.' : 'Chỉ cần nhập số xe (gõ thẳng, không cần có trong danh mục).'}</p>
           <label className="field"><span>Số xe *</span>{showDrv ? <WithAdd cat="vehicles" preset={{ plate: f.plate, vehicleType: f.vehicleType }} onAdded={(id, r) => pickPlate(r?.plate || id)}><input list="dl-st-plate" value={f.plate} onChange={(e) => pickPlate(e.target.value)} placeholder="VD: 51C-12345" /></WithAdd>
             : <input value={f.plate} onChange={(e) => pickPlate(e.target.value)} placeholder="VD: 51C-12345" style={{ fontSize: 18 }} />}</label>
-          <label className="field"><span>Loại xe</span><select value={f.vehicleType} onChange={(e) => set('vehicleType', e.target.value)}>
-            {['', 'Xe tải', 'Container 20', 'Container 40', 'Đầu kéo + mooc'].map((x) => <option key={x} value={x}>{x || '--'}</option>)}</select></label>
+          <label className="field"><span>Loại xe</span><Select value={f.vehicleType} onChange={(e) => set('vehicleType', e.target.value)}>
+            {['', 'Xe tải', 'Container 20', 'Container 40', 'Đầu kéo + mooc'].map((x) => <option key={x} value={x}>{x || '--'}</option>)}</Select></label>
           {showDrv && <>
           <label className="field"><span>Số CCCD tài xế</span>{myIdCard ? <input value={f.idCard} disabled /> : <WithAdd cat="drivers" preset={{ idCard: f.idCard, name: f.driverName, phone: f.driverPhone }} onAdded={(id, r) => { pickDriver(r?.idCard || id); if (r?.name) set('driverName', r.name); }}><input list="dl-st-driver" value={f.idCard} onChange={(e) => pickDriver(e.target.value)} /></WithAdd>}</label>
           <label className="field"><span>Họ tên tài xế</span><input value={f.driverName} onChange={(e) => set('driverName', e.target.value)} /></label>

@@ -4,6 +4,7 @@ import { useCollection } from '../lib/hooks';
 import { catalogByKey, refLabel, refValue } from '../catalogs';
 import { QuickAdd } from './FormTools';
 import { fmtDate, fmtNum } from '../lib/utils';
+import Select from './Select';
 
 // Ô nhập cho 1 trường theo kiểu dữ liệu
 // unit: đơn vị tiền của trường kiểu Tiền ('đ' mặc định, 'USD' trên đơn USD)
@@ -13,18 +14,18 @@ export default function FieldInput({ field: f, value, onChange, disabled, onPick
   if (f.type === 'multiref') return <MultiRefInput field={f} value={value} onChange={onChange} disabled={disabled} />;
   if (f.type === 'select')
     return (
-      <select value={value ?? ''} onChange={(e) => onChange(e.target.value)} disabled={disabled}>
+      <Select value={value ?? ''} onChange={(e) => onChange(e.target.value)} disabled={disabled}>
         <option value="">-- Chọn --</option>
         {(f.options || []).map((o) => <option key={o} value={o}>{f.labels?.[o] || o}</option>)}
-      </select>
+      </Select>
     );
   // Trường số / % / tiền / chữ có danh sách giá trị chọn sẵn (vd. VAT 5%, 8%, 10%)
   if (f.options?.length && ['number', 'percent', 'currency', 'text'].includes(f.type))
     return (
-      <select value={value ?? ''} onChange={(e) => onChange(f.type === 'text' || e.target.value === '' ? e.target.value : Number(e.target.value))} disabled={disabled}>
+      <Select value={value ?? ''} onChange={(e) => onChange(f.type === 'text' || e.target.value === '' ? e.target.value : Number(e.target.value))} disabled={disabled}>
         <option value="">-- Chọn --</option>
         {f.options.map((o) => <option key={o} value={o}>{f.type === 'percent' ? `${o}%` : f.type === 'currency' ? fmtNum(o) : o}</option>)}
-      </select>
+      </Select>
     );
   if (f.type === 'checkbox') return <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} disabled={disabled} />;
   if (f.type === 'textarea' || (f.type === 'text' && Number(f.height) > 40 && !f.options?.length)) return <textarea rows={2} value={value ?? ''} onChange={(e) => onChange(e.target.value)} disabled={disabled} />;

@@ -17,6 +17,7 @@ import { ItemCode, ItemStockModal } from '../../components/ItemStock';
 import PalletChoice from '../../components/PalletChoice';
 import { cleanPallets, packingMode, palletError, palletManaged } from '../../lib/pallets';
 import { OVER_CAP_CONFIRM, OVER_CAP_MSG, capacityCheck, splitByCapacity } from '../../lib/capacity';
+import Select from '../../components/Select';
 
 // Thông tin vận tải gắn trên phiếu xuất (SO và STO). Phiếu nhập không cần.
 const EMPTY_TRANSPORT = { plate: '', carrier: '', carrierName: '', idCard: '', driverName: '', driverPhone: '' };
@@ -621,10 +622,10 @@ function Form({ type }) {
         <div className="form-grid">
           <Field label="Kho" required>
             <WithAdd cat="warehouses" onAdded={(id) => changeWh(id)}>
-              <select value={whCode} onChange={(e) => changeWh(e.target.value)}>
+              <Select value={whCode} onChange={(e) => changeWh(e.target.value)}>
                 <option value="">-- Chọn kho --</option>
                 {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-              </select>
+              </Select>
             </WithAdd>
           </Field>
           <Field label="Công ty chủ hàng" required={type === 'in'} help={type === 'in' ? 'Hàng nhập thuộc công ty nào' : 'Chỉ hiện tồn của công ty này; bỏ trống = mọi công ty'}>
@@ -664,14 +665,14 @@ function Form({ type }) {
               )}
               {!(type === 'in' && source === 'direct') && <Field label={type === 'out' ? 'Theo đơn bán (SO) / lệnh chuyển kho (STO)' : IN_SOURCES[source].label} required={type === 'in'}
                 help={orderOpts.length ? (source === 'SO' ? 'Phiếu sẽ ghi nhận phần khách trả về của đơn' : 'Phiếu sẽ tự trừ phần còn lại của đơn') : source === 'SO' ? 'Không có đơn bán nào đã giao hàng' : 'Không có đơn đang mở phù hợp'}>
-                <select value={head.orderId} onChange={(e) => pickOrder(e.target.value)}>
+                <Select searchable value={head.orderId} onChange={(e) => pickOrder(e.target.value)}>
                   <option value="">{type === 'in' ? '-- Chọn --' : '-- Không theo đơn --'}</option>
                   {orderOpts.map((o) => {
                     const left = o.lines.reduce((s2, l) => s2 + openK(o, l, type), 0);
                     const who = o.type === 'STO' ? stoRoute(o) : o.partyName || o.partyCode;
-                    return <option key={o.id} value={o.id}>{o.id}{o.refNo ? ` (${o.refNo})` : ''} · {who} · {o.type === 'STO' && type === 'in' ? 'đang đi đường' : isReturn(o, type) ? 'được trả tối đa' : 'còn'} {fmtNum(left, 2)} kg</option>;
+                    return <option key={o.id} value={o.id} data-search={[o.partyCode, o.partyName, o.salesName, o.note, ...(o.lines || []).flatMap((l) => [l.item, l.itemName, l.shipCode, l.warehouse, l.fromWarehouse, l.toWarehouse])].join(' ')}>{o.id}{o.refNo ? ` (${o.refNo})` : ''} · {who} · {o.type === 'STO' && type === 'in' ? 'đang đi đường' : isReturn(o, type) ? 'được trả tối đa' : 'còn'} {fmtNum(left, 2)} kg</option>;
                   })}
-                </select>
+                </Select>
                 {type === 'out' && <button type="button" className="btn primary sm" style={{ marginTop: 6 }} onClick={() => setOrdPicking(true)}>🔎 Tìm & chọn đơn (bảng)</button>}
               </Field>}
               {ordPicking && <OrderPicker orders={orders} myWh={warehouses} whCode={whCode} onClose={() => setOrdPicking(false)}
@@ -680,10 +681,10 @@ function Form({ type }) {
                 <Field label="Giao đến (Shipto)" required={shipRequired}
                   help={shipOpts.length === 1 ? 'Khách chỉ có 1 mã giao: tự chọn sẵn' : shipRequired ? `Khách có ${shipOpts.length} mã giao: bắt buộc chọn` : ''}>
                   <WithAdd cat="shipto" preset={{ customerCode: head.partyCode, customerName: head.partyName }} onAdded={(id, r) => setH('shipCode', r?.shipCode || id)}>
-                    <select value={head.shipCode} onChange={(e) => setH('shipCode', e.target.value)}>
+                    <Select value={head.shipCode} onChange={(e) => setH('shipCode', e.target.value)}>
                       <option value="">-- Chọn --</option>
                       {shipOpts.map((s) => <option key={s.shipCode} value={s.shipCode}>{s.shipCode} – {s.address}</option>)}
-                    </select>
+                    </Select>
                   </WithAdd>
                 </Field>
               )}
@@ -694,10 +695,10 @@ function Form({ type }) {
               <div className="section-head">🚚 Thông tin vận tải (chưa có thì để trống, bổ sung sau ở Phiếu kho)</div>
               <div className="form-grid">
                 <Field label="Chuyến xe đang ở cửa" help="Chọn để tự điền xe, tài xế đã đăng ký ở cổng">
-                  <select value={head.tripId} onChange={(e) => setH('tripId', e.target.value)}>
+                  <Select value={head.tripId} onChange={(e) => setH('tripId', e.target.value)}>
                     <option value="">-- Không gắn chuyến --</option>
                     {tripOpts.map((t) => <option key={t.id} value={t.id}>{t.id} · {t.plate} · cửa {t.dock}</option>)}
-                  </select>
+                  </Select>
                 </Field>
                 <Field label="Số xe"><WithAdd cat="vehicles" preset={{ plate: head.plate, carrier: head.carrier }} onAdded={(id, r) => pickPlate(r?.plate || id)}><input list="dl-mv-plate" value={head.plate} onChange={(e) => pickPlate(e.target.value)} placeholder="VD: 51C-12345" /></WithAdd></Field>
                 <Field label="Đơn vị vận tải">
@@ -733,10 +734,10 @@ function Form({ type }) {
           {(type === 'adjust' || type === 'in' || type === 'out') && (
             <Field label="Lý do" required={type === 'adjust'}>
               <div className="cell-add">
-                <select value={head.reason} onChange={(e) => setH('reason', e.target.value)}>
+                <Select value={head.reason} onChange={(e) => setH('reason', e.target.value)}>
                   <option value="">-- Chọn --</option>
                   {reasons.filter((r) => type !== 'adjust' || ['Điều chỉnh tồn', 'Hàng lỗi'].includes(r.appliesTo)).map((r) => <option key={r.code} value={`${r.code} – ${r.name}`}>{r.name}</option>)}
-                </select>
+                </Select>
                 <QuickAdd catKey="reasons" preset={{ appliesTo: { in: 'Nhập kho', out: 'Xuất kho', adjust: 'Điều chỉnh tồn' }[type] }}
                   onAdded={(id, r) => setH('reason', `${id} – ${r?.name || ''}`)} />
               </div>
@@ -864,13 +865,13 @@ function LocationSelect({ value, onChange, locations, exclude, wh }) {
   const whCode = wh || locations[0]?.warehouse || '';
   return (
     <WithAdd cat="locations" preset={whCode ? { warehouse: whCode } : undefined} onAdded={(id, r) => onChange(r?.code || String(id).split('__').pop())}>
-    <select value={value} onChange={(e) => onChange(e.target.value)}>
+    <Select value={value} onChange={(e) => onChange(e.target.value)}>
       <option value="">-- Vị trí --</option>
       {locations.filter((x) => x.code !== exclude).sort((a, b) => a.code.localeCompare(b.code)).map((x) => {
         const free = num(x.capacity) - num(x.currentPallets);
         return <option key={x.code} value={x.code} disabled={x.locked}>{x.code} · trống {fmtNum(free, 1)}/{fmtNum(x.capacity)} pallet{x.locked ? ' (khóa)' : ''}</option>;
       })}
-    </select>
+    </Select>
     </WithAdd>
   );
 }
@@ -917,19 +918,19 @@ export function InLine({ l, set, itemMap, locations, statuses, pledgees, locRequ
       <Field label="Vị trí" required={locRequired} help={locRequired ? '' : 'Thủ kho chọn khi nhận hàng'}><LocationSelect value={l.location} onChange={(v) => set({ location: v })} locations={locations} /></Field>
       <Field label="Tình trạng">
         <WithAdd cat="goodsStatus" onAdded={(id) => set({ goodsStatus: id })}>
-          <select value={l.goodsStatus} onChange={(e) => set({ goodsStatus: e.target.value })}>
+          <Select value={l.goodsStatus} onChange={(e) => set({ goodsStatus: e.target.value })}>
             {statuses.map((s) => <option key={s.code} value={s.code}>{s.code} – {s.name}</option>)}
             {!statuses.length && <option value="KTC">KTC</option>}
-          </select>
+          </Select>
         </WithAdd>
       </Field>
       {l.goodsStatus === 'HTC' && (
         <Field label="Bên nhận thế chấp" required>
           <WithAdd cat="pledgees" onAdded={(id) => set({ pledgee: id })}>
-            <select value={l.pledgee} onChange={(e) => set({ pledgee: e.target.value })}>
+            <Select value={l.pledgee} onChange={(e) => set({ pledgee: e.target.value })}>
               <option value="">-- Chọn --</option>
               {pledgees.map((p) => <option key={p.code} value={p.code}>{p.code} – {p.name}</option>)}
-            </select>
+            </Select>
           </WithAdd>
         </Field>
       )}
@@ -1053,20 +1054,20 @@ function StockLine({ type, l, set, onPickOut, rows, byId, blocked, releasable, l
         </div>
       ) : (
       <Field label="Dòng tồn (FIFO)" required full>
-        <select value={l.stockId} onChange={(e) => pick(e.target.value)}>
+        <Select value={l.stockId} onChange={(e) => pick(e.target.value)}>
           <option value="">-- Chọn hàng trong kho --</option>
           {rows.map((x) => (
             <option key={x._id} value={x._id} disabled={blocked(x)}>
               {x.company ? `[${x.company}] ` : ''}{x.item} · lot {x.lot || '-'} · {x.location} · {x.goodsStatus}{x.pledgee ? `(${x.pledgee})` : ''} · {fmtNum(x.bags)} bao / {fmtNum(x.pallets, 2)} pl · nhập {fmtDate(x.inDate)} ({ageDays(x.inDate)} ngày){blocked(x) ? ' · KHÓA XUẤT' : releasable?.(x) ? ' · chờ giải chấp' : ''}
             </option>
           ))}
-        </select>
+        </Select>
         <small className="small">Hoặc bấm 📋 Xem tồn kho & chọn hàng để xem dạng bảng.</small>
       </Field>
       )}
       {type === 'adjust' && (
         <Field label="Tăng / giảm">
-          <select value={l.sign} onChange={(e) => set({ sign: e.target.value })}><option value="+">Tăng (+)</option><option value="-">Giảm (−)</option></select>
+          <Select value={l.sign} onChange={(e) => set({ sign: e.target.value })}><option value="+">Tăng (+)</option><option value="-">Giảm (−)</option></Select>
         </Field>
       )}
       {type === 'move' && <Field label="Đến vị trí" required><LocationSelect value={l.toLocation} onChange={(v) => set({ toLocation: v })} locations={locations} exclude={r?.location} /></Field>}
@@ -1074,19 +1075,19 @@ function StockLine({ type, l, set, onPickOut, rows, byId, blocked, releasable, l
         <>
           <Field label="Tình trạng mới" required>
             <WithAdd cat="goodsStatus" onAdded={(id) => set({ toStatus: id })}>
-              <select value={l.toStatus} onChange={(e) => set({ toStatus: e.target.value })}>
+              <Select value={l.toStatus} onChange={(e) => set({ toStatus: e.target.value })}>
                 <option value="">-- Chọn --</option>
                 {statuses.filter((s) => s.code !== r?.goodsStatus).map((s) => <option key={s.code} value={s.code}>{s.code} – {s.name}</option>)}
-              </select>
+              </Select>
             </WithAdd>
           </Field>
           {l.toStatus === 'HTC' && (
             <Field label="Bên nhận thế chấp" required>
               <WithAdd cat="pledgees" onAdded={(id) => set({ toPledgee: id })}>
-                <select value={l.toPledgee} onChange={(e) => set({ toPledgee: e.target.value })}>
+                <Select value={l.toPledgee} onChange={(e) => set({ toPledgee: e.target.value })}>
                   <option value="">-- Chọn --</option>
                   {pledgees.map((p) => <option key={p.code} value={p.code}>{p.code} – {p.name}</option>)}
-                </select>
+                </Select>
               </WithAdd>
             </Field>
           )}
@@ -1151,13 +1152,13 @@ function OrderPicker({ orders, myWh, whCode, onClose, onPick }) {
     <Modal title="Chọn đơn xuất kho" onClose={onClose} wide>
       <div className="filters" style={{ marginBottom: 8 }}>
         <input type="search" autoFocus placeholder="Tìm số đơn, mã hàng, tên hàng, khách hàng, kho, mã giao…" value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: 1, minWidth: 260 }} />
-        <select value={fWh} onChange={(e) => setFWh(e.target.value)}>
+        <Select value={fWh} onChange={(e) => setFWh(e.target.value)}>
           <option value="">Kho xuất: tất cả</option>
           {myWh.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-        </select>
-        <select value={fType} onChange={(e) => setFType(e.target.value)}>
+        </Select>
+        <Select value={fType} onChange={(e) => setFType(e.target.value)}>
           <option value="">SO và STO</option><option value="SO">Đơn bán (SO)</option><option value="STO">Chuyển kho (STO)</option>
-        </select>
+        </Select>
       </div>
       <div className="table-wrap" style={{ maxHeight: '60vh', overflow: 'auto' }}>
         <table className="picker">

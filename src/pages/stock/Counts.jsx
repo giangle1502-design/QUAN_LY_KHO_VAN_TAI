@@ -6,9 +6,10 @@ import { CompanyPicker } from '../../components/TripBits';
 import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
 import { exportSheets } from '../../lib/excel';
 import { vnDate } from '../../lib/trips';
-import { fmtDate, fmtNum } from '../../lib/utils';
+import { fmtDate, fmtNum, matchQ } from '../../lib/utils';
 import { COUNT_KINDS, COUNT_STATUS, createCount, lineResult, loadLines, pickStock, scopeText } from '../../lib/counts';
 import { WithAdd } from '../../components/FormTools';
+import Select from '../../components/Select';
 
 // Kiểm kê (toàn kho / theo vị trí) và cycle count (khu vực, mã có giao dịch trong ngày): danh sách, lập phiếu, báo cáo
 export default function Counts() {
@@ -50,7 +51,9 @@ function StatusBadge({ s }) {
 function List({ counts, loading }) {
   const [kind, setKind] = useState('');
   const [st, setSt] = useState('active');
-  const rows = counts.filter((c) => (!kind || c.kind === kind) && (st === 'all' || (st === 'active' ? ['preparing', 'open', 'done'].includes(c.status) : c.status === st)));
+  const [q, setQ] = useState('');
+  const rows = counts.filter((c) => (!kind || c.kind === kind) && (st === 'all' || (st === 'active' ? ['preparing', 'open', 'done'].includes(c.status) : c.status === st))
+    && matchQ(q, c.id, c.company, c.warehouse, scopeText(c), c.createdByName, c.createdBy, c.note, c.date, fmtDate(c.date)));
   return (
     <>
       <p className="hint">
@@ -58,18 +61,19 @@ function List({ counts, loading }) {
         <b> Cycle count</b>: quản trị chỉ định khu vực / vị trí / mã hàng có giao dịch trong ngày; nhân viên mở trên điện thoại, đến từng vị trí nhập số pallet chẵn và số bao lẻ, hệ thống báo ngay khớp hay lệch. Thủ kho chỉ nhập số đếm và chốt gửi duyệt; tồn kho chỉ điều chỉnh khi quản trị duyệt.
       </p>
       <div className="filters">
-        <select value={kind} onChange={(e) => setKind(e.target.value)}>
+        <input type="search" placeholder="Tìm số phiếu, kho, vị trí, mã hàng, người lập…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Select value={kind} onChange={(e) => setKind(e.target.value)}>
           <option value="">Mọi loại</option>
           {Object.entries(COUNT_KINDS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-        </select>
-        <select value={st} onChange={(e) => setSt(e.target.value)}>
+        </Select>
+        <Select value={st} onChange={(e) => setSt(e.target.value)}>
           <option value="active">Đang đếm / chưa điều chỉnh</option>
           <option value="done">Chờ duyệt</option>
           <option value="adjusted">Đã điều chỉnh tồn</option>
           <option value="closed">Duyệt, không điều chỉnh</option>
           <option value="cancelled">Đã hủy</option>
           <option value="all">Tất cả</option>
-        </select>
+        </Select>
       </div>
       {loading ? <div className="center">Đang tải…</div> : !rows.length ? <Empty text="Chưa có phiếu kiểm kê" /> : (
         <div className="table-wrap">
@@ -138,10 +142,10 @@ function CreateCount({ onClose }) {
         <Field label="Công ty"><CompanyPicker value={f.company} onChange={(v) => set({ company: v })} /></Field>
         <Field label="Kho" required>
           <WithAdd cat="warehouses" onAdded={(id) => set({ warehouse: id })}>
-            <select value={f.warehouse} onChange={(e) => set({ warehouse: e.target.value })}>
+            <Select value={f.warehouse} onChange={(e) => set({ warehouse: e.target.value })}>
               <option value="">-- Chọn kho --</option>
               {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-            </select>
+            </Select>
           </WithAdd>
         </Field>
         <Field label="Ngày kiểm kê" required><input type="date" value={f.date} onChange={(e) => set({ date: e.target.value })} /></Field>
@@ -225,12 +229,12 @@ function Report({ counts }) {
       <div className="filters">
         <label className="small">Từ ngày <input type="date" value={from} onChange={(e) => { setFrom(e.target.value); setData(null); }} /></label>
         <label className="small">Đến ngày <input type="date" value={to} onChange={(e) => { setTo(e.target.value); setData(null); }} /></label>
-        <select value={kind} onChange={(e) => { setKind(e.target.value); setData(null); }}>
+        <Select value={kind} onChange={(e) => { setKind(e.target.value); setData(null); }}>
           <option value="cycle">Cycle count</option><option value="full">Kiểm kê</option><option value="">Cả hai</option>
-        </select>
-        <select value={wh} onChange={(e) => { setWh(e.target.value); setData(null); }}>
+        </Select>
+        <Select value={wh} onChange={(e) => { setWh(e.target.value); setData(null); }}>
           <option value="">Mọi kho</option>{whs.map((w) => <option key={w} value={w}>{w}</option>)}
-        </select>
+        </Select>
         <button className="btn primary" disabled={busy || !list.length} onClick={run}>{busy ? 'Đang tải…' : `Xem báo cáo (${list.length} phiếu)`}</button>
         {data && <button className="btn" onClick={excel}>⬇ Excel</button>}
       </div>

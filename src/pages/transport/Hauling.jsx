@@ -17,6 +17,7 @@ import { fmtDate, fmtNum, today } from '../../lib/utils';
 import { Empty, ErrorBox, Modal } from '../../components/ui';
 import { DriverLinkBox, PhotoModal, StepModal } from '../../components/TripSteps';
 import { WithAdd } from '../../components/FormTools';
+import Select from '../../components/Select';
 
 // Vận chuyển theo chuyến: đơn cần chia xe → chuyến xe (tài xế xác nhận từng bước) → chi phí & cước
 const n = (v) => (v === '' || v == null ? 0 : Number(v) || 0);
@@ -165,7 +166,7 @@ function SplitModal({ rows, carrier, onClose, action = 'Chia xe' }) {
               {drvCols && <><td><WithAdd cat="drivers" preset={{ idCard: l.idCard, name: l.driverName }} onAdded={(id, r) => { pickDriver(i, r?.idCard || id); if (r?.name) setLoad(i, { driverName: r.name }); }}><input list="dl-sp-driver" value={l.idCard} onChange={(e) => pickDriver(i, e.target.value)} /></WithAdd></td>
               <td><input value={l.driverName} onChange={(e) => setLoad(i, { driverName: e.target.value })} /></td></>}
               <td><input value={l.driverPhone} onChange={(e) => setLoad(i, { driverPhone: e.target.value })} style={{ width: 110 }} /></td>
-              {threepl.length > 0 && <td><select value={l.threepl} onChange={(e) => setLoad(i, { threepl: e.target.value })}><option value="">-- Xe GHA --</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</select></td>}
+              {threepl.length > 0 && <td><Select value={l.threepl} onChange={(e) => setLoad(i, { threepl: e.target.value })}><option value="">-- Xe GHA --</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</Select></td>}
               <td><button type="button" className="btn ghost sm" disabled={loads.length === 1} onClick={() => setLoads((ls) => ls.filter((_, j) => j !== i))}>✕</button></td></tr>
           );
         })}</tbody>
@@ -243,7 +244,7 @@ function TripList({ trips, priv }) {
       </span>
     </>;
   };
-  const sel3pl = (t) => <select value={priv[t.id]?.threepl || ''} onChange={(e) => set3pl(t, e.target.value)}><option value="">Xe nhà GHA</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</select>;
+  const sel3pl = (t) => <Select value={priv[t.id]?.threepl || ''} onChange={(e) => set3pl(t, e.target.value)}><option value="">Xe nhà GHA</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</Select>;
   const mapUrl = (a) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a)}`;
   // Thẻ chuyến (đơn vị vận tải, 3PL làm trên điện thoại)
   const card = (t) => {
@@ -276,9 +277,9 @@ function TripList({ trips, priv }) {
       <div className="filters">
         <label>Từ <input type="date" value={f.from} onChange={(e) => setFF('from', e.target.value)} /></label>
         <label>Đến <input type="date" value={f.to} onChange={(e) => setFF('to', e.target.value)} /></label>
-        <select value={f.status} onChange={(e) => setFF('status', e.target.value)}><option value="active">Đang chạy</option><option value="">Tất cả</option>
-          {Object.entries(STATUS_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}</select>
-        {!isCarrier && !isTpl && <select value={f.carrier} onChange={(e) => setFF('carrier', e.target.value)}><option value="">Mọi đơn vị vận tải</option>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}</select>}
+        <Select value={f.status} onChange={(e) => setFF('status', e.target.value)}><option value="active">Đang chạy</option><option value="">Tất cả</option>
+          {Object.entries(STATUS_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}</Select>
+        {!isCarrier && !isTpl && <Select value={f.carrier} onChange={(e) => setFF('carrier', e.target.value)}><option value="">Mọi đơn vị vận tải</option>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}</Select>}
         <input type="search" placeholder="Tìm chuyến, xe, tài xế, đơn, khách…" value={f.q} onChange={(e) => setFF('q', e.target.value)} />
         <span className="seg"><button type="button" className={'btn sm' + (view === 'card' ? ' primary' : '')} onClick={() => setView('card')}>▦ Thẻ</button><button type="button" className={'btn sm' + (view === 'table' ? ' primary' : '')} onClick={() => setView('table')}>☰ Bảng</button></span>
         {(isAdmin || isCarrier || isTpl) && <DriverLinkBox compact />}
@@ -522,13 +523,13 @@ function DriverAccounts() {
       <form className="card" onSubmit={save} style={{ marginBottom: 12 }}>
         <div className="section-head">Thêm tài khoản {can3PL ? '3PL / ' : ''}điều phối có đăng nhập (không bắt buộc với tài xế: tài xế dùng link ở trên)</div>
         <div className="form-grid">
-          {can3PL && <label className="field"><span>Loại tài khoản</span><select value={f.role} onChange={(e) => set('role', e.target.value)}><option value="tai_xe">Tài xế</option><option value="tpl">3PL (thầu phụ GHA)</option></select></label>}
-          {tpl && <label className="field"><span>3PL *</span><select value={f.threepl} onChange={(e) => set('threepl', e.target.value)}><option value="">--</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</select></label>}
+          {can3PL && <label className="field"><span>Loại tài khoản</span><Select value={f.role} onChange={(e) => set('role', e.target.value)}><option value="tai_xe">Tài xế</option><option value="tpl">3PL (thầu phụ GHA)</option></Select></label>}
+          {tpl && <label className="field"><span>3PL *</span><Select value={f.threepl} onChange={(e) => set('threepl', e.target.value)}><option value="">--</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</Select></label>}
           <label className="field"><span>Email đăng nhập *</span><input value={f.email} onChange={(e) => set('email', e.target.value)} /></label>
           <label className="field"><span>Họ tên *</span><input value={f.name} onChange={(e) => set('name', e.target.value)} /></label>
           <label className="field"><span>CCCD (không bắt buộc)</span><input value={f.idCard} onChange={(e) => set('idCard', e.target.value)} /></label>
           <label className="field"><span>Điện thoại</span><input value={f.phone} onChange={(e) => set('phone', e.target.value)} /></label>
-          {isAdmin && <label className="field"><span>Đơn vị vận tải *</span><WithAdd cat="carriers" onAdded={(id) => set('carrier', id)}><select value={f.carrier} onChange={(e) => set('carrier', e.target.value)}><option value="">--</option>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}</select></WithAdd></label>}
+          {isAdmin && <label className="field"><span>Đơn vị vận tải *</span><WithAdd cat="carriers" onAdded={(id) => set('carrier', id)}><Select value={f.carrier} onChange={(e) => set('carrier', e.target.value)}><option value="">--</option>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}</Select></WithAdd></label>}
         </div>
         {msg && <div className="ok-box">{msg}</div>}
         <ErrorBox error={err} />

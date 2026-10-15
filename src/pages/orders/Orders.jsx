@@ -22,6 +22,7 @@ import { usePref } from '../../lib/prefs';
 import { useCollection, usePendingIn, useWaitingOut } from '../../lib/hooks';
 import { useShortfall } from '../../lib/shortfall';
 import { dragHeadProps, orderCols } from '../../lib/colOrder';
+import Select from '../../components/Select';
 
 // Đơn vị chính là kg; tấn chỉ là quy đổi (dòng phụ)
 const t = (kg) => fmtNum(Number(kg) || 0, 2);
@@ -259,11 +260,11 @@ function OrderList({ type, initialQ = '', startNew = false, onNewDone }) {
       </div>
       <div className="filters">
         <CompanyPicker value={co} onChange={setCo} />
-        <select value={status} onChange={(e) => setStatus(e.target.value)}>
+        <Select value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="opening">Đang mở (chưa xong)</option>
           <option value="">Tất cả trạng thái</option>
           {Object.entries(ORDER_STATUS).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
-        </select>
+        </Select>
         <input type="search" placeholder={`Tìm số đơn, ${meta.partyLabel.toLowerCase()}, mã hàng…`} value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="actions" style={{ marginLeft: 'auto' }}>
           <ColumnPicker cols={cols.map((c) => ({ key: c.key, label: c.extra ? `➕ ${c.label}` : c.label, locked: c.locked }))} hidden={hidden} setHidden={setHidden} order={colOrder} setOrder={setColOrder} />
@@ -556,13 +557,13 @@ function AssignCarrier({ o: view, onClose }) {
     <Modal title={`Giao đơn vị vận tải · ${o.id}`} onClose={onClose} wide>
       <p className="hint">Chỉ định xong, các dòng này vào <b>Vận chuyển → Chờ giao vận tải</b>. Admin kiểm tra rồi bấm Giao vận tải thì đơn vị vận tải mới thấy chuyến.</p>
       <div className="filters">Áp cho tất cả dòng:
-        <WithAdd cat="carriers" onAdded={(id) => { setAll(id); setMap(Object.fromEntries(o.lines.map((l) => [l.no, id]))); }}><select value={all} onChange={(e) => { setAll(e.target.value); setMap(Object.fromEntries(o.lines.map((l) => [l.no, e.target.value]))); }}><option value="">-- Chọn --</option>{opts}</select></WithAdd></div>
+        <WithAdd cat="carriers" onAdded={(id) => { setAll(id); setMap(Object.fromEntries(o.lines.map((l) => [l.no, id]))); }}><Select value={all} onChange={(e) => { setAll(e.target.value); setMap(Object.fromEntries(o.lines.map((l) => [l.no, e.target.value]))); }}><option value="">-- Chọn --</option>{opts}</Select></WithAdd></div>
       <div className="table-wrap"><table>
         <thead><tr><th>#</th><th>Kho xuất</th><th>Mã hàng</th><th>Giao đến</th><th className="num">Còn lại (kg)</th><th>Đơn vị vận tải</th></tr></thead>
         <tbody>{o.lines.map((l) => (
           <tr key={l.no}><td>{l.no}</td><td>{lineWh(o, l, 'out')}</td><td>{l.item} {l.itemName}</td><td>{o.type === 'STO' ? `Kho ${lineTo(o, l)}` : lineShip(o, l) || o.partyName}</td>
             <td className="num">{t(leftKg(l))}</td>
-            <td><WithAdd cat="carriers" onAdded={(id) => setMap((m) => ({ ...m, [l.no]: id }))}><select value={map[l.no]} onChange={(e) => setMap((m) => ({ ...m, [l.no]: e.target.value }))}><option value="">-- Chưa giao --</option>{opts}</select></WithAdd></td></tr>
+            <td><WithAdd cat="carriers" onAdded={(id) => setMap((m) => ({ ...m, [l.no]: id }))}><Select value={map[l.no]} onChange={(e) => setMap((m) => ({ ...m, [l.no]: e.target.value }))}><option value="">-- Chưa giao --</option>{opts}</Select></WithAdd></td></tr>
         ))}</tbody>
       </table></div>
       <ErrorBox error={err} />

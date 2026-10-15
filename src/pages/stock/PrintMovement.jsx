@@ -11,6 +11,7 @@ import { TemplatePage, TemplateSheets, useTemplateChoice } from '../../component
 import PalletChoice from '../../components/PalletChoice';
 import { ErrorBox } from '../../components/ui';
 import { MODE_LABEL, palletError, palletManaged, palletText, palletToText, setSlipPallets } from '../../lib/pallets';
+import Select from '../../components/Select';
 
 // 3 liên phiếu giao hàng: liên kho, liên vận tải (có dòng pallet), liên khách hàng (không có pallet vận tải mượn)
 const COPIES = [
@@ -56,9 +57,9 @@ export default function PrintMovement({ pick = false }) {
       {m.type === 'in' && m.status === 'posted' && <Link className="btn" to={`/kho/phieu/${m.id}/nhan`}>🏷️ In nhãn pallet</Link>}
       {m.type === 'out' && (pick ? <Link className="btn" to={`/kho/phieu/${m.id}/in`}>📄 Phiếu xuất kho</Link> : <Link className="btn" to={`/kho/phieu/${m.id}/soan`}>📋 Phiếu soạn hàng</Link>)}
       {m.type === 'out' && !pick && (
-        <label className="small">Số liên <select value={nCopies} onChange={(e) => { const p = new URLSearchParams(params); p.set('lien', e.target.value); setParams(p, { replace: true }); }}>
+        <label className="small">Số liên <Select value={nCopies} onChange={(e) => { const p = new URLSearchParams(params); p.set('lien', e.target.value); setParams(p, { replace: true }); }}>
           <option value="3">3 liên (mặc định)</option><option value="2">2 liên</option><option value="1">1 liên</option>
-        </select></label>
+        </Select></label>
       )}
       {choice.select}
     </>

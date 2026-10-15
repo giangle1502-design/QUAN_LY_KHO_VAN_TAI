@@ -15,6 +15,7 @@ import { loadReleaseData } from '../../lib/printData';
 import { pageToPdf, savePdf } from '../../lib/pdf';
 import { TemplatePage, useTemplateChoice } from '../../components/PrintTemplate';
 import { WithAdd } from '../../components/FormTools';
+import Select from '../../components/Select';
 
 // ============================================================================
 // Đề nghị giải chấp: kế toán chọn hàng HTC (1 công ty, 1 ngân hàng, 1 kho), in đề nghị
@@ -129,10 +130,10 @@ export default function Release() {
       </p>
       <div className="toolbar">
         <CompanyPicker value={co} onChange={setCo} />
-        <select value={st} onChange={(e) => setSt(e.target.value)}>
+        <Select value={st} onChange={(e) => setSt(e.target.value)}>
           <option value="">Tất cả trạng thái</option>
           {Object.entries(RELEASE_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-        </select>
+        </Select>
       </div>
       <ErrorBox error={error} />
       <div className="table-wrap">
@@ -455,18 +456,18 @@ function ReleaseForm({ onClose, preset }) {
           <Field label="Công ty (bên thế chấp)" required><CompanyPicker value={h.company} allowAll={false} required onChange={(v) => set('company', v)} /></Field>
           <Field label="Ngân hàng nhận thế chấp" required>
             <WithAdd cat="pledgees" onAdded={(id) => set('pledgee', id)}>
-              <select value={h.pledgee} onChange={(e) => set('pledgee', e.target.value)}>
+              <Select value={h.pledgee} onChange={(e) => set('pledgee', e.target.value)}>
                 <option value="">-- Chọn --</option>
                 {pledgees.map((p) => <option key={p.code} value={p.code}>{p.code} – {p.shortName || p.name}</option>)}
-              </select>
+              </Select>
             </WithAdd>
           </Field>
           <Field label="Kho" required>
             <WithAdd cat="warehouses" onAdded={(id) => set('warehouse', id)}>
-              <select value={h.warehouse} onChange={(e) => set('warehouse', e.target.value)}>
+              <Select value={h.warehouse} onChange={(e) => set('warehouse', e.target.value)}>
                 <option value="">-- Chọn --</option>
                 {myWh.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-              </select>
+              </Select>
             </WithAdd>
           </Field>
           <Field label="Ngày đề nghị" required><input type="date" value={h.date} onChange={(e) => set('date', e.target.value)} /></Field>

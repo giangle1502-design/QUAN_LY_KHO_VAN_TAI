@@ -10,6 +10,7 @@ import { useCollection } from '../lib/hooks';
 import { DATE_DEFAULTS, HEIGHT_OPTS, WIDTH_OPTS, badChoices, canChoose, canDefault, keyFieldsOf, parseChoices } from '../lib/fields';
 import { norm } from '../lib/utils';
 import { ErrorBox, Modal } from '../components/ui';
+import Select from '../components/Select';
 
 const typeLabel = (t) => FIELD_TYPES.find((x) => x[0] === t)?.[1] || { multiref: 'Chọn nhiều từ danh mục' }[t] || t;
 const REF_TARGETS = CATALOGS.filter((c) => !['codeRules', 'users'].includes(c.key));
@@ -119,14 +120,14 @@ export default function FieldManager() {
       <div className="page-head">
         <h1>🧩 Quản lý trường (hạng mục)</h1>
         <div className="actions">
-          <select value={catKey} onChange={(e) => (!dirty || window.confirm('Bỏ các thay đổi chưa lưu?')) && setCatKey(e.target.value)}>
+          <Select value={catKey} onChange={(e) => (!dirty || window.confirm('Bỏ các thay đổi chưa lưu?')) && setCatKey(e.target.value)}>
             {GROUPS.map((g) => (
               <optgroup key={g} label={g}>
                 {CATALOGS.filter((c) => c.group === g).map((c) => <option key={c.key} value={c.key}>{c.title}</option>)}
               </optgroup>
             ))}
             <optgroup label="Biểu mẫu đơn hàng">{FORM_DEFS.map((c) => <option key={c.key} value={c.key}>{c.title}</option>)}</optgroup>
-          </select>
+          </Select>
           <button className="btn primary" disabled={!dirty} onClick={save}>Lưu thay đổi</button>
         </div>
       </div>
@@ -156,14 +157,14 @@ export default function FieldManager() {
                   <td>
                     {f.custom ? (
                       <>
-                        <select value={f.type} onChange={(e) => upd(i, { type: e.target.value })}>
+                        <Select value={f.type} onChange={(e) => upd(i, { type: e.target.value })}>
                           {FIELD_TYPES.map(([t, l]) => <option key={t} value={t}>{l}</option>)}
-                        </select>
+                        </Select>
                         {f.type === 'ref' && (
-                          <select value={f.ref || ''} onChange={(e) => upd(i, { ref: e.target.value })} style={{ marginTop: 4 }}>
+                          <Select value={f.ref || ''} onChange={(e) => upd(i, { ref: e.target.value })} style={{ marginTop: 4 }}>
                             <option value="">-- Lấy từ danh mục --</option>
                             {REF_TARGETS.map((c) => <option key={c.key} value={c.key}>{c.title}</option>)}
-                          </select>
+                          </Select>
                         )}
                       </>
                     ) : <span className="small">{typeLabel(f.type)}{f.ref ? `: ${catalogByKey(f.ref)?.short}` : ''}</span>}
@@ -173,8 +174,8 @@ export default function FieldManager() {
                     {f.custom && f.type === 'formula' ? (
                       <>
                         <textarea rows={2} value={f.formulaText || ''} onChange={(e) => upd(i, { formulaText: e.target.value })} placeholder="VD: [Số lượng (tấn)] * [Đơn giá]" />
-                        <select value={f.resultType || 'number'} onChange={(e) => upd(i, { resultType: e.target.value })} style={{ marginTop: 4 }}>
-                          {RESULT_TYPES.map(([v, l]) => <option key={v} value={v}>Kết quả: {l}</option>)}</select>
+                        <Select value={f.resultType || 'number'} onChange={(e) => upd(i, { resultType: e.target.value })} style={{ marginTop: 4 }}>
+                          {RESULT_TYPES.map(([v, l]) => <option key={v} value={v}>Kết quả: {l}</option>)}</Select>
                         {f.formulaText && checkFormula(f.formulaText, [list, other], catKey.endsWith('Head') ? other : []) && <div className="req small">{checkFormula(f.formulaText, [list, other], catKey.endsWith('Head') ? other : [])}</div>}
                       </>
                     ) : canChoose(f)
@@ -187,19 +188,19 @@ export default function FieldManager() {
                     {!canDefault(f) ? <span className="small">—</span>
                       : f.type === 'checkbox' ? <input type="checkbox" checked={f.defText === 'true'} onChange={(e) => upd(i, { defText: e.target.checked ? 'true' : '' })} />
                       : parseChoices(f.optionsText, f.type).length ? (
-                        <select value={f.defText} onChange={(e) => upd(i, { defText: e.target.value })}><option value="">--</option>
-                          {parseChoices(f.optionsText, f.type).map((o) => <option key={o} value={o}>{f.type === 'percent' ? `${o}%` : o}</option>)}</select>
+                        <Select value={f.defText} onChange={(e) => upd(i, { defText: e.target.value })}><option value="">--</option>
+                          {parseChoices(f.optionsText, f.type).map((o) => <option key={o} value={o}>{f.type === 'percent' ? `${o}%` : o}</option>)}</Select>
                       ) : ['date', 'datetime'].includes(f.type) ? (
-                        <select value={f.defText} onChange={(e) => upd(i, { defText: e.target.value })}><option value="">--</option>
-                          {DATE_DEFAULTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+                        <Select value={f.defText} onChange={(e) => upd(i, { defText: e.target.value })}><option value="">--</option>
+                          {DATE_DEFAULTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
                       ) : <input type="text" value={f.defText} onChange={(e) => upd(i, { defText: e.target.value })} style={{ width: 110 }}
                         placeholder={f.type === 'ref' ? `Mã ${catalogByKey(f.ref)?.short || ''}` : f.type === 'percent' ? 'VD: 8' : ''} />}
                   </td>
                   <td className="nowrap">
-                    <select value={Number(f.width) || 0} onChange={(e) => upd(i, { width: Number(e.target.value) })} title="Độ rộng">
-                      {WIDTH_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-                    <select value={Number(f.height) || 0} onChange={(e) => upd(i, { height: Number(e.target.value) })} title="Độ cao" style={{ marginLeft: 4 }}>
-                      {HEIGHT_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+                    <Select value={Number(f.width) || 0} onChange={(e) => upd(i, { width: Number(e.target.value) })} title="Độ rộng">
+                      {WIDTH_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
+                    <Select value={Number(f.height) || 0} onChange={(e) => upd(i, { height: Number(e.target.value) })} title="Độ cao" style={{ marginLeft: 4 }}>
+                      {HEIGHT_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
                   </td>
                   {cat.form && (
                     <td>
@@ -229,14 +230,14 @@ export default function FieldManager() {
       <div className="inline-add card" style={{ marginTop: 12, alignItems: 'center' }}>
         <b>Thêm trường:</b>
         <input placeholder="Tên trường mới" value={nf.label} onChange={(e) => setNf({ ...nf, label: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && add()} />
-        <select value={nf.type} onChange={(e) => setNf({ ...nf, type: e.target.value })}>
+        <Select value={nf.type} onChange={(e) => setNf({ ...nf, type: e.target.value })}>
           {FIELD_TYPES.map(([t, l]) => <option key={t} value={t}>{l}</option>)}
-        </select>
+        </Select>
         {nf.type === 'ref' && (
-          <select value={nf.ref} onChange={(e) => setNf({ ...nf, ref: e.target.value })}>
+          <Select value={nf.ref} onChange={(e) => setNf({ ...nf, ref: e.target.value })}>
             <option value="">-- Lấy từ danh mục --</option>
             {REF_TARGETS.map((c) => <option key={c.key} value={c.key}>{c.title}</option>)}
-          </select>
+          </Select>
         )}
         <button className="btn" onClick={add}>+ Thêm</button>
       </div>

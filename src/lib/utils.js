@@ -6,6 +6,14 @@ export function norm(s) {
     .toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+// Ô tìm kiếm: mọi từ gõ vào (không dấu) đều phải có trong các giá trị của dòng
+export function matchQ(q, ...vals) {
+  const words = norm(q).split(' ').filter(Boolean);
+  if (!words.length) return true;
+  const hay = norm(vals.flat(Infinity).filter((v) => v != null).join(' '));
+  return words.every((w) => hay.includes(w));
+}
+
 // Quy ước số của công ty: dấu "," ngăn cách hàng nghìn, dấu "." thập phân (1,234.5)
 export function fmtNum(n, digits = 0, minDigits = 0) {
   if (n === null || n === undefined || n === '' || Number.isNaN(Number(n))) return '';

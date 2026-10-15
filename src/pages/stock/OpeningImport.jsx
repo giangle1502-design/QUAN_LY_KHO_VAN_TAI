@@ -7,6 +7,7 @@ import { vnDate } from '../../lib/trips';
 import { fmtDate, fmtNum, norm } from '../../lib/utils';
 import { ErrorBox } from '../../components/ui';
 import { WithAdd } from '../../components/FormTools';
+import Select from '../../components/Select';
 
 // Cột file Excel tồn đầu kỳ: [khóa, tiêu đề, các tên cột chấp nhận]
 const COLS = [
@@ -132,10 +133,10 @@ export default function OpeningImport() {
       </p>
       <div className="toolbar">
         <WithAdd cat="warehouses" onAdded={(id) => setOpWh(id)}>
-          <select value={wh?.code || ''} onChange={(e) => { setOpWh(e.target.value); }}>
+          <Select value={wh?.code || ''} onChange={(e) => { setOpWh(e.target.value); }}>
             <option value="">-- Chọn kho --</option>
             {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-          </select>
+          </Select>
         </WithAdd>
         <label className="small">Ngày chứng từ <input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
         <button className="btn" disabled={!wh} onClick={() => fileRef.current.click()}>⬆ Chọn file Excel</button>

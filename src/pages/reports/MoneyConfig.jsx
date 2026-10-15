@@ -1,4 +1,5 @@
 import { describeMoney, n } from '../../lib/orderMoney';
+import Select from '../../components/Select';
 
 // Chọn trường dùng để tính tiền (doanh thu / tiền mua) — lưu trên trình duyệt của người dùng
 export default function MoneyConfig({ m, what }) {
@@ -6,22 +7,22 @@ export default function MoneyConfig({ m, what }) {
   return (
     <div className="card no-print" style={{ marginBottom: 12, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end' }}>
       <label className="field"><span>{what[0].toUpperCase() + what.slice(1)} lấy từ trường</span>
-        <select value={amountKey} onChange={(e) => setCfg({ ...cfg, amount: e.target.value })}>
+        <Select value={amountKey} onChange={(e) => setCfg({ ...cfg, amount: e.target.value })}>
           <option value="">(không — tính Đơn giá × số lượng)</option>
           {moneyFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
-        </select>
+        </Select>
       </label>
       <label className="field"><span>Đơn giá</span>
-        <select value={priceKey} onChange={(e) => setCfg({ ...cfg, price: e.target.value })}>
+        <Select value={priceKey} onChange={(e) => setCfg({ ...cfg, price: e.target.value })}>
           <option value="">(không có)</option>
           {moneyFields.filter((f) => f.type !== 'formula').map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
-        </select>
+        </Select>
       </label>
       <label className="field"><span>Đơn giá tính theo</span>
-        <select value={unit} onChange={(e) => setCfg({ ...cfg, unit: e.target.value })}>
+        <Select value={unit} onChange={(e) => setCfg({ ...cfg, unit: e.target.value })}>
           <option value="tan">đ / tấn</option>
           <option value="kg">đ / kg</option>
-        </select>
+        </Select>
       </label>
       <button className="btn ghost" onClick={() => setCfg({ amount: null, price: null, unit: 'tan' })}>Tự nhận lại</button>
       {!moneyFields.length && <div className="small">Dòng đơn chưa có trường tiền nào bạn được xem.</div>}

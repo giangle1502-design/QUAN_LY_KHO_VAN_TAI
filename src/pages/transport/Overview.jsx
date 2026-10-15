@@ -13,6 +13,7 @@ import { Pipeline, StatusBadge, WarehousePicker, totalPayload } from '../../comp
 import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
 import { useTripAction } from './Ops';
 import { QuickAdd } from '../../components/FormTools';
+import Select from '../../components/Select';
 
 const addDays = (ymd, n) => { const d = new Date(ymd + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const PRESETS = [
@@ -195,11 +196,11 @@ function TripDetail({ trip: t, onClose }) {
               }}>{isSuper ? 'Xóa' : 'Đề nghị xóa'}</button>
               {ACTIVE.includes(t.status) && (
                 <>
-                  <select value={cancelReason} onChange={(e) => setCancelReason(e.target.value)}>
+                  <Select value={cancelReason} onChange={(e) => setCancelReason(e.target.value)}>
                     <option value="">-- Lý do hủy --</option>
                     {reasons.map((r) => <option key={r.code} value={`${r.code} – ${r.name}`}>{r.name}</option>)}
                     <option value="Khác">Khác</option>
-                  </select>
+                  </Select>
                   <QuickAdd catKey="reasons" preset={{ appliesTo: 'Hủy chuyến' }} onAdded={(id, r) => setCancelReason(`${id} – ${r?.name || ''}`)} />
                   <button className="btn danger" disabled={!cancelReason} onClick={() => act(t, { status: ST.CANCELLED, cancelReason, cancelTime: nowISO() }, `Hủy chuyến: ${cancelReason}`)}>Hủy chuyến</button>
                 </>

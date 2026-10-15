@@ -7,9 +7,10 @@ import { useCollection, useMyWarehouses } from '../../lib/hooks';
 import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
 import { exportSheets } from '../../lib/excel';
 import { vnDate } from '../../lib/trips';
-import { fmtDate, fmtNum } from '../../lib/utils';
+import { fmtDate, fmtNum, matchQ } from '../../lib/utils';
 import { MOVE_KINDS, palletManaged, postPalletMove } from '../../lib/pallets';
 import { WithAdd } from '../../components/FormTools';
+import Select from '../../components/Select';
 
 // Quản lý pallet gỗ / nhựa: tồn theo kho, vận tải đang mượn (nhận trả), sổ pallet
 export default function Pallets() {
@@ -109,39 +110,39 @@ function MoveForm({ init, warehouses, catalog, onClose }) {
     <Modal title={f.kind === 'return' ? 'Vận tải trả pallet về kho' : 'Nhập / điều chỉnh pallet'} onClose={() => onClose('')}>
       <div className="form-grid">
         <Field label="Nghiệp vụ" required>
-          <select value={f.kind} onChange={(e) => set({ kind: e.target.value })}>
+          <Select value={f.kind} onChange={(e) => set({ kind: e.target.value })}>
             {['return', 'in', 'customerReturn', 'adjust'].map((k) => <option key={k} value={k}>{MOVE_KINDS[k]}</option>)}
-          </select>
+          </Select>
         </Field>
         <Field label="Kho" required>
           <WithAdd cat="warehouses" onAdded={(id) => set({ warehouse: id })}>
-            <select value={f.warehouse} onChange={(e) => set({ warehouse: e.target.value })}>
+            <Select value={f.warehouse} onChange={(e) => set({ warehouse: e.target.value })}>
               <option value="">-- Chọn kho --</option>
               {warehouses.filter((w) => f.kind === 'return' || palletManaged(w)).map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}{palletManaged(w) ? '' : ' (quản lý theo Kiện)'}</option>)}
-            </select>
+            </Select>
           </WithAdd>
         </Field>
         <Field label="Ngày" required><input type="date" value={f.date} onChange={(e) => set({ date: e.target.value })} /></Field>
         {f.kind === 'return' && (
           <Field label="Đơn vị vận tải" required>
             <WithAdd cat="carriers" onAdded={(id, r) => set({ carrier: id, carrierName: r?.name || '' })}>
-              <select value={f.carrier} onChange={(e) => set({ carrier: e.target.value, carrierName: carriers.find((c) => c.code === e.target.value)?.name || '' })}>
+              <Select value={f.carrier} onChange={(e) => set({ carrier: e.target.value, carrierName: carriers.find((c) => c.code === e.target.value)?.name || '' })}>
                 <option value="">-- Chọn --</option>
                 {carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}
-              </select>
+              </Select>
             </WithAdd>
           </Field>
         )}
         <Field label="Mã pallet" required>
           <WithAdd cat="pallets" onAdded={(id) => set({ code: id })}>
-            <select value={f.code} onChange={(e) => set({ code: e.target.value })}>
+            <Select value={f.code} onChange={(e) => set({ code: e.target.value })}>
               <option value="">-- Chọn --</option>
               {catalog.map((p) => <option key={p.code} value={p.code}>{p.code} – {p.name} ({p.material})</option>)}
-            </select>
+            </Select>
           </WithAdd>
         </Field>
         {f.kind === 'adjust' && (
-          <Field label="Tăng / giảm"><select value={f.sign} onChange={(e) => set({ sign: e.target.value })}><option value="+">Tăng (+)</option><option value="-">Giảm (−)</option></select></Field>
+          <Field label="Tăng / giảm"><Select value={f.sign} onChange={(e) => set({ sign: e.target.value })}><option value="+">Tăng (+)</option><option value="-">Giảm (−)</option></Select></Field>
         )}
         <Field label="Số lượng (cái)" required><input type="number" min="0" step="1" value={f.qty} onChange={(e) => set({ qty: e.target.value })} /></Field>
         <Field label="Ghi chú" full><input value={f.note} onChange={(e) => set({ note: e.target.value })} /></Field>
@@ -157,6 +158,7 @@ function Ledger({ mine, carrierOnly }) {
   const [from, setFrom] = useState(vnDate().slice(0, 8) + '01');
   const [to, setTo] = useState(vnDate());
   const [rows, setRows] = useState(null);
+  const [q, setQ] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const run = async () => {
@@ -203,13 +205,14 @@ function Ledger({ mine, carrierOnly }) {
         <label className="small">Đến ngày <input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
         <button className="btn primary" disabled={busy} onClick={run}>{busy ? 'Đang tải…' : 'Xem sổ pallet'}</button>
         {rows?.length ? <button className="btn" onClick={excel}>⬇ Excel</button> : null}
+        {rows?.length ? <input type="search" placeholder="Tìm chứng từ, mã pallet, kho, vận tải / khách…" value={q} onChange={(e) => setQ(e.target.value)} /> : null}
       </div>
       <ErrorBox error={err} />
       {rows && (!rows.length ? <Empty text="Không có phát sinh pallet" /> : (
         <div className="table-wrap">
           <table>
             <thead><tr><th>Ngày</th><th>Chứng từ</th><th>Kho</th><th>Mã pallet</th><th>Loại</th><th>Nghiệp vụ</th><th className="num">Tồn kho</th><th className="num">Vận tải mượn</th><th>Vận tải / khách hàng</th><th>Người ghi</th><th>Ghi chú</th></tr></thead>
-            <tbody>{rows.map((r, i) => (
+            <tbody>{rows.filter((r) => matchQ(q, r.ref, r.warehouse, r.code, r.name, r.material, MOVE_KINDS[r.kind], r.who, r.by, r.note)).map((r, i) => (
               <tr key={i}>
                 <td>{fmtDate(r.date)}</td><td>{r.link ? <Link className="mono" to={r.link} target="_blank">{r.ref}</Link> : ''}</td><td>{r.warehouse}</td><td>{r.code}</td><td>{r.material}</td>
                 <td>{MOVE_KINDS[r.kind]}</td><td className="num">{r.stock > 0 ? '+' : ''}{fmtNum(r.stock)}</td><td className="num">{r.lent ? `${r.lent > 0 ? '+' : ''}${fmtNum(r.lent)}` : ''}</td>

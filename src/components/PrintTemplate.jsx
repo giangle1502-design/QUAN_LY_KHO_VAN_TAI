@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { DOC_TYPES, pageCss, pickTemplate, renderBody } from '../lib/printTemplates';
 import { usePrintTemplates } from '../lib/printData';
+import Select from './Select';
 
 // Các trang (hoặc các nhãn) của 1 phiếu theo mẫu
 export function TemplateSheets({ tpl, data, preview = false, max = 0 }) {
@@ -38,11 +39,11 @@ export function useTemplateChoice(docType, { company = '', party = '' } = {}) {
   const select = docType && (mine.length > 0 || canDesign) ? (
     <span className="tpl-choice">
       <label className="small">Mẫu in{' '}
-        <select value={sel === undefined ? '__auto' : sel} onChange={(e) => setSel(e.target.value === '__auto' ? undefined : e.target.value)}>
+        <Select value={sel === undefined ? '__auto' : sel} onChange={(e) => setSel(e.target.value === '__auto' ? undefined : e.target.value)}>
           <option value="__auto">Tự động: {auto ? auto.name : 'Mẫu gốc'}</option>
           <option value="">Mẫu gốc của hệ thống</option>
           {mine.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </select>
+        </Select>
       </label>
       {canDesign && <Link className="btn ghost" to={tpl ? `/mau-in/${tpl.id}` : `/mau-in?loai=${docType}`}>✎ {tpl ? 'Sửa mẫu' : 'Thiết kế mẫu'}</Link>}
     </span>

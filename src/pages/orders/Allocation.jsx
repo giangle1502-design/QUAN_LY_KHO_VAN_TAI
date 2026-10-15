@@ -16,6 +16,7 @@ import {
   detachFromOrder, groupForOrders, setCarrier, missingForOrder, poKey, updateAllocation,
 } from '../../lib/allocations';
 import { WithAdd } from '../../components/FormTools';
+import Select from '../../components/Select';
 
 const n = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? 0 : Number(v));
 const kg = (v) => fmtNum(n(v), 2);
@@ -264,9 +265,9 @@ function QtySplit({ o, l, left, user, orders, allocs, rcv, onClose }) {
       {free.map((r, i) => (
         <div key={i} className="filters" style={{ marginBottom: 4 }}>
           <WithAdd cat="soldto" onAdded={(id, rec) => setFree((f) => f.map((x, j) => (j === i ? { ...x, partyCode: rec?.code || id } : x)))}>
-            <select value={r.partyCode} onChange={(e) => setFree((f) => f.map((x, j) => (j === i ? { ...x, partyCode: e.target.value } : x)))}>
+            <Select value={r.partyCode} onChange={(e) => setFree((f) => f.map((x, j) => (j === i ? { ...x, partyCode: e.target.value } : x)))}>
               <option value="">-- Khách hàng --</option>{soldto.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}
-            </select></WithAdd>
+            </Select></WithAdd>
           <input type="number" step="any" min="0" placeholder="kg" style={{ width: 120 }} value={r.kg} onChange={(e) => setFree((f) => f.map((x, j) => (j === i ? { ...x, kg: e.target.value } : x)))} />
           <button type="button" className="btn sm ghost" onClick={() => setFree((f) => f.filter((_, j) => j !== i))}>✕</button>
         </div>
@@ -275,9 +276,9 @@ function QtySplit({ o, l, left, user, orders, allocs, rcv, onClose }) {
       <h3 style={{ margin: '12px 0 4px' }}>3. Phần còn lại: <span style={{ color: rest < -0.001 ? 'var(--red)' : undefined }}>{kg(rest)} kg</span> <span className="small">{tn(rest)}</span></h3>
       {rest > 0.001 && (
         <label className="field"><span>Về kho</span>
-          <WithAdd cat="warehouses" onAdded={(id) => setRestWh(id)}><select value={restWh} onChange={(e) => setRestWh(e.target.value)}>
+          <WithAdd cat="warehouses" onAdded={(id) => setRestWh(id)}><Select value={restWh} onChange={(e) => setRestWh(e.target.value)}>
             <option value="">-- Chọn kho --</option>{whs.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}{w.code === fromWh ? ' (kho nhận, để tồn)' : ''}</option>)}
-          </select></WithAdd>
+          </Select></WithAdd>
           <small className="small">{restWh && restWh === fromWh ? 'Hàng để tồn tại kho nhận, không cần lệnh chuyển kho.' : restWh ? `Tạo lệnh chuyển kho (STO) từ ${fromWh || 'nơi nhận'} về ${restWh}.` : ''}</small></label>
       )}
       <ErrorBox error={err} />
@@ -418,13 +419,13 @@ function Plan({ allocs, orderMap, orders, allocated, pos, cats, co, setCo, canMa
       </div>
       <div className="filters">
         <CompanyPicker value={co} onChange={setCo} />
-        <select value={filter} onChange={(e) => { setFilter(e.target.value); setSel(new Set()); }}>
+        <Select value={filter} onChange={(e) => { setFilter(e.target.value); setSel(new Set()); }}>
           {Object.entries(FILTERS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-        </select>
-        <select value={dest} onChange={(e) => setDest(e.target.value)}>
+        </Select>
+        <Select value={dest} onChange={(e) => setDest(e.target.value)}>
           <option value="">Mọi điểm giao</option>
           {Object.entries(DEST_TYPES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-        </select>
+        </Select>
         <input type="search" placeholder="Tìm PO, BCT, mã hàng, số cont, khách, kho, số đơn…" value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="actions" style={{ marginLeft: 'auto' }}>
           <button className="btn" onClick={exportExcel}>⬇ Excel</button>
@@ -503,34 +504,34 @@ function SharedCells({ v, edit, editCarrier = edit, save, cats, whs }) {
       <td>{edit ? <input style={{ width: 125 }} placeholder="Số cont" defaultValue={v.contNo} key={'c' + v.contNo} onBlur={blur('contNo', (x) => x.trim().toUpperCase())} /> : <span className="mono">{v.contNo}</span>}{mixed('contNo')}</td>
       <td>{edit ? <input type="date" style={{ width: 140 }} defaultValue={v.date} key={'d' + v.date} onBlur={blur('date')} /> : <span className="nowrap">{fmtDate(v.date)}</span>}{mixed('date')}</td>
       <td>{edit && (!v.fromWarehouse || chgFrom) ? (
-        <WithAdd cat="warehouses" onAdded={(id) => { setChgFrom(false); save({ fromWarehouse: id, fromLocation: '' }); }}><select value={v.fromWarehouse || ''} onChange={(e) => { setChgFrom(false); save({ fromWarehouse: e.target.value, fromLocation: '' }); }}>
+        <WithAdd cat="warehouses" onAdded={(id) => { setChgFrom(false); save({ fromWarehouse: id, fromLocation: '' }); }}><Select value={v.fromWarehouse || ''} onChange={(e) => { setChgFrom(false); save({ fromWarehouse: e.target.value, fromLocation: '' }); }}>
           <option value="">-- Kho --</option>{whs.map((w) => <option key={w.code} value={w.code}>{w.code}</option>)}
-        </select></WithAdd>) : <span title="Lấy từ kho nhập của dòng PO">{v.fromWarehouse}{edit && <button type="button" className="btn ghost sm" title="Đổi nơi nhận" onClick={() => setChgFrom(true)}>✎</button>}</span>}
+        </Select></WithAdd>) : <span title="Lấy từ kho nhập của dòng PO">{v.fromWarehouse}{edit && <button type="button" className="btn ghost sm" title="Đổi nơi nhận" onClick={() => setChgFrom(true)}>✎</button>}</span>}
         {mixed('fromWarehouse')}
         <LocCell wh={whOf(v.fromWarehouse)} value={v.fromLocation} edit={edit} locs={locs} onChange={(x) => save({ fromLocation: x })} mixed={v.mixed?.fromLocation} /></td>
       <td>{edit ? (
-        <select value={v.destType || ''} onChange={(e) => e.target.value && save({ destType: e.target.value })}>
+        <Select value={v.destType || ''} onChange={(e) => e.target.value && save({ destType: e.target.value })}>
           {!v.destType && <option value="">-- Khác nhau --</option>}
           {Object.entries(DEST_TYPES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-        </select>) : DEST_TYPES[v.destType]}</td>
+        </Select>) : DEST_TYPES[v.destType]}</td>
       <td>{edit && v.destType === 'customer' ? (
         <><WithAdd cat="soldto" onAdded={(id, r) => save({ partyCode: r?.code || id, partyName: r?.name || '', shipCode: '' })}><input list="dl-alloc-soldto" style={{ width: 130 }} placeholder="Mã khách" defaultValue={v.partyCode} key={'p' + v.partyCode} onBlur={pickCustomer} /></WithAdd>
           {v.partyName && <div className="small">{v.partyName}</div>}</>
       ) : edit && v.destType === 'warehouse' ? (
-        <WithAdd cat="warehouses" onAdded={(id) => save({ toWarehouse: id, toLocation: '' })}><select value={v.toWarehouse || ''} onChange={(e) => save({ toWarehouse: e.target.value, toLocation: '' })}>
+        <WithAdd cat="warehouses" onAdded={(id) => save({ toWarehouse: id, toLocation: '' })}><Select value={v.toWarehouse || ''} onChange={(e) => save({ toWarehouse: e.target.value, toLocation: '' })}>
           <option value="">-- Kho đến --</option>{whs.filter((w) => w.code !== v.fromWarehouse).map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-        </select></WithAdd>
+        </Select></WithAdd>
       ) : v.destType === 'customer' ? <>{v.partyCode}{v.partyName ? <div className="small">{v.partyName}</div> : null}</> : v.destType === 'warehouse' ? v.toWarehouse : v.destType === 'keep' ? <span className="small">Ở lại {v.fromWarehouse || 'kho nhận'}</span> : <span className="small">–</span>}
         {mixed(v.destType === 'warehouse' ? 'toWarehouse' : 'partyCode')}
         {v.destType === 'warehouse' && <LocCell wh={whOf(v.toWarehouse)} value={v.toLocation} edit={edit} locs={locs} onChange={(x) => save({ toLocation: x })} mixed={v.mixed?.toLocation} />}</td>
       <td>{edit && v.destType === 'customer' && v.partyCode ? (
-        <WithAdd cat="shipto" preset={{ customerCode: v.partyCode, customerName: v.partyName }} onAdded={(id, r) => save({ shipCode: r?.shipCode || id })}><select value={v.shipCode || ''} onChange={(e) => save({ shipCode: e.target.value })}>
+        <WithAdd cat="shipto" preset={{ customerCode: v.partyCode, customerName: v.partyName }} onAdded={(id, r) => save({ shipCode: r?.shipCode || id })}><Select value={v.shipCode || ''} onChange={(e) => save({ shipCode: e.target.value })}>
           <option value="">-- Mã giao --</option>{ships.map((sh) => <option key={sh.shipCode} value={sh.shipCode} title={sh.address}>{sh.shipCode}</option>)}
-        </select></WithAdd>) : v.destType === 'customer' ? v.shipCode : ''}</td>
+        </Select></WithAdd>) : v.destType === 'customer' ? v.shipCode : ''}</td>
       <td>{editCarrier ? (
-        <WithAdd cat="carriers" onAdded={(id) => save({ carrier: id })}><select value={v.carrier || ''} title={edit ? '' : 'Đổi nhà vận chuyển ghi luôn vào dòng đơn'} onChange={(e) => save({ carrier: e.target.value })}>
+        <WithAdd cat="carriers" onAdded={(id) => save({ carrier: id })}><Select value={v.carrier || ''} title={edit ? '' : 'Đổi nhà vận chuyển ghi luôn vào dòng đơn'} onChange={(e) => save({ carrier: e.target.value })}>
           <option value="">--</option>{(cats.carriers || []).filter((c) => c.active !== false).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
-        </select></WithAdd>) : v.carrier}{mixed('carrier')}</td>
+        </Select></WithAdd>) : v.carrier}{mixed('carrier')}</td>
     </>
   );
 }
@@ -542,11 +543,11 @@ function LocCell({ wh, value, edit, locs, onChange, mixed }) {
   if (!edit) return value ? <div className="small">Vị trí {value}</div> : null;
   return (
     <WithAdd style={{ marginTop: 4 }} cat="locations" preset={{ warehouse: wh.code }} onAdded={(id, r) => onChange(r?.code || String(id).split('__').pop())}>
-      <select value={value || ''} title="Vị trí nhận hàng, chuyển sang phiếu nhập kho" onChange={(e) => onChange(e.target.value)}>
+      <Select value={value || ''} title="Vị trí nhận hàng, chuyển sang phiếu nhập kho" onChange={(e) => onChange(e.target.value)}>
         <option value="">{mixed ? '-- Khác nhau --' : '-- Vị trí --'}</option>
         {list.map((l) => <option key={l.code} value={l.code}>{l.code}{n(l.capacity) ? ` · trống ${fmtNum(Math.max(0, n(l.capacity) - n(l.currentPallets)), 1)} pl` : ''}</option>)}
         {value && !list.some((l) => l.code === value) && <option value={value}>{value}</option>}
-      </select>
+      </Select>
     </WithAdd>
   );
 }
@@ -708,9 +709,9 @@ function CreateOrders({ rows, cats, user, onClose }) {
           {g.type === 'SO' && !done[g.key] && (
             <label className="small">Sale phụ trách:{' '}
               {salesOnly ? <b>{email}</b> : (
-                <select value={sales[g.key] || ''} onChange={(e) => setSales((s) => ({ ...s, [g.key]: e.target.value }))}>
+                <Select value={sales[g.key] || ''} onChange={(e) => setSales((s) => ({ ...s, [g.key]: e.target.value }))}>
                   <option value="">-- Không ghi --</option>{users.map((u) => <option key={u.email} value={u.email}>{u.name} ({u.email})</option>)}
-                </select>)}
+                </Select>)}
             </label>
           )}
           <table><thead><tr><th>Ngày giao</th><th>Mã hàng</th><th className="num">Số lượng (kg)</th><th>Cont</th>{g.type === 'SO' ? <><th>Kho xuất</th><th>Mã giao</th></> : <><th>Kho đi</th><th>Kho đến</th></>}<th>PO</th><th>Nhà vận chuyển</th></tr></thead>

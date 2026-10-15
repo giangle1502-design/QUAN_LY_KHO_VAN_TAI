@@ -1,5 +1,6 @@
 // Ô soạn thảo nội dung mẫu in (như Word thu nhỏ): chữ đậm/nghiêng, cỡ chữ, màu, căn lề, bảng, hình/logo, chèn trường dữ liệu
 import { useEffect, useRef, useState } from 'react';
+import Select from './Select';
 
 const SIZES = [9, 10, 11, 12, 13, 14, 16, 18, 20, 24, 28, 36, 48];
 
@@ -136,17 +137,17 @@ export default function RichEditor({ value, onChange, fieldGroups = [], extraTok
         <B c="bold" t="Đậm (Ctrl+B)"><b>B</b></B>
         <B c="italic" t="Nghiêng (Ctrl+I)"><i>I</i></B>
         <B c="underline" t="Gạch chân (Ctrl+U)"><u>U</u></B>
-        <select title="Cỡ chữ" value="" onMouseDown={() => restore()} onChange={(e) => fontSize(e.target.value)}>
+        <Select title="Cỡ chữ" value="" onMouseDown={() => restore()} onChange={(e) => fontSize(e.target.value)}>
           <option value="">Cỡ chữ</option>
           {SIZES.map((s) => <option key={s} value={s}>{s}px</option>)}
-        </select>
-        <select title="Kiểu đoạn" value="" onChange={(e) => e.target.value && cmd('formatBlock', e.target.value)}>
+        </Select>
+        <Select title="Kiểu đoạn" value="" onChange={(e) => e.target.value && cmd('formatBlock', e.target.value)}>
           <option value="">Đoạn</option>
           <option value="p">Chữ thường</option>
           <option value="h1">Tiêu đề lớn</option>
           <option value="h2">Tiêu đề vừa</option>
           <option value="h3">Tiêu đề nhỏ</option>
-        </select>
+        </Select>
         <label className="btn sm" title="Màu chữ">A<input type="color" style={{ width: 22, height: 18, padding: 0, border: 0 }} onChange={(e) => cmd('foreColor', e.target.value)} /></label>
         <B c="justifyLeft" t="Căn trái">⇤</B>
         <B c="justifyCenter" t="Căn giữa">≡</B>
@@ -163,12 +164,12 @@ export default function RichEditor({ value, onChange, fieldGroups = [], extraTok
         <B c={() => { if (source) { setSource(false); } else { emit(); setSource(true); } }} on={source} t="Sửa trực tiếp mã HTML">&lt;/&gt; HTML</B>
       </div>
       <div className="rte-bar">
-        <select value="" onMouseDown={() => restore()} onChange={(e) => e.target.value && insertText(`{{${e.target.value}}}`)} style={{ maxWidth: 320 }}>
+        <Select value="" onMouseDown={() => restore()} onChange={(e) => e.target.value && insertText(`{{${e.target.value}}}`)} style={{ maxWidth: 320 }}>
           <option value="">➕ Chèn trường dữ liệu…</option>
           {fieldGroups.map(([g, list]) => (
             <optgroup key={g} label={g}>{list.map((f) => <option key={f.label} value={f.label}>{f.label}</option>)}</optgroup>
           ))}
-        </select>
+        </Select>
         {extraTokens.map(([t, label, help]) => <B key={t} c={() => insertText(t)} t={help}>{label}</B>)}
         {cell && (
           <span className="rte-cell">

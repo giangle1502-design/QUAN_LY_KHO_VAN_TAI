@@ -6,8 +6,9 @@ import { useCollection, useCompanies } from '../../lib/hooks';
 import { costTotal, tripKg } from '../../lib/transport';
 import { nowISO } from '../../lib/trips';
 import { exportSheets } from '../../lib/excel';
-import { fmtDate, fmtNum, today } from '../../lib/utils';
+import { fmtDate, fmtNum, matchQ, today } from '../../lib/utils';
 import { Empty, ErrorBox } from '../../components/ui';
+import Select from '../../components/Select';
 
 // ============================================================================
 // Bảng kê cước: chọn đơn vị vận tải (cước với VAP / PLA / DAM… theo công ty) hoặc 3PL (cước 3PL ↔ GHA),
@@ -31,6 +32,7 @@ export default function Statements({ trips, priv }) {
   const modes = [...(isTpl ? [] : [['carrier', 'Đơn vị vận tải']]), ...(can3PL || isTpl ? [['3pl', '3PL ↔ GHA']] : [])];
   const [f, setF] = useState({ mode: modes[0][0], party: isCarrier ? myCarrier : isTpl ? myThreepl : '', company: '', from: monthStart(), to: today() });
   const [off, setOff] = useState({}); // chuyến bỏ chọn
+  const [q, setQ] = useState('');
   const [open, setOpen] = useState(null); // bảng kê đã lưu đang mở
   const [saved, setSaved] = useState([]);
   const [err, setErr] = useState('');
@@ -54,8 +56,8 @@ export default function Statements({ trips, priv }) {
     if (open) return trips.filter((t) => open.tripIds.includes(t.id));
     return trips.filter((t) => t.status === 'completed' && (!f.from || (t.plannedDate || '') >= f.from) && (!f.to || (t.plannedDate || '') <= f.to)
       && (is3 ? !!priv[t.id]?.threepl && (!party || priv[t.id].threepl === party) : (!party || t.carrier === party))
-      && (!f.company || t.company === f.company));
-  }, [trips, priv, f, party, is3, open]);
+      && (!f.company || t.company === f.company) && matchQ(q, t.id, t.plate, t.driverName, t.warehouse, (t.lines || []).map((l) => [l.partyCode, l.partyName, l.item, l.orderId]), t.company, t.carrier, t.carrierName));
+  }, [trips, priv, f, party, is3, open, q]);
   const picked = list.filter((t) => !off[t.id]);
   const sum = picked.reduce((s, t) => { const c = costOf(t) || {}; return { kg: s.kg + tripKg(t), freight: s.freight + n(c.freight), chiHo: s.chiHo + n(c.chiHo), bocXep: s.bocXep + n(c.bocXep), other: s.other + n(c.other), total: s.total + costTotal(c) }; },
     { kg: 0, freight: 0, chiHo: 0, bocXep: 0, other: 0, total: 0 });
@@ -104,11 +106,12 @@ export default function Statements({ trips, priv }) {
   return (
     <div>
       <div className="filters">
-        {modes.length > 1 && <select value={f.mode} onChange={(e) => set('mode', e.target.value)}>{modes.map(([k, l]) => <option key={k} value={k}>Bảng kê {l}</option>)}</select>}
+        {modes.length > 1 && <Select value={f.mode} onChange={(e) => set('mode', e.target.value)}>{modes.map(([k, l]) => <option key={k} value={k}>Bảng kê {l}</option>)}</Select>}
         {!fixedParty && (is3
-          ? <select value={f.party} onChange={(e) => set('party', e.target.value)}><option value="">-- Chọn 3PL --</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</select>
-          : <select value={f.party} onChange={(e) => set('party', e.target.value)}><option value="">-- Chọn đơn vị vận tải --</option>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}</select>)}
-        {!is3 && <select value={f.company} onChange={(e) => set('company', e.target.value)} title="Cước của từng công ty (VAP, PLA, DAM…)"><option value="">Mọi công ty</option>{companies.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}</select>}
+          ? <Select value={f.party} onChange={(e) => set('party', e.target.value)}><option value="">-- Chọn 3PL --</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</Select>
+          : <Select value={f.party} onChange={(e) => set('party', e.target.value)}><option value="">-- Chọn đơn vị vận tải --</option>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}</Select>)}
+        {!is3 && <Select value={f.company} onChange={(e) => set('company', e.target.value)} title="Cước của từng công ty (VAP, PLA, DAM…)"><option value="">Mọi công ty</option>{companies.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}</Select>}
+        {!open && <input type="search" placeholder="Tìm chuyến, số xe, tài xế, tuyến…" value={q} onChange={(e) => setQ(e.target.value)} />}
         <label>Từ <input type="date" value={f.from} onChange={(e) => set('from', e.target.value)} /></label>
         <label>Đến <input type="date" value={f.to} onChange={(e) => set('to', e.target.value)} /></label>
         <button className="btn" onClick={print} disabled={!picked.length}>🖨 In bảng kê</button>

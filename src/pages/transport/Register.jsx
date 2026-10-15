@@ -8,6 +8,7 @@ import { fmtNum } from '../../lib/utils';
 import { PURPOSES, firstStatus, nowISO, reserveCodes, vnDate, STATUS_META } from '../../lib/trips';
 import { ErrorBox, Field } from '../../components/ui';
 import { WithAdd } from '../../components/FormTools';
+import Select from '../../components/Select';
 
 const emptyLine = () => ({ partyCode: '', partyName: '', shipCode: '', address: '', payload: '', orderId: '' });
 const emptyForm = () => ({ purpose: 'export', plate: '', carrier: '', carrierName: '', vehicleType: '', idCard: '', driverName: '', driverPhone: '', note: '' });
@@ -152,10 +153,10 @@ export default function Register() {
         <div className="form-grid">
           <Field label="Kho" required>
             <WithAdd cat="warehouses" onAdded={(id) => setOpWh(id)}>
-              <select value={wh?.code || ''} onChange={(e) => setOpWh(e.target.value)}>
+              <Select value={wh?.code || ''} onChange={(e) => setOpWh(e.target.value)}>
                 <option value="">-- Chọn kho --</option>
                 {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}{w.hasGuard === false ? ' (không bảo vệ)' : ''}</option>)}
-              </select>
+              </Select>
             </WithAdd>
           </Field>
           <Field label="Mục đích" required>
@@ -202,19 +203,19 @@ export default function Register() {
             {form.purpose === 'export' ? (
               <Field label="Giao đến (Shipto)">
                 <WithAdd cat="shipto" preset={{ customerCode: l.partyCode, customerName: l.partyName }} onAdded={(id, r) => pickShip(i, r?.shipCode || id)}>
-                  <select value={l.shipCode} onChange={(e) => pickShip(i, e.target.value)}>
+                  <Select value={l.shipCode} onChange={(e) => pickShip(i, e.target.value)}>
                     <option value="">-- Chọn --</option>
                     {shipsOf(l.partyCode).map((s) => <option key={s.shipCode} value={s.shipCode}>{s.shipCode} – {s.address}</option>)}
-                  </select>
+                  </Select>
                 </WithAdd>
                 {l.address && <small className="small">{l.address}</small>}
               </Field>
             ) : <div />}
             <Field label={form.purpose === 'import' ? 'Đơn mua (PO) / chuyển kho (STO)' : 'Đơn bán (SO) / chuyển kho (STO)'}>
-              <select value={l.orderId} onChange={(e) => pickOrder(i, e.target.value)}>
+              <Select searchable value={l.orderId} onChange={(e) => pickOrder(i, e.target.value)}>
                 <option value="">-- Không theo đơn --</option>
-                {ordersOf(l.partyCode).map((o) => <option key={o.id} value={o.id}>{o.id}{o.refNo ? ` (${o.refNo})` : ''}{o.type === 'STO' ? ` · ${stoRoute(o)}` : ''} · {o.type === 'STO' && moveType === 'in' ? 'đang đi đường' : 'còn'} {fmtNum(orderLeft(o), 3)} tấn</option>)}
-              </select>
+                {ordersOf(l.partyCode).map((o) => <option key={o.id} value={o.id} data-search={[o.partyCode, o.partyName, o.salesName, o.note, ...(o.lines || []).flatMap((l) => [l.item, l.itemName, l.shipCode, l.warehouse, l.fromWarehouse, l.toWarehouse])].join(' ')}>{o.id}{o.refNo ? ` (${o.refNo})` : ''}{o.type === 'STO' ? ` · ${stoRoute(o)}` : ''} · {o.type === 'STO' && moveType === 'in' ? 'đang đi đường' : 'còn'} {fmtNum(orderLeft(o), 3)} tấn</option>)}
+              </Select>
             </Field>
             <Field label="Khối lượng (tấn)">
               <input type="number" step="any" value={l.payload} onChange={(e) => setLine(i, { payload: e.target.value })} />

@@ -9,6 +9,7 @@ import { fmtNum, norm } from '../../lib/utils';
 import { ErrorBox } from '../../components/ui';
 import { QuickAdd } from '../../components/FormTools';
 import { WithAdd } from '../../components/FormTools';
+import Select from '../../components/Select';
 
 // Cột file Excel điều chỉnh tồn: [khóa, tiêu đề, các tên cột chấp nhận]
 const COLS = [
@@ -153,17 +154,17 @@ export default function AdjustImport() {
       </p>
       <div className="toolbar">
         <WithAdd cat="warehouses" onAdded={(id) => setOpWh(id)}>
-          <select value={wh?.code || ''} onChange={(e) => setOpWh(e.target.value)}>
+          <Select value={wh?.code || ''} onChange={(e) => setOpWh(e.target.value)}>
             <option value="">-- Chọn kho --</option>
             {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-          </select>
+          </Select>
         </WithAdd>
         <label className="small">Ngày chứng từ <input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
         <span className="cell-add">
-          <select value={reason} onChange={(e) => setReason(e.target.value)}>
+          <Select value={reason} onChange={(e) => setReason(e.target.value)}>
             <option value="">-- Lý do điều chỉnh --</option>
             {reasons.map((r) => <option key={r.code} value={`${r.code} – ${r.name}`}>{r.name}</option>)}
-          </select>
+          </Select>
           <QuickAdd catKey="reasons" preset={{ appliesTo: 'Điều chỉnh tồn' }} onAdded={(id, r) => setReason(`${id} – ${r?.name || ''}`)} />
         </span>
         <button className="btn" disabled={!wh} onClick={() => fileRef.current.click()}>⬆ Chọn file Excel</button>

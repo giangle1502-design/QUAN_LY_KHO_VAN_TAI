@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useCollection } from '../lib/hooks';
 import { MATERIALS, MODE_LABEL } from '../lib/pallets';
 import { WithAdd } from './FormTools';
+import Select from './Select';
 
 const blank = (material, to, qty) => ({ material, code: '', name: '', qty: qty || '', to, carrier: '', carrierName: '' });
 
@@ -43,20 +44,20 @@ export default function PalletChoice({ value, onChange, carrier, carrierName, su
           <Seg val={p.material} opts={MATERIALS.map((m) => [m, m === 'Kiện' ? 'Kiện (chưa rõ loại)' : m])} on={(m) => pickMaterial(i, m)} />
           {p.material ? (
             <WithAdd cat="pallets" preset={{ material: p.material }} onAdded={(id, r) => setLine(i, { code: id, name: r?.name || '', material: r?.material || p.material })}>
-              <select value={p.code} disabled={disabled} onChange={(e) => { const x = pallets.find((y) => y.code === e.target.value); setLine(i, { code: e.target.value, name: x?.name || '' }); }}>
+              <Select value={p.code} disabled={disabled} onChange={(e) => { const x = pallets.find((y) => y.code === e.target.value); setLine(i, { code: e.target.value, name: x?.name || '' }); }}>
                 <option value="">-- Mã {p.material.toLowerCase()} --</option>
                 {codesOf(p.material).map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}{x.size ? ` (${x.size})` : ''}</option>)}
-              </select>
+              </Select>
             </WithAdd>
           ) : <span className="small" style={{ color: 'var(--red)' }}>Pallet gỗ hay nhựa? Chưa rõ thì chọn Kiện</span>}
           <label className="small">Số pallet <input type="number" min="0" step="1" style={{ width: 80 }} value={p.qty} disabled={disabled} onChange={(e) => setLine(i, { qty: e.target.value })} /> cái</label>
           {!isIn && <Seg val={p.to} opts={toOpts} on={(t) => setLine(i, { to: t })} />}
           {!isIn && p.to === 'carrier' && (
             <WithAdd cat="carriers" onAdded={(id, r) => setLine(i, { carrier: id, carrierName: r?.name || '' })}>
-              <select value={p.carrier || carrier || ''} disabled={disabled} onChange={(e) => { const c = carriers.find((x) => x.code === e.target.value); setLine(i, { carrier: e.target.value, carrierName: c?.name || '' }); }}>
+              <Select value={p.carrier || carrier || ''} disabled={disabled} onChange={(e) => { const c = carriers.find((x) => x.code === e.target.value); setLine(i, { carrier: e.target.value, carrierName: c?.name || '' }); }}>
                 <option value="">-- Đơn vị vận tải mượn --</option>
                 {carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}
-              </select>
+              </Select>
             </WithAdd>
           )}
           {(v.pallets.length > 1 || optional) && <button type="button" className="btn sm danger" disabled={disabled} onClick={() => set({ pallets: v.pallets.filter((_, j) => j !== i) })}>✕</button>}

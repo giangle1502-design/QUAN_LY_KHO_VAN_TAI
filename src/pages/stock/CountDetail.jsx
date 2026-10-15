@@ -11,6 +11,7 @@ import {
   COUNT_KINDS, COUNT_STATUS, addFoundLine, adjustPlan, countValue, inLocRange, lineResult, locCmp, postAdjust, saveCount, scopeText, setCountStatus, specOf,
 } from '../../lib/counts';
 import { WithAdd } from '../../components/FormTools';
+import Select from '../../components/Select';
 
 // Phiếu + dòng đếm realtime (nhiều người cùng đếm thấy tiến độ của nhau)
 function useCount(id) {
@@ -102,11 +103,11 @@ export default function CountDetail() {
       {count.status === 'done' && !isSuper && <div className="hint" style={{ color: 'var(--amber)' }}>Số đếm đã chốt, chờ quản trị duyệt. Tồn kho chỉ thay đổi khi được duyệt.</div>}
       {count.adjustIds?.length ? <div className="ok-box" style={{ marginBottom: 10 }}>Đã điều chỉnh tồn bằng phiếu {count.adjustIds.map((x, i) => <span key={x}>{i ? ', ' : ''}<Link className="mono" to={`/kho/phieu/${x}/in`} target="_blank">{x}</Link></span>)}.</div> : null}
       <div className="filters">
-        <label className="small">Từ vị trí <select value={from} onChange={(e) => setFrom(e.target.value)}><option value="">(đầu)</option>{locs.map((l) => <option key={l}>{l}</option>)}</select></label>
-        <label className="small">Đến vị trí <select value={to} onChange={(e) => setTo(e.target.value)}><option value="">(cuối)</option>{locs.map((l) => <option key={l}>{l}</option>)}</select></label>
-        <select value={show} onChange={(e) => setShow(e.target.value)}>
+        <label className="small">Từ vị trí <Select value={from} onChange={(e) => setFrom(e.target.value)}><option value="">(đầu)</option>{locs.map((l) => <option key={l}>{l}</option>)}</Select></label>
+        <label className="small">Đến vị trí <Select value={to} onChange={(e) => setTo(e.target.value)}><option value="">(cuối)</option>{locs.map((l) => <option key={l}>{l}</option>)}</Select></label>
+        <Select value={show} onChange={(e) => setShow(e.target.value)}>
           <option value="">Mọi dòng</option><option value="todo">Chưa đếm</option><option value="diff">Lệch</option><option value="ok">Khớp</option>
-        </select>
+        </Select>
         <input placeholder="Tìm vị trí, mã, lot…" value={q} onChange={(e) => setQ(e.target.value)} />
         <span style={{ flex: 1 }} />
         {canManage && open && <button className="btn primary" disabled={!p.counted} onClick={() => act(() => setCountStatus(count, 'done', user, `Chốt số đếm, gửi duyệt (${p.counted}/${p.total} dòng)`))}>✔ Chốt số, gửi duyệt</button>}
@@ -207,10 +208,10 @@ function AdjustModal({ count, lines, user, onClose }) {
             </div>
           )}
           <Field label="Lý do điều chỉnh" required>
-            <select value={reason} onChange={(e) => setReason(e.target.value)}>
+            <Select value={reason} onChange={(e) => setReason(e.target.value)}>
               <option value={`Chênh lệch ${COUNT_KINDS[count.kind].toLowerCase()} ${count.id}`}>Chênh lệch {COUNT_KINDS[count.kind].toLowerCase()} {count.id}</option>
               {reasons.map((r) => <option key={r.code} value={`${r.code} – ${r.name}`}>{r.name}</option>)}
-            </select>
+            </Select>
           </Field>
         </>
       )}
@@ -357,8 +358,8 @@ function FoundModal({ count, loc, user, onClose }) {
       <Field label="Mã hàng" required><WithAdd cat="items" onAdded={(id) => setF((x) => ({ ...x, item: id }))}><input list="kk-items" value={f.item} onChange={(e) => setF({ ...f, item: e.target.value })} /></WithAdd></Field>
       <datalist id="kk-items">{items.map((i) => <option key={i.code} value={i.code}>{i.name}</option>)}</datalist>
       <Field label="Lot"><input value={f.lot} onChange={(e) => setF({ ...f, lot: e.target.value })} /></Field>
-      <Field label="Tình trạng"><WithAdd cat="goodsStatus" onAdded={(id) => setF((x) => ({ ...x, goodsStatus: id }))}><select value={f.goodsStatus} onChange={(e) => setF({ ...f, goodsStatus: e.target.value })}>{statuses.map((s) => <option key={s.code} value={s.code}>{s.code} – {s.name}</option>)}</select></WithAdd></Field>
-      <Field label="Công ty" required><WithAdd cat="companies" onAdded={(id) => setF((x) => ({ ...x, company: id }))}><select value={f.company} onChange={(e) => setF({ ...f, company: e.target.value })}><option value="">-- Chọn --</option>{co.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}</select></WithAdd></Field>
+      <Field label="Tình trạng"><WithAdd cat="goodsStatus" onAdded={(id) => setF((x) => ({ ...x, goodsStatus: id }))}><Select value={f.goodsStatus} onChange={(e) => setF({ ...f, goodsStatus: e.target.value })}>{statuses.map((s) => <option key={s.code} value={s.code}>{s.code} – {s.name}</option>)}</Select></WithAdd></Field>
+      <Field label="Công ty" required><WithAdd cat="companies" onAdded={(id) => setF((x) => ({ ...x, company: id }))}><Select value={f.company} onChange={(e) => setF({ ...f, company: e.target.value })}><option value="">-- Chọn --</option>{co.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}</Select></WithAdd></Field>
       <ErrorBox error={err} />
       <div className="form-actions"><button className="btn" onClick={onClose}>Đóng</button><button className="btn primary" onClick={save}>Thêm dòng để đếm</button></div>
     </Modal>
@@ -395,8 +396,8 @@ export function PrintCount() {
       <style>{'@media print { @page { size: A4 landscape; margin: 10mm; } }'}</style>
       <div className="no-print toolbar">
         <Link className="btn" to={`/kho/kiem-ke/${id}`}>← Phiếu {id}</Link>
-        <label className="small">Từ vị trí <select value={from} onChange={(e) => setP('from', e.target.value)}><option value="">(đầu)</option>{locs.map((l) => <option key={l}>{l}</option>)}</select></label>
-        <label className="small">Đến vị trí <select value={to} onChange={(e) => setP('to', e.target.value)}><option value="">(cuối)</option>{locs.map((l) => <option key={l}>{l}</option>)}</select></label>
+        <label className="small">Từ vị trí <Select value={from} onChange={(e) => setP('from', e.target.value)}><option value="">(đầu)</option>{locs.map((l) => <option key={l}>{l}</option>)}</Select></label>
+        <label className="small">Đến vị trí <Select value={to} onChange={(e) => setP('to', e.target.value)}><option value="">(cuối)</option>{locs.map((l) => <option key={l}>{l}</option>)}</Select></label>
         <label className="small"><input type="checkbox" checked={!hideSys} onChange={(e) => setP('sys', e.target.checked ? '1' : '0')} /> In SL hệ thống</label>
         <label className="small"><input type="checkbox" checked={filled} onChange={(e) => setP('filled', e.target.checked ? '1' : '')} /> In kèm số đã đếm</label>
         <button className="btn primary" onClick={() => window.print()}>🖨 In / Lưu PDF</button>

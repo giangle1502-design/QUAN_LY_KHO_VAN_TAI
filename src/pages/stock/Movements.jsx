@@ -14,6 +14,7 @@ import { CompanyPicker, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox, Modal } from '../../components/ui';
 import { WithAdd } from '../../components/FormTools';
 import EditSlip, { canEditSlip } from '../../components/EditSlip';
+import Select from '../../components/Select';
 
 const addDays = (ymd, n) => { const d = new Date(ymd + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 // Số lượng có dấu (nhập +, xuất −); chuyển vị trí / đổi tình trạng không đổi tổng tồn → hiện ± số lượng
@@ -84,13 +85,13 @@ export default function Movements() {
         <input type="date" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} />
         <WarehousePicker value={wh} onChange={setWh} />
         <CompanyPicker value={co} onChange={setCo} />
-        <select value={type} onChange={(e) => setType(e.target.value)}>
+        <Select value={type} onChange={(e) => setType(e.target.value)}>
           <option value="">Tất cả loại phiếu</option>
           {Object.entries(MOVE_TYPES).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
-        </select>
-        <select value={fStep} onChange={(e) => setFStep(e.target.value)}>
+        </Select>
+        <Select value={fStep} onChange={(e) => setFStep(e.target.value)}>
           {STEP_FILTERS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-        </select>
+        </Select>
         <input type="search" placeholder="Tìm số phiếu, movetype, mã hàng, lot, khách…" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
       <ErrorBox error={error} />

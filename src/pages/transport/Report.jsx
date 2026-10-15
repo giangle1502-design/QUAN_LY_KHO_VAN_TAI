@@ -8,6 +8,7 @@ import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum } from '../../lib/utils';
 import { Pipeline, StatusBadge } from '../../components/TripBits';
 import { Empty } from '../../components/ui';
+import Select from '../../components/Select';
 
 // ============================================================================
 // Báo cáo theo tình trạng xe (giống tab Tổng quan của app QLVT): đếm chuyến theo từng tình trạng (bấm để lọc),
@@ -78,7 +79,7 @@ export default function TripReport({ trips, priv }) {
         <input type="date" value={from} onChange={(e) => { setPreset('custom'); setCustom({ from: e.target.value, to }); }} />
         <span>đến</span>
         <input type="date" value={to} onChange={(e) => { setPreset('custom'); setCustom({ from, to: e.target.value }); }} />
-        {!scopedRole && <select value={carrier} onChange={(e) => setCarrier(e.target.value)}><option value="">Mọi đơn vị vận tải</option>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}</select>}
+        {!scopedRole && <Select value={carrier} onChange={(e) => setCarrier(e.target.value)}><option value="">Mọi đơn vị vận tải</option>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}</Select>}
         <input type="search" placeholder="Tìm số xe, tài xế, khách, đơn, chuyến…" value={q} onChange={(e) => setQ(e.target.value)} />
         {statusF && <button type="button" className="btn ghost sm" onClick={() => setStatusF('')}>Xóa lọc tình trạng</button>}
         <button type="button" className="btn" onClick={excel} disabled={!rows.length}>⬇ Xuất Excel</button>

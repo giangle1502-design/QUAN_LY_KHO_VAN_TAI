@@ -12,6 +12,7 @@ const REF_TARGETS = CATALOGS.filter((c) => !['codeRules', 'users'].includes(c.ke
 import { norm } from '../lib/utils';
 import { EditForm } from '../pages/CatalogPage';
 import { ErrorBox, Field, Modal } from './ui';
+import Select from './Select';
 
 // Nút "+" cạnh ô chọn: thêm ngay bản ghi mới vào danh mục mà không phải rời form đang nhập
 export function QuickAdd({ catKey, preset, onAdded }) {
@@ -33,7 +34,7 @@ export function QuickAdd({ catKey, preset, onAdded }) {
   );
 }
 
-// Ô chọn mã + nút (+) thêm nhanh vào danh mục: <WithAdd cat="carriers" onAdded={(id, rec) => …}><select …/></WithAdd>
+// Ô chọn mã + nút (+) thêm nhanh vào danh mục: <WithAdd cat="carriers" onAdded={(id, rec) => …}><Select …/></WithAdd>
 export function WithAdd({ cat, preset, onAdded, children, style }) {
   return <div className="cell-add" style={style}>{children}<QuickAdd catKey={cat} preset={preset} onAdded={onAdded} /></div>;
 }
@@ -184,8 +185,8 @@ export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường'
                   <td><b>{x.label}</b>{x.hidden && <span className="badge" style={{ marginLeft: 4 }}>đang ẩn</span>}
                     <div className="small">{FIELD_TYPES.find((t) => t[0] === x.type)?.[1] || x.type}{x.link ? ' · có liên kết' : ''}{x.viewers?.length || x.salesSees ? ' · 🔒 giới hạn người xem' : ''}
                       {x.type === 'formula' ? ` · ${formulaToLabels(x.formula, fieldsOf(formKey), otherList())}` : ''}{!x.custom ? ' · trường chính' : ''}</div></td>
-                  <td><select value={Number(x.width) || 0} onChange={(e) => setSize(x, 'width', Number(e.target.value))}>{WIDTH_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></td>
-                  <td><select value={Number(x.height) || 0} onChange={(e) => setSize(x, 'height', Number(e.target.value))}>{HEIGHT_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></td>
+                  <td><Select value={Number(x.width) || 0} onChange={(e) => setSize(x, 'width', Number(e.target.value))}>{WIDTH_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></td>
+                  <td><Select value={Number(x.height) || 0} onChange={(e) => setSize(x, 'height', Number(e.target.value))}>{HEIGHT_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></td>
                   <td className="nowrap">
                     {x.custom && <><button type="button" className="btn sm" onClick={() => startEdit(x)}>✎ Sửa</button>{' '}
                     <button type="button" className="btn sm danger" onClick={() => remove(x)}>🗑 Xóa</button></>}
@@ -207,14 +208,14 @@ export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường'
           <div className="form-grid">
             <Field label="Tên trường" required><input value={f.label} onChange={(e) => set('label', e.target.value)} placeholder="VD: Điều khoản thanh toán" autoFocus /></Field>
             <Field label="Kiểu dữ liệu">
-              <select value={f.type} onChange={(e) => set('type', e.target.value)}>{FIELD_TYPES.map(([t, l]) => <option key={t} value={t}>{l}</option>)}</select>
+              <Select value={f.type} onChange={(e) => set('type', e.target.value)}>{FIELD_TYPES.map(([t, l]) => <option key={t} value={t}>{l}</option>)}</Select>
             </Field>
             {f.type === 'ref' && (
               <Field label="Chọn từ danh mục" required>
-                <select value={f.ref} onChange={(e) => set('ref', e.target.value)}>
+                <Select value={f.ref} onChange={(e) => set('ref', e.target.value)}>
                   <option value="">-- Chọn --</option>
                   {REF_TARGETS.map((c) => <option key={c.key} value={c.key}>{c.title}</option>)}
-                </select>
+                </Select>
               </Field>
             )}
             {CHOICE_TYPES.includes(f.type) && (
@@ -236,50 +237,50 @@ export function AddFieldButton({ formKey, vias = [], label = '+ Thêm trường'
             )}
             {f.type === 'formula' && (
               <Field label="Kết quả hiện dạng">
-                <select value={f.resultType} onChange={(e) => set('resultType', e.target.value)}>{RESULT_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+                <Select value={f.resultType} onChange={(e) => set('resultType', e.target.value)}>{RESULT_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
               </Field>
             )}
             {!['multiref', 'formula'].includes(f.type) && (
               <Field label="Giá trị mặc định" help="Tự điền khi tạo mới (vẫn sửa được)">
                 {f.type === 'checkbox' ? <input type="checkbox" checked={!!f.def} onChange={(e) => set('def', e.target.checked)} />
                   : parseChoices(f.options, f.type).length ? (
-                    <select value={f.def} onChange={(e) => set('def', e.target.value)}><option value="">-- Không --</option>
-                      {parseChoices(f.options, f.type).map((o) => <option key={o} value={o}>{f.type === 'percent' ? `${o}%` : o}</option>)}</select>
+                    <Select value={f.def} onChange={(e) => set('def', e.target.value)}><option value="">-- Không --</option>
+                      {parseChoices(f.options, f.type).map((o) => <option key={o} value={o}>{f.type === 'percent' ? `${o}%` : o}</option>)}</Select>
                   ) : ['date', 'datetime'].includes(f.type) ? (
-                    <select value={f.def} onChange={(e) => set('def', e.target.value)}><option value="">-- Không --</option>
-                      {DATE_DEFAULTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+                    <Select value={f.def} onChange={(e) => set('def', e.target.value)}><option value="">-- Không --</option>
+                      {DATE_DEFAULTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
                   ) : <input value={f.def} onChange={(e) => set('def', e.target.value)} placeholder={f.type === 'percent' ? 'VD: 8' : f.type === 'ref' ? 'Mã mặc định' : ''} />}
               </Field>
             )}
             {f.type !== 'formula' && (
             <Field label="Liên kết với" help="Chọn bản ghi ở mục này thì trường tự điền theo (vẫn sửa tay được)">
-              <select value={f.via} onChange={(e) => setF((x) => ({ ...x, via: e.target.value, viaCat: '', field: e.target.value ? '__new' : '' }))}>
+              <Select value={f.via} onChange={(e) => setF((x) => ({ ...x, via: e.target.value, viaCat: '', field: e.target.value ? '__new' : '' }))}>
                 <option value="">-- Không liên kết --</option>
                 {vias.map((v) => <option key={v.key} value={v.key}>{v.label}</option>)}
                 <option value="__cat">＋ Danh mục khác…</option>
-              </select>
+              </Select>
             </Field>
             )}
             {f.via === '__cat' && (
               <Field label="Danh mục liên kết" help="Form sẽ có thêm ô chọn danh mục này">
-                <select value={f.viaCat} onChange={(e) => setF((x) => ({ ...x, viaCat: e.target.value, field: '__new' }))}>
+                <Select value={f.viaCat} onChange={(e) => setF((x) => ({ ...x, viaCat: e.target.value, field: '__new' }))}>
                   <option value="">-- Chọn --</option>
                   {REF_TARGETS.map((c) => <option key={c.key} value={c.key}>{c.title}</option>)}
-                </select>
+                </Select>
               </Field>
             )}
             {via && (
               <Field label={`Lấy từ trường của ${catalogByKey(via.ref)?.short}`}>
-                <select value={f.field} onChange={(e) => set('field', e.target.value)}>
+                <Select value={f.field} onChange={(e) => set('field', e.target.value)}>
                   <option value="__new">＋ Tạo trường "{f.label.trim() || 'mới'}" trong {catalogByKey(via.ref)?.short}</option>
                   {targetFields.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
-                </select>
+                </Select>
               </Field>
             )}
             <Field label="Độ rộng × độ cao ô nhập">
               <span className="nowrap">
-                <select value={f.width} onChange={(e) => set('width', Number(e.target.value))}>{WIDTH_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-                <select value={f.height} onChange={(e) => set('height', Number(e.target.value))} style={{ marginLeft: 4 }}>{HEIGHT_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+                <Select value={f.width} onChange={(e) => set('width', Number(e.target.value))}>{WIDTH_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
+                <Select value={f.height} onChange={(e) => set('height', Number(e.target.value))} style={{ marginLeft: 4 }}>{HEIGHT_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
               </span>
             </Field>
             <Field label="Bắt buộc nhập"><input type="checkbox" checked={f.required} onChange={(e) => set('required', e.target.checked)} /></Field>

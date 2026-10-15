@@ -16,6 +16,7 @@ import { splitSecrets } from '../../lib/orderSecrets';
 import { usePref } from '../../lib/prefs';
 import { vnDate } from '../../lib/trips';
 import { fmtNum } from '../../lib/utils';
+import Select from '../../components/Select';
 
 // Đơn bán (SO) / đơn mua (PO) gồm 2 phần:
 //  - Phần chung cho cả đơn: ngày tạo đơn, công ty xuất, khách hàng (+ trường tự thêm, có thể liên kết theo khách hàng / công ty)
@@ -279,11 +280,11 @@ export default function SOForm({ type = 'SO', order, onClose }) {
       </>
     );
     if (f.key === 'sales') return salesOnly ? <div className="readonly-val">{h.sales || email}</div> : (
-      <select value={h.sales || ''} onChange={(e) => setHead('sales', e.target.value)}>
+      <Select value={h.sales || ''} onChange={(e) => setHead('sales', e.target.value)}>
         <option value="">-- Chưa giao sale --</option>
         {h.sales && !salesUsers.some((u) => u.email === h.sales) && <option value={h.sales}>{h.sales}</option>}
         {salesUsers.map((u) => <option key={u.email} value={u.email}>{u.name} ({u.email})</option>)}
-      </select>
+      </Select>
     );
     return (
       <div className="cell-add">
@@ -299,21 +300,21 @@ export default function SOForm({ type = 'SO', order, onClose }) {
       case 'dueDate': return <input type="date" value={l.dueDate} onChange={(e) => set(e.target.value)} />;
       case 'warehouse': return (
         <WithAdd cat="warehouses" onAdded={(id) => set(id)}>
-          <select value={l.warehouse} onChange={(e) => set(e.target.value)}>
+          <Select value={l.warehouse} onChange={(e) => set(e.target.value)}>
             <option value="">-- Kho nào cũng được --</option>
             {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-          </select>
+          </Select>
         </WithAdd>
       );
       case 'fromWarehouse': case 'toWarehouse': {
         const opts = f.key === 'fromWarehouse' ? fromOpts : warehouses.filter((w) => w.code !== l.fromWarehouse);
         return (
           <WithAdd cat="warehouses" onAdded={(id) => !done && set(id)}>
-            <select value={l[f.key]} disabled={done} title={done ? 'Dòng đã xuất, không đổi kho được' : ''} onChange={(e) => set(e.target.value)}>
+            <Select value={l[f.key]} disabled={done} title={done ? 'Dòng đã xuất, không đổi kho được' : ''} onChange={(e) => set(e.target.value)}>
               <option value="">-- Chọn --</option>
               {l[f.key] && !opts.some((w) => w.code === l[f.key]) && <option value={l[f.key]}>{l[f.key]}</option>}
               {opts.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-            </select>
+            </Select>
           </WithAdd>
         );
       }
@@ -337,18 +338,18 @@ export default function SOForm({ type = 'SO', order, onClose }) {
       case 'qtyT': return <span className="readonly-val">{n(l.qtyKg) ? fmtNum(n(l.qtyKg) / 1000, 3) : ''}</span>;
       case 'shipCode': return (
         <div className="cell-add">
-          <select value={l.shipCode} onChange={(e) => set(e.target.value)} title={recOf.shipCode(l.shipCode)?.address || ''}>
+          <Select value={l.shipCode} onChange={(e) => set(e.target.value)} title={recOf.shipCode(l.shipCode)?.address || ''}>
             <option value="">{h.partyCode ? '-- Chọn --' : 'Chọn khách hàng trước'}</option>
             {myShips.map((s) => <option key={s.shipCode} value={s.shipCode}>{s.shipCode} – {s.address}</option>)}
-          </select>
+          </Select>
           {h.partyCode && <QuickAdd catKey="shipto" preset={{ customerCode: h.partyCode, customerName: h.partyName }} onAdded={(id, rec) => set(id, rec)} />}
         </div>
       );
       case 'goodsStatus': return (
-        <select value={l.goodsStatus} onChange={(e) => set(e.target.value)}>
+        <Select value={l.goodsStatus} onChange={(e) => set(e.target.value)}>
           <option value="">{type === 'PO' ? '-- Theo thực tế --' : sto ? '-- Loại nào cũng được --' : 'KTC hoặc DGC'}</option>
           {(f.options || ['KTC', 'DGC']).map((o) => <option key={o} value={o}>{o}</option>)}
-        </select>
+        </Select>
       );
       case 'note': return Number(f.height) > 40 ? <textarea value={l.note} onChange={(e) => set(e.target.value)} /> : <input value={l.note} onChange={(e) => set(e.target.value)} />;
       default: return (

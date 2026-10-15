@@ -5,6 +5,7 @@ import { useApp } from '../../context/AppContext';
 import { CATALOGS } from '../../catalogs';
 import { COLL_LABEL, approveDelete, myRequests, rejectDelete } from '../../lib/deletes';
 import { fmtTime } from '../../lib/trips';
+import { matchQ } from '../../lib/utils';
 import { Empty, ErrorBox, Modal } from '../../components/ui';
 
 const ST = { pending: ['Chờ duyệt', 'amber'], approved: ['Đã duyệt xóa', 'red'], deleted: ['Quản trị gốc xóa', 'red'], rejected: ['Từ chối', 'green'], reset: ['Xóa dữ liệu hàng loạt', 'purple'] };
@@ -21,7 +22,8 @@ export default function Deletes() {
   useEffect(() => onSnapshot(isSuper ? collection(db, 'deleteRequests') : myRequests(email),
     (s) => setRows(s.docs.map((d) => d.data()).sort((a, b) => String(b.requestedAt).localeCompare(String(a.requestedAt)))),
     (e) => setError(e.message)), [isSuper, email]);
-  const list = rows.filter((r) => tab === 'all' || r.status === tab);
+  const [q, setQ] = useState('');
+  const list = rows.filter((r) => (tab === 'all' || r.status === tab) && matchQ(q, r.docId, r.label, collLabel(r.coll), r.reason, r.note, r.requestedByName, r.requestedBy, r.decidedByName));
   const nPending = rows.filter((r) => r.status === 'pending').length;
 
   const approve = async (r) => {
@@ -48,6 +50,7 @@ export default function Deletes() {
         {[['pending', `Chờ duyệt (${nPending})`], ['approved', 'Đã duyệt'], ['rejected', 'Từ chối'], ...(isSuper ? [['deleted', 'Tôi tự xóa'], ['reset', 'Xóa hàng loạt']] : []), ['all', 'Tất cả']]
           .map(([k, l]) => <button key={k} type="button" className={'btn sm' + (tab === k ? ' primary' : '')} onClick={() => setTab(k)}>{l}</button>)}
       </div>
+      <input type="search" placeholder="Tìm bản ghi, loại dữ liệu, lý do, người yêu cầu…" value={q} onChange={(e) => setQ(e.target.value)} style={{ marginBottom: 10, width: '100%', maxWidth: 420 }} />
       <ErrorBox error={error} />
       <div className="table-wrap">
         {!list.length ? <Empty text="Không có yêu cầu nào." /> : (

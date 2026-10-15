@@ -9,6 +9,7 @@ import { vnDate } from '../../lib/trips';
 import { fmtDate, fmtNum, norm } from '../../lib/utils';
 import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
 import { WithAdd } from '../../components/FormTools';
+import Select from '../../components/Select';
 
 const kg = (v) => fmtNum(Number(v) || 0, 2);
 
@@ -96,12 +97,12 @@ export default function ShipPlans() {
         Quản trị kho / thủ kho căn cứ vào đây bấm <b>📤 Lập phiếu xuất</b>; phiếu xuất lưu xong thì dự kiến tự chuyển <i>Đã lập phiếu xuất</i>.
       </p>
       <div className="filters">
-        <select value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
+        <Select value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
           <option value="open">Chờ lập phiếu (còn mở)</option>
           <option value="done">Đã lập phiếu xuất</option>
           <option value="cancelled">Đã hủy</option>
           <option value="all">Tất cả</option>
-        </select>
+        </Select>
         <label className="small">Từ <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
         <label className="small">đến <input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
         <input type="search" placeholder="Tìm số dự kiến, SO, khách, mã hàng, mã giao…" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -242,14 +243,15 @@ function PlanForm({ plan, orderId, plans, onClose }) {
     <Modal title={plan ? `Sửa dự kiến xuất ${plan.id}` : 'Tạo dự kiến xuất kho'} onClose={onClose} wide>
       <div className="form-grid">
         <Field label="Đơn bán (SO)" required>
-          <select value={oid} disabled={!!plan} onChange={(e) => { setOid(e.target.value); setQty({}); setShip({}); }}>
+          <Select searchable value={oid} disabled={!!plan} onChange={(e) => { setOid(e.target.value); setQty({}); setShip({}); }}>
             <option value="">-- Chọn đơn bán --</option>
-            {orderOpts.map((o) => <option key={o.id} value={o.id}>{o.id}{o.refNo ? ` (${o.refNo})` : ''} · {o.partyName || o.partyCode} · còn {kg(o.lines.reduce((s, l) => s + leftKg(l), 0))} kg</option>)}
-          </select>
+            {orderOpts.map((o) => <option key={o.id} value={o.id} data-search={[o.partyCode, o.salesName, o.note, ...o.lines.flatMap((l) => [l.item, l.itemName, l.shipCode, l.warehouse])].join(' ')}>
+              {o.id}{o.refNo ? ` (${o.refNo})` : ''} · {o.partyCode ? `${o.partyCode} – ` : ''}{o.partyName} · {[...new Set(o.lines.filter((l) => leftKg(l) > 0.001).map((l) => l.item))].join(', ')} · còn {kg(o.lines.reduce((s, l) => s + leftKg(l), 0))} kg</option>)}
+          </Select>
         </Field>
         <Field label="Ngày dự kiến xuất" required><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
-        <Field label="Đơn vị vận tải"><WithAdd cat="carriers" onAdded={(id) => setCarrier(id)}><select value={carrierVal} onChange={(e) => setCarrier(e.target.value)}>
-          <option value="">-- Chưa chỉ định --</option>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}</select></WithAdd></Field>
+        <Field label="Đơn vị vận tải"><WithAdd cat="carriers" onAdded={(id) => setCarrier(id)}><Select value={carrierVal} onChange={(e) => setCarrier(e.target.value)}>
+          <option value="">-- Chưa chỉ định --</option>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}</Select></WithAdd></Field>
         <Field label="Ghi chú"><input value={note} onChange={(e) => setNote(e.target.value)} /></Field>
       </div>
       {order && (
@@ -271,10 +273,10 @@ function PlanForm({ plan, orderId, plans, onClose }) {
                   </td>
                   <td>
                     <WithAdd cat="shipto" preset={{ customerCode: order.partyCode, customerName: order.partyName }} onAdded={(id, rec) => setShip((x) => ({ ...x, [r.l.no]: rec?.shipCode || id }))}>
-                      <select value={ship[r.l.no] || ''} onChange={(e) => setShip((x) => ({ ...x, [r.l.no]: e.target.value }))}>
+                      <Select value={ship[r.l.no] || ''} onChange={(e) => setShip((x) => ({ ...x, [r.l.no]: e.target.value }))}>
                         <option value="">-- Chọn --</option>
                         {myShips.map((s) => <option key={s.shipCode} value={s.shipCode}>{s.shipCode} – {s.address}</option>)}
-                      </select>
+                      </Select>
                     </WithAdd>
                   </td>
                 </tr>
