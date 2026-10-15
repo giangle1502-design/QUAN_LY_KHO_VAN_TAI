@@ -154,6 +154,11 @@ export default function LinkDriver() {
       <label className="field" style={{ marginBottom: 8 }}><span>Số xe bạn đang chạy</span>
         <input list="dl-tx-plates" value={plate} onChange={(e) => { setPlate(e.target.value.toUpperCase()); setOpen(null); }} onBlur={() => keep({ plate })} placeholder="VD: 51C-12345" style={{ fontSize: 20, padding: 12 }} /></label>
       <datalist id="dl-tx-plates">{vehicles.map((v) => <option key={v.plate} value={v.plate}>{v.vehicleType}</option>)}</datalist>
+      {vehicles.length > 0 && !vehicles.some((v) => plateKey(v.plate) === pk) && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+        <span className="small" style={{ width: '100%' }}>Xe của nhóm (bấm để chọn):</span>
+        {vehicles.map((v) => <button key={v.plate} type="button" className="btn" style={{ fontSize: 18, padding: '8px 12px' }} onClick={() => { setPlate(v.plate); setOpen(null); keep({ plate: v.plate }); }}>{v.plate}</button>)}</div>}
+      {!trips.some((t) => !['completed', 'cancelled'].includes(t.status)) && <p className="small" style={{ background: '#fff7e6', padding: 8, borderRadius: 6 }}>
+        Hiện chưa có chuyến nào được giao cho <b>{carrierName}</b>. Hàng chỉ định cho đơn vị vận tải chỉ hiện ở đây sau khi quản trị bấm <b>Giao vận tải</b> (Vận chuyển → Chờ giao vận tải).</p>}
       {!pk ? <p>Nhập số xe để thấy chuyến của xe bạn.</p> : <>
         <p className="small">Bấm nút xanh theo thứ tự: Đến điểm nhận hàng → Lấy hàng xong → Đến điểm giao hàng → Hoàn thành (chụp phiếu giao).</p>
         {mine.length ? mine.map((t) => card(t)) : <p>Xe <b>{plate}</b> chưa có chuyến đang chạy.</p>}
