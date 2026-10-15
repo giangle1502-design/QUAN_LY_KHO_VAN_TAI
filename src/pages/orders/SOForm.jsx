@@ -137,13 +137,9 @@ export default function SOForm({ type = 'SO', order, onClose }) {
   const itemOpts = isSO && salesOnly ? items.filter((x) => itemAllowed(x, cust, email)) : items;
   const soTypes = isSO ? typesOf(lines.map((l) => l.item), itemMap) : [];
   const autoSale = isSO && soTypes.length === 1 ? salesFor(cust, soTypes[0]) : '';
-  // Quản trị lập SO: tự chọn sale phụ trách theo khách + loại hạt nhựa (đổi khách / mã hàng thì chọn lại, trừ khi đã chọn tay)
-  const [autoPicked, setAutoPicked] = useState(order ? null : '');
+  // Sale phụ trách SO luôn theo thiết lập của khách hàng + loại hạt nhựa (không theo người lập: admin lập hộ vẫn về đúng sale)
   useEffect(() => {
-    if (!isSO || salesOnly || autoPicked === null || !autoSale || h.sales === autoSale) return;
-    if (h.sales && h.sales !== autoPicked) return;
-    setH((x) => ({ ...x, sales: autoSale }));
-    setAutoPicked(autoSale);
+    if (autoSale && h.sales !== autoSale) setH((x) => ({ ...x, sales: autoSale }));
   }, [autoSale]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setHead = (k, v, rec) => setH((x) => {
@@ -265,7 +261,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
         goodsStatus: l.goodsStatus || '', note: String(l.note || '').trim(), ...custom });
     }
     const changes = order ? orderChanges(order, { ...headCustom, company: h.company, date: h.date, partyCode: h.partyCode, note: String(h.note || '').trim(),
-      tolerancePct: h.tolerancePct === '' ? 0 : Number(h.tolerancePct), ...(sto || salesOnly ? {} : { sales: String(h.sales || '').trim().toLowerCase() }) },
+      tolerancePct: h.tolerancePct === '' ? 0 : Number(h.tolerancePct), ...(sto ? {} : autoSale ? { sales: autoSale } : salesOnly ? {} : { sales: String(h.sales || '').trim().toLowerCase() }) },
     out, headFields, lineFields) : [];
     if (finished && !changes.length) return setErr('Chưa có thay đổi nào.');
     // Trường riêng tư (chỉ người được chỉ định xem) lưu riêng ở orderSecrets
@@ -273,7 +269,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
     const sum = summarizeLines(sp.lines, sto);
     const whName = (c) => warehouses.find((w) => w.code === c)?.name || c;
     const data = {
-      ...sp.head, type, company: h.company, date: h.date, ...(sto ? {} : { sales: salesOnly ? email : String(h.sales || '').trim().toLowerCase() }),
+      ...sp.head, type, company: h.company, date: h.date, ...(sto ? {} : { sales: autoSale || (salesOnly ? email : String(h.sales || '').trim().toLowerCase()) }),
       ...(sto ? { partyCode: sum.toWarehouses.join(', '), partyName: `Chuyển đến kho ${sum.toWarehouses.map(whName).join(', ')}` }
         : { partyCode: h.partyCode.trim(), partyName: String(h.partyName || recOf.partyCode(h.partyCode.trim())?.name || '').trim() }),
       refNo: order?.refNo || '', tolerancePct: h.tolerancePct === '' ? 0 : Number(h.tolerancePct), note: String(h.note || '').trim(),
@@ -301,6 +297,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
         {h.partyCode && <small className={recOf.partyCode(h.partyCode) || h.partyName ? 'small' : 'req'}>{recOf.partyCode(h.partyCode)?.name || h.partyName || `Chưa có trong danh mục ${cfg.partyLabel}: bấm + để thêm`}</small>}
       </>
     );
+    if (f.key === 'sales' && autoSale) return <div className="readonly-val" title="Theo Sale phụ trách của khách hàng (Danh mục khách hàng)">{autoSale} <small className="small">· theo khách hàng, hạt nhựa {soTypes[0]}</small></div>;
     if (f.key === 'sales') return salesOnly ? <div className="readonly-val">{h.sales || email}</div> : (
       <div>
         <Select value={h.sales || ''} onChange={(e) => setHead('sales', e.target.value)}>
@@ -308,7 +305,6 @@ export default function SOForm({ type = 'SO', order, onClose }) {
           {h.sales && !salesUsers.some((u) => u.email === h.sales) && <option value={h.sales}>{h.sales}</option>}
           {salesUsers.map((u) => <option key={u.email} value={u.email}>{u.name} ({u.email})</option>)}
         </Select>
-        {autoSale && <small className={h.sales === autoSale ? 'small' : 'req'}>Theo khách hàng, hạt nhựa {soTypes[0]}: {autoSale}</small>}
       </div>
     );
     return (

@@ -517,7 +517,7 @@ function ImportOrders({ type, existing, onDone }) {
         if (type === 'SO') {
           const pts = typesOf(g.lines.map((l) => l.item), itemMap);
           if (pts.length > 1) { errs.push(`Đơn ${g.refNo}: có cả ${pts.join(' và ')}, mỗi SO chỉ một loại hạt nhựa.`); continue; }
-          g.sales = salesOnly ? email : pts.length ? salesFor(partyMap.get(g.partyCode), pts[0]) : '';
+          g.sales = (pts.length ? salesFor(partyMap.get(g.partyCode), pts[0]) : '') || (salesOnly ? email : '');
         }
         await createOrder(g, { email, name });
         made++;

@@ -677,7 +677,7 @@ function CreateOrders({ rows, cats, user, onClose }) {
   const autoSale = (g) => salesFor((cats.soldto || []).find((c) => c.code === g.partyCode), g.plasticType);
   const nConts = new Set(rows.map((a) => a.contNo || a._id)).size;
   const [salesMap, setSales] = useState({});
-  const sales = new Proxy(salesMap, { get: (m, k) => (k in m ? m[k] : salesOnly ? email : autoSale(groups.find((g) => g.key === k) || {}) || '') });
+  const sales = new Proxy(salesMap, { get: (m, k) => (autoSale(groups.find((g) => g.key === k) || {}) || (k in m ? m[k] : salesOnly ? email : '')) });
   const [done, setDone] = useState({});
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -712,7 +712,7 @@ function CreateOrders({ rows, cats, user, onClose }) {
           </div>
           {g.type === 'SO' && !done[g.key] && (
             <label className="small">Sale phụ trách:{' '}
-              {salesOnly ? <b>{email}</b> : (
+              {autoSale(g) ? <><b>{autoSale(g)}</b> <span className="small">(theo khách hàng, hạt nhựa {g.plasticType})</span></> : salesOnly ? <b>{email}</b> : (
                 <Select value={sales[g.key] || ''} onChange={(e) => setSales((s) => ({ ...s, [g.key]: e.target.value }))}>
                   <option value="">-- Không ghi --</option>{users.map((u) => <option key={u.email} value={u.email}>{u.name} ({u.email})</option>)}
                 </Select>)}
