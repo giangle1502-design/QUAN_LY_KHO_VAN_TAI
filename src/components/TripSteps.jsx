@@ -6,15 +6,21 @@ import { useCollection } from '../lib/hooks';
 import { STEPS, compressImage, doStep } from '../lib/transport';
 import { ErrorBox, Modal } from './ui';
 import { WithAdd } from './FormTools';
-import { driverLink, isSelfPickup, needsDriverId, newLinkToken } from '../lib/dispatch';
+import { driverLink, isGHA, isSelfPickup, needsDriverId, newLinkToken } from '../lib/dispatch';
 import Select from './Select';
 
 // Thực hiện 1 bước của chuyến (tài xế, hoặc điều phối làm thay)
-export function StepModal({ t, step, onClose, plate = '', via3pl = false }) {
-  const { email, name, myIdCard, userDoc, role } = useApp();
+export function StepModal({ t, step, onClose, plate = '', threepl: cur3pl = '' }) {
+  const { email, name, myIdCard, userDoc, role, can3PL } = useApp();
   const carriers = useCollection('carriers').rows;
+  const car = carriers.find((c) => c.code === t.carrier) || { code: t.carrier, kind: t.carrierKind };
+  // GHA chỉ định ngay khi đăng ký xe: xe nhà GHA hoặc giao cho 3PL (3PL tự đăng ký xe, hoặc GHA đăng ký hộ)
+  const pick3 = step === 'reg' && can3PL && isGHA(car);
+  const tpls = useCollection(pick3 ? 'threepl' : '').rows;
+  const [tp, setTp] = useState(cur3pl);
+  const via3pl = !!tp;
   // Họ tên, CCCD và danh mục xe chỉ cho xe nội bộ nhóm (Sơn, Hậu, Quân…) và xe nhà GHA; xe dịch vụ, 3PL, khách tự lấy chỉ nhập số xe
-  const showDrv = needsDriverId(carriers.find((c) => c.code === t.carrier) || { kind: t.carrierKind }, via3pl || role === 'tpl');
+  const showDrv = needsDriverId(car, via3pl || role === 'tpl');
   const vehicles = useCollection(showDrv ? 'vehicles' : '').rows.filter((v) => !t.carrier || v.carrier === t.carrier);
   const drivers = useCollection(showDrv ? 'drivers' : '').rows.filter((d) => !t.carrier || d.carrier === t.carrier);
   const [f, setF] = useState(() => ({ plate: t.plate || plate || '', vehicleType: t.vehicleType || '', idCard: t.idCard || myIdCard || '',
@@ -32,6 +38,11 @@ export function StepModal({ t, step, onClose, plate = '', via3pl = false }) {
   const go = async () => {
     setErr(''); setBusy(true);
     try {
+      if (pick3 && tp !== cur3pl) {
+        await setDoc(doc(db, 'tripPrivate', t.id), { tripId: t.id, carrier: t.carrier, threepl: tp, threeplName: tpls.find((x) => x.code === tp)?.name || '', by: email, at: new Date().toISOString() }, { merge: true });
+      }
+      // Giao cho 3PL, chưa có số xe: để 3PL tự đăng ký xe
+      if (pick3 && tp && !f.plate.trim()) { onClose(true); setBusy(false); return; }
       // Tài xế chỉ xác nhận giao nhận; cước do điều phối / kế toán nhập sau (kể cả xe nội bộ)
       await doStep(t, step, role === 'tpl' ? { email, name, as: t.carrierName || t.carrier || 'GHA' } : { email, name }, { ...f, ...(showDrv ? {} : { idCard: '', driverName: '' }), photos });
       onClose(true);
@@ -42,8 +53,11 @@ export function StepModal({ t, step, onClose, plate = '', via3pl = false }) {
     <Modal title={`${STEPS[step]} · ${t.id}`} onClose={() => onClose(false)}>
       {step === 'reg' && (
         <div className="form-grid">
+          {pick3 && <label className="field full"><span>Xe chạy chuyến này</span><Select value={tp} onChange={(e) => setTp(e.target.value)}>
+            <option value="">Xe nhà GHA</option>{tpls.map((x) => <option key={x.code} value={x.code}>Thuê 3PL: {x.code} – {x.name}</option>)}</Select>
+            {tp && <small className="small">Để trống số xe rồi lưu: 3PL tự đăng ký xe, tài xế. Biết xe rồi thì nhập luôn (đăng ký hộ).</small>}</label>}
           <p className="small full" style={{ margin: 0 }}>{showDrv ? 'Xe nội bộ: chọn số xe trong danh sách, ghi họ tên và CCCD tài xế.' : 'Chỉ cần nhập số xe (gõ thẳng, không cần có trong danh mục).'}</p>
-          <label className="field"><span>Số xe *</span>{showDrv ? <WithAdd cat="vehicles" preset={{ plate: f.plate, vehicleType: f.vehicleType }} onAdded={(id, r) => pickPlate(r?.plate || id)}><input list="dl-st-plate" value={f.plate} onChange={(e) => pickPlate(e.target.value)} placeholder="VD: 51C-12345" /></WithAdd>
+          <label className="field"><span>Số xe{pick3 && tp ? ' (để trống nếu 3PL tự đăng ký)' : ' *'}</span>{showDrv ? <WithAdd cat="vehicles" preset={{ plate: f.plate, vehicleType: f.vehicleType }} onAdded={(id, r) => pickPlate(r?.plate || id)}><input list="dl-st-plate" value={f.plate} onChange={(e) => pickPlate(e.target.value)} placeholder="VD: 51C-12345" /></WithAdd>
             : <input value={f.plate} onChange={(e) => pickPlate(e.target.value)} placeholder="VD: 51C-12345" style={{ fontSize: 18 }} />}</label>
           <label className="field"><span>Loại xe</span><Select value={f.vehicleType} onChange={(e) => set('vehicleType', e.target.value)}>
             {['', 'Xe tải', 'Container 20', 'Container 40', 'Đầu kéo + mooc'].map((x) => <option key={x} value={x}>{x || '--'}</option>)}</Select></label>
@@ -71,7 +85,7 @@ export function StepModal({ t, step, onClose, plate = '', via3pl = false }) {
       {step !== 'reg' && <label className="field"><span>Ghi chú</span><input value={f.note} onChange={(e) => set('note', e.target.value)} /></label>}
       <ErrorBox error={err} />
       <div className="form-actions"><button className="btn" onClick={() => onClose(false)}>Thôi</button>
-        <button className="btn primary" disabled={busy} onClick={go}>{busy ? 'Đang lưu…' : `✓ ${STEPS[step]}`}</button></div>
+        <button className="btn primary" disabled={busy} onClick={go}>{busy ? 'Đang lưu…' : pick3 && tp && !f.plate.trim() ? '✓ Giao cho 3PL' : `✓ ${STEPS[step]}`}</button></div>
     </Modal>
   );
 }

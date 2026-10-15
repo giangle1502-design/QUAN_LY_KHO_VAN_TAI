@@ -85,7 +85,8 @@ function SplitModal({ rows, carrier, onClose, action = 'Chia xe' }) {
   const drvCols = usesVehicleList(carrier);
   const drivers = useCollection(drvCols ? 'drivers' : '').rows.filter((d) => d.carrier === carrier.code);
   const warehouses = useCollection('warehouses').rows;
-  const threepl = useCollection(can3PL && isGHA(carrier) ? 'threepl' : '').rows;
+  // Admin giao vận tải không chọn 3PL: GHA chọn ở màn hình đăng ký xe
+  const threepl = useCollection(can3PL && isGHA(carrier) && action !== 'Giao vận tải' ? 'threepl' : '').rows;
   const [need, setNeed] = useState(() => Object.fromEntries(rows.map((r) => [r.key, r.rest])));
   const total = rows.reduce((s, r) => s + n(need[r.key]), 0);
   const [cap, setCap] = useState(30);
@@ -189,7 +190,6 @@ function TripList({ trips, priv }) {
   const isCarrier = role === 'van_tai';
   const isTpl = role === 'tpl';
   const carriers = useCollection('carriers').rows;
-  const threepl = useCollection(can3PL ? 'threepl' : '').rows;
   const [f, setF] = useState({ from: monthStart(), to: '', status: 'active', carrier: '', q: '' });
   const [step, setStep] = useState(null);
   const [photo, setPhoto] = useState(null);
@@ -208,13 +208,7 @@ function TripList({ trips, priv }) {
     try { await updateDoc(doc(db, 'trips', t.id), { status: 'cancelled', cancelReason: reason, cancelTime: nowISO(), updatedAt: nowISO(), updatedBy: email,
       history: [...(t.history || []), { at: nowISO(), by: email, byName: name, action: `Hủy chuyến: ${reason}`, status: 'cancelled' }] }); } catch (e) { setErr(e.message); }
   };
-  // GHA chỉ định 3PL cho chuyến (lưu riêng, admin khách không thấy)
-  const set3pl = async (t, code) => {
-    setErr('');
-    try {
-      await setDoc(doc(db, 'tripPrivate', t.id), { tripId: t.id, carrier: t.carrier, threepl: code, threeplName: threepl.find((x) => x.code === code)?.name || '', by: email, at: nowISO() }, { merge: true });
-    } catch (e) { setErr(e.code === 'permission-denied' ? 'Không có quyền chỉ định 3PL.' : e.message); }
-  };
+
   const statusText = (t) => (t.selfPickup && t.status === 'completed' ? 'Khách đã lấy xong' : STATUS_META[t.status]?.label);
   // Đơn vị vận tải / 3PL làm trên điện thoại: mặc định xem dạng thẻ; quản trị mặc định dạng bảng
   const [view, setView] = usePref('trips-view', isCarrier || isTpl ? 'card' : 'table');
@@ -246,10 +240,10 @@ function TripList({ trips, priv }) {
     return { st, blocked, c, p3, canStep, open };
   };
   const actions = (t, big) => {
-    const { st, blocked, p3, canStep } = info(t);
+    const { st, blocked, c, p3, canStep } = info(t);
     const sz = big ? '' : ' sm';
     return <>
-      {canStep && st && !blocked && <button className={'btn primary' + sz} style={big ? { width: '100%', padding: 10, fontSize: 15 } : undefined} onClick={() => setStep({ t, st })}>{STEPS[st]}</button>}{big ? null : ' '}
+      {canStep && st && !blocked && <button className={'btn primary' + sz} style={big ? { width: '100%', padding: 10, fontSize: 15 } : undefined} onClick={() => setStep({ t, st })}>{st === 'reg' && can3PL && isGHA(c) && !p3?.threepl ? 'Đăng ký xe / chọn 3PL' : STEPS[st]}</button>}{big ? null : ' '}
       <span className={big ? 'trip-card-more' : ''}>
         {canStep && st && st !== 'reg' && t.status === 'planned' && <button className="btn sm" onClick={() => setStep({ t, st: 'reg' })}>Sửa xe</button>}{' '}
         {(isAdmin || isCarrier) && t.status === 'planned' && t.lines.length > 0 && <button className="btn sm" title="Hàng nhiều hơn 1 xe: tách bớt sang chuyến mới" onClick={() => setCut(t)}>✂ Tách</button>}{' '}
@@ -260,7 +254,6 @@ function TripList({ trips, priv }) {
       </span>
     </>;
   };
-  const sel3pl = (t) => <Select value={priv[t.id]?.threepl || ''} onChange={(e) => set3pl(t, e.target.value)}><option value="">Xe nhà GHA</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</Select>;
   const mapUrl = (a) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a)}`;
   // Thẻ chuyến (đơn vị vận tải, 3PL làm trên điện thoại)
   const card = (t) => {
@@ -283,7 +276,7 @@ function TripList({ trips, priv }) {
         </div>; })}
         <ul className="trip-card-items">{t.lines.map((l) => <li key={l.id}>{l.item}{l.itemName ? ` ${l.itemName}` : ''} — <b>{fmtNum(n(l.plannedKg))} kg</b></li>)}</ul>
         <div>Xe: {t.plate ? <b>{t.plate}</b> : <span className="small">{isInternal(c) ? 'chờ tài xế nhóm nhận' : 'chưa có xe'}</span>}{t.driverName ? ` · ${t.driverName}` : ''}{t.driverPhone ? <> · <a href={`tel:${t.driverPhone}`}>{t.driverPhone}</a></> : null}</div>
-        {can3PL && isGHA(c) && <div>3PL: {open ? sel3pl(t) : <b>{p3?.threeplName || p3?.threepl || 'Xe nhà GHA'}</b>}</div>}
+        {can3PL && isGHA(c) && <div>Xe: <b>{p3?.threepl ? `3PL ${p3.threeplName || p3.threepl}` : 'Xe nhà GHA'}</b></div>}
         {[['driverArrivedAt', 'Đến điểm nhận'], ['driverLoadedAt', 'Lấy hàng xong'], ['driverAtDestAt', 'Đến điểm giao'], ['driverDeliveredAt', 'Hoàn thành']].some(([k]) => t[k]) &&
           <div className="small">{[['driverArrivedAt', 'Đến điểm nhận'], ['driverLoadedAt', 'Lấy hàng xong'], ['driverAtDestAt', 'Đến điểm giao'], ['driverDeliveredAt', 'Hoàn thành']].filter(([k]) => t[k]).map(([k, l]) => `${l} ${fmtTime(t[k])}`).join(' · ')}</div>}
         {st && blocked && <div className="small">⏳ {blocked}</div>}
@@ -316,7 +309,7 @@ function TripList({ trips, priv }) {
                   <td className="mono">{t.id}{t.selfPickup ? <div className="small">khách tự lấy</div> : null}</td><td className="nowrap">{fmtDate(t.plannedDate)}</td><td>{t.warehouse}</td>
                   <td>{t.plate ? <b>{t.plate}</b> : <span className="small">{isInternal(c) ? 'chờ tài xế nhóm nhận' : 'chưa có xe'}</span>}{t.driverName ? <div className="small">{t.driverName}{t.driverPhone ? ` · ${t.driverPhone}` : ''}</div> : null}</td>
                   {!isCarrier && !isTpl && <td>{t.carrierName || t.carrier}<div className="small">{kindText(c)}</div></td>}
-                  {can3PL && <td>{isGHA(c) ? (open ? sel3pl(t) : (p3?.threeplName || p3?.threepl || 'Xe nhà GHA')) : ''}</td>}
+                  {can3PL && <td>{isGHA(c) ? (p3?.threeplName || p3?.threepl || 'Xe nhà GHA') : ''}</td>}
                   <td className="small">{[...new Set(t.lines.map((l) => { const pl = placeOf(l, warehouses); return pl.sto ? pl.name : pl.short; }))].join(', ')}<div>{t.lines.map((l) => `${l.orderId} ${l.item}`).join('; ')}</div></td>
                   <td className="num">{t3(tripKg(t))}</td>
                   <td><span className={'badge ' + (STATUS_META[t.status]?.tone || '')}>{statusText(t)}</span>
@@ -331,7 +324,7 @@ function TripList({ trips, priv }) {
           </table>
       </div>
       )}
-      {step && <StepModal t={step.t} step={step.st} via3pl={!!priv[step.t.id]?.threepl} onClose={() => setStep(null)} />}
+      {step && <StepModal t={step.t} step={step.st} threepl={priv[step.t.id]?.threepl || ''} onClose={() => setStep(null)} />}
       {photo && <PhotoModal t={photo} onClose={() => setPhoto(null)} />}
       {cost && <CostModal t={trips.find((x) => x.id === cost.id) || cost} onClose={() => setCost(null)} />}
       {cost3 && <Cost3plModal t={cost3} p={priv[cost3.id] || {}} onClose={() => setCost3(null)} />}
