@@ -175,6 +175,11 @@ function OrderList({ type, initialQ = '' }) {
   const late = list.filter((o) => OPEN_STATUSES.includes(o.status) && o.dueDate && o.dueDate < today);
   const current = open && rows.find((o) => o.id === open);
   // Cột danh sách đơn: mỗi người dùng tự chọn cột muốn xem (⚙ Cột hiển thị)
+  // Cột thêm lưu riêng danh sách đã bật (người dùng đã lưu cột ẩn từ trước vẫn thấy cột mới ở trạng thái ẩn)
+  const [shownExtra, setShownExtra] = usePref(`orderListExtra:${type}`, []);
+  // Tên đơn vị vận tải: chỉ nghe danh mục khi đã bật cột (tiết kiệm lượt đọc)
+  const carrierRows = useCollection(type !== 'PO' && shownExtra.includes('carrier') ? 'carriers' : '').rows;
+  const carrierName = useMemo(() => new Map(carrierRows.map((c) => [c.code || c._id, c.name || c.code])), [carrierRows]);
   const uniqText = (o, f) => [...new Set((o.lines || []).map((l) => f(o, l)).filter(Boolean))].join(', ');
   const cols = [
     { key: 'id', label: 'Số đơn', locked: true, cls: 'mono nowrap', render: (o) => <>{o.id}{o.direct ? <span className="badge" title="Lập tự động khi nhập kho trực tiếp" style={{ marginLeft: 4 }}>trực tiếp</span> : null}</> },
@@ -195,8 +200,18 @@ function OrderList({ type, initialQ = '' }) {
     { key: 'progress', label: 'Tiến độ', render: (o) => <div style={{ width: 130 }}><Progress o={o} /></div> },
     { key: 'due', label: so ? 'Ngày giao (sớm nhất)' : pl ? 'ETA (sớm nhất)' : 'Ngày chuyển (sớm nhất)', cls: 'nowrap', style: (o, c) => (c.isLate ? { color: 'var(--red)', fontWeight: 600 } : undefined), render: (o, c) => <>{fmtDate(o.dueDate)}{c.isLate ? ' ⚠' : ''}</> },
     { key: 'status', label: 'Trạng thái', locked: true, render: (o) => <OrderStatus status={o.status} /> },
+    // Cột thêm: mặc định ẩn, người dùng tự bật trong ⚙ Cột hiển thị
+    ...(type === 'PO' ? [] : [{ key: 'carrier', extra: true, label: 'Đơn vị vận tải', render: (o) => uniqText(o, (_, l) => (l.carrier ? carrierName.get(l.carrier) || l.carrier : '')) || <span className="small">–</span> }]),
+    { key: 'goodsStatus', extra: true, label: 'TTHH', render: (o) => uniqText(o, (_, l) => l.goodsStatus) },
+    { key: 'lineNote', extra: true, label: 'Ghi chú dòng', cls: 'small', render: (o) => uniqText(o, (_, l) => l.note) },
+    { key: 'note', extra: true, label: 'Ghi chú đơn', cls: 'small', render: (o) => o.note || '' },
+    { key: 'createdBy', extra: true, label: 'Người lập', cls: 'small', render: (o) => o.createdByName || o.createdBy || '' },
+    { key: 'updatedAt', extra: true, label: 'Sửa lần cuối', cls: 'small nowrap', render: (o) => (o.updatedAt ? fmtTime(o.updatedAt) : '') },
   ];
-  const [hidden, setHidden] = usePref(`orderListHidden:${type}`, cols.filter((c) => c.hideDefault).map((c) => c.key));
+  const [hiddenBase, setHiddenBase] = usePref(`orderListHidden:${type}`, cols.filter((c) => c.hideDefault).map((c) => c.key));
+  const extraKeys = cols.filter((c) => c.extra).map((c) => c.key);
+  const hidden = [...hiddenBase.filter((k) => !extraKeys.includes(k)), ...extraKeys.filter((k) => !shownExtra.includes(k))];
+  const setHidden = (h) => { setHiddenBase(h.filter((k) => !extraKeys.includes(k))); setShownExtra(extraKeys.filter((k) => !h.includes(k))); };
   // Thứ tự cột: mỗi người tự kéo thả (tiêu đề bảng hoặc trong ⚙ Cột hiển thị)
   const [colOrder, setColOrder] = usePref(`orderListOrder:${type}`, []);
   const orderedCols = orderCols(cols, colOrder);
@@ -225,7 +240,7 @@ function OrderList({ type, initialQ = '' }) {
       ...Object.fromEntries(customLine.map((f) => [f.label, displayValue(f, l[f.key], true)])),
       'Mã hàng': l.item, 'Tên hàng': l.itemName, 'Đặt (kg)': l.qtyKg, [`${meta.done} (kg)`]: l.doneKg || 0,
       ...(sto ? { 'Đang đi đường (kg)': transitKg(l), 'Đã nhận (kg)': l.receivedKg || 0 } : {}),
-      [`${meta.left} (kg)`]: OPEN_STATUSES.includes(o.status) ? leftKg(l) : 0, 'Trạng thái': ORDER_STATUS[o.status]?.label, 'Ghi chú': o.note,
+      [`${meta.left} (kg)`]: OPEN_STATUSES.includes(o.status) ? leftKg(l) : 0, ...(type === 'PO' ? {} : { 'Đơn vị vận tải': l.carrier ? carrierName.get(l.carrier) || l.carrier : '' }), 'Trạng thái': ORDER_STATUS[o.status]?.label, 'Ghi chú': o.note,
     })));
     exportSheets(`${type}_${today}`, { [meta.label]: out.length ? out : [{ 'Số đơn': '' }] });
   };
@@ -249,7 +264,7 @@ function OrderList({ type, initialQ = '' }) {
         </select>
         <input type="search" placeholder={`Tìm số đơn, ${meta.partyLabel.toLowerCase()}, mã hàng…`} value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="actions" style={{ marginLeft: 'auto' }}>
-          <ColumnPicker cols={cols.map((c) => ({ key: c.key, label: c.label, locked: c.locked }))} hidden={hidden} setHidden={setHidden} order={colOrder} setOrder={setColOrder} />
+          <ColumnPicker cols={cols.map((c) => ({ key: c.key, label: c.extra ? `➕ ${c.label}` : c.label, locked: c.locked }))} hidden={hidden} setHidden={setHidden} order={colOrder} setOrder={setColOrder} />
           <button className="btn" onClick={exportExcel}>⬇ Excel</button>
           {canManage && !sto && <ImportOrders type={type} existing={rows} onDone={setMsg} />}
           {isAdmin && noSales.length > 0 && <button className="btn" onClick={fillSales} title="Sale chỉ thấy đơn có Sale phụ trách là mình">Gán sale cho {noSales.length} đơn cũ</button>}
