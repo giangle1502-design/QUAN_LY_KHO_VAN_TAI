@@ -14,7 +14,7 @@ import { FAV_KEY, MenuEditor, itemId, useNavLayout } from './NavCustom';
 const DEFAULT_CLOSED = ['quan-tri', ...GROUPS.map((g) => `dm:${g}`)];
 
 export default function Layout() {
-  const { name, email, role, isAdmin, isSuper, can3PL, canDesign, hasRole, logout, settings, seesDebt } = useApp();
+  const { name, email, role, isAdmin, isSuper, can3PL, canDesign, hasRole, logout, settings } = useApp();
   const [open, setOpen] = useState(false);
   const loc = useLocation();
   const orderTab = (k) => ({ isActive }) => (isActive && (new URLSearchParams(loc.search).get('tab') || 'SO') === k ? 'active' : '');
@@ -125,9 +125,6 @@ export default function Layout() {
       { to: '/van-tai?tab=cho-giao', ico: '📥', label: 'Chờ giao vận tải', show: isAdmin },
       { to: '/van-tai?tab=chuyen', ico: '🚛', label: 'Chuyến xe vận tải (xe, 3PL, cước)' },
       { to: '/van-tai?tab=bang-ke', ico: '🧾', label: 'Bảng kê cước' },
-    ] },
-    { key: 'cong-no', title: '💳 Công nợ', items: [
-      { to: '/cong-no?tab=tong-hop', ico: '💳', label: 'Theo dõi công nợ (MISA)', show: seesDebt },
     ] },
     { key: 'bao-cao', title: '📊 Báo cáo', items: REPORTS.map(([k, ic, l]) => ({ to: `/bao-cao/${k}`, ico: ic, label: l })) },
     { key: 'thiet-lap', title: '🧩 Danh mục & thiết lập', items: [

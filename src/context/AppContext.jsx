@@ -67,8 +67,6 @@ export function AppProvider({ children }) {
   const hasRole = useCallback((...roles) => isAdmin || roles.includes(role), [isAdmin, role]);
   // Kinh doanh chỉ thấy đơn SO/PO có Sale phụ trách là mình (trừ người được cho xem đơn của mọi sale)
   const salesOnly = role === 'kinh_doanh' && userDoc?.seeAllOrders !== true;
-  // Công nợ phải thu (file tuổi nợ MISA): quản trị, kế toán, kinh doanh được xem đơn của mọi sale
-  const seesDebt = isAdmin || role === 'ke_toan' || (role === 'kinh_doanh' && !salesOnly);
   // Trường chỉ người được chỉ định xem
   const seeField = useCallback((f) => canSeeField(f, { isAdmin, email, role }), [isAdmin, email, role]);
   const seenFieldsOf = useCallback((key, ...others) => visibleFields(fieldsOf(key), { isAdmin, email, role }, ...others), [fieldsOf, isAdmin, email, role]);
@@ -76,10 +74,10 @@ export function AppProvider({ children }) {
   const value = useMemo(() => ({
     user, email, role, isAdmin, isSuper, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, myCarrier, myThreepl, myIdCard, carrierDoc, can3PL, userDoc,
     name: userDoc?.name || user?.displayName || email,
-    fieldConfig, fieldsOf, settings, salesOnly, seesDebt, seeField, seenFieldsOf,
+    fieldConfig, fieldsOf, settings, salesOnly, seeField, seenFieldsOf,
     loading: user === undefined || (!!user && userDoc === undefined && !isSuper),
     logout: () => signOut(auth),
-  }), [user, email, role, isAdmin, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, myCarrier, myThreepl, myIdCard, carrierDoc, can3PL, userDoc, fieldConfig, fieldsOf, settings, isSuper, salesOnly, seesDebt, seeField, seenFieldsOf]);
+  }), [user, email, role, isAdmin, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, myCarrier, myThreepl, myIdCard, carrierDoc, can3PL, userDoc, fieldConfig, fieldsOf, settings, isSuper, salesOnly, seeField, seenFieldsOf]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

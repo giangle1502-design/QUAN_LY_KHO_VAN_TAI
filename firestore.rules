@@ -374,22 +374,6 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // ==== Công nợ phải thu (nhập file tuổi nợ MISA) ====
-    // Xem: quản trị, kế toán, kinh doanh được xem đơn của mọi sale. Nhập: quản trị, kế toán. Xóa: quản trị gốc.
-    function seesDebt() { return isAdmin() || hasRole('ke_toan') || (hasRole('kinh_doanh') && !salesOnly()); }
-    function debtWrite(id) {
-      return (isAdmin() || hasRole('ke_toan')) && id == request.resource.data.company + '_' + request.resource.data.asOf
-        && request.resource.data.id == id && request.resource.data.importedBy == me();
-    }
-    match /debtSnapshots/{id} {
-      allow read: if seesDebt();
-      allow create, update: if debtWrite(id);
-    }
-    match /debtRows/{id} {
-      allow read: if seesDebt();
-      allow create, update: if debtWrite(id);
-    }
-
     // ==== Xóa dữ liệu ====
     // Chỉ quản trị gốc xóa thẳng; người khác gửi yêu cầu xóa để quản trị gốc duyệt
     match /deleteRequests/{id} {
