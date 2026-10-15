@@ -297,7 +297,7 @@ export default function SalesAnalysis({ wh, co, q }) {
           <div className="section-head" style={{ marginTop: 16 }}>Theo mặt hàng</div>
           <ReportTable cols={itemCols} rows={A.byItem} />
           <div className="section-head" style={{ marginTop: 16 }}>Top 20 khách hàng {A.byCust.length > 20 && <span className="small">(Excel có đủ {A.byCust.length} khách)</span>}</div>
-          <ReportTable cols={custCols} rows={A.byCust.slice(0, 20)} />
+          <ReportTable cols={custCols} rows={A.byCust.slice(0, 20)} links={[{ key: 'code', cat: 'soldto' }]} />
 
           {cmpOn && (
             <div className="grid2" style={{ marginTop: 16 }}>

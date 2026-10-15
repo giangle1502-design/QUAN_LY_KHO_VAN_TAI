@@ -202,7 +202,7 @@ export default function Overview({ wh, co, q }) {
       </div>
       {!hasPOmoney && PO.length > 0 && <NoMoneyNote m={mPO} rows={PO} what="tiền mua" onConfig={() => setCfg('PO')} />}
       <div className="section-head">Theo nhà cung cấp</div>
-      <ReportTable cols={supCols} rows={poBySup} empty="Không có đơn mua trong kỳ." />
+      <ReportTable cols={supCols} rows={poBySup} links={[{ key: 'code', cat: 'suppliers', label: 'NCC' }]} empty="Không có đơn mua trong kỳ." />
       <div className="section-head" style={{ marginTop: 16 }}>Theo mã hàng</div>
       <ReportTable cols={pItemCols} rows={poByItem} empty="Không có đơn mua trong kỳ." />
 
@@ -246,7 +246,7 @@ export default function Overview({ wh, co, q }) {
       <div className="section-head">Theo nhân viên sale</div>
       <ReportTable cols={saleCols} rows={soBySale} empty="Không có đơn bán trong kỳ." />
       <div className="section-head" style={{ marginTop: 16 }}>Top 15 khách hàng {soByCust.length > 15 && <span className="small">(Excel có đủ {soByCust.length} khách)</span>}</div>
-      <ReportTable cols={custCols} rows={soByCust.slice(0, 15)} empty="Không có đơn bán trong kỳ." />
+      <ReportTable cols={custCols} rows={soByCust.slice(0, 15)} links={[{ key: 'code', cat: 'soldto' }]} empty="Không có đơn bán trong kỳ." />
     </>
   );
 }

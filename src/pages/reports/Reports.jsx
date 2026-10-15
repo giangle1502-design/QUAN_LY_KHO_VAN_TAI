@@ -1,11 +1,18 @@
 import { useMemo, useState } from 'react';
-import { NavLink, useParams } from 'react-router-dom';
+import { NavLink, useLocation, useParams } from 'react-router-dom';
+import { catalogByKey } from '../../catalogs';
+import { ColumnPicker } from '../../components/FormTools';
+import { displayValue } from '../../components/FieldInput';
+import { usePref } from '../../lib/prefs';
+import { dragHeadProps, orderCols } from '../../lib/colOrder';
 import { useApp } from '../../context/AppContext';
-import { useCollection, useOpCompany, useOpWarehouse, useOrders, useStock } from '../../lib/hooks';
+import { useCollection, useCollections, useOpCompany, useOpWarehouse, useOrders, useStock } from '../../lib/hooks';
 import { OPEN_STATUSES, ORDER_STATUS, leftKg, transitKg } from '../../lib/orders';
 import { ageDays } from '../../lib/stock';
 import { vnDate } from '../../lib/trips';
 import { exportSheets } from '../../lib/excel';
+import { useOrderSecrets, viewOrder } from '../../lib/orderSecrets';
+import { moneyUnit } from '../../lib/currency';
 import { fmtDate, fmtNum, norm } from '../../lib/utils';
 import { CompanyPicker, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox } from '../../components/ui';
@@ -38,40 +45,99 @@ const t3 = (kg) => fmtNum(T(kg), 2);
 const STATUS_ORDER = ['KTC', 'HTC', 'DGC'];
 const rankSt = (c) => (STATUS_ORDER.includes(c) ? STATUS_ORDER.indexOf(c) : 99);
 
+// Cột có mã danh mục → liên kết sẵn (thêm được cột lấy từ danh mục đó). Bảng khác truyền links riêng.
+const DEFAULT_LINKS = { item: 'items', ic: 'items', warehouse: 'warehouses', pledgee: 'pledgees', carrier: 'carriers', partyCode: 'soldto', shipCode: 'shipto' };
+const LINK_LABELS = { soldto: 'Khách hàng', suppliers: 'NCC', shipto: 'Nơi giao', items: 'Mã hàng', warehouses: 'Kho', locations: 'Vị trí' };
+// Cột đang hiện của từng bảng (theo đúng mảng cols truyền vào) để Excel xuất đúng cột người dùng chọn
+const SHOWN = new WeakMap();
+
 // Bảng dùng chung. cols: [{ key, label, num, digits, ton (kg→tấn), sum, render, style }]
-export function ReportTable({ cols, rows, empty = 'Không có dữ liệu.', rowStyle }) {
+// Mỗi người tự chọn / sắp xếp cột (⚙ Cột hiển thị, lưu trên trình duyệt) và thêm cột:
+//  - extra: cột tùy chọn bảng tự có (vd. trường tự thêm của đơn hàng), mặc định ẩn
+//  - links: [{ key, cat, label?, id?(row) }] → mọi trường (có sẵn + tự thêm) của danh mục liên kết, vd. Mã hàng › Nhóm hàng
+export function ReportTable({ cols: baseCols, rows, empty = 'Không có dữ liệu.', rowStyle, id, links, extra = [] }) {
+  const { pathname } = useLocation();
+  const { seenFieldsOf } = useApp();
+  const pid = id || `${pathname}|${baseCols.slice(0, 3).map((c) => c.key).join(',')}`;
+  const linkList = (links || baseCols.filter((c) => DEFAULT_LINKS[c.key]).map((c) => ({ key: c.key, cat: DEFAULT_LINKS[c.key] })))
+    .filter((lk) => catalogByKey(lk.cat))
+    .map((lk) => ({ ...lk, label: lk.label || LINK_LABELS[lk.cat] || baseCols.find((c) => c.key === lk.key)?.label || catalogByKey(lk.cat).short }));
+  const linkCols = linkList.flatMap((lk) => {
+    const cat = catalogByKey(lk.cat);
+    return seenFieldsOf(lk.cat).filter((f) => !f.hidden && f.key !== cat.idField && f.type !== 'formula')
+      .map((f) => ({ key: `L:${lk.key}:${f.key}`, label: `${lk.label} › ${f.label}`, link: lk, field: f, num: NUM_TYPES.includes(f.type) }));
+  });
+  const optCols = [...extra, ...linkCols];
+  const optKeys = optCols.map((c) => c.key);
+  const [hiddenBase, setHiddenBase] = usePref(`rpHidden:${pid}`, []);
+  const [shownOpt, setShownOpt] = usePref(`rpExtra:${pid}`, []);
+  const [order, setOrder] = usePref(`rpOrder:${pid}`, []);
+  const hidden = [...hiddenBase, ...optKeys.filter((k) => !shownOpt.includes(k))];
+  const setHidden = (h) => { setHiddenBase(h.filter((k) => !optKeys.includes(k))); setShownOpt(optKeys.filter((k) => !h.includes(k))); };
+  // Chỉ nghe danh mục có cột liên kết đang bật (tiết kiệm lượt đọc)
+  const data = useCollections([...new Set(linkCols.filter((c) => shownOpt.includes(c.key)).map((c) => c.link.cat))]);
+  const lookups = useMemo(() => {
+    const m = {};
+    for (const [k, list] of Object.entries(data)) {
+      const cat = catalogByKey(k);
+      m[k] = new Map(list.map((x) => [String(cat.idOf ? cat.idOf(x) : x[cat.idField] ?? x._id), x]));
+    }
+    return m;
+  }, [data]);
+  const linkVal = (c, r) => {
+    const code = c.link.id ? c.link.id(r) : r[c.link.key];
+    return code == null || code === '' ? undefined : lookups[c.link.cat]?.get(String(code))?.[c.field.key];
+  };
+  const all = [...baseCols, ...optCols.map((c) => (c.link
+    ? { ...c, render: (r) => displayValue(c.field, linkVal(c, r)), excel: (r) => displayValue(c.field, linkVal(c, r), true) }
+    : c))];
+  const ordered = orderCols(all, order);
+  const cols = ordered.filter((c) => !hidden.includes(c.key));
+  SHOWN.set(baseCols, cols);
+  const keys = ordered.map((c) => c.key);
+
   if (!rows.length) return <Empty text={empty} />;
   const show = (c, r) => (c.render ? c.render(r) : c.ton ? t3(r[c.key]) : c.num ? fmtNum(r[c.key], c.digits ?? 0) : r[c.key]);
   const hasSum = cols.some((c) => c.sum);
   return (
-    <div className="table-wrap report-table">
-      <table>
-        <thead><tr><th className="stt">STT</th>{cols.map((c) => <th key={c.key} className={c.num || c.ton ? 'num' : ''}>{c.label}</th>)}</tr></thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={r._k ?? i} style={rowStyle?.(r)}>
-              <td className="stt">{i + 1}</td>
-              {cols.map((c) => <td key={c.key} className={(c.num || c.ton ? 'num' : '') + (c.nowrap ? ' nowrap' : '')} style={c.style?.(r)}>{show(c, r)}</td>)}
-            </tr>
-          ))}
-        </tbody>
-        {hasSum && (
-          <tfoot><tr><td />{cols.map((c, i) => (
-            <td key={c.key} className={c.num || c.ton ? 'num' : ''}>
-              {c.sum ? (c.ton ? t3(rows.reduce((s, r) => s + n(r[c.key]), 0)) : fmtNum(rows.reduce((s, r) => s + n(r[c.key]), 0), c.digits ?? 0)) : i === 0 ? 'Cộng' : ''}
-            </td>
-          ))}</tr></tfoot>
-        )}
-      </table>
-    </div>
+    <>
+      <div className="report-cols no-print">
+        <ColumnPicker cols={all.map((c) => ({ key: c.key, label: c.link ? `🔗 ${c.label}` : optKeys.includes(c.key) ? `➕ ${c.label}` : c.label }))}
+          hidden={hidden} setHidden={setHidden} order={order} setOrder={setOrder} />
+      </div>
+      <div className="table-wrap report-table">
+        <table>
+          <thead><tr><th className="stt">STT</th>{cols.map((c) => <th key={c.key} className={(c.num || c.ton ? 'num ' : '') + 'col-drag'} {...dragHeadProps(c.key, keys, setOrder)}>{c.label}</th>)}</tr></thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={r._k ?? i} style={rowStyle?.(r)}>
+                <td className="stt">{i + 1}</td>
+                {cols.map((c) => <td key={c.key} className={(c.num || c.ton ? 'num' : '') + (c.nowrap ? ' nowrap' : '')} style={c.style?.(r)}>{show(c, r)}</td>)}
+              </tr>
+            ))}
+          </tbody>
+          {hasSum && (
+            <tfoot><tr><td />{cols.map((c, i) => (
+              <td key={c.key} className={c.num || c.ton ? 'num' : ''}>
+                {c.sum ? (c.ton ? t3(rows.reduce((s, r) => s + n(r[c.key]), 0)) : fmtNum(rows.reduce((s, r) => s + n(r[c.key]), 0), c.digits ?? 0)) : i === 0 ? 'Cộng' : ''}
+              </td>
+            ))}</tr></tfoot>
+          )}
+        </table>
+      </div>
+    </>
   );
 }
-// Dòng Excel theo đúng cột trên màn hình (số kg xuất dạng số)
-export const toSheet = (cols, rows) => (rows.length ? rows : [{}]).map((r, i) => ({
-  STT: rows.length ? i + 1 : '',
-  ...Object.fromEntries(cols.filter((c) => !c.noExcel).map((c) => [c.label + (c.ton ? ' (kg)' : ''),
-    !rows.length ? '' : c.excel ? c.excel(r) : c.ton ? Math.round(T(r[c.key]) * 1000) / 1000 : r[c.key] ?? ''])),
-}));
+const NUM_TYPES = ['number', 'currency', 'percent'];
+// Dòng Excel theo đúng cột trên màn hình (cột người dùng đã chọn; số kg xuất dạng số)
+export const toSheet = (baseCols, rows) => {
+  const cols = SHOWN.get(baseCols) || baseCols;
+  return (rows.length ? rows : [{}]).map((r, i) => ({
+    STT: rows.length ? i + 1 : '',
+    ...Object.fromEntries(cols.filter((c) => !c.noExcel).map((c) => [c.label + (c.ton ? ' (kg)' : ''),
+      !rows.length ? '' : c.excel ? c.excel(r) : c.ton ? Math.round(T(r[c.key]) * 1000) / 1000 : r[c.key] ?? ''])),
+  }));
+};
 
 export default function Reports() {
   const { report } = useParams();
@@ -177,7 +243,7 @@ function ByWarehouse({ wh, co, q }) {
       <ErrorBox error={error} />
       <Actions onExcel={excel} />
       <div className="section-head">Tổng theo kho</div>
-      <ReportTable cols={whCols} rows={whRows} />
+      <ReportTable cols={whCols} rows={whRows} links={[{ key: 'code', cat: 'warehouses' }]} />
       <div className="section-head" style={{ marginTop: 16 }}>Theo mã hàng và kho (kg)</div>
       <ReportTable cols={pivotCols} rows={pivot} empty="Chưa có tồn kho." />
     </>
@@ -239,7 +305,8 @@ function ByLocation({ wh, co, q }) {
         <span className="small">{rows.length} vị trí · {cnt((x) => !x.empty)} đang chứa · {cnt((x) => x.empty && !x.locked)} trống</span>
         <span style={{ marginLeft: 'auto' }}><Actions onExcel={excel} /></span>
       </div>
-      <ReportTable cols={cols} rows={rows} empty="Không có vị trí nào." />
+      <ReportTable cols={cols} rows={rows} empty="Không có vị trí nào."
+        links={[{ key: 'code', cat: 'locations', id: (r) => `${r.warehouse}__${r.code}` }, { key: 'warehouse', cat: 'warehouses' }]} />
     </>
   );
 }
@@ -395,26 +462,43 @@ function ForSales({ wh, co, q }) {
 // 5 & 6. Đơn bán chưa giao / đơn mua chưa nhập kho (theo từng dòng mặt hàng)
 function useOrderLines(type, wh, co, q, onlyLate) {
   const { orders, error, inScope } = useOpenOrders(wh, co);
+  const { fieldsOf, seenFieldsOf } = useApp();
   const today = vnDate();
+  // Trường tự thêm của đơn (phần chung + dòng hàng, kể cả công thức; trường riêng tư chỉ người được xem thấy) → cột thêm của báo cáo
+  const fk = type.toLowerCase();
+  const headSeen = useMemo(() => seenFieldsOf(`${fk}Head`, fieldsOf(`${fk}Line`)), [seenFieldsOf, fieldsOf, fk]);
+  const lineSeen = useMemo(() => seenFieldsOf(`${fk}Line`, fieldsOf(`${fk}Head`)), [seenFieldsOf, fieldsOf, fk]);
+  const secMap = useOrderSecrets(type);
+  const headX = headSeen.filter((f) => (f.custom || f.fx) && !f.hidden);
+  const lineX = lineSeen.filter((f) => f.custom && !f.hidden);
+  const fxLists = [lineSeen, headSeen];
+  const extra = [
+    ...headX.map((f) => ({ key: `h_${f.key}`, label: f.label, f })),
+    ...lineX.map((f) => ({ key: `l_${f.key}`, label: lineX.some((x) => x !== f && x.label === f.label) || headX.some((x) => x.label === f.label) ? `${f.label} (dòng)` : f.label, f })),
+  ].map((c) => ({ key: c.key, label: c.label, num: NUM_TYPES.includes(c.f.type) || c.f.type === 'formula', nowrap: true,
+    render: (r) => displayValue(c.f, r[c.key], false, r._unit?.[c.key]), excel: (r) => displayValue(c.f, r[c.key], true) }));
   const rows = orders.filter((o) => o.type === type && OPEN_STATUSES.includes(o.status))
+    .map((o) => viewOrder(o, secMap, headSeen, lineSeen))
     .flatMap((o) => o.lines.filter((l) => leftKg(l) > 0 && inScope(l.warehouse || o.warehouse)).map((l) => {
       const due = l.dueDate || o.dueDate || '';
       return {
         _k: `${o.id}-${l.no}`, id: o.id, refNo: o.refNo || '', date: o.date, partyCode: o.partyCode, partyName: o.partyName, company: o.company || '', shipCode: l.shipCode || o.shipCode || '',
         warehouse: l.warehouse || o.warehouse || '', item: l.item, itemName: l.itemName, qty: n(l.qtyKg), done: n(l.doneKg), left: leftKg(l),
         due, late: due && due < today ? ageDays(due) : 0, status: o.status, goodsStatus: l.goodsStatus || '',
+        ...Object.fromEntries(headX.map((f) => [`h_${f.key}`, o[f.key]])), ...Object.fromEntries(lineX.map((f) => [`l_${f.key}`, l[f.key]])),
+        _unit: Object.fromEntries([...headX.map((f) => [`h_${f.key}`, moneyUnit(f, o, fxLists)]), ...lineX.map((f) => [`l_${f.key}`, moneyUnit(f, o, fxLists)])]),
       };
     }))
     .filter((r) => matchItem(q, r.id, r.refNo, r.partyCode, r.partyName, r.item, r.itemName))
     .filter((r) => !onlyLate || r.late > 0)
     .sort((a, b) => String(a.due || '9999').localeCompare(String(b.due || '9999')) || a.id.localeCompare(b.id));
-  return { rows, error };
+  return { rows, error, extra };
 }
 const lateStyle = (r) => (r.late > 0 ? { color: 'var(--red)', fontWeight: 600 } : undefined);
 
 function OpenSO({ wh, co, q }) {
   const [onlyLate, setOnlyLate] = useState(false);
-  const { rows, error } = useOrderLines('SO', wh, co, q, onlyLate);
+  const { rows, error, extra } = useOrderLines('SO', wh, co, q, onlyLate);
   const { stock, locked } = useBase(wh, co);
   const usable = useMemo(() => {
     const m = new Map();
@@ -455,14 +539,15 @@ function OpenSO({ wh, co, q }) {
       <div className="section-head">Theo khách hàng (kg)</div>
       <ReportTable cols={custCols} rows={byCustomer} empty="Không có đơn chưa giao." />
       <div className="section-head" style={{ marginTop: 16 }}>Chi tiết từng dòng đơn (kg)</div>
-      <ReportTable cols={cols} rows={list} empty="Không có đơn chưa giao." />
+      <ReportTable cols={cols} rows={list} extra={extra} empty="Không có đơn chưa giao." />
     </>
   );
 }
 
+const PO_LINKS = [{ key: 'partyCode', cat: 'suppliers', label: 'NCC' }, { key: 'item', cat: 'items' }, { key: 'warehouse', cat: 'warehouses' }];
 function OpenPO({ wh, co, q }) {
   const [onlyLate, setOnlyLate] = useState(false);
-  const { rows, error } = useOrderLines('PO', wh, co, q, onlyLate);
+  const { rows, error, extra } = useOrderLines('PO', wh, co, q, onlyLate);
   const cols = [
     { key: 'id', label: 'Số PO', nowrap: true }, { key: 'refNo', label: 'Số Ecount' }, { key: 'company', label: 'Công ty' }, { key: 'date', label: 'Ngày đơn', render: (r) => fmtDate(r.date), nowrap: true },
     { key: 'partyCode', label: 'Mã NCC' }, { key: 'partyName', label: 'Nhà cung cấp' }, { key: 'warehouse', label: 'Nhập về kho' },
@@ -495,9 +580,9 @@ function OpenPO({ wh, co, q }) {
         <span style={{ marginLeft: 'auto' }}><Actions onExcel={excel} /></span>
       </div>
       <div className="section-head">Theo nhà cung cấp và mã hàng (kg)</div>
-      <ReportTable cols={supCols} rows={bySupplier} empty="Không có PO chưa nhập." />
+      <ReportTable cols={supCols} rows={bySupplier} links={PO_LINKS} empty="Không có PO chưa nhập." />
       <div className="section-head" style={{ marginTop: 16 }}>Chi tiết từng dòng PO (kg)</div>
-      <ReportTable cols={cols} rows={rows} empty="Không có PO chưa nhập." />
+      <ReportTable cols={cols} rows={rows} extra={extra} links={PO_LINKS} empty="Không có PO chưa nhập." />
     </>
   );
 }

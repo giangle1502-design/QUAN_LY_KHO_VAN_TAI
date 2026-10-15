@@ -43,6 +43,7 @@ export function WithAdd({ cat, preset, onAdded, children, style }) {
 // order / setOrder (tùy chọn): thứ tự cột riêng của người dùng, kéo thả hoặc bấm ▲▼ trong danh sách
 export function ColumnPicker({ cols, hidden, setHidden, order, setOrder }) {
   const [open, setOpen] = useState(false);
+  const [find, setFind] = useState('');
   const ref = useRef();
   useEffect(() => {
     if (!open) return undefined;
@@ -53,13 +54,18 @@ export function ColumnPicker({ cols, hidden, setHidden, order, setOrder }) {
   const toggle = (k) => setHidden(hidden.includes(k) ? hidden.filter((x) => x !== k) : [...hidden, k]);
   const list = setOrder ? orderCols(cols, order) : cols;
   const keys = list.map((c) => c.key);
+  // Danh sách dài (trường tự thêm, trường liên kết): có ô tìm cột
+  const f = norm(find);
+  const view = f ? list.filter((c) => norm(c.label).includes(f)) : list;
   const step = (k, d) => { const i = keys.indexOf(k); const j = i + d; if (j < 0 || j >= keys.length) return; const n = [...keys]; [n[i], n[j]] = [n[j], n[i]]; setOrder(n); };
   return (
     <span className="col-picker" ref={ref}>
       <button type="button" className="btn sm" onClick={() => setOpen((o) => !o)}>⚙ Cột hiển thị</button>
       {open && (
         <div className="col-picker-menu">
-          {list.map((c, i) => (
+          {list.length > 12 && <input type="search" placeholder="Tìm cột…" value={find} onChange={(e) => setFind(e.target.value)} autoFocus style={{ marginBottom: 4 }} />}
+          <div className="col-picker-list">
+          {view.map((c) => { const i = keys.indexOf(c.key); return (
             <div key={c.key} className="col-picker-row" {...(setOrder ? dragHeadProps(c.key, keys, setOrder) : {})}>
               {setOrder && <span className="col-handle" title="Kéo để đổi thứ tự">☰</span>}
               <label><input type="checkbox" checked={c.locked || !hidden.includes(c.key)} disabled={c.locked} onChange={() => toggle(c.key)} /> {c.label}</label>
@@ -67,7 +73,8 @@ export function ColumnPicker({ cols, hidden, setHidden, order, setOrder }) {
                 <button type="button" disabled={!i} onClick={() => step(c.key, -1)} title="Lên trước">▲</button>
                 <button type="button" disabled={i === list.length - 1} onClick={() => step(c.key, 1)} title="Xuống sau">▼</button></span>}
             </div>
-          ))}
+          ); })}
+          </div>
           {setOrder && <button type="button" className="btn sm" style={{ marginTop: 6 }} onClick={() => setOrder([])}>↺ Thứ tự mặc định</button>}
           <small className="small">{setOrder ? 'Kéo ☰ (hoặc kéo tiêu đề cột trên bảng) để đổi thứ tự. ' : ''}Chỉ áp dụng cho tài khoản của bạn trên máy này.</small>
         </div>

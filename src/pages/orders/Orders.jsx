@@ -206,6 +206,9 @@ function OrderList({ type, initialQ = '', startNew = false, onNewDone }) {
     { key: 'status', label: 'Trạng thái', locked: true, render: (o) => <OrderStatus status={o.status} /> },
     // Cột thêm: mặc định ẩn, người dùng tự bật trong ⚙ Cột hiển thị
     ...(type === 'PO' ? [] : [{ key: 'carrier', extra: true, label: 'Đơn vị vận tải', render: (o) => uniqText(o, (_, l) => (l.carrier ? carrierName.get(l.carrier) || l.carrier : '')) || <span className="small">–</span> }]),
+    // Trường tự thêm ở dòng hàng (kể cả công thức như Thành tiền, trường riêng tư mình được xem): mỗi dòng một giá trị
+    ...customLine.map((f) => ({ key: `l_${f.key}`, extra: true, label: f.label, cls: 'nowrap', num: NUMERIC.includes(f.type) || (f.type === 'formula' && f.resultType !== 'text'),
+      render: (o) => lineValues(o, f, moneyUnit(f, o, fxLists)) })),
     { key: 'goodsStatus', extra: true, label: 'TTHH', render: (o) => uniqText(o, (_, l) => l.goodsStatus) },
     { key: 'lineNote', extra: true, label: 'Ghi chú dòng', cls: 'small', render: (o) => uniqText(o, (_, l) => l.note) },
     { key: 'note', extra: true, label: 'Ghi chú đơn', cls: 'small', render: (o) => o.note || '' },
@@ -301,6 +304,24 @@ function OrderList({ type, initialQ = '', startNew = false, onNewDone }) {
     </div>
   );
 }
+
+// Giá trị 1 trường dòng hàng trên danh sách đơn: 1 dòng (hoặc mọi dòng cùng giá trị) → 1 giá trị;
+// nhiều dòng → từng dòng kèm mã hàng; công thức ra tiền (vd. Thành tiền) có thêm dòng Cộng (đơn giá thì không cộng)
+const NUMERIC = ['number', 'currency', 'percent'];
+function lineValues(o, f, unit) {
+  const ls = (o.lines || []).filter((l) => l[f.key] !== '' && l[f.key] != null);
+  if (!ls.length) return '';
+  const vals = ls.map((l) => displayValue(f, l[f.key], false, unit));
+  if (new Set(vals).size === 1 && (ls.length === 1 || !isAmount(f))) return vals[0];
+  const total = isAmount(f) ? ls.reduce((s, l) => s + (Number(l[f.key]) || 0), 0) : null;
+  return (
+    <div className="line-vals">
+      {ls.map((l, i) => <div key={l.no ?? i}><span className="small">{l.item}:</span> {vals[i]}</div>)}
+      {total != null && <div><b>Cộng: {displayValue(f, total, false, unit)}</b></div>}
+    </div>
+  );
+}
+const isAmount = (f) => f.type === 'formula' && (f.resultType || 'number') === 'currency';
 
 // ---------------------------------------------------------------------------
 function OrderDetail({ o, onClose, onEdit }) {
