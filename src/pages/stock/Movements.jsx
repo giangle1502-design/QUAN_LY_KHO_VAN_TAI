@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { collection, doc, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
@@ -38,7 +38,8 @@ export default function Movements() {
   const [range, setRange] = useState({ from: addDays(vnDate(), -30), to: vnDate() });
   const [type, setType] = useState('');
   const [fStep, setFStep] = useState('');
-  const [showMvt, setShowMvt] = useState(false);
+  const [sp] = useSearchParams();
+  const [showMvt, setShowMvt] = useState(sp.get('mvt') === '1');
   const [co, setCo] = useOpCompany();
   const [q, setQ] = useState('');
   const [rows, setRows] = useState([]);

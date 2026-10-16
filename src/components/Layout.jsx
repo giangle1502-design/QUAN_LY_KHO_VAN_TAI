@@ -89,7 +89,7 @@ export default function Layout() {
     const p = new URLSearchParams(loc.search);
     return isActive && p.get('tab') === k && (p.get('loai') || '') === loai ? 'active' : '';
   };
-  const srcTab = (sto) => ({ isActive }) => (isActive && (new URLSearchParams(loc.search).get('src') === 'sto') === sto ? 'active' : '');
+  const srcTab = (sto) => ({ isActive }) => (isActive && (new URLSearchParams(loc.search).get('src') || '') === (sto === true ? 'sto' : sto || '') ? 'active' : '');
   // Mục "➕ Lập … mới": mở thẳng form tạo mới (?new=1), không tô sáng như trang đang xem
   const noActive = () => '';
   const canSO = hasRole('kinh_doanh', 'ke_toan');
@@ -102,6 +102,7 @@ export default function Layout() {
       { to: '/kho/out', cls: srcTab(false), ico: '📤', label: 'Lập phiếu xuất kho', show: hasRole('thu_kho') },
       { to: '/don-hang?tab=DO', cls: slipTab('DO', ''), ico: '🚚', label: 'Danh sách đơn hàng xuất kho DO' },
       { to: '/xe/giao-hang', ico: '✅', label: 'Xác nhận giao hàng', show: isAdmin },
+      { to: '/kho/in?src=so', cls: srcTab('so'), ico: '↩️', label: 'Thu hồi / khách trả hàng (MVT 651)', show: isAdmin },
     ] },
     { key: 'mua', title: '🛒 Mua hàng (PO → nhập)', items: [
       { to: '/don-hang?tab=PO&new=1', cls: noActive, ico: '➕', label: 'Lập PO mới', show: canSO },
@@ -123,6 +124,7 @@ export default function Layout() {
       { to: '/kho/ton', ico: '🏭', label: 'Tồn kho' },
       { to: '/don-hang?tab=can-doi', cls: orderTab('can-doi'), ico: '⚖️', label: 'Cân đối theo mã hàng' },
       { to: '/kho/phieu', ico: '🧾', label: 'Phiếu kho (danh sách)' },
+      { to: '/kho/phieu?mvt=1', ico: '🔢', label: 'Bảng mã movetype' },
       { to: '/kho/move', ico: '🔀', label: 'Chuyển vị trí', show: hasRole('thu_kho') },
       { to: '/kho/adjust', ico: '⚖️', label: 'Điều chỉnh tồn', show: hasRole('thu_kho') },
       { to: '/kho/kiem-ke', ico: '🧮', label: 'Kiểm kê & cycle count' },

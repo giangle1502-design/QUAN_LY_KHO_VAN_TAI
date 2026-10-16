@@ -11,6 +11,9 @@ import { IN_SOURCES, OPEN_STATUSES, ORDER_FOR_MOVE, ORDER_TYPES, isReturn, lineF
 import { MOVE_TYPES, ageDays, createPendingIn, createWaitingOut, kgOf, postMovement, suggestPallets } from '../../lib/stock';
 import { releaseStatusOfWh } from '../../lib/release';
 import { ST, vnDate } from '../../lib/trips';
+import { createPlannedTrips } from '../../lib/transport';
+import { SHIP_PICKUP, pickupFrom } from '../../lib/dispatch';
+import { MVT } from '../../lib/moveCodes';
 import { fmtDate, fmtNum } from '../../lib/utils';
 import { ErrorBox, Field, Modal } from '../../components/ui';
 import { QuickAdd, WithAdd } from '../../components/FormTools';
@@ -91,7 +94,9 @@ function Form({ type }) {
   const grp = useMemo(() => groupCodes(companies), [companies]);
   const [crossCo, setCrossCo] = useState(false);
   // Phiếu nhập: nguồn nhập (trực tiếp / theo PO / theo STO / hàng trả về theo SO)
-  const [source, setSource] = useState(type === 'in' ? (params.get('src') === 'sto' ? 'STO' : 'direct') : '');
+  const [source, setSource] = useState(type === 'in' ? ({ sto: 'STO', so: 'SO', po: 'PO' }[params.get('src')] || 'direct') : '');
+  // Hàng thu hồi (nhập trả về theo SO, MVT 651): giao vận tải đi lấy hàng ở khách (điểm nhận = mã giao của khách)
+  const [ret, setRet] = useState({ carrier: '', ship: '', date: '', plate: '' });
   const [head, setHead] = useState({ refNo: '', company: opCo, date: vnDate(), tripId: params.get('trip') || '', orderId: params.get('order') || '', partyCode: '', partyName: '', shipCode: '', reason: '', note: '', ...EMPTY_TRANSPORT });
   const vehicles = useCollection('vehicles').rows;
   const carriers = useCollection('carriers').rows;
@@ -116,6 +121,7 @@ function Form({ type }) {
   const [donePO, setDonePO] = useState('');
   const [doneRel, setDoneRel] = useState(null);
   const [doneCross, setDoneCross] = useState('');
+  const [doneTrip, setDoneTrip] = useState('');
   const [doneGroup, setDoneGroup] = useState(null);
   const [filter, setFilter] = useState('');
   const [picking, setPicking] = useState(false);
@@ -756,10 +762,23 @@ function Form({ type }) {
         }
       }
       const mvId = ids[0];
+      if (type === 'in' && source === 'SO' && ret.carrier && mvId) {
+        try {
+          const shipCode = ret.ship || head.shipCode || order?.lines?.map((l) => lineShip(order, l)).find(Boolean) || '';
+          const c = carriers.find((x) => x.code === ret.carrier) || { code: ret.carrier };
+          const [tid] = await createPlannedTrips({ wh, carrier: c, trips: [{ date: ret.date || head.date, plate: ret.plate, company: head.company || '', note: `Thu hồi hàng trả về theo ${head.orderId}, phiếu nhập ${mvId}`,
+            pickup: shipCode ? pickupFrom(SHIP_PICKUP + shipCode, [], shipto) : null,
+            lines: lines.filter((l) => l.item && Math.abs(num(l.kg)) > 0).map((l) => ({ orderId: head.orderId, no: l.orderLine ?? null, item: l.item, itemName: itemMap.get(l.item)?.name || '', kg: Math.abs(num(l.kg)), movementId: mvId,
+              partyCode: wh.code, partyName: wh.name || `Kho ${wh.code}` })) }] }, { email, name }, 'Thu hồi hàng');
+          setDoneTrip(tid);
+        } catch (e5) { setErr(`Đã lập phiếu ${mvId} nhưng chưa tạo được chuyến thu hồi: ${e5.message}. Tạo chuyến ở Vận tải.`); }
+      }
       setDoneCross(cross.length ? [...new Set(cross.map((l) => l.company))].join(', ') : '');
       setShipPlan(null); setExtra([]); setGroupPlans([]);
       setDoneGroup(groupId ? { id: groupId, ids, orders: pieces.map((x) => x.order.id) } : null);
       setDone(mvId);
+      if (!(type === 'in' && source === 'SO' && ret.carrier)) setDoneTrip('');
+      setRet({ carrier: '', ship: '', date: '', plate: '' });
       setDoneRel(rel.length ? { wait: true } : null);
       setLines([type === 'in' ? newLine() : stockLine()]);
       setPal({ palletMode: '', pallets: [] });
@@ -774,7 +793,7 @@ function Form({ type }) {
   return (
     <form onSubmit={submit}>
       <div className="page-head">
-        <h1>{meta.icon} {meta.label}{type === 'in' && <i className="help-tip on" title="Quản trị lập và in phiếu nhập. Thủ kho nhận hàng ngoài hiện trường, vào Nhận hàng nhập số thực nhận, lot, vị trí rồi xác nhận: lúc đó tồn kho mới cập nhật và in được nhãn pallet."> ⓘ</i>}</h1>
+        <h1>{meta.icon} {meta.label}{type === 'out' && <small className="mono" style={{ fontSize: 13, marginLeft: 8, color: 'var(--muted)' }} title="Movetype: 601 xuất bán theo SO, 641 xuất chuyển kho STO, 201 xuất khác">MVT {order?.type === 'STO' ? 641 : order ? 601 : 201}</small>}{type === 'in' && <i className="help-tip on" title="Quản trị lập và in phiếu nhập. Thủ kho nhận hàng ngoài hiện trường, vào Nhận hàng nhập số thực nhận, lot, vị trí rồi xác nhận: lúc đó tồn kho mới cập nhật và in được nhãn pallet."> ⓘ</i>}</h1>
         <div className="actions">
           {type === 'adjust' && <Link className="btn" to="/kho/dieu-chinh-excel">⬆ Nhập từ Excel</Link>}
           <Link className="btn" to="/kho/phieu">Danh sách phiếu</Link>
@@ -786,6 +805,7 @@ function Form({ type }) {
       {done && !doneGroup && <div className="ok-box" style={{ marginBottom: 10 }}>Đã lập phiếu <b className="mono">{done}</b>{donePO && <> và đơn mua <Link className="mono" to="/don-hang?tab=PO">{donePO}</Link> (nhập trực tiếp)</>}.{type === 'in' ? <> <b>Chờ thủ kho nhận hàng</b> và xác nhận số thực nhận, vị trí (tồn kho cập nhật khi thủ kho xác nhận{source === 'direct' ? ', đơn mua PO lập theo số thực nhận' : ''}).</> : doneRel ? '' : ' Tồn kho đã cập nhật.'} <Link to={`/kho/phieu/${done}/in`} target="_blank">🖨 In phiếu</Link>
 
         {type === 'out' && <> · <Link className="btn primary" to={`/kho/phieu/${done}/soan`} target="_blank">📋 In phiếu soạn hàng</Link></>}
+        {doneTrip && <div style={{ marginTop: 6 }}>🚚 Đã tạo chuyến thu hồi <b className="mono">{doneTrip}</b>: đơn vị vận tải thấy chuyến trên link tài xế, điểm nhận hàng là địa chỉ khách. Xem ở <Link to="/van-tai">Vận tải</Link>.</div>}
         {doneCross && <div style={{ marginTop: 6 }}>🏛️ Phiếu có hàng lấy từ tồn công ty <b>{doneCross}</b> (chuyển pháp nhân): đã gửi thông báo cho kế toán. Xem <Link to="/bao-cao/chuyen-phap-nhan">Báo cáo chuyển pháp nhân</Link>.</div>}
         {doneRel && <div style={{ marginTop: 6 }}>⏳ Phiếu có hàng HTC nên đang <b>chờ giải chấp</b> (tồn chưa trừ). In phiếu, soạn hàng được; vào <Link to="/kho/giai-chap">Đề nghị giải chấp → Chờ giải chấp</Link> để tạo lệnh giải chấp, khi đó phiếu mới ghi xuất kho.</div>}</div>}
       {/* Gọn trong 1 màn hình: chú thích thành ⓘ (rê chuột xem), ô mã + tên cùng hàng, vận tải + Kiện/Xá cạnh nhau */}
@@ -816,7 +836,7 @@ function Form({ type }) {
                   SO: 'Khách trả hàng: tự điền lot, TTHH, số lượng đã giao từ phiếu xuất của đơn bán.' }[source]}>
                   <div className="seg wrap">
                     {Object.entries(IN_SOURCES).map(([k, x]) => (
-                      <button type="button" key={k} className={source === k ? 'on' : ''} onClick={() => source !== k && changeSource(k)}>{x.short}</button>
+                      <button type="button" key={k} className={source === k ? 'on' : ''} title={`Movetype ${IN_MVT[k]}: ${MVT[IN_MVT[k]]?.label}`} onClick={() => source !== k && changeSource(k)}>{x.short} <small className="mono">{IN_MVT[k]}</small></button>
                     ))}
                   </div>
                 </Field>
@@ -908,6 +928,33 @@ function Form({ type }) {
               <PalletChoice value={pal} onChange={setPal} kind="in" managed={palletManaged(wh)}
                 suggestQty={Math.ceil(lines.reduce((a, l) => a + (Number(l.pallets) || 0), 0)) || ''} />
               {pal.palletMode && <button type="button" className="btn sm ghost" onClick={() => setPal({ palletMode: '', pallets: [] })}>Bỏ chọn</button>}
+            </div>
+          )}
+          {type === 'in' && source === 'SO' && (
+            <div className="transport-box span2">
+              <div className="section-head">🚚 Xe đi thu hồi hàng ở khách <i className="help-tip" title="Chọn đơn vị vận tải thì khi lập phiếu sẽ tạo luôn chuyến: điểm nhận hàng là mã giao của khách, giao về kho này. Để trống nếu khách tự chở hàng về."> ⓘ</i></div>
+              <div className="form-grid">
+                <Field label="Đơn vị vận tải">
+                  <WithAdd cat="carriers" onAdded={(id) => setRet((r) => ({ ...r, carrier: id }))}>
+                    <Select value={ret.carrier} onChange={(e) => setRet((r) => ({ ...r, carrier: e.target.value }))}>
+                      <option value="">-- Khách tự chở / chưa giao --</option>
+                      {carriers.filter((c) => c.active !== false).map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}
+                    </Select>
+                  </WithAdd>
+                </Field>
+                {ret.carrier && <>
+                  <Field label="Lấy hàng tại (mã giao)">
+                    <WithAdd cat="shipto" preset={{ customerCode: head.partyCode, customerName: head.partyName }} onAdded={(id, r) => setRet((x) => ({ ...x, ship: r?.shipCode || id }))}>
+                      <Select value={ret.ship || head.shipCode || order?.lines?.map((l) => lineShip(order, l)).find(Boolean) || ''} onChange={(e) => setRet((r) => ({ ...r, ship: e.target.value }))}>
+                        <option value="">-- Chọn --</option>
+                        {shipto.filter((s) => !head.partyCode || s.customerCode === head.partyCode).map((s) => <option key={s.shipCode} value={s.shipCode}>{s.shipCode} – {s.address}</option>)}
+                      </Select>
+                    </WithAdd>
+                  </Field>
+                  <Field label="Ngày đi lấy"><input type="date" value={ret.date || head.date} onChange={(e) => setRet((r) => ({ ...r, date: e.target.value }))} /></Field>
+                  <Field label="Số xe (nếu biết)"><input value={ret.plate} onChange={(e) => setRet((r) => ({ ...r, plate: e.target.value.toUpperCase() }))} /></Field>
+                </>}
+              </div>
             </div>
           )}
           {(type === 'adjust' || type === 'in' || type === 'out') && (
@@ -1420,3 +1467,6 @@ function OrderPicker({ orders, myWh, whCode, onClose, onPick }) {
     </Modal>
   );
 }
+
+// Movetype của phiếu nhập theo nguồn
+const IN_MVT = { direct: 501, PO: 101, STO: 101, SO: 651 };
