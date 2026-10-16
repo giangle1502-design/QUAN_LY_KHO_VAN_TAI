@@ -31,8 +31,12 @@ export function tripInvoice(t, cats = {}) {
   const { pickupPoints = [], soldto = [], shipto = [], warehouses = [] } = cats;
   let from;
   if (t.pickup) {
-    const p = pickupPoints.find((x) => x.code === t.pickup);
-    from = { text: s(p?.invoiceInfo) || s(t.pickupName) || s(p?.name) || t.pickup, missing: false };
+    // Thu hồi hàng từ khách (pickup 'ship:<mã giao>'): thông tin xuất hóa đơn của mã giao / khách, không có thì địa chỉ
+    const sc = String(t.pickup).startsWith('ship:') ? String(t.pickup).slice(5) : '';
+    const st = sc ? shipto.find((x) => x.shipCode === sc) : null;
+    const p = sc ? null : pickupPoints.find((x) => x.code === t.pickup);
+    from = sc ? { text: s(st?.invoiceInfo) || s(soldto.find((x) => x.code === st?.customerCode)?.invoiceInfo) || s(t.pickupAddress) || s(t.pickupName), missing: false }
+      : { text: s(p?.invoiceInfo) || s(t.pickupName) || s(p?.name) || t.pickup, missing: false };
   } else from = whInvoice(t.warehouse, tripLocations(t), cats);
   const seen = new Map();
   for (const l of t.lines || []) {

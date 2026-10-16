@@ -319,7 +319,7 @@ export const CATALOGS = [
     ],
   },  {
     key: 'pickupPoints', group: 'Vận tải', icon: '⚓', title: 'Điểm nhận hàng (cảng, kho ngoài…)', short: 'Điểm nhận hàng', idField: 'code', upperId: true, editRoles: ['van_tai', 'ke_toan'],
-    help: 'Nơi xe đến lấy hàng khi không lấy tại kho của mình, VD Cảng Cát Lái, Cảng Hiệp Phước, ICD Phước Long, kho ngoại quan. Chọn ở Vận tải → Chờ giao vận tải (ô "Nhận tại kho") hoặc ở Chi phí chuyến: tài xế thấy địa chỉ, chỉ đường; bảng giá cước tính theo điểm nhận.',
+    help: 'Điểm nhận hàng = nơi xe đến nhận hàng rồi đi giao chỗ khác. Kho của mình (Kho VAP/PLA/DAM Đức Hòa…) lấy từ Danh sách kho, khách hàng khi thu hồi hàng lấy từ Shipto: không cần khai lại ở đây. Danh mục này chỉ khai nơi nhận khác: cảng Cát Lái, Hiệp Phước, ICD, kho ngoại quan… Chọn ở Vận tải → Chờ giao vận tải (cột Điểm nhận hàng) hoặc Chi phí chuyến.',
     fields: [
       { key: 'code', label: 'Mã điểm nhận', type: 'text', required: true, help: 'VD CATLAI' },
       { key: 'name', label: 'Tên điểm nhận', type: 'text', required: true, help: 'VD Cảng Cát Lái' },

@@ -6,7 +6,8 @@ import { useApp } from '../../context/AppContext';
 import { useCollection } from '../../lib/hooks';
 import { usePref } from '../../lib/prefs';
 import { OPEN_STATUSES } from '../../lib/orders';
-import { enrichLine, navUrl, placeOf, whOf, whText, isGHA, isInternal, kindText, usesVehicleList } from '../../lib/dispatch';
+import PickupSelect from '../../components/PickupSelect';
+import { enrichLine, pickupFrom, navUrl, placeOf, whOf, whText, isGHA, isInternal, kindText, usesVehicleList } from '../../lib/dispatch';
 import Dispatch from './Dispatch';
 import Statements from './Statements';
 import TripReport from './Report';
@@ -268,7 +269,7 @@ function TripList({ trips, priv }) {
         <div>Đơn hàng: <b>{(t.orderIds || []).join(', ')}</b></div>
         {t.company && <div>Công ty xuất hàng: <b>{companyName(t.company)}</b></div>}
         {t.pickup && <div>Điểm nhận hàng: <b>{t.pickupName || t.pickup}</b>{t.pickupAddress ? <div className="small">{t.pickupAddress}</div> : null}</div>}
-        <div>{t.pickup ? 'Kho' : 'Nơi nhận hàng'}: <b>{whText(t.warehouse, warehouses) || t.warehouseName}</b>
+        <div>{t.pickup ? 'Kho' : 'Điểm nhận hàng'}: <b>{whText(t.warehouse, warehouses) || t.warehouseName}</b>
           {whOf(t.warehouse, warehouses)?.address && <div className="small">{whOf(t.warehouse, warehouses).address} · <a href={mapUrl(whOf(t.warehouse, warehouses).address)} target="_blank" rel="noreferrer">📍 Bản đồ</a></div>}</div>
         {t.pickupLocation && <div>Vị trí lấy hàng: <b>{t.pickupLocation}</b>{t.pickupLocAddress ? <div className="small">{t.pickupLocAddress}</div> : null}</div>}
         {dests.map((l) => { const pl = placeOf(l, warehouses); return <div key={`${l.partyCode}${l.shipCode}`}>
@@ -418,6 +419,7 @@ function CostModal({ t, onClose }) {
   const { email, name, role, hasRole, isAdmin } = useApp();
   const rates = useCollection('freightRates').rows;
   const points = useCollection('pickupPoints').rows;
+  const shipto = useCollection('shipto').rows;
   const fields = useCostFields();
   const c = t.costs || {};
   const [pickup, setPickup] = useState(t.pickup || '');
@@ -444,7 +446,7 @@ function CostModal({ t, onClose }) {
   const vals = Object.fromEntries(fields.filter((x) => !x.formula).map((x) => [x.key, n(raw(x.key))]));
   const sumc = calcCosts(vals, fields, { kg: tripKg(t) });
   const costs = { ...vals, ...sumc, invoiceNo: f.invoiceNo.trim(), invoiceDate: f.invoiceDate, note: f.note.trim(), rate: sug?.rate || '' };
-  const pt = points.find((x) => x.code === pickup);
+  const pt = pickupFrom(pickup, points, shipto);
   const pickUpd = pickup !== (t.pickup || '') ? { pickup, pickupName: pt?.name || '', pickupAddress: pt?.address || '', pickupMap: pt?.mapLink || '' } : {};
   const input = (x) => (
     <label key={x.key} className="field"><span>{x.label}{x.group === 'pct' ? ' (%)' : ' (đ)'}{x.formula ? ' ƒ' : ''}</span>
@@ -456,9 +458,8 @@ function CostModal({ t, onClose }) {
       <p className="small">{t.company ? `${t.company} · ` : ''}{fmtDate(t.plannedDate)} · {t.carrierName} · {t.plate} · {t3(tripKg(t))} tấn · {COST[t.costStatus || '']?.[0]}
         {isAdmin && <button type="button" className="btn sm" style={{ marginLeft: 8 }} onClick={() => setCfg(true)}>⚙ Cấu hình khoản phí / công thức</button>}</p>
       <div className="form-grid">
-        <label className="field"><span>Điểm nhận hàng</span><WithAdd cat="pickupPoints" onAdded={(id) => setPickup(id)}>
-          <Select value={pickup} disabled={!canEdit} onChange={(e) => setPickup(e.target.value)}><option value="">{t.warehouseName || t.warehouse} (kho xuất)</option>
-            {points.filter((x) => x.active !== false || x.code === pickup).map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</Select></WithAdd></label>
+        <label className="field"><span>Điểm nhận hàng</span>
+          <PickupSelect value={pickup} disabled={!canEdit} onChange={setPickup} whLabel={t.warehouseName || t.warehouse} points={points} shipto={shipto} /></label>
         <div className="field full"><span>Điểm giao</span><b>{destOf(t, [])}</b></div>
       </div>
       <p className="small" style={{ margin: '6px 0' }}>{sug ? <>Bảng giá <b>{sug.rate}</b>: {sug.basis === 'Theo chuyến' ? 'theo chuyến' : `${vnd(sug.price)} đ/tấn`} = <b>{vnd(sug.amount)} đ</b></> : 'Chưa có giá khớp trong bảng giá cước (thêm giá theo điểm nhận → điểm giao ở Bảng giá cước).'}</p>

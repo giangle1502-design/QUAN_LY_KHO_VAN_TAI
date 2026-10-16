@@ -5,7 +5,8 @@ import { useApp } from '../../context/AppContext';
 import { useCollection } from '../../lib/hooks';
 import { usePlans } from '../../lib/shipPlans';
 import { useMovesRange } from '../../lib/slips';
-import { KIND_LABEL, SRC_LABEL, isSelfPickup, kindText, pendingDispatch, usesVehicleList } from '../../lib/dispatch';
+import { KIND_LABEL, SRC_LABEL, isSelfPickup, kindText, pendingDispatch, pickupFrom, usesVehicleList } from '../../lib/dispatch';
+import PickupSelect from '../../components/PickupSelect';
 import { createPlannedTrips } from '../../lib/transport';
 import { fmtDate, fmtNum, norm, today } from '../../lib/utils';
 import { Empty, ErrorBox } from '../../components/ui';
@@ -56,7 +57,7 @@ export default function Dispatch({ orders, trips, onSplit }) {
       for (const r of list) {
         const v = val(r);
         const wh = warehouses.find((w) => w.code === r.warehouse) || { code: r.warehouse };
-        await createPlannedTrips({ wh, carrier: car(v.carrier), trips: [{ date: v.date, plate: v.plate, driverName: v.driverName, company: r.company, pickup: points.find((x) => x.code === v.pickup), lines: r.items, }] }, { email, name }, 'Giao vận tải');
+        await createPlannedTrips({ wh, carrier: car(v.carrier), trips: [{ date: v.date, plate: v.plate, driverName: v.driverName, company: r.company, pickup: pickupFrom(v.pickup, points, shipto), lines: r.items, }] }, { email, name }, 'Giao vận tải');
         done += 1;
       }
       setMsg(`Đã giao ${done} chuyến cho đơn vị vận tải.`);
@@ -89,7 +90,7 @@ export default function Dispatch({ orders, trips, onSplit }) {
         {!rows.length ? <Empty text="Không có hàng nào chờ giao vận tải." /> : (
           <table>
             <thead><tr><th><input type="checkbox" checked={chosen.length === rows.length} onChange={(e) => setSel(e.target.checked ? Object.fromEntries(rows.map((r) => [r.key, true])) : {})} /></th>
-              <th>Nguồn</th><th>Ngày đi</th><th>Kho xuất · điểm nhận</th><th>Giao đến</th><th>Hàng</th><th className="num">Tấn</th><th>Đơn vị vận tải</th><th>Số xe (nếu biết)</th><th></th></tr></thead>
+              <th>Nguồn</th><th>Ngày đi</th><th>Điểm nhận hàng</th><th>Giao đến</th><th>Hàng</th><th className="num">Tấn</th><th>Đơn vị vận tải</th><th>Số xe (nếu biết)</th><th></th></tr></thead>
             <tbody>{rows.map((r) => {
               const v = val(r); const c = car(v.carrier);
               return (
@@ -97,9 +98,8 @@ export default function Dispatch({ orders, trips, onSplit }) {
                   <td><input type="checkbox" checked={!!sel[r.key]} onChange={() => setSel((s) => ({ ...s, [r.key]: !s[r.key] }))} /></td>
                   <td className="small">{r.srcLabel}{r.src !== 'order' ? <div className="mono">{r.orderId}</div> : null}</td>
                   <td><input type="date" value={v.date} onChange={(e) => setO(r.key, { date: e.target.value })} />{r.date && r.date !== v.date ? <div className="small">kế hoạch {fmtDate(r.date)}</div> : null}</td>
-                  <td>{r.warehouse || <span className="small">chưa có kho</span>}
-                    <WithAdd cat="pickupPoints" style={{ marginTop: 2, maxWidth: 210 }} onAdded={(id) => setO(r.key, { pickup: id })}>
-                      <Select value={v.pickup || ''} onChange={(e) => setO(r.key, { pickup: e.target.value })} title="Xe nhận hàng ở nơi khác kho (cảng, kho ngoài…): chọn điểm nhận để tài xế có địa chỉ, chỉ đường và tính đúng giá cước"><option value="">Nhận tại kho</option>{points.filter((x) => x.active !== false).map((x) => <option key={x.code} value={x.code}>⚓ {x.name}</option>)}</Select></WithAdd></td>
+                  <td>{r.warehouse ? <span className="small">Kho {r.warehouse}</span> : <span className="small">chưa có kho</span>}
+                    <PickupSelect value={v.pickup} onChange={(x) => setO(r.key, { pickup: x })} whLabel={warehouses.find((w) => w.code === r.warehouse)?.name || r.warehouse || 'Kho xuất'} points={points} shipto={shipto} style={{ marginTop: 2, maxWidth: 230 }} /></td>
                   <td>{r.partyName || r.partyCode}{r.shipCode ? <div className="small">{r.shipCode}{r.address ? ` · ${r.address}` : ''}</div> : null}</td>
                   <td className="small">{r.items.map((i) => <div key={`${i.no}${i.item}`}>{i.item} {t3(i.kg)} t</div>)}</td>
                   <td className="num"><b>{t3(r.kg)}</b></td>

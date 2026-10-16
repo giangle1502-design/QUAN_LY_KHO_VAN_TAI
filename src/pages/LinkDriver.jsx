@@ -91,10 +91,10 @@ export default function LinkDriver() {
           <b className="mono">{t.id}</b><span className={'badge ' + (STATUS_META[t.status]?.tone || '')}>{t.selfPickup && t.status === 'completed' ? 'Đã lấy xong' : STATUS_META[t.status]?.label}</span></div>
         <div>Ngày đi: <b>{fmtDate(t.plannedDate)}</b>{t.plate ? <> · Xe <b>{t.plate}</b></> : null}</div>
         {/* Nơi nhận hàng: điểm nhận (cảng…) hoặc kho; vị trí lấy hàng (cảng SP-ITC, kho mua nội địa…) có địa chỉ riêng thì chỉ đường tới vị trí */}
-        {t.pickup ? <div>Nơi nhận hàng: <b>{t.pickupName || t.pickup}</b>
+        {t.pickup ? <div>Điểm nhận hàng: <b>{t.pickupName || t.pickup}</b>
           {t.pickupAddress && <div className="small">Địa chỉ: {t.pickupAddress}</div>}
           {navUrl({ mapLink: t.pickupMap, address: t.pickupAddress }) && <div className="small"><a href={navUrl({ mapLink: t.pickupMap, address: t.pickupAddress })} target="_blank" rel="noreferrer">📍 Chỉ đường đến điểm nhận</a></div>}</div>
-          : <div>Nơi nhận hàng: <b>{t.warehouseName || t.warehouse}</b>
+          : <div>Điểm nhận hàng: <b>{t.warehouseName || t.warehouse}</b>
           {t.warehouseAddress && <div className="small">Địa chỉ: {t.warehouseAddress}</div>}
           {!t.pickupLocAddress && !t.pickupLocMap && navUrl({ mapLink: t.warehouseMap, address: t.warehouseAddress }) && <div className="small"><a href={navUrl({ mapLink: t.warehouseMap, address: t.warehouseAddress })} target="_blank" rel="noreferrer">📍 Chỉ đường đến kho</a></div>}</div>}
         {t.pickupLocation && <div className="small">Vị trí lấy hàng: <b>{t.pickupLocation}</b>{t.pickupLocAddress ? <> · {t.pickupLocAddress}</> : null}

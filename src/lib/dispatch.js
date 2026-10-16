@@ -168,3 +168,20 @@ export function pendingDispatch({ orders, plans, allocs, moves, trips, shipto = 
     .sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')) || a.key.localeCompare(b.key));
 }
 export const SRC_LABEL = { plan: '📅 Dự kiến xuất', alloc: '📋 Kế hoạch phân bổ', px: '📤 Phiếu xuất', order: '🧾 SO / STO' };
+
+// ============================================================================
+// Điểm nhận hàng của chuyến = nơi xe đến lấy hàng rồi đi giao chỗ khác:
+//  • kho của mình (kho xuất của chuyến, VD Kho VAP/PLA/DAM Đức Hòa): mặc định, để trống
+//  • điểm nhận ngoài danh sách kho (danh mục Điểm nhận hàng: cảng, ICD, kho ngoại quan…)
+//  • khách hàng (mã giao) khi thu hồi hàng về: giá trị 'ship:<mã giao>'
+// ============================================================================
+export const SHIP_PICKUP = 'ship:';
+export function pickupFrom(value, points = [], shipto = []) {
+  if (!value) return null;
+  if (String(value).startsWith(SHIP_PICKUP)) {
+    const sc = String(value).slice(SHIP_PICKUP.length);
+    const s = shipto.find((x) => x.shipCode === sc);
+    return { code: value, name: s ? `Khách ${s.customerName || s.customerCode} (${sc})` : `Khách – mã giao ${sc}`, address: s?.address || '', mapLink: s?.mapLink || '', invoiceInfo: s?.invoiceInfo || '' };
+  }
+  return points.find((x) => x.code === value) || null;
+}
