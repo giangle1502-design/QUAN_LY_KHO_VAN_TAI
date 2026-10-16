@@ -169,7 +169,7 @@ function SplitModal({ rows, carrier, onClose, action = 'Chia xe' }) {
               {drvCols && <><td><WithAdd cat="drivers" preset={{ idCard: l.idCard, name: l.driverName }} onAdded={(id, r) => { pickDriver(i, r?.idCard || id); if (r?.name) setLoad(i, { driverName: r.name }); }}><input list="dl-sp-driver" value={l.idCard} onChange={(e) => pickDriver(i, e.target.value)} /></WithAdd></td>
               <td><input value={l.driverName} onChange={(e) => setLoad(i, { driverName: e.target.value })} /></td></>}
               <td><input value={l.driverPhone} onChange={(e) => setLoad(i, { driverPhone: e.target.value })} style={{ width: 110 }} /></td>
-              {threepl.length > 0 && <td><Select value={l.threepl} onChange={(e) => setLoad(i, { threepl: e.target.value })}><option value="">-- Xe GHA --</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</Select></td>}
+              {threepl.length > 0 && <td><WithAdd cat="threepl" onAdded={(id) => setLoad(i, { threepl: id })}><Select value={l.threepl} onChange={(e) => setLoad(i, { threepl: e.target.value })}><option value="">-- Xe GHA --</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</Select></WithAdd></td>}
               <td><button type="button" className="btn ghost sm" disabled={loads.length === 1} onClick={() => setLoads((ls) => ls.filter((_, j) => j !== i))}>✕</button></td></tr>
           );
         })}</tbody>
@@ -270,9 +270,11 @@ function TripList({ trips, priv }) {
         {t.pickup && <div>Điểm nhận hàng: <b>{t.pickupName || t.pickup}</b>{t.pickupAddress ? <div className="small">{t.pickupAddress}</div> : null}</div>}
         <div>{t.pickup ? 'Kho' : 'Nơi nhận hàng'}: <b>{whText(t.warehouse, warehouses) || t.warehouseName}</b>
           {whOf(t.warehouse, warehouses)?.address && <div className="small">{whOf(t.warehouse, warehouses).address} · <a href={mapUrl(whOf(t.warehouse, warehouses).address)} target="_blank" rel="noreferrer">📍 Bản đồ</a></div>}</div>
+        {t.pickupLocation && <div>Vị trí lấy hàng: <b>{t.pickupLocation}</b>{t.pickupLocAddress ? <div className="small">{t.pickupLocAddress}</div> : null}</div>}
         {dests.map((l) => { const pl = placeOf(l, warehouses); return <div key={`${l.partyCode}${l.shipCode}`}>
           <div>{pl.sto ? 'Chuyển kho, giao đến' : 'Khách hàng (nơi giao)'}: <b>{pl.name}</b></div>
           {l.shipCode && <div className="small">Mã giao hàng: <b>{l.shipCode}</b></div>}
+          {l.toLocation && <div className="small">Vị trí nhận hàng: <b>{l.toLocation}</b></div>}
           {pl.address && <div>Địa chỉ giao hàng: {pl.address}</div>}
           {(l.contact || l.contactPhone) && <div className="small">Người nhận: {l.contact}{l.contactPhone ? <> · <a href={`tel:${l.contactPhone}`}>📞 {l.contactPhone}</a></> : null}</div>}
           {navUrl({ mapLink: l.mapLink, address: pl.address }) && <div><a href={navUrl({ mapLink: l.mapLink, address: pl.address })} target="_blank" rel="noreferrer">📍 Chỉ đường đến điểm giao{l.mapLink ? ' (đã ghim)' : ''}</a></div>}
@@ -352,7 +354,7 @@ function CutModal({ t, p3, onClose }) {
     setBusy(true);
     try {
       const [id] = await createPlannedTrips({ wh: { code: t.warehouse, name: t.warehouseName, hasGuard: t.hasGuard }, carrier: { code: t.carrier, name: t.carrierName, kind: t.carrierKind || '' },
-        trips: [{ date: t.plannedDate, plate, company: t.company || '', note: t.note || '', lines: moved.map(({ l, kg }) => ({ ...l, no: l.orderLine, kg })) }] }, { email, name }, `Tách từ chuyến ${t.id}`);
+        trips: [{ date: t.plannedDate, plate, company: t.company || '', note: t.note || '', pickup: t.pickup ? { code: t.pickup, name: t.pickupName, address: t.pickupAddress, mapLink: t.pickupMap } : null, lines: moved.map(({ l, kg }) => ({ ...l, no: l.orderLine, kg })) }] }, { email, name }, `Tách từ chuyến ${t.id}`);
       const left = t.lines.map((l) => { const m = moved.find((x) => x.l.id === l.id); const kg = n(l.plannedKg) - (m?.kg || 0); return { ...l, plannedKg: kg, payload: Math.round(kg) / 1000 }; }).filter((l) => l.plannedKg > 0.5);
       await updateDoc(doc(db, 'trips', t.id), { lines: left, updatedAt: nowISO(), updatedBy: email,
         history: [...(t.history || []), { at: nowISO(), by: email, byName: name, action: `Tách ${t3(moved.reduce((s, x) => s + x.kg, 0))} tấn sang chuyến ${id}` }] });
@@ -704,7 +706,7 @@ function DriverAccounts() {
         <div className="section-head">Tạo tài khoản đăng nhập: {roles.map((x) => x[1]).join(', ')} (tài xế không bắt buộc: dùng link ở trên)</div>
         <div className="form-grid">
           {roles.length > 1 && <label className="field"><span>Loại tài khoản</span><Select value={f.role} onChange={(e) => set('role', e.target.value)}>{roles.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select></label>}
-          {tpl && <label className="field"><span>3PL *</span><Select value={f.threepl} onChange={(e) => set('threepl', e.target.value)}><option value="">--</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</Select></label>}
+          {tpl && <label className="field"><span>3PL *</span><WithAdd cat="threepl" onAdded={(id) => set('threepl', id)}><Select value={f.threepl} onChange={(e) => set('threepl', e.target.value)}><option value="">--</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</Select></WithAdd></label>}
           <label className="field"><span>Email đăng nhập *</span><input value={f.email} onChange={(e) => set('email', e.target.value)} /></label>
           <label className="field"><span>Họ tên *</span><input value={f.name} onChange={(e) => set('name', e.target.value)} /></label>
           <label className="field"><span>CCCD (không bắt buộc)</span><input value={f.idCard} onChange={(e) => set('idCard', e.target.value)} /></label>

@@ -10,6 +10,7 @@ import { createPlannedTrips } from '../../lib/transport';
 import { fmtDate, fmtNum, norm, today } from '../../lib/utils';
 import { Empty, ErrorBox } from '../../components/ui';
 import Select from '../../components/Select';
+import { WithAdd } from '../../components/FormTools';
 
 const n = (v) => (v === '' || v == null ? 0 : Number(v) || 0);
 const t3 = (kg) => fmtNum(n(kg) / 1000, 3);
@@ -97,12 +98,13 @@ export default function Dispatch({ orders, trips, onSplit }) {
                   <td className="small">{r.srcLabel}{r.src !== 'order' ? <div className="mono">{r.orderId}</div> : null}</td>
                   <td><input type="date" value={v.date} onChange={(e) => setO(r.key, { date: e.target.value })} />{r.date && r.date !== v.date ? <div className="small">kế hoạch {fmtDate(r.date)}</div> : null}</td>
                   <td>{r.warehouse || <span className="small">chưa có kho</span>}
-                    {points.length > 0 && <Select value={v.pickup || ''} onChange={(e) => setO(r.key, { pickup: e.target.value })} style={{ display: 'block', marginTop: 2, maxWidth: 170 }}><option value="">Nhận tại kho</option>{points.filter((x) => x.active !== false).map((x) => <option key={x.code} value={x.code}>⚓ {x.name}</option>)}</Select>}</td>
+                    <WithAdd cat="pickupPoints" style={{ marginTop: 2, maxWidth: 210 }} onAdded={(id) => setO(r.key, { pickup: id })}>
+                      <Select value={v.pickup || ''} onChange={(e) => setO(r.key, { pickup: e.target.value })} title="Xe nhận hàng ở nơi khác kho (cảng, kho ngoài…): chọn điểm nhận để tài xế có địa chỉ, chỉ đường và tính đúng giá cước"><option value="">Nhận tại kho</option>{points.filter((x) => x.active !== false).map((x) => <option key={x.code} value={x.code}>⚓ {x.name}</option>)}</Select></WithAdd></td>
                   <td>{r.partyName || r.partyCode}{r.shipCode ? <div className="small">{r.shipCode}{r.address ? ` · ${r.address}` : ''}</div> : null}</td>
                   <td className="small">{r.items.map((i) => <div key={`${i.no}${i.item}`}>{i.item} {t3(i.kg)} t</div>)}</td>
                   <td className="num"><b>{t3(r.kg)}</b></td>
-                  <td><Select value={v.carrier} onChange={(e) => setO(r.key, { carrier: e.target.value })} style={v.carrier !== r.carrier ? { borderColor: 'var(--amber)' } : undefined}>
-                    <option value="">-- Chọn --</option>{carriers.filter((x) => x.active !== false || x.code === v.carrier).map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</Select>
+                  <td><WithAdd cat="carriers" onAdded={(id) => setO(r.key, { carrier: id })}><Select value={v.carrier} onChange={(e) => setO(r.key, { carrier: e.target.value })} style={v.carrier !== r.carrier ? { borderColor: 'var(--amber)' } : undefined}>
+                    <option value="">-- Chọn --</option>{carriers.filter((x) => x.active !== false || x.code === v.carrier).map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</Select></WithAdd>
                     {c ? <div className="small" title={KIND_LABEL[c.kind] || ''}>{kindText(c)}{v.carrier !== r.carrier ? ` · đã đổi từ ${r.carrier}` : ''}</div> : null}</td>
                   <td><input list={`dl-dp-${v.carrier}`} value={v.plate} placeholder={isSelfPickup(c) ? 'xe khách' : ''} onChange={(e) => setO(r.key, { plate: e.target.value.toUpperCase() })} style={{ width: 110 }} /></td>
                   <td><button className="btn primary sm" disabled={busy} onClick={() => release([r])}>Giao</button></td>

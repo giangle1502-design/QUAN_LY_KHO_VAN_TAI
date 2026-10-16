@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { MOVE_TYPES } from '../../lib/stock';
@@ -34,6 +34,7 @@ export default function PrintMovement({ pick = false }) {
   const [trip, setTrip] = useState(null);
   const [wh, setWh] = useState(null);
   const [co, setCo] = useState(null);
+  const [buyer, setBuyer] = useState(null); // khách hàng (Soldto) + mã giao (Shipto) / kho nhận STO cho phiếu giao hàng
 
   useEffect(() => {
     getDoc(doc(db, 'movements', id)).then(async (s) => {
@@ -44,6 +45,7 @@ export default function PrintMovement({ pick = false }) {
       const c = d?.company || d?.lines?.find((l) => l.company)?.company;
       if (c) getDoc(doc(db, 'companies', c)).then((x) => setCo(x.exists() ? x.data() : { code: c, name: c })).catch(() => setCo({ code: c, name: c }));
       if (d?.warehouse) getDoc(doc(db, 'warehouses', d.warehouse)).then((w) => w.exists() && setWh(w.data())).catch(() => {});
+      if (d?.type === 'out') loadBuyer(d).then(setBuyer).catch(() => {});
     }).catch(() => setM(null));
   }, [id, ver, alone]);
 
@@ -120,7 +122,7 @@ export default function PrintMovement({ pick = false }) {
   // Phiếu giao hàng (phiếu xuất) mặc định in 3 liên; liên khách hàng chỉ có dòng pallet khách giữ
   const copies = summary ? COPIES.slice(0, nCopies) : [null];
   const palRows = (copy) => (!copy || m.palletMode !== 'pallet' || !managed ? [] : (m.pallets || []).filter((p) => copy.key !== 'customer' || p.to !== 'carrier'));
-  const Body = ({ copy }) => (
+  const Body = ({ copy }) => (summary ? <DeliveryNote m={m} copy={copy} co={co} wh={wh} buyer={buyer} trip={trip} groups={groups} multi={multi} tot={tot} palRows={palRows(copy)} settings={settings} /> : (
     <>
       <div className="print-head">
         <div><b>{co?.name || settings.companyName}</b>{(co ? co.address : settings.companyAddress) ? <><br /><span className="small">{co ? co.address : settings.companyAddress}</span></> : null}{co?.taxCode ? <><br /><span className="small">MST {co.taxCode}</span></> : null}<br /><span className="small">{wh ? `${wh.name}${wh.address ? ' – ' + wh.address : ''}` : `Kho ${m.warehouse}`}</span></div>
@@ -181,13 +183,105 @@ export default function PrintMovement({ pick = false }) {
         {signs.map((s) => <div key={s}><b>{s}</b><br /><span className="small">(Ký, ghi rõ họ tên)</span><div className="sign-space" />{s === 'Người lập phiếu' ? m.createdByName : ''}</div>)}
       </div>
     </>
-  );
+  ));
 
   return (
     <div className="print-page">
       <div className="no-print toolbar">{toolbar}</div>
       {summary && <SlipPallet m={m} managed={managed} onSaved={reload} />}
       {copies.map((c, i) => <div key={i} className={copies.length > 1 ? 'print-copy' : ''}><Body copy={c} /></div>)}
+    </div>
+  );
+}
+
+// Khách hàng (tên, MST) + mã giao (địa chỉ giao) của phiếu xuất; STO: kho nhận
+async function loadBuyer(m) {
+  const sto = m.orderType === 'STO' || String(m.orderId || '').startsWith('STO');
+  if (sto) {
+    const o = m.orderId ? await getDoc(doc(db, 'orders', String(m.orderId).split(',')[0].trim())).then((x) => (x.exists() ? x.data() : null)).catch(() => null) : null;
+    const to = o?.toWarehouse || o?.lines?.find((l) => l.toWarehouse)?.toWarehouse || '';
+    const w = to ? await getDoc(doc(db, 'warehouses', to)).then((x) => (x.exists() ? x.data() : null)).catch(() => null) : null;
+    return { sto: true, toWh: w || (to ? { code: to, name: to } : null) };
+  }
+  const [c, s] = await Promise.all([
+    m.partyCode ? getDoc(doc(db, 'soldto', m.partyCode)).then((x) => (x.exists() ? x.data() : null)).catch(() => null) : null,
+    m.shipCode ? getDocs(query(collection(db, 'shipto'), where('shipCode', '==', m.shipCode), limit(5)))
+      .then((q) => { const rows = q.docs.map((d) => d.data()); return rows.find((r) => r.customerCode === m.partyCode) || rows[0] || null; }).catch(() => null) : null,
+  ]);
+  return { customer: c, ship: s };
+}
+
+// Tiêu đề phiếu giao hàng: khách có mẫu riêng (Danh mục khách hàng → Tiêu đề phiếu giao hàng riêng), World Vina mặc định biên bản kiêm phiếu xuất kho
+function deliveryTitle(customer, partyName) {
+  if (customer?.deliveryTitle) return customer.deliveryTitle;
+  if (/world\s*vina/i.test(`${customer?.name || ''} ${partyName || ''}`)) return 'BIÊN BẢN GIAO NHẬN HÀNG HÓA KIÊM PHIẾU XUẤT KHO';
+  return 'BIÊN BẢN GIAO HÀNG';
+}
+
+// Phiếu giao hàng (biên bản giao hàng) theo mẫu của công ty: công ty bán (tên, địa chỉ, MST), công ty mua (tên, địa chỉ mã giao, MST),
+// vận chuyển, bảng hàng, 2 chữ ký đại diện bên giao / khách hàng (như mẫu)
+function DeliveryNote({ m, copy, co, wh, buyer, trip, groups, multi, tot, palRows, settings }) {
+  const sto = buyer?.sto || m.orderType === 'STO';
+  const c = buyer?.customer; const s = buyer?.ship;
+  const unitOf = () => 'KG';
+  const plate = m.plate || trip?.plate || '';
+  const drv = m.driverName || trip?.driverName || '';
+  const idc = m.idCard || trip?.idCard || '';
+  const phone = m.driverPhone || trip?.driverPhone || '';
+  const Row = ({ label, children, big, plain }) => (children ? <div className={big ? 'dn-big' : ''}>{label}: {plain ? children : <b>{children}</b>}</div> : null);
+  return (
+    <div className="delivery-note">
+      <div className="dn-head">
+        <div className="dn-side small">{wh ? <>{wh.name}{wh.address ? <><br />{wh.address}</> : null}</> : `Kho ${m.warehouse}`}</div>
+        <h2 className="dn-title">{sto ? 'PHIẾU XUẤT KHO KIÊM VẬN CHUYỂN NỘI BỘ' : deliveryTitle(c, m.partyName)}</h2>
+        <div className="dn-side" style={{ textAlign: 'right' }}>Số: <b>{m.id}</b></div>
+      </div>
+      {copy && <p className="print-copy-label" style={{ margin: '2px 0 0' }}>{copy.label}</p>}
+      {m.status === 'cancelled' && <div className="error-box">PHIẾU ĐÃ HỦY: {m.cancelReason}</div>}
+      {m.status === 'wait_release' && <p className="small" style={{ textAlign: 'center' }}>Phiếu chờ giải chấp hàng HTC: soạn hàng được, chỉ giao hàng khi đã lập lệnh giải chấp.</p>}
+      <div className="dn-block">
+        <Row label="Ngày giao">{fmtDate(m.date)}</Row>
+        <Row label="Số phiếu">{m.groupMoves ? m.groupMoves.map((x) => x.id).join(', ') : m.id}</Row>
+        <Row label={sto ? 'Lệnh chuyển kho' : 'Số đơn hàng'}>{m.orderId ? `${m.orderId}${m.orderRef ? ` (Ecount ${m.orderRef})` : ''}` : ''}</Row>
+      </div>
+      <div className="dn-block">
+        <Row label={sto ? 'Công ty' : 'Công ty bán'} big>{co?.name || settings.companyName}</Row>
+        <Row label="Địa chỉ" plain>{co ? co.address : settings.companyAddress}</Row>
+        <Row label="Mã số thuế">{co?.taxCode}</Row>
+      </div>
+      {sto ? (
+        <div className="dn-block">
+          <Row label="Kho xuất" big>{wh ? wh.name : m.warehouse}</Row>
+          <Row label="Kho nhận" big>{buyer?.toWh?.name || m.partyName || m.partyCode}</Row>
+          <Row label="Địa chỉ kho nhận" plain>{buyer?.toWh?.address}</Row>
+        </div>
+      ) : (
+        <div className="dn-block">
+          <Row label="Công ty mua" big>{c?.name || m.partyName || m.partyCode}</Row>
+          <Row label="Địa chỉ" plain>{s?.address || c?.taxAddress}</Row>
+          {m.shipCode && <div className="small">Mã giao hàng: {m.shipCode}{s?.contact ? ` · Người nhận: ${s.contact}` : ''}{s?.phone ? ` · ĐT ${s.phone}` : ''}</div>}
+          <Row label="Mã số thuế">{c?.taxCode || s?.taxCode}</Row>
+        </div>
+      )}
+      <div className="dn-block">
+        <Row label="Đơn vị vận chuyển">{m.carrierName || m.carrier || trip?.carrierName}</Row>
+        <Row label="Số xe">{plate}</Row>
+        {(drv || idc) && <div>Thông tin tài xế: {drv}{idc ? `, CCCD: ${idc}` : ''}{phone ? `, ĐT: ${phone}` : ''}</div>}
+        {m.note && <div>Ghi chú: {m.note}</div>}
+      </div>
+      <p style={{ margin: '10px 0 4px' }}><b>Thông tin hàng hóa</b></p>
+      <table className="print-lines">
+        <thead><tr><th>Số thứ tự</th><th>Mã hàng</th><th>Tên mặt hàng</th>{multi && <th>Theo đơn (SO)</th>}<th>Đơn vị</th><th className="num">Số lượng xuất</th><th className="num">Số bao</th><th>Ghi chú</th></tr></thead>
+        <tbody>{groups.map((g, i) => <tr key={g.item}><td style={{ textAlign: 'center' }}>{i + 1}</td><td>{g.item}</td><td>{g.itemName}</td>
+          {multi && <td>{[...g.bySO].map(([so, k]) => <div key={so}>{so}{g.bySO.size > 1 ? `: ${fmtNum(k, 2)} kg` : ''}</div>)}</td>}
+          <td style={{ textAlign: 'center' }}>{unitOf(g)}</td><td className="num">{fmtNum(g.kg, 2)}</td><td className="num">{fmtNum(g.bags)}</td><td></td></tr>)}</tbody>
+        <tfoot><tr><td colSpan={multi ? 5 : 4} style={{ textAlign: 'center' }}><b>Tổng cộng</b></td><td className="num"><b>{fmtNum(tot('kg'), 2)}</b></td><td className="num"><b>{fmtNum(tot('bags'))}</b></td><td></td></tr></tfoot>
+      </table>
+      <PalletTable m={m} rows={palRows} />
+      <div className="dn-signs">
+        <div><b>ĐẠI DIỆN BÊN GIAO</b><br /><i className="small">(Ký và ghi rõ họ tên)</i></div>
+        <div><b>{sto ? 'ĐẠI DIỆN KHO NHẬN' : 'ĐẠI DIỆN KHÁCH HÀNG'}</b><br /><i className="small">(Ký và ghi rõ họ tên)</i></div>
+      </div>
     </div>
   );
 }

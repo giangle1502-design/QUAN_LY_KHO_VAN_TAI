@@ -196,11 +196,11 @@ function TripDetail({ trip: t, onClose }) {
               }}>{isSuper ? 'Xóa' : 'Đề nghị xóa'}</button>
               {ACTIVE.includes(t.status) && (
                 <>
-                  <Select value={cancelReason} onChange={(e) => setCancelReason(e.target.value)}>
+                  <span className="cell-add"><Select value={cancelReason} onChange={(e) => setCancelReason(e.target.value)}>
                     <option value="">-- Lý do hủy --</option>
                     {reasons.map((r) => <option key={r.code} value={`${r.code} – ${r.name}`}>{r.name}</option>)}
                     <option value="Khác">Khác</option>
-                  </Select>
+                  </Select><QuickAdd catKey="reasons" onAdded={(id, r) => setCancelReason(`${id} – ${r?.name || ''}`)} /></span>
                   <QuickAdd catKey="reasons" preset={{ appliesTo: 'Hủy chuyến' }} onAdded={(id, r) => setCancelReason(`${id} – ${r?.name || ''}`)} />
                   <button className="btn danger" disabled={!cancelReason} onClick={() => act(t, { status: ST.CANCELLED, cancelReason, cancelTime: nowISO() }, `Hủy chuyến: ${cancelReason}`)}>Hủy chuyến</button>
                 </>

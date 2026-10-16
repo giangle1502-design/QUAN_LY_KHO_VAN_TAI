@@ -208,10 +208,10 @@ function AdjustModal({ count, lines, user, onClose }) {
             </div>
           )}
           <Field label="Lý do điều chỉnh" required>
-            <Select value={reason} onChange={(e) => setReason(e.target.value)}>
+            <WithAdd cat="reasons" preset={{ appliesTo: 'Điều chỉnh tồn' }} onAdded={(id, r) => setReason(`${id} – ${r?.name || ''}`)}><Select value={reason} onChange={(e) => setReason(e.target.value)}>
               <option value={`Chênh lệch ${COUNT_KINDS[count.kind].toLowerCase()} ${count.id}`}>Chênh lệch {COUNT_KINDS[count.kind].toLowerCase()} {count.id}</option>
               {reasons.map((r) => <option key={r.code} value={`${r.code} – ${r.name}`}>{r.name}</option>)}
-            </Select>
+            </Select></WithAdd>
           </Field>
         </>
       )}

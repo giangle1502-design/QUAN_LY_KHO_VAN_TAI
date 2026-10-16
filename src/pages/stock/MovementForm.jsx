@@ -774,7 +774,7 @@ function Form({ type }) {
   return (
     <form onSubmit={submit}>
       <div className="page-head">
-        <h1>{meta.icon} {meta.label}</h1>
+        <h1>{meta.icon} {meta.label}{type === 'in' && <i className="help-tip on" title="Quản trị lập và in phiếu nhập. Thủ kho nhận hàng ngoài hiện trường, vào Nhận hàng nhập số thực nhận, lot, vị trí rồi xác nhận: lúc đó tồn kho mới cập nhật và in được nhãn pallet."> ⓘ</i>}</h1>
         <div className="actions">
           {type === 'adjust' && <Link className="btn" to="/kho/dieu-chinh-excel">⬆ Nhập từ Excel</Link>}
           <Link className="btn" to="/kho/phieu">Danh sách phiếu</Link>
@@ -788,8 +788,8 @@ function Form({ type }) {
         {type === 'out' && <> · <Link className="btn primary" to={`/kho/phieu/${done}/soan`} target="_blank">📋 In phiếu soạn hàng</Link></>}
         {doneCross && <div style={{ marginTop: 6 }}>🏛️ Phiếu có hàng lấy từ tồn công ty <b>{doneCross}</b> (chuyển pháp nhân): đã gửi thông báo cho kế toán. Xem <Link to="/bao-cao/chuyen-phap-nhan">Báo cáo chuyển pháp nhân</Link>.</div>}
         {doneRel && <div style={{ marginTop: 6 }}>⏳ Phiếu có hàng HTC nên đang <b>chờ giải chấp</b> (tồn chưa trừ). In phiếu, soạn hàng được; vào <Link to="/kho/giai-chap">Đề nghị giải chấp → Chờ giải chấp</Link> để tạo lệnh giải chấp, khi đó phiếu mới ghi xuất kho.</div>}</div>}
-      {type === 'in' && !done && <p className="hint">Quản trị lập và in phiếu nhập. Thủ kho nhận hàng ngoài hiện trường, vào <b>Nhận hàng</b> nhập số thực nhận, lot, vị trí rồi xác nhận: lúc đó tồn kho mới cập nhật và in được nhãn pallet.</p>}
-      <div className="card" style={{ marginBottom: 12 }}>
+      {/* Gọn trong 1 màn hình: chú thích thành ⓘ (rê chuột xem), ô mã + tên cùng hàng, vận tải + Kiện/Xá cạnh nhau */}
+      <div className="card mv-head" style={{ marginBottom: 10 }}>
         <div className="form-grid">
           <Field label="Kho" required>
             <WithAdd cat="warehouses" onAdded={(id) => changeWh(id)}>
@@ -809,7 +809,7 @@ function Form({ type }) {
           {(type === 'in' || type === 'out') && (
             <>
               {type === 'in' && (
-                <Field label="Nguồn nhập" required full help={{
+                <Field label="Nguồn nhập" required size={{ width: 480 }} help={{
                   direct: 'Hàng về không có PO trước: lập phiếu nhập này sẽ tự lập luôn đơn mua (PO) đã nhận đủ.',
                   PO: 'Nhập theo đơn mua đã lập trước: phiếu tự trừ phần còn chưa về của PO.',
                   STO: 'Nhận hàng chuyển kho: tự điền lot, TTHH, số lượng từ phiếu xuất ở kho đi.',
@@ -823,12 +823,12 @@ function Form({ type }) {
               )}
               {!(type === 'in' && source === 'STO') && (
                 <Field label={type === 'out' ? 'Khách hàng' : source === 'SO' ? 'Khách hàng trả hàng' : 'Nhà cung cấp'} required={type === 'in' && source === 'direct'}>
-                  <div className="cell-add">
-                    <input list="dl-mv-party" value={head.partyCode} placeholder="Mã"
+                  <div className="cell-add pair">
+                    <input list="dl-mv-party" value={head.partyCode} placeholder="Mã" className="code"
                       onChange={(e) => { const p = parties.find((x) => x.code === e.target.value); setHead((h) => ({ ...h, partyCode: e.target.value, partyName: p ? p.name : h.partyName, shipCode: '', orderId: '' })); }} />
                     <QuickAdd catKey={type === 'in' && source !== 'SO' ? 'suppliers' : 'soldto'} onAdded={(id, r) => setHead((h) => ({ ...h, partyCode: r?.code || id, partyName: r?.name || h.partyName, shipCode: '', orderId: '' }))} />
+                    <input value={head.partyName} placeholder="Tên" title={head.partyName} onChange={(e) => setH('partyName', e.target.value)} />
                   </div>
-                  <input value={head.partyName} placeholder="Tên" style={{ marginTop: 4 }} onChange={(e) => setH('partyName', e.target.value)} />
                 </Field>
               )}
               {type === 'in' && source === 'direct' && (
@@ -838,6 +838,7 @@ function Form({ type }) {
               )}
               {!(type === 'in' && source === 'direct') && <Field label={type === 'out' ? 'Theo đơn bán (SO) / lệnh chuyển kho (STO)' : IN_SOURCES[source].label} required={type === 'in'}
                 help={orderOpts.length ? (source === 'SO' ? 'Phiếu sẽ ghi nhận phần khách trả về của đơn' : 'Phiếu sẽ tự trừ phần còn lại của đơn') : source === 'SO' ? 'Không có đơn bán nào đã giao hàng' : 'Không có đơn đang mở phù hợp'}>
+                <div className="cell-add">
                 <Select searchable value={head.orderId} onChange={(e) => pickOrder(e.target.value)}>
                   <option value="">{type === 'in' ? '-- Chọn --' : '-- Không theo đơn --'}</option>
                   {orderOpts.map((o) => {
@@ -846,7 +847,8 @@ function Form({ type }) {
                     return <option key={o.id} value={o.id} data-search={[o.partyCode, o.partyName, o.salesName, o.note, ...(o.lines || []).flatMap((l) => [l.item, l.itemName, l.shipCode, l.warehouse, l.fromWarehouse, l.toWarehouse])].join(' ')}>{o.id}{o.refNo ? ` (${o.refNo})` : ''} · {who} · {o.type === 'STO' && type === 'in' ? 'đang đi đường' : isReturn(o, type) ? 'được trả tối đa' : 'còn'} {fmtNum(left, 2)} kg</option>;
                   })}
                 </Select>
-                {type === 'out' && <button type="button" className="btn primary sm" style={{ marginTop: 6 }} onClick={() => setOrdPicking(true)}>🔎 Tìm & chọn đơn (bảng)</button>}
+                {type === 'out' && <button type="button" className="btn primary sm" title="Tìm & chọn đơn dạng bảng" onClick={() => setOrdPicking(true)}>🔎 Bảng</button>}
+                </div>
               </Field>}
               {ordPicking && <OrderPicker orders={orders} myWh={warehouses} whCode={whCode} onClose={() => setOrdPicking(false)}
                 onPick={(id, pl, w) => { setOrdPicking(false); pickOrder(id, { plan: pl, wh: w, force: true }); }} />}
@@ -863,9 +865,9 @@ function Form({ type }) {
               )}
             </>
           )}
-          {type === 'out' && (
-            <div className="full transport-box">
-              <div className="section-head">🚚 Thông tin vận tải (chưa có thì để trống, bổ sung sau ở Phiếu kho)</div>
+          {type === 'out' && <div className="full mv-boxes">
+            <div className="transport-box">
+              <div className="section-head">🚚 Vận tải <span className="small" style={{ fontWeight: 400 }}>(chưa có thì để trống, bổ sung sau ở Phiếu kho)</span></div>
               <div className="form-grid">
                 <Field label="Chuyến xe đang ở cửa" help="Chọn để tự điền xe, tài xế đã đăng ký ở cổng">
                   <Select value={head.tripId} onChange={(e) => setH('tripId', e.target.value)}>
@@ -875,30 +877,34 @@ function Form({ type }) {
                 </Field>
                 <Field label="Số xe"><WithAdd cat="vehicles" preset={{ plate: head.plate, carrier: head.carrier }} onAdded={(id, r) => pickPlate(r?.plate || id)}><input list="dl-mv-plate" value={head.plate} onChange={(e) => pickPlate(e.target.value)} placeholder="VD: 51C-12345" /></WithAdd></Field>
                 <Field label="Đơn vị vận tải">
-                  <WithAdd cat="carriers" onAdded={(id, r) => setHead((h) => ({ ...h, carrier: id, carrierName: r?.name || h.carrierName, carrierAuto: false }))}><input list="dl-mv-carrier" value={head.carrier} placeholder="Mã" onChange={(e) => pickCarrier(e.target.value)} /></WithAdd>
-                  <input value={head.carrierName} placeholder="Tên đơn vị" style={{ marginTop: 4 }} onChange={(e) => setH('carrierName', e.target.value)} />
+                  <div className="cell-add pair">
+                    <input list="dl-mv-carrier" value={head.carrier} placeholder="Mã" className="code" onChange={(e) => pickCarrier(e.target.value)} />
+                    <QuickAdd catKey="carriers" onAdded={(id, r) => setHead((h) => ({ ...h, carrier: id, carrierName: r?.name || h.carrierName, carrierAuto: false }))} />
+                    <input value={head.carrierName} placeholder="Tên đơn vị" title={head.carrierName} onChange={(e) => setH('carrierName', e.target.value)} />
+                  </div>
                 </Field>
-                <Field label="Tài xế">
-                  <WithAdd cat="drivers" preset={{ idCard: head.idCard, name: head.driverName, phone: head.driverPhone, carrier: head.carrier }} onAdded={(id, r) => setHead((h) => ({ ...h, idCard: r?.idCard || id, driverName: r?.name || h.driverName, driverPhone: r?.phone || h.driverPhone }))}><input list="dl-mv-driver" value={head.idCard} placeholder="Số CCCD" onChange={(e) => pickDriver(e.target.value)} /></WithAdd>
-                  <input value={head.driverName} placeholder="Họ tên" style={{ marginTop: 4 }} onChange={(e) => setH('driverName', e.target.value)} />
-                  <input value={head.driverPhone} placeholder="Điện thoại" style={{ marginTop: 4 }} onChange={(e) => setH('driverPhone', e.target.value)} />
+                <Field label="Tài xế (CCCD · họ tên · điện thoại)" size={{ width: 480 }}>
+                  <div className="cell-add pair">
+                    <input list="dl-mv-driver" value={head.idCard} placeholder="Số CCCD" className="code" onChange={(e) => pickDriver(e.target.value)} />
+                    <QuickAdd catKey="drivers" preset={{ idCard: head.idCard, name: head.driverName, phone: head.driverPhone, carrier: head.carrier }} onAdded={(id, r) => setHead((h) => ({ ...h, idCard: r?.idCard || id, driverName: r?.name || h.driverName, driverPhone: r?.phone || h.driverPhone }))} />
+                    <input value={head.driverName} placeholder="Họ tên" onChange={(e) => setH('driverName', e.target.value)} />
+                    <input value={head.driverPhone} placeholder="Điện thoại" className="code" onChange={(e) => setH('driverPhone', e.target.value)} />
+                  </div>
                 </Field>
               </div>
               <datalist id="dl-mv-plate">{vehicles.map((v) => <option key={v.plate} value={v.plate}>{v.carrier}</option>)}</datalist>
               <datalist id="dl-mv-carrier">{carriers.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</datalist>
               <datalist id="dl-mv-driver">{drivers.map((d) => <option key={d.idCard} value={d.idCard}>{d.name}</option>)}</datalist>
             </div>
-          )}
-          {type === 'out' && (
-            <div className="full transport-box">
+            <div className="transport-box">
               <div className="section-head">🪵 Hàng Kiện / Xá <span className="req">*</span></div>
               <PalletChoice value={pal} onChange={setPal} carrier={head.carrier} carrierName={head.carrierName} sto={order?.type === 'STO'} managed={palletManaged(wh)}
                 suggestQty={Math.ceil(lines.reduce((a, l) => a + (Number(l.pallets) || 0), 0)) || ''} />
             </div>
-          )}
+          </div>}
           {type === 'in' && (
-            <div className="full transport-box">
-              <div className="section-head">🪵 Hàng về Kiện / Xá <span className="small">(chưa biết thì để thủ kho kiểm tra, chọn khi nhận hàng)</span></div>
+            <div className="transport-box span2">
+              <div className="section-head">🪵 Hàng về Kiện / Xá <i className="help-tip" title="Chưa biết thì để thủ kho kiểm tra, chọn khi nhận hàng"> ⓘ</i></div>
               <PalletChoice value={pal} onChange={setPal} kind="in" managed={palletManaged(wh)}
                 suggestQty={Math.ceil(lines.reduce((a, l) => a + (Number(l.pallets) || 0), 0)) || ''} />
               {pal.palletMode && <button type="button" className="btn sm ghost" onClick={() => setPal({ palletMode: '', pallets: [] })}>Bỏ chọn</button>}
@@ -916,7 +922,7 @@ function Form({ type }) {
               </div>
             </Field>
           )}
-          <Field label="Ghi chú" full><textarea rows={2} value={head.note} onChange={(e) => setH('note', e.target.value)} /></Field>
+          <Field label="Ghi chú" size={{ width: type === 'in' || type === 'out' ? 480 : 720 }}><textarea rows={1} value={head.note} onChange={(e) => setH('note', e.target.value)} /></Field>
         </div>
       </div>
 
@@ -1278,7 +1284,7 @@ function StockLine({ type, slipCo, l, set, onPickOut, rows, byId, blocked, relea
           </div>
         </div>
       ) : (
-      <Field label="Dòng tồn (FIFO)" required full>
+      <Field label="Dòng tồn (FIFO)" required size={{ width: 480 }}>
         <Select value={l.stockId} onChange={(e) => pick(e.target.value)}>
           <option value="">-- Chọn hàng trong kho --</option>
           {rows.map((x) => (
@@ -1287,7 +1293,6 @@ function StockLine({ type, slipCo, l, set, onPickOut, rows, byId, blocked, relea
             </option>
           ))}
         </Select>
-        <small className="small">Hoặc bấm 📋 Xem tồn kho & chọn hàng để xem dạng bảng.</small>
       </Field>
       )}
       {type === 'adjust' && (

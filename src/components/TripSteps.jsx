@@ -53,8 +53,8 @@ export function StepModal({ t, step, onClose, plate = '', threepl: cur3pl = '' }
     <Modal title={`${STEPS[step]} · ${t.id}`} onClose={() => onClose(false)}>
       {step === 'reg' && (
         <div className="form-grid">
-          {pick3 && <label className="field full"><span>Xe chạy chuyến này</span><Select value={tp} onChange={(e) => setTp(e.target.value)}>
-            <option value="">Xe nhà GHA</option>{tpls.map((x) => <option key={x.code} value={x.code}>Thuê 3PL: {x.code} – {x.name}</option>)}</Select>
+          {pick3 && <label className="field full"><span>Xe chạy chuyến này</span><WithAdd cat="threepl" onAdded={(id) => setTp(id)}><Select value={tp} onChange={(e) => setTp(e.target.value)}>
+            <option value="">Xe nhà GHA</option>{tpls.map((x) => <option key={x.code} value={x.code}>Thuê 3PL: {x.code} – {x.name}</option>)}</Select></WithAdd>
             {tp && <small className="small">Để trống số xe rồi lưu: 3PL tự đăng ký xe, tài xế. Biết xe rồi thì nhập luôn (đăng ký hộ).</small>}</label>}
           <p className="small full" style={{ margin: 0 }}>{showDrv ? 'Xe nội bộ: chọn số xe trong danh sách, ghi họ tên và CCCD tài xế.' : 'Chỉ cần nhập số xe (gõ thẳng, không cần có trong danh mục).'}</p>
           <label className="field"><span>Số xe{pick3 && tp ? ' (để trống nếu 3PL tự đăng ký)' : ' *'}</span>{showDrv ? <WithAdd cat="vehicles" preset={{ plate: f.plate, vehicleType: f.vehicleType }} onAdded={(id, r) => pickPlate(r?.plate || id)}><input list="dl-st-plate" value={f.plate} onChange={(e) => pickPlate(e.target.value)} placeholder="VD: 51C-12345" /></WithAdd>

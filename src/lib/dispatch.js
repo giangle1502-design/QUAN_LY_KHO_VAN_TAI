@@ -47,11 +47,13 @@ export function navUrl({ mapLink = '', address = '' } = {}) {
 }
 // Chép thông tin điểm giao vào dòng chuyến (địa chỉ, người nhận, điện thoại, định vị) để tài xế mở link
 // (không đăng nhập, không đọc được danh mục) vẫn thấy. Dòng STO: lấy địa chỉ kho nhận.
-export function enrichLine(l, shipto = [], whs = []) {
+export function enrichLine(l, shipto = [], whs = [], locs = []) {
   const s = l.shipCode ? shipto.find((x) => x.shipCode === l.shipCode) : null;
   const w = !s && l.partyCode ? whs.find((x) => x.code === String(l.partyCode).split(',')[0].trim()) : null;
+  // Kho nhận STO: vị trí nhận ở nơi riêng (cảng, kho mua nội địa) có địa chỉ / định vị riêng thì lấy của vị trí
+  const loc = w && l.toLocation ? locs.find((x) => x.warehouse === w.code && x.code === l.toLocation) : null;
   const src = s ? { address: s.address, contact: s.contact, contactPhone: s.phone, mapLink: s.mapLink }
-    : w ? { address: w.address, contact: w.manager, contactPhone: w.phone, mapLink: w.mapLink } : {};
+    : w ? { address: loc?.address || w.address, contact: w.manager, contactPhone: w.phone, mapLink: loc?.mapLink || w.mapLink } : {};
   const out = { ...l };
   for (const [k, v] of Object.entries(src)) if (v && !out[k]) out[k] = v;
   return out;
@@ -124,7 +126,8 @@ export function pendingDispatch({ orders, plans, allocs, moves, trips, shipto = 
     const party = sto ? { partyCode: a.toWarehouse || (ol ? lineTo(o, ol) : ''), partyName: `Kho ${a.toWarehouse || (ol ? lineTo(o, ol) : '')}` } : { partyCode: o.partyCode || '', partyName: o.partyName || '' };
     rows.push({ key: `alloc:${a._id || a.id}`, src: 'alloc', srcId: a._id || a.id, srcLabel: `📋 Phân bổ ${a.poId}${a.contNo ? ` · cont ${a.contNo}` : ''}`, orderId: o.id, orderType: o.type, company: o.company || '',
       date: a.date || '', warehouse: a.fromWarehouse || (ol ? lineWh(o, ol, 'out') : ''), ...party, shipCode: a.shipCode || '', address: addr(a.shipCode), carrier: a.carrier,
-      items: [{ orderId: o.id, no: a.orderLine, item: a.item, itemName: a.itemName || '', kg, allocId: a._id || a.id, shipCode: a.shipCode || '', address: addr(a.shipCode), ...party }] });
+      items: [{ orderId: o.id, no: a.orderLine, item: a.item, itemName: a.itemName || '', kg, allocId: a._id || a.id, shipCode: a.shipCode || '', address: addr(a.shipCode), ...party,
+        ...(a.fromLocation ? { location: a.fromLocation } : {}), ...(sto && a.toLocation ? { toLocation: a.toLocation } : {}) }] });
   }
 
   // 3. Phiếu xuất đã ghi đơn vị vận tải nhưng chưa có chuyến
@@ -136,8 +139,8 @@ export function pendingDispatch({ orders, plans, allocs, moves, trips, shipto = 
       const kg = Math.max(0, n(l.kg) - n(cov.byMove.get(`${m.id}#${l.orderLine}`)));
       if (kg <= 0.5) continue;
       const it = items.find((x) => x.no === l.orderLine && x.item === l.item);
-      if (it) it.kg += kg;
-      else items.push({ orderId: m.orderId, no: l.orderLine, item: l.item, itemName: l.itemName || '', kg, movementId: m.id, shipCode: m.shipCode || '', address: addr(m.shipCode),
+      if (it) { it.kg += kg; if (l.location && !String(it.location || '').split(',').includes(l.location)) it.location = it.location ? `${it.location},${l.location}` : l.location; }
+      else items.push({ orderId: m.orderId, no: l.orderLine, item: l.item, itemName: l.itemName || '', kg, movementId: m.id, shipCode: m.shipCode || '', address: addr(m.shipCode), location: l.location || '',
         partyCode: m.partyCode || o?.partyCode || '', partyName: m.partyName || o?.partyName || '' });
     }
     if (!items.length) continue;

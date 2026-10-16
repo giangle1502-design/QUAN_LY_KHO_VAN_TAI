@@ -35,7 +35,7 @@ export function Field({ label, required, help, children, full, size }) {
   };
   return (
     <label className={'field' + (wide ? ' full' : '') + (w && !wide ? ' fw' : '') + (h ? ' fh' : '')} style={style}>
-      <span>{label}{required && <b className="req"> *</b>}</span>
+      <span>{label}{required && <b className="req"> *</b>}{typeof help === 'string' && help && <i className="help-tip" title={help}> ⓘ</i>}</span>
       {children}
       {help && <small className="small">{help}</small>}
     </label>
