@@ -384,7 +384,7 @@ export const CATALOGS = [
       { key: 'role', label: 'Vai trò', type: 'select', options: ROLES.map((r) => r[0]), options3PL: ['tpl'], labels: Object.fromEntries(ROLES.map((r) => [r[0], r[1]])), required: true, default: 'xem' },
       { key: 'warehouses', label: 'Kho được thao tác', type: 'multiref', ref: 'warehouses', help: 'Để trống = tất cả kho' },
       { key: 'carrier', label: 'Thuộc đơn vị vận tải', type: 'ref', ref: 'carriers', help: 'Bắt buộc với vai trò Điều phối vận tải / Tài xế / 3PL (3PL chọn GHA): chỉ thấy dữ liệu của đơn vị này', helpNo3PL: 'Bắt buộc với vai trò Điều phối vận tải / Tài xế: chỉ thấy dữ liệu của đơn vị này' },
-      { key: 'threepl', label: 'Mã 3PL (vai trò 3PL)', type: 'text', only3PL: true, help: 'Vai trò 3PL: mã 3PL trong Danh sách 3-PL của GHA' },
+      { key: 'threepl', label: 'Mã 3PL (vai trò 3PL)', type: 'ref', ref: 'threepl', only3PL: true, help: 'Vai trò 3PL: mã 3PL trong Danh sách 3-PL của GHA' },
       { key: 'idCard', label: 'CCCD (tài xế)', type: 'text', help: 'Vai trò Tài xế: số CCCD để nhận chuyến' },
       { key: 'seeAllOrders', label: 'Kinh doanh: xem đơn của mọi sale', type: 'checkbox', default: false, help: 'Không tích: vai trò Kinh doanh chỉ thấy đơn SO/PO có Sale phụ trách là mình' },
       { key: 'formDesigner', label: 'Được thiết lập biểu mẫu', type: 'checkbox', default: false, help: 'Tự thêm / sửa / ẩn trường của danh mục và biểu mẫu đơn hàng (Quản lý trường, nút + Thêm trường) và tự thiết kế mẫu in (phiếu xuất, phiếu nhập, nhãn, đề nghị giải chấp…)' },
