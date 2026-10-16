@@ -34,7 +34,7 @@ export default function Hauling() {
   const isCarrier = role === 'van_tai';
   const isTpl = role === 'tpl';
   const tabs = [...(isAdmin ? [['cho-giao', 'Chờ giao vận tải']] : []), ['chuyen', isTpl ? 'Chuyến 3PL của tôi' : 'Chuyến xe'], ...(isTpl ? [] : [['chi-phi', 'Chi phí & cước']]),
-    ['tinh-trang', 'Tình trạng xe'], ['bang-ke', 'Bảng kê'], ...(isAdmin || isCarrier ? [['tai-xe', can3PL ? 'Link tài xế / tài khoản 3PL' : 'Link tài xế']] : [])];
+    ['tinh-trang', 'Tình trạng xe'], ['bang-ke', 'Bảng kê'], ...(isAdmin || isCarrier ? [['tai-xe', isAdmin || can3PL ? 'Link tài xế & tài khoản' : 'Link tài xế']] : [])];
   const [sp, setSp] = useSearchParams();
   const tab = tabs.some(([k]) => k === sp.get('tab')) ? sp.get('tab') : tabs[0][0];
   const [orders, setOrders] = useState([]);
@@ -672,11 +672,13 @@ function DriverAccounts() {
   const carriers = useCollection('carriers').rows;
   const threepl = useCollection(can3PL ? 'threepl' : '').rows;
   const [rows, setRows] = useState([]);
-  const [f, setF] = useState({ email: '', name: '', idCard: '', phone: '', carrier: myCarrier, role: 'tai_xe', threepl: '' });
+  const [f, setF] = useState({ email: '', name: '', idCard: '', phone: '', carrier: myCarrier, role: isAdmin ? 'van_tai' : 'tai_xe', threepl: '' });
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
-  useEffect(() => onSnapshot(query(collection(db, 'users'), where('role', 'in', can3PL ? ['tai_xe', 'tpl'] : ['tai_xe'])),
-    (s) => setRows(s.docs.map((d) => d.data()).filter((u) => isAdmin || u.carrier === myCarrier)), (e) => setErr(e.message)), [isAdmin, myCarrier, can3PL]);
+  // Quản trị: tạo cả tài khoản điều phối của đơn vị vận tải (VD GHA); điều phối tạo tài xế / 3PL của đơn vị mình
+  const roles = [...(isAdmin ? [['van_tai', 'Điều phối vận tải (VD GHA)']] : []), ['tai_xe', 'Tài xế'], ...(can3PL ? [['tpl', '3PL (thầu phụ GHA)']] : [])];
+  useEffect(() => onSnapshot(query(collection(db, 'users'), where('role', 'in', roles.map((x) => x[0]))),
+    (s) => setRows(s.docs.map((d) => d.data()).filter((u) => isAdmin || u.carrier === myCarrier)), (e) => setErr(e.message)), [isAdmin, myCarrier, can3PL]); // eslint-disable-line react-hooks/exhaustive-deps
   const tpl = f.role === 'tpl';
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const save = async (e) => {
@@ -686,9 +688,9 @@ function DriverAccounts() {
     if (tpl && !f.threepl) return setErr('Chọn 3PL cho tài khoản 3PL.');
     const at = nowISO();
     try {
-      await setDoc(doc(db, 'users', em), { email: em, name: f.name.trim(), role: tpl ? 'tpl' : 'tai_xe', ...(tpl ? { threepl: f.threepl } : {}), carrier: f.carrier, idCard: f.idCard.trim(), phone: f.phone.trim(), warehouses: [], active: true, updatedAt: at, updatedBy: email }, { merge: true });
-      if (!tpl && f.idCard.trim()) await setDoc(doc(db, 'drivers', f.idCard.trim()), { idCard: f.idCard.trim(), name: f.name.trim(), phone: f.phone.trim(), carrier: f.carrier, loginEmail: em, updatedAt: at, updatedBy: email }, { merge: true });
-      setMsg(`Đã tạo tài khoản ${em}. ${tpl ? '3PL' : 'Người này'} mở app, đăng nhập bằng Google hoặc tạo mật khẩu với email này.`);
+      await setDoc(doc(db, 'users', em), { email: em, name: f.name.trim(), role: f.role, ...(tpl ? { threepl: f.threepl } : {}), carrier: f.carrier, idCard: f.idCard.trim(), phone: f.phone.trim(), warehouses: [], active: true, updatedAt: at, updatedBy: email }, { merge: true });
+      if (f.role === 'tai_xe' && f.idCard.trim()) await setDoc(doc(db, 'drivers', f.idCard.trim()), { idCard: f.idCard.trim(), name: f.name.trim(), phone: f.phone.trim(), carrier: f.carrier, loginEmail: em, updatedAt: at, updatedBy: email }, { merge: true });
+      setMsg(`Đã tạo tài khoản ${em}. Người này mở app, đăng nhập bằng Google hoặc tạo mật khẩu với email này.`);
       setF({ email: '', name: '', idCard: '', phone: '', carrier: myCarrier, role: f.role, threepl: '' });
     } catch (e2) { setErr(e2.code === 'permission-denied' ? 'Không có quyền tạo tài khoản (email này có thể đang là tài khoản vai trò khác).' : e2.message); }
   };
@@ -699,9 +701,9 @@ function DriverAccounts() {
     <div>
       <DriverLinkBox />
       <form className="card" onSubmit={save} style={{ marginBottom: 12 }}>
-        <div className="section-head">Thêm tài khoản {can3PL ? '3PL / ' : ''}điều phối có đăng nhập (không bắt buộc với tài xế: tài xế dùng link ở trên)</div>
+        <div className="section-head">Tạo tài khoản đăng nhập: {roles.map((x) => x[1]).join(', ')} (tài xế không bắt buộc: dùng link ở trên)</div>
         <div className="form-grid">
-          {can3PL && <label className="field"><span>Loại tài khoản</span><Select value={f.role} onChange={(e) => set('role', e.target.value)}><option value="tai_xe">Tài xế</option><option value="tpl">3PL (thầu phụ GHA)</option></Select></label>}
+          {roles.length > 1 && <label className="field"><span>Loại tài khoản</span><Select value={f.role} onChange={(e) => set('role', e.target.value)}>{roles.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select></label>}
           {tpl && <label className="field"><span>3PL *</span><Select value={f.threepl} onChange={(e) => set('threepl', e.target.value)}><option value="">--</option>{threepl.map((x) => <option key={x.code} value={x.code}>{x.code} – {x.name}</option>)}</Select></label>}
           <label className="field"><span>Email đăng nhập *</span><input value={f.email} onChange={(e) => set('email', e.target.value)} /></label>
           <label className="field"><span>Họ tên *</span><input value={f.name} onChange={(e) => set('name', e.target.value)} /></label>
@@ -714,9 +716,9 @@ function DriverAccounts() {
         <div className="form-actions"><button className="btn primary">Lưu tài khoản</button></div>
       </form>
       <div className="table-wrap">
-        {!rows.length ? <Empty text="Chưa có tài khoản tài xế." /> : (
+        {!rows.length ? <Empty text="Chưa có tài khoản nào." /> : (
           <table><thead><tr><th>Email</th><th>Họ tên</th><th>CCCD</th><th>Điện thoại</th>{isAdmin && <th>Đơn vị</th>}<th>Trạng thái</th><th></th></tr></thead>
-            <tbody>{rows.map((u) => <tr key={u.email}><td>{u.email}{u.role === 'tpl' ? <div className="small">3PL {u.threepl}</div> : null}</td><td>{u.name}</td><td>{u.idCard}</td><td>{u.phone}</td>{isAdmin && <td>{u.carrier}</td>}
+            <tbody>{rows.map((u) => <tr key={u.email}><td>{u.email}{u.role === 'tpl' ? <div className="small">3PL {u.threepl}</div> : u.role === 'van_tai' ? <div className="small">Điều phối vận tải</div> : null}</td><td>{u.name}</td><td>{u.idCard}</td><td>{u.phone}</td>{isAdmin && <td>{u.carrier}</td>}
               <td>{u.active === false ? <span className="badge red">Đã khóa</span> : <span className="badge green">Hoạt động</span>}</td>
               <td><button className="btn sm" onClick={() => toggle(u)}>{u.active === false ? 'Mở khóa' : 'Khóa'}</button></td></tr>)}</tbody></table>
         )}
