@@ -149,7 +149,7 @@ export function PartnerForm({ row, existing, onClose, onSaved }) {
   const setRole = (c, k, v) => setRoles((r) => ({ ...r, [c]: { ...r[c], [k]: v } }));
   const general = fields.filter((f) => !f.custom && !f.hidden && !['isCustomer', 'isVendor'].includes(f.key));
   const extra = fields.filter((f) => f.custom && !f.hidden);
-  const tabs = [['chung', 'Thông tin chung'], ...(form.isCustomer ? [['kh', '🏢 Khách hàng · mã giao']] : []), ...(form.isVendor ? [['ncc', '🏭 Nhà cung cấp']] : []), ['them', `Thông tin bổ sung${extra.length ? ` (${extra.length})` : ''}`]];
+  const tabs = [['chung', 'Thông tin chung'], ...(form.isCustomer ? [['kh', '🏢 Khách hàng · điểm giao hàng']] : []), ...(form.isVendor ? [['ncc', '🏭 Nhà cung cấp']] : []), ['them', `Thông tin bổ sung${extra.length ? ` (${extra.length})` : ''}`]];
   const curTab = tabs.some(([k]) => k === tab) ? tab : 'chung';
 
   const save = async (e) => {
@@ -237,9 +237,9 @@ function ShipTos({ code, partner, saved }) {
   const cat = catalogByKey('shipto');
   return (
     <div style={{ marginTop: 12 }}>
-      <div className="section-head">📍 Mã giao hàng ({list.length})
-        {saved ? <button type="button" className="btn sm" style={{ marginLeft: 8 }} onClick={() => setEditing({ customerCode: code, customerName: partner.name || '', taxCode: partner.taxCode || '' })}>+ Thêm mã giao</button>
-          : <span className="small"> · lưu đối tác (là khách hàng) trước rồi thêm mã giao</span>}
+      <div className="section-head">📍 Điểm giao hàng ({list.length})
+        {saved ? <button type="button" className="btn sm" style={{ marginLeft: 8 }} onClick={() => setEditing({ customerCode: code, customerName: partner.name || '', taxCode: partner.taxCode || '' })}>+ Thêm điểm giao hàng</button>
+          : <span className="small"> · lưu đối tác (là khách hàng) trước rồi thêm điểm giao hàng</span>}
       </div>
       {msg && <div className="ok-box">{msg}</div>}
       {list.length ? (
@@ -247,7 +247,7 @@ function ShipTos({ code, partner, saved }) {
           <tbody>{list.map((s) => (
             <tr key={s._id} style={{ cursor: 'pointer' }} onClick={() => setEditing(s)}><td className="mono">{s.shipCode}</td><td>{s.address}</td><td>{s.contact}</td><td>{s.phone}</td></tr>
           ))}</tbody></table>
-      ) : <p className="small">Chưa có mã giao.</p>}
+      ) : <p className="small">Chưa có điểm giao hàng.</p>}
       {editing && <EditForm cat={cat} fields={fieldsOf('shipto')} row={editing} existing={rows} onClose={() => setEditing(null)} onSaved={(t) => { setEditing(null); setMsg(t); }} />}
     </div>
   );

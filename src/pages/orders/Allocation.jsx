@@ -561,7 +561,7 @@ function SharedCells({ v, edit, editCarrier = edit, save, cats, whs }) {
     const x = e.target.value.trim();
     if (x === (v.partyCode || '')) return;
     const c = (cats.soldto || []).find((r) => r.code === x);
-    if (x && !c) { e.target.value = v.partyCode || ''; window.alert(`Mã khách ${x} không có trong danh mục Soldto.`); return; }
+    if (x && !c) { e.target.value = v.partyCode || ''; window.alert(`Mã khách ${x} không có trong danh mục Khách hàng / NCC.`); return; }
     const sh = (cats.shipto || []).filter((r) => r.customerCode === x);
     save({ partyCode: x, partyName: c?.name || '', shipCode: sh.length === 1 ? sh[0].shipCode : '' });
   };

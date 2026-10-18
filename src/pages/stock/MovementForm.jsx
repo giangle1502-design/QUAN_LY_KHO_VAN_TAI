@@ -1,4 +1,4 @@
-import { withBlock } from '../../catalogs';
+import { kindOf, withBlock } from '../../catalogs';
 import { notifySlip } from '../../lib/chat';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
@@ -146,6 +146,9 @@ function Form({ type }) {
 
   // Đơn đang mở phù hợp kho và khách / nhà cung cấp
   const order = orders.find((o) => o.id === head.orderId);
+  // Xe đi lấy hàng ở khách: khách trả hàng (SO / DRT) hoặc mua lại hàng của khách (PO loại POK): Nơi nhận = điểm giao hàng của khách
+  const pokIn = type === 'in' && source === 'PO' && !!order && kindOf(order) === 'POK';
+  const pickAtCustomer = type === 'in' && (['SO', 'DRT'].includes(source) || pokIn);
   const orderOpts = orders.filter((o) => {
     if (type === 'in' && o.type !== source) return false;
     return (isReturn(o, type) || o.type === 'DRT' || orderInWarehouse(o, type, whCode)) && (o.type === 'STO' || !head.partyCode || o.partyCode === head.partyCode || o.id === head.orderId);
@@ -769,14 +772,14 @@ function Form({ type }) {
         }
       }
       const mvId = ids[0];
-      if (type === 'in' && ['SO', 'DRT'].includes(source) && ret.carrier && mvId) {
+      if (pickAtCustomer && ret.carrier && mvId) {
         try {
           const shipCode = ret.ship || head.shipCode || order?.lines?.map((l) => lineShip(order, l)).find(Boolean) || '';
           const c = carriers.find((x) => x.code === ret.carrier) || { code: ret.carrier };
-          const [tid] = await createPlannedTrips({ wh, carrier: c, trips: [{ date: ret.date || head.date, plate: ret.plate, company: head.company || '', note: `Thu hồi hàng trả về theo ${head.orderId}, phiếu nhập ${mvId}`,
+          const [tid] = await createPlannedTrips({ wh, carrier: c, trips: [{ date: ret.date || head.date, plate: ret.plate, company: head.company || '', note: `${pokIn ? 'Lấy hàng mua lại của khách' : 'Thu hồi hàng trả về'} theo ${head.orderId}, phiếu nhập ${mvId}`,
             pickup: shipCode ? pickupFrom(SHIP_PICKUP + shipCode, [], shipto) : null,
             lines: lines.filter((l) => l.item && Math.abs(num(l.kg)) > 0).map((l) => ({ orderId: head.orderId, no: l.orderLine ?? null, item: l.item, itemName: itemMap.get(l.item)?.name || '', kg: Math.abs(num(l.kg)), movementId: mvId,
-              partyCode: wh.code, partyName: wh.name || `Kho ${wh.code}` })) }] }, { email, name }, 'Thu hồi hàng');
+              partyCode: wh.code, partyName: wh.name || `Kho ${wh.code}` })) }] }, { email, name }, pokIn ? 'Lấy hàng mua lại (POK)' : 'Thu hồi hàng');
           setDoneTrip(tid);
         } catch (e5) { setErr(`Đã lập phiếu ${mvId} nhưng chưa tạo được chuyến thu hồi: ${e5.message}. Tạo chuyến ở Vận tải.`); }
       }
@@ -812,7 +815,7 @@ function Form({ type }) {
       {done && !doneGroup && <div className="ok-box" style={{ marginBottom: 10 }}>Đã lập phiếu <b className="mono">{done}</b>{donePO && <> và đơn mua <Link className="mono" to="/don-hang?tab=PO">{donePO}</Link> (nhập trực tiếp)</>}.{type === 'in' ? <> <b>Chờ thủ kho nhận hàng</b> và xác nhận số thực nhận, vị trí (tồn kho cập nhật khi thủ kho xác nhận{source === 'direct' ? ', đơn mua PO lập theo số thực nhận' : ''}).</> : doneRel ? '' : ' Tồn kho đã cập nhật.'} <Link to={`/kho/phieu/${done}/in`} target="_blank">🖨 In phiếu</Link>
 
         {type === 'out' && <> · <Link className="btn primary" to={`/kho/phieu/${done}/soan`} target="_blank">📋 In phiếu soạn hàng</Link></>}
-        {doneTrip && <div style={{ marginTop: 6 }}>🚚 Đã tạo chuyến thu hồi <b className="mono">{doneTrip}</b>: đơn vị vận tải thấy chuyến trên link tài xế, điểm nhận hàng là địa chỉ khách. Xem ở <Link to="/van-tai">Vận tải</Link>.</div>}
+        {doneTrip && <div style={{ marginTop: 6 }}>🚚 Đã tạo chuyến đi lấy hàng ở khách <b className="mono">{doneTrip}</b>: đơn vị vận tải thấy chuyến trên link tài xế, điểm nhận hàng là địa chỉ khách. Xem ở <Link to="/van-tai">Vận tải</Link>.</div>}
         {doneCross && <div style={{ marginTop: 6 }}>🏛️ Phiếu có hàng lấy từ tồn công ty <b>{doneCross}</b> (chuyển pháp nhân): đã gửi thông báo cho kế toán. Xem <Link to="/bao-cao/chuyen-phap-nhan">Báo cáo chuyển pháp nhân</Link>.</div>}
         {doneRel && <div style={{ marginTop: 6 }}>⏳ Phiếu có hàng HTC nên đang <b>chờ giải chấp</b> (tồn chưa trừ). In phiếu, soạn hàng được; vào <Link to="/kho/giai-chap">Đề nghị giải chấp → Chờ giải chấp</Link> để tạo lệnh giải chấp, khi đó phiếu mới ghi xuất kho.</div>}</div>}
       {/* Gọn trong 1 màn hình: chú thích thành ⓘ (rê chuột xem), ô mã + tên cùng hàng, vận tải + Kiện/Xá cạnh nhau */}
@@ -880,7 +883,7 @@ function Form({ type }) {
               {ordPicking && <OrderPicker orders={orders} myWh={warehouses} whCode={whCode} onClose={() => setOrdPicking(false)}
                 onPick={(id, pl, w) => { setOrdPicking(false); pickOrder(id, { plan: pl, wh: w, force: true }); }} />}
               {type === 'out' && (
-                <Field label="Giao đến (Shipto)" required={shipRequired}
+                <Field label="Điểm giao hàng" required={shipRequired}
                   help={shipOpts.length === 1 ? 'Khách chỉ có 1 mã giao: tự chọn sẵn' : shipRequired ? `Khách có ${shipOpts.length} mã giao: bắt buộc chọn` : ''}>
                   <WithAdd cat="shipto" preset={{ customerCode: head.partyCode, customerName: head.partyName }} onAdded={(id, r) => setH('shipCode', r?.shipCode || id)}>
                     <Select value={head.shipCode} onChange={(e) => setH('shipCode', e.target.value)}>
@@ -937,9 +940,9 @@ function Form({ type }) {
               {pal.palletMode && <button type="button" className="btn sm ghost" onClick={() => setPal({ palletMode: '', pallets: [] })}>Bỏ chọn</button>}
             </div>
           )}
-          {type === 'in' && ['SO', 'DRT'].includes(source) && (
+          {pickAtCustomer && (
             <div className="transport-box span2">
-              <div className="section-head">🚚 Xe đi thu hồi hàng ở khách <i className="help-tip" title="Chọn đơn vị vận tải thì khi lập phiếu sẽ tạo luôn chuyến: điểm nhận hàng là mã giao của khách, giao về kho này. Để trống nếu khách tự chở hàng về."> ⓘ</i></div>
+              <div className="section-head">🚚 {pokIn ? 'Xe đi lấy hàng mua lại ở khách (POK)' : 'Xe đi thu hồi hàng ở khách'} <i className="help-tip" title="Chọn đơn vị vận tải thì khi lập phiếu sẽ tạo luôn chuyến: Nơi nhận là điểm giao hàng của khách, giao về kho này. Để trống nếu khách tự chở hàng tới."> ⓘ</i></div>
               <div className="form-grid">
                 <Field label="Đơn vị vận tải">
                   <WithAdd cat="carriers" onAdded={(id) => setRet((r) => ({ ...r, carrier: id }))}>
@@ -950,7 +953,7 @@ function Form({ type }) {
                   </WithAdd>
                 </Field>
                 {ret.carrier && <>
-                  <Field label="Lấy hàng tại (mã giao)">
+                  <Field label="Nơi nhận (điểm giao hàng của khách)">
                     <WithAdd cat="shipto" preset={{ customerCode: head.partyCode, customerName: head.partyName }} onAdded={(id, r) => setRet((x) => ({ ...x, ship: r?.shipCode || id }))}>
                       <Select value={ret.ship || head.shipCode || order?.lines?.map((l) => lineShip(order, l)).find(Boolean) || ''} onChange={(e) => setRet((r) => ({ ...r, ship: e.target.value }))}>
                         <option value="">-- Chọn --</option>

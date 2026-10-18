@@ -201,7 +201,7 @@ export default function Register() {
               <input value={l.partyName} onChange={(e) => setLine(i, { partyName: e.target.value })} placeholder="Tên" style={{ marginTop: 4 }} />
             </Field>
             {form.purpose === 'export' ? (
-              <Field label="Giao đến (Shipto)">
+              <Field label="Điểm giao hàng">
                 <WithAdd cat="shipto" preset={{ customerCode: l.partyCode, customerName: l.partyName }} onAdded={(id, r) => pickShip(i, r?.shipCode || id)}>
                   <Select value={l.shipCode} onChange={(e) => pickShip(i, e.target.value)}>
                     <option value="">-- Chọn --</option>

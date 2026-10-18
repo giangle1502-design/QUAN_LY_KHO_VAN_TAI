@@ -104,7 +104,7 @@ export default function Layout() {
       { to: '/xe/giao-hang', ico: '✅', label: 'Xác nhận giao hàng', show: isAdmin },
       { to: '/don-hang?tab=DRT', cls: orderTab('DRT'), ico: '↩️', label: 'Danh sách SO trả hàng (DRT)' },
       { to: '/kho/in?src=so', cls: srcTab('so'), ico: '↩️', label: 'Thu hồi / khách trả hàng (MVT 651)', show: isAdmin },
-      { to: '/dm/partners?nhom=kh', ico: '🤝', label: 'Đối tác (khách hàng)' },
+      { to: '/dm/partners?nhom=kh', ico: '🤝', label: 'Khách hàng / NCC · khách hàng' },
     ] },
     { key: 'mua', title: '🛒 Mua hàng (PO → nhập)', items: [
       { to: '/don-hang?tab=PO&new=1', cls: noActive, ico: '➕', label: 'Lập PO mới', show: canSO },
@@ -112,7 +112,7 @@ export default function Layout() {
       { to: '/phan-bo', ico: '📋', label: 'Kế hoạch phân bổ hàng mua' },
       { to: '/kho/in', cls: srcTab(false), ico: '📝', label: 'Lập phiếu nhập kho', show: isAdmin },
       { to: '/don-hang?tab=cho-nhap', cls: slipTab('cho-nhap', ''), ico: '📥', label: 'IB · Danh sách đơn chờ nhập' },
-      { to: '/dm/partners?nhom=ncc', ico: '🤝', label: 'Đối tác (nhà cung cấp)' },
+      { to: '/dm/partners?nhom=ncc', ico: '🤝', label: 'Khách hàng / NCC · nhà cung cấp' },
       { to: '/kho/nhan-hang', ico: '📥', label: 'Nhận hàng (chờ nhập)', show: hasRole('thu_kho') },
     ] },
     { key: 'sto', title: '🔁 Chuyển kho (STO)', items: [
@@ -159,7 +159,7 @@ export default function Layout() {
       { to: '/quan-tri/du-lieu', ico: '🧹', label: 'Xóa dữ liệu chạy thử', show: isSuper },
       { to: '/quan-tri/tin-nhan', ico: '💬', label: 'Cấu hình tin nhắn hệ thống', show: isAdmin },
     ] },
-    ...GROUPS.map((g) => ({ key: `dm:${g}`, title: `📚 ${g}`, items: CATALOGS.filter((c) => c.group === g && (isAdmin || !c.adminOnly) && (!c.only3PL || can3PL))
+    ...GROUPS.map((g) => ({ key: `dm:${g}`, title: `📚 ${g}`, items: CATALOGS.filter((c) => c.group === g && !c.menuHidden && (isAdmin || !c.adminOnly) && (!c.only3PL || can3PL))
       .map((c) => ({ to: `/dm/${c.key}`, ico: c.icon, label: c.short })) })),
   ];
   // Menu theo ý từng người: yêu thích, thư mục tự tạo, thứ tự, ẩn mục (lưu trên trình duyệt)

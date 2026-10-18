@@ -94,8 +94,8 @@ export const CATALOGS = [
   // Mỗi công ty 1 mã đối tác, tích "Là khách hàng" / "Là nhà cung cấp" (được tích cả hai).
   // Dữ liệu cũ giữ nguyên: Soldto và Nhà cung cấp vẫn là nơi SO / PO / phiếu kho đọc; lưu đối tác tự đồng bộ sang hai danh mục đó (cùng mã)
   {
-    key: 'partners', group: 'Khách hàng', icon: '🤝', title: 'Đối tác (BP · khách hàng + nhà cung cấp)', short: 'Đối tác (BP)', idField: 'code', editRoles: ['kinh_doanh', 'ke_toan'],
-    help: 'Một công ty một mã. Tích Là khách hàng / Là nhà cung cấp (được tích cả hai, đổi lúc nào cũng được, mã và lịch sử giữ nguyên). Lưu ở đây tự cập nhật Soldto và Nhà cung cấp cùng mã.',
+    key: 'partners', group: 'Khách hàng', icon: '🤝', title: 'Khách hàng / Nhà cung cấp', short: 'Khách hàng / NCC', idField: 'code', editRoles: ['kinh_doanh', 'ke_toan'],
+    help: 'Một công ty một mã. Tích Là khách hàng / Là nhà cung cấp (được tích cả hai, đổi lúc nào cũng được, mã và lịch sử giữ nguyên). Mỗi khách hàng có nhiều Điểm giao hàng (thẻ Khách hàng · điểm giao).',
     fields: [
       { key: 'code', label: 'Mã đối tác', type: 'text', required: true, help: 'Nên trùng mã trên Ecount. Khách hàng / NCC cũ giữ nguyên mã' },
       { key: 'name', label: 'Tên công ty', type: 'text', required: true },
@@ -119,7 +119,7 @@ export const CATALOGS = [
   },
   // ---------------- Khách hàng ----------------
   {
-    key: 'soldto', group: 'Khách hàng', icon: '🏢', title: 'Soldto (khách hàng xuất hóa đơn)',
+    key: 'soldto', group: 'Khách hàng', icon: '🏢', title: 'Soldto (dữ liệu khách hàng cũ, sửa ở Khách hàng / Nhà cung cấp)', menuHidden: true,
     short: 'Soldto', idField: 'code', editRoles: ['kinh_doanh', 'ke_toan'],
     fields: [
       { key: 'code', label: 'Mã khách hàng', type: 'text', required: true, help: 'Nên trùng mã trên Ecount' },
@@ -144,8 +144,8 @@ export const CATALOGS = [
     ],
   },
   {
-    key: 'shipto', group: 'Khách hàng', icon: '📍', title: 'Shipto (địa chỉ giao hàng)',
-    short: 'Shipto', idField: 'shipCode', editRoles: ['kinh_doanh', 'ke_toan'],
+    key: 'shipto', group: 'Khách hàng', icon: '📍', title: 'Điểm giao hàng (Shipto)',
+    short: 'Điểm giao hàng', idField: 'shipCode', editRoles: ['kinh_doanh', 'ke_toan'],
     fields: [
       { key: 'customerCode', label: 'Mã khách hàng', type: 'ref', ref: 'soldto', required: true,
         fill: { customerName: 'name', taxCode: 'taxCode' } },
@@ -219,7 +219,7 @@ export const CATALOGS = [
     ],
   },
   {
-    key: 'suppliers', group: 'Hàng hóa', icon: '🏭', title: 'Nhà cung cấp', short: 'Nhà cung cấp', idField: 'code', editRoles: ['kinh_doanh', 'ke_toan'],
+    key: 'suppliers', group: 'Hàng hóa', icon: '🏭', title: 'Nhà cung cấp (dữ liệu cũ, sửa ở Khách hàng / Nhà cung cấp)', menuHidden: true, short: 'Nhà cung cấp', idField: 'code', editRoles: ['kinh_doanh', 'ke_toan'],
     fields: [
       { key: 'code', label: 'Mã nhà cung cấp', type: 'text', required: true },
       { key: 'name', label: 'Tên nhà cung cấp', type: 'text', required: true },
