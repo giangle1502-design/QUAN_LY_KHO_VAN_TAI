@@ -25,6 +25,7 @@ import { useCollection, usePendingIn, useWaitingOut } from '../../lib/hooks';
 import { useShortfall } from '../../lib/shortfall';
 import { dragHeadProps, orderCols } from '../../lib/colOrder';
 import Select from '../../components/Select';
+import DynamicFilterPanel, { AdvButton, activeConds, applyFilter, EMPTY_FILTER } from '../../components/DynamicFilterPanel';
 import { salesFor, typesOf } from '../../lib/plasticSales';
 
 // Đơn vị chính là kg; tấn chỉ là quy đổi (dòng phụ)
@@ -169,15 +170,61 @@ function OrderList({ type, initialQ = '', startNew = false, onNewDone }) {
   useEffect(() => { if (startNew && canManage) setEdit('new'); }, [startNew]); // eslint-disable-line react-hooks/exhaustive-deps
   const today = vnDate();
 
+  // Tìm kiếm nâng cao: nhiều điều kiện tự thêm trên trường của đơn và của dòng hàng (nhớ theo loại đơn)
+  const [adv, setAdv] = usePref(`filter:orders:${type}`, EMPTY_FILTER);
+  const [advOpen, setAdvOpen] = usePref(`filter-open:orders:${type}`, false);
+  const advFields = useMemo(() => {
+    const seen = new Set();
+    const keep = (f) => (f.key && !seen.has(f.key) && !f.hidden ? (seen.add(f.key), true) : false);
+    const head = [
+      { key: 'id', label: 'Số đơn', type: 'text' },
+      { key: 'status', label: 'Trạng thái', type: 'select', options: Object.keys(ORDER_STATUS), labels: Object.fromEntries(Object.entries(ORDER_STATUS).map(([k, v]) => [k, v.label])) },
+      { key: 'company', label: 'Công ty', type: 'text' },
+      { key: 'date', label: 'Ngày tạo đơn', type: 'date' },
+      { key: 'dueDate', label: so ? 'Ngày giao (sớm nhất)' : pl ? 'ETA (sớm nhất)' : 'Ngày chuyển (sớm nhất)', type: 'date' },
+      ...(sto ? [] : [{ key: 'partyCode', label: `Mã ${meta.partyLabel}`, type: 'text' }, { key: 'partyName', label: `Tên ${meta.partyLabel}`, type: 'text' }, { key: 'sales', label: 'Sale phụ trách', type: 'text' }]),
+      { key: 'refNo', label: 'Số Ecount', type: 'text' },
+      { key: 'note', label: 'Ghi chú đơn', type: 'text' },
+      { key: 'createdBy', label: 'Người lập', type: 'text' },
+      ...headSeen.filter((f) => f.type !== 'formula' || f.resultType),
+    ].filter(keep);
+    const line = [
+      { key: 'item', label: 'Mã hàng', type: 'text' },
+      { key: 'itemName', label: 'Tên hàng', type: 'text' },
+      ...(sto ? [{ key: 'fromWh', label: 'Kho xuất', type: 'text' }, { key: 'toWh', label: 'Kho nhập', type: 'text' }] : [{ key: 'wh', label: so ? 'Kho xuất' : 'Kho nhập', type: 'text' }]),
+      ...(so ? [{ key: 'shipCode', label: 'Mã giao', type: 'text' }] : []),
+      { key: 'goodsStatus', label: 'TTHH', type: 'text' },
+      { key: 'qtyKg', label: 'Số lượng đặt (kg)', type: 'number' },
+      { key: 'left', label: `${meta.left} (kg)`, type: 'number' },
+      { key: 'note', label: 'Ghi chú dòng', type: 'text' },
+      ...lineSeen,
+    ].filter((f) => f.key && !f.hidden).map((f) => ({ ...f, key: `l_${f.key}`, label: `${f.label} (dòng hàng)` })).filter(keep);
+    return [...head, ...line];
+  }, [headSeen, lineSeen, sto, so, pl, meta]);
+  const advN = activeConds(adv);
+  // Đơn + giá trị từng dòng hàng (mảng) để so điều kiện
+  const withLines = (o) => {
+    const x = { ...o, orderKind: kindOf(o) };
+    advFields.forEach((f) => {
+      if (!f.key.startsWith('l_')) return;
+      const k = f.key.slice(2);
+      x[f.key] = (o.lines || []).map((l) => (k === 'wh' ? lineWh(o, l) : k === 'fromWh' ? lineFrom(o, l) : k === 'toWh' ? lineTo(o, l) : k === 'shipCode' ? lineShip(o, l) : k === 'left' ? leftKg(l) : l[k]));
+    });
+    return x;
+  };
+
   const list = useMemo(() => {
     const f = norm(q);
-    return rows
+    const base = rows
       .filter((o) => (o.lines || []).some((l) => [lineWh(o, l, 'out'), lineWh(o, l, 'in')].some((w) => !w || inMyWarehouses(w))))
       .filter((o) => !co || o.company === co)
       .filter((o) => (status === 'opening' ? OPEN_STATUSES.includes(o.status) : !status || o.status === status))
       .filter((o) => !f || norm([o.id, o.refNo, o.partyCode, o.partyName, o.fromWarehouse, o.toWarehouse, o.shipCode, ...(o.lines || []).flatMap((l) => [l.item, l.itemName, l.warehouse, l.fromWarehouse, l.toWarehouse, l.shipCode])].join(' ')).includes(f))
       .sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')) || String(b.createdAt).localeCompare(String(a.createdAt)));
-  }, [rows, status, q, inMyWarehouses, sto, co]);
+    if (!advN) return base;
+    const ok = new Set(applyFilter(base.map(withLines), advFields, adv).map((o) => o.id));
+    return base.filter((o) => ok.has(o.id));
+  }, [rows, status, q, inMyWarehouses, sto, co, adv, advN, advFields]); // eslint-disable-line react-hooks/exhaustive-deps
   const sum = list.reduce((s, o) => { const x = orderTotals(o); return { qty: s.qty + x.qty, done: s.done + x.done, transit: s.transit + x.transit, left: s.left + (OPEN_STATUSES.includes(o.status) ? x.left : 0) }; }, { qty: 0, done: 0, left: 0, transit: 0 });
   const late = list.filter((o) => OPEN_STATUSES.includes(o.status) && o.dueDate && o.dueDate < today);
   const current = open && rows.find((o) => o.id === open);
@@ -273,6 +320,8 @@ function OrderList({ type, initialQ = '', startNew = false, onNewDone }) {
           {Object.entries(ORDER_STATUS).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
         </Select>
         <input type="search" placeholder={`Tìm số đơn, ${meta.partyLabel.toLowerCase()}, mã hàng…`} value={q} onChange={(e) => setQ(e.target.value)} />
+        <AdvButton open={advOpen} n={advN} onClick={() => setAdvOpen(!advOpen)} />
+        {!advOpen && advN > 0 && <button type="button" className="btn sm ghost" onClick={() => setAdv(EMPTY_FILTER)}>✕ Bỏ lọc nâng cao</button>}
         <div className="actions" style={{ marginLeft: 'auto' }}>
           <ColumnPicker cols={cols.map((c) => ({ key: c.key, label: c.extra ? `➕ ${c.label}` : c.label, locked: c.locked }))} hidden={hidden} setHidden={setHidden} order={colOrder} setOrder={setColOrder} />
           <button className="btn" onClick={exportExcel}>⬇ Excel</button>
@@ -282,6 +331,7 @@ function OrderList({ type, initialQ = '', startNew = false, onNewDone }) {
         </div>
       </div>
       {msg && <div className="ok-box" style={{ marginBottom: 10 }}>{msg}</div>}
+      {advOpen && <DynamicFilterPanel scope={`orders:${type}`} fields={advFields} value={adv} onApply={(v) => { setAdv(v); if (activeConds(v) && status === 'opening') setStatus(''); }} />}
       {type === 'SO' && <ShortBanner co={co} />}
       <ErrorBox error={error} />
       <div className="table-wrap">

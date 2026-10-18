@@ -720,3 +720,15 @@ tr.row-bad td { background: #fdecec; }
 .cell-add.pair > input.code { flex: 0 0 34%; }
 .cell-add.pair > input:not(.code) { flex: 1 1 0; min-width: 0; }
 @media (max-width: 900px) { .mv-boxes { grid-template-columns: 1fr; } .mv-head .transport-box.span2 { grid-column: 1 / -1; } }
+
+/* Bảng tìm kiếm nâng cao (Tìm kiếm F3) */
+.adv-tabs { display: flex; align-items: center; gap: 2px; border-bottom: 1px solid var(--line); padding: 0 8px; flex-wrap: wrap; }
+.adv-tabs > button:not(.btn) { border: none; background: none; padding: 10px 14px; cursor: pointer; font: inherit; border-bottom: 2px solid transparent; color: inherit; }
+.adv-tabs > button.on { border-bottom-color: var(--primary); color: var(--primary); font-weight: 600; }
+.adv-tabs > .adv-plus { border: 1px solid var(--line) !important; border-radius: 6px; padding: 2px 9px !important; margin-left: 6px; }
+.adv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 8px 28px; }
+.adv-row { display: grid; grid-template-columns: 170px 1fr auto; gap: 8px; align-items: center; }
+.adv-row > input, .adv-row > .ss-trigger, .adv-row select { width: 100%; }
+.adv-label { font-size: 13px; color: var(--muted, #555); }
+.adv-foot { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 14px; background: var(--bg, #f6f7f9); border-top: 1px solid var(--line); }
+@media (max-width: 640px) { .adv-grid { grid-template-columns: 1fr; } .adv-row { grid-template-columns: 1fr; gap: 3px; } }

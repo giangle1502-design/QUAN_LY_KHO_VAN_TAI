@@ -15,9 +15,16 @@ import FieldInput, { displayValue } from '../components/FieldInput';
 import { Empty, ErrorBox, Field, Modal } from '../components/ui';
 import { deleteOrRequest } from '../lib/deletes';
 import { usePref } from '../lib/prefs';
-import DynamicFilterPanel, { activeConds, applyFilter, EMPTY_FILTER } from '../components/DynamicFilterPanel';
+import DynamicFilterPanel, { AdvButton, activeConds, applyFilter, EMPTY_FILTER } from '../components/DynamicFilterPanel';
 import { matchType, syncFromCatalog, syncPartnersToRoles } from '../lib/partners';
 import { AddRoleButton, PartnerFixedFilters, PartnerForm, PartnerNotices, usePartnerRows } from './Partners';
+
+// Bố cục thẻ tìm kiếm gợi ý cho Đối tác (giống MISA); người dùng tự chỉnh lại được
+const BP_TABS = [
+  { name: 'Mặc định', keys: ['code', 'name', 'representativeName', 'businessType', 'businessLine', 'phone', 'fax', 'keywords', 'mobile', 'billingAddress', 'email', 'partnerGroup'] },
+  { name: 'Thông tin KH/NCC', keys: ['taxCode', 'isCustomer', 'isVendor', 'status', 'note'] },
+  { name: 'Hạn mức tín dụng', keys: ['creditLimit'] },
+];
 
 export default function CatalogPage() {
   const { key } = useParams();
@@ -143,8 +150,7 @@ function Catalog({ cat }) {
       )}
       <div className="toolbar">
         <input type="search" placeholder={isBP ? 'Tìm nhanh: mã, tên, MST, điện thoại…' : 'Tìm kiếm…'} value={q} onChange={(e) => setQ(e.target.value)} />
-        <button type="button" className={'btn sm' + (advOpen || activeConds(adv) ? ' primary' : '')} onClick={() => setAdvOpen(!advOpen)}
-          title="Tìm theo nhiều điều kiện, tự thêm điều kiện theo bất kỳ trường nào (kể cả trường tự thêm)">🔎 Tìm nâng cao{activeConds(adv) ? ` (${activeConds(adv)})` : ''}</button>
+        <AdvButton open={advOpen} n={activeConds(adv)} onClick={() => setAdvOpen(!advOpen)} />
         {!advOpen && activeConds(adv) > 0 && <button type="button" className="btn sm ghost" onClick={() => setAdv(EMPTY_FILTER)}>✕ Bỏ lọc nâng cao</button>}
         <span className="small">{visible.length} / {mine.length} dòng</span>
         {(missingCount > 0 || onlyMissing) && (
@@ -153,7 +159,7 @@ function Catalog({ cat }) {
           </label>
         )}
       </div>
-      {advOpen && <DynamicFilterPanel fields={fields} value={adv} onApply={setAdv}
+      {advOpen && <DynamicFilterPanel scope={cat.key} fields={fields} value={adv} onApply={setAdv} defaultTabs={isBP ? BP_TABS : undefined}
         extra={isBP ? <PartnerFixedFilters value={pf} onChange={setPf} /> : null} onReset={() => { setQ(''); setPf({ type: '', status: '' }); }} />}
       {isBP && !advOpen && <div className="toolbar"><PartnerFixedFilters value={pf} onChange={setPf} /></div>}
       {isBP && <PartnerNotices rows={rows} partnerError={bp.partnerError} onMsg={(t, e) => { setMsg(t); setErr(e || ''); }} />}
