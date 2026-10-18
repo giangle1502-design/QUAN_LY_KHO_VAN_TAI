@@ -8,6 +8,7 @@ import { useOrderSecrets, viewOrder } from '../../lib/orderSecrets';
 import { CompanyPicker } from '../../components/TripBits';
 import { ORDER_STATUS, ORDER_TYPES, OPEN_STATUSES, createOrder, leftKg, lineDue, lineFrom, lineShip, lineTo, lineWh, orderTotals, returnableKg, setOrderState, stoRoute, summarizeLines, transitKg } from '../../lib/orders';
 import { MOVE_TYPES } from '../../lib/stock';
+import { kindOf } from '../../catalogs';
 import { STATUS_META, fmtTime, vnDate } from '../../lib/trips';
 import { exportSheets, exportTemplate, readFirstSheet, toNumber, toYmd } from '../../lib/excel';
 import { fmtDate, fmtNum, norm } from '../../lib/utils';
@@ -15,6 +16,7 @@ import { Empty, ErrorBox, Modal } from '../../components/ui';
 import Balance from './Balance';
 import SlipList from './Slips';
 import SOForm from './SOForm';
+import DrtList, { DrtButton } from './Returns';
 import { ColumnPicker, WithAdd } from '../../components/FormTools';
 import { displayValue } from '../../components/FieldInput';
 import { moneyUnit } from '../../lib/currency';
@@ -98,7 +100,7 @@ export function Progress({ o }) {
 
 // Trang Đơn hàng: SO → DO (phiếu xuất theo đơn), PO / STO → Danh sách đơn chờ nhập, Cân đối theo mã hàng.
 // Mỗi người tự kéo thả thứ tự các thẻ (lưu trên trình duyệt).
-export const ORDER_TABS = [['SO', '🧾 SO đã tạo'], ['DO', '🚚 Danh sách đơn hàng xuất kho DO'], ['PO', '🛒 Đơn mua (PO)'], ['cho-nhap', '📥 Danh sách đơn chờ nhập'], ['STO', '🔁 Chuyển kho (STO)'], ['can-doi', '⚖️ Cân đối theo mã hàng']];
+export const ORDER_TABS = [['SO', '🧾 SO đã tạo'], ['DO', '🚚 Danh sách đơn hàng xuất kho DO'], ['PO', '🛒 Đơn mua (PO)'], ['cho-nhap', '📥 IB · Danh sách đơn chờ nhập'], ['DRT', '↩ SO trả hàng (DRT)'], ['STO', '🔁 Chuyển kho (STO)'], ['can-doi', '⚖️ Cân đối theo mã hàng']];
 export default function Orders() {
   const [params, setParams] = useSearchParams();
   const keys = ORDER_TABS.map(([k]) => k);
@@ -124,6 +126,7 @@ export default function Orders() {
         </div>
       </div>
       {tab === 'can-doi' ? <Balance /> : tab === 'DO' ? <SlipList key={"DO" + (params.get('loai') || '')} kind="DO" loai={params.get('loai') || ''} /> : tab === 'cho-nhap' ? <SlipList key={"IN" + (params.get('loai') || '')} kind="IN" loai={params.get('loai') || ''} />
+        : tab === 'DRT' ? <DrtList initialQ={params.get('q') || ''} />
         : <OrderList key={tab} type={tab} initialQ={params.get('q') || ''} startNew={params.get('new') === '1'} onNewDone={() => setParams({ tab })} />}
     </div>
   );
@@ -143,7 +146,7 @@ function OrderList({ type, initialQ = '', startNew = false, onNewDone }) {
   const headSeen = useMemo(() => seenFieldsOf(`${fk}Head`, fieldsOf(`${fk}Line`)), [seenFieldsOf, fieldsOf, fk]);
   const lineSeen = useMemo(() => seenFieldsOf(`${fk}Line`, fieldsOf(`${fk}Head`)), [seenFieldsOf, fieldsOf, fk]);
   // Trường tự thêm + Đơn vị tiền tệ / Tỷ giá (có sẵn) hiện trên danh sách, chi tiết, Excel
-  const customHead = headSeen.filter((f) => (f.custom || f.fx) && !f.hidden);
+  const customHead = headSeen.filter((f) => (f.custom || f.fx || f.listCol) && !f.hidden);
   const fxLists = [lineSeen, headSeen];
   const customLine = lineSeen.filter((f) => f.custom && !f.hidden);
   const { rows: rawRows, error } = useOrders(type);
@@ -191,7 +194,7 @@ function OrderList({ type, initialQ = '', startNew = false, onNewDone }) {
     { key: 'refNo', label: 'Số Ecount', cls: 'mono', render: (o) => o.refNo, hideDefault: true },
     { key: 'date', label: 'Ngày tạo đơn', cls: 'nowrap', render: (o) => fmtDate(o.date) },
     ...(sto ? [] : [{ key: 'party', label: meta.partyLabel, cls: 'nowrap', render: (o) => partyText(o) }, { key: 'sales', label: 'Sale phụ trách', cls: 'small', render: (o) => o.sales || '' }]),
-    ...customHead.map((f) => ({ key: f.key, label: f.label, render: (o) => displayValue(f, o[f.key], false, moneyUnit(f, o, fxLists)) })),
+    ...customHead.map((f) => ({ key: f.key, label: f.label, render: (o) => displayValue(f, f.key === 'orderKind' ? kindOf(o) : o[f.key], false, moneyUnit(f, o, fxLists)) })),
     ...(sto ? [{ key: 'from', label: 'Kho xuất', render: (o) => uniqText(o, lineFrom) }, { key: 'to', label: 'Kho nhập', render: (o) => uniqText(o, lineTo) }]
       : [{ key: 'warehouse', label: so ? 'Kho xuất' : 'Kho nhập', render: (o) => uniqText(o, lineWh) }]),
     ...(so ? [{ key: 'ship', label: 'Mã giao', render: (o) => uniqText(o, lineShip) }] : []),
@@ -334,7 +337,8 @@ function OrderDetail({ o, onClose, onEdit }) {
   const fk = o.type.toLowerCase();
   const headAll = seenFieldsOf(`${fk}Head`, fieldsOf(`${fk}Line`));
   const lineAll = seenFieldsOf(`${fk}Line`, fieldsOf(`${fk}Head`));
-  const headCustom = headAll.filter((f) => (f.custom || f.fx) && !f.hidden && o[f.key] !== '' && o[f.key] != null);
+  const hv = (f) => (f.key === 'orderKind' ? kindOf(o) : o[f.key]);
+  const headCustom = headAll.filter((f) => (f.custom || f.fx || f.listCol) && !f.hidden && hv(f) !== '' && hv(f) != null);
   const lineCustom = lineAll.filter((f) => f.custom && !f.hidden);
   const unitOf = (f) => moneyUnit(f, o, [lineAll, headAll]);
   const canManage = canManageOrders(hasRole, o.type);
@@ -363,7 +367,7 @@ function OrderDetail({ o, onClose, onEdit }) {
       <p>
         <OrderStatus status={o.status} /> {o.refNo ? <> · Số Ecount <b className="mono">{o.refNo}</b></> : null} · Ngày {fmtDate(o.date)}
         {' · '}{meta.partyLabel}: <b>{sto ? partyText(o) : `${o.partyCode} ${o.partyName}`}</b>{o.sales ? <> · Sale: <b>{o.sales}</b></> : null}
-        {headCustom.map((f) => <span key={f.key}> · {f.label}: <b>{displayValue(f, o[f.key], false, unitOf(f))}</b></span>)}
+        {headCustom.map((f) => <span key={f.key}> · {f.label}: <b>{displayValue(f, hv(f), false, unitOf(f))}</b></span>)}
         {Number(o.tolerancePct) ? ` · Dung sai ${o.tolerancePct}%` : ''}
       </p>
       {o.direct && <p className="small">Đơn mua lập tự động khi <b>nhập kho trực tiếp</b> (hàng về không có PO trước).</p>}
@@ -392,6 +396,7 @@ function OrderDetail({ o, onClose, onEdit }) {
 
       {o.type === 'PO' && !o.direct && <PoAllocations o={o} />}
       <div className="form-actions" style={{ justifyContent: 'flex-start', marginBottom: 8 }}><MoveButtons o={o} pend={pendIn.get(o.id)} wait={waitOut.get(o.id)} />
+        <DrtButton so={o} />
         {isAdmin && o.type !== 'PO' && isOpen && <button type="button" className="btn" onClick={() => setAssign(true)}>🚛 Giao đơn vị vận tải</button>}</div>
       {assign && <AssignCarrier o={o} onClose={() => setAssign(false)} />}
       <div className="section-head">Phiếu {sto || hasRet ? 'xuất / nhập kho' : MOVE_TYPES[moveType].label.toLowerCase()} theo đơn ({moves.length})</div>

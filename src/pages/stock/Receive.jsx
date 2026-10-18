@@ -1,3 +1,4 @@
+import { withBlock } from '../../catalogs';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
@@ -74,7 +75,8 @@ function ReceiveForm({ id }) {
   const items = useCollection('items').rows;
   const itemMap = useMemo(() => new Map(items.map((i) => [i.code, i])), [items]);
   const allLocations = useCollection('locations').rows;
-  const statuses = useCollection('goodsStatus').rows;
+  const statusRows = useCollection('goodsStatus').rows;
+  const statuses = useMemo(() => withBlock(statusRows), [statusRows]);
   const pledgees = useCollection('pledgees').rows;
   const warehouses = useCollection('warehouses').rows;
   // Hàng về Kiện (pallet gỗ / nhựa, số pallet) hay Xá: thủ kho kiểm tra thực tế

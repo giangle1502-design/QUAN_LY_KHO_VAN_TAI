@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { Link, useParams, Navigate } from 'react-router-dom';
+import { Link, useParams, Navigate, useSearchParams } from 'react-router-dom';
 import {
   collection, deleteDoc, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, where, writeBatch,
 } from 'firebase/firestore';
@@ -14,6 +14,10 @@ import { norm, today } from '../lib/utils';
 import FieldInput, { displayValue } from '../components/FieldInput';
 import { Empty, ErrorBox, Field, Modal } from '../components/ui';
 import { deleteOrRequest } from '../lib/deletes';
+import { usePref } from '../lib/prefs';
+import DynamicFilterPanel, { activeConds, applyFilter, EMPTY_FILTER } from '../components/DynamicFilterPanel';
+import { matchType, syncFromCatalog, syncPartnersToRoles } from '../lib/partners';
+import { AddRoleButton, PartnerFixedFilters, PartnerForm, PartnerNotices, usePartnerRows } from './Partners';
 
 export default function CatalogPage() {
   const { key } = useParams();
@@ -28,11 +32,20 @@ function Catalog({ cat }) {
   const { isAdmin, canDesign, canEdit, inMyWarehouses, fieldsOf, email } = app;
   const fields = fieldsOf(cat.key);
   const shown = fields.filter((f) => !f.hidden);
-  const { rows, loading, error } = useCollection(cat.key);
+  // Đối tác (BP): hồ sơ partners gộp với Soldto + NCC theo mã
+  const isBP = cat.key === 'partners';
+  const plain = useCollection(isBP ? '' : cat.key);
+  const bp = usePartnerRows(isBP);
+  const { rows, loading, error } = isBP ? bp : plain;
+  const [params] = useSearchParams();
   // Sale chỉ thấy khách hàng (và địa chỉ giao) mình được gán phụ trách
   const custScope = app.salesOnly && ['soldto', 'shipto'].includes(cat.key);
   const custRows = useCollection(custScope && cat.key === 'shipto' ? 'soldto' : '').rows;
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(params.get('q') || '');
+  // Tìm nâng cao: nhiều điều kiện tự thêm (nhớ theo từng danh mục trên trình duyệt)
+  const [adv, setAdv] = usePref(`filter:${cat.key}`, EMPTY_FILTER);
+  const [advOpen, setAdvOpen] = usePref(`filter-open:${cat.key}`, false);
+  const [pf, setPf] = useState({ type: { kh: 'anyCustomer', ncc: 'anyVendor' }[params.get('nhom')] || '', status: '' });
   const [onlyMissing, setOnlyMissing] = useState(false);
   const [editing, setEditing] = useState(null); // {} = thêm mới
   const [msg, setMsg] = useState('');
@@ -59,9 +72,11 @@ function Catalog({ cat }) {
     let list = mine;
     if (onlyMissing) list = list.filter((r) => missingOf(r).length);
     const nq = norm(q);
-    if (nq) list = list.filter((r) => shown.some((f) => norm(displayValue(f, r[f.key])).includes(nq)));
+    if (nq) list = list.filter((r) => shown.some((f) => norm(displayValue(f, r[f.key])).includes(nq)) || (isBP && norm(r.keywords).includes(nq)));
+    if (isBP) list = list.filter((r) => matchType(r, pf.type) && (!pf.status || (r.status || 'active') === pf.status));
+    list = applyFilter(list, fields, adv);
     return [...list].sort((a, b) => String(a._id).localeCompare(String(b._id), 'vi', { numeric: true }));
-  }, [mine, q, shown, onlyMissing]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mine, q, shown, onlyMissing, adv, pf, isBP]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const editable = canEdit(cat);
 
@@ -74,20 +89,23 @@ function Catalog({ cat }) {
     exportSheets(`${cat.short}_${today()}`, { [cat.short]: data.length ? data : [{ STT: '' }] });
   };
 
-  const seed = async () => {
+  const seed = async (list = cat.seed) => {
     const batch = writeBatch(db);
-    cat.seed.forEach((s) => {
+    list.forEach((s) => {
       const row = applyComputed(fields, { ...defaultsOf(fields), ...s });
       batch.set(doc(db, cat.key, docIdOf(cat, row)), { ...row, createdAt: serverTimestamp(), createdBy: email });
     });
     await batch.commit();
-    setMsg(`Đã tạo ${cat.seed.length} dòng mặc định.`);
+    setMsg(`Đã tạo ${list.length} dòng mặc định.`);
   };
 
   const importExcel = async (file) => {
     setErr(''); setMsg('');
     try {
       const res = await importRows(cat, fields, file, app);
+      // Đối tác ↔ Soldto / NCC cùng mã
+      if (isBP) await syncPartnersToRoles(res.written, rows, { email, name: app.name });
+      else await syncFromCatalog(cat.key, res.written, { email });
       setMsg(`Nhập Excel: ${res.added} dòng mới, ${res.updated} dòng cập nhật.`
         + (res.incomplete.length ? ` ${res.incomplete.length} dòng còn thiếu thông tin, đã nhập và đánh dấu ⚠ để bổ sung sau.` : '')
         + (res.skipped.length ? ` Bỏ qua ${res.skipped.length} dòng.` : ''));
@@ -124,7 +142,10 @@ function Catalog({ cat }) {
         </p>
       )}
       <div className="toolbar">
-        <input type="search" placeholder="Tìm kiếm…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input type="search" placeholder={isBP ? 'Tìm nhanh: mã, tên, MST, điện thoại…' : 'Tìm kiếm…'} value={q} onChange={(e) => setQ(e.target.value)} />
+        <button type="button" className={'btn sm' + (advOpen || activeConds(adv) ? ' primary' : '')} onClick={() => setAdvOpen(!advOpen)}
+          title="Tìm theo nhiều điều kiện, tự thêm điều kiện theo bất kỳ trường nào (kể cả trường tự thêm)">🔎 Tìm nâng cao{activeConds(adv) ? ` (${activeConds(adv)})` : ''}</button>
+        {!advOpen && activeConds(adv) > 0 && <button type="button" className="btn sm ghost" onClick={() => setAdv(EMPTY_FILTER)}>✕ Bỏ lọc nâng cao</button>}
         <span className="small">{visible.length} / {mine.length} dòng</span>
         {(missingCount > 0 || onlyMissing) && (
           <label className="small" style={{ color: 'var(--amber)' }}>
@@ -132,12 +153,22 @@ function Catalog({ cat }) {
           </label>
         )}
       </div>
+      {advOpen && <DynamicFilterPanel fields={fields} value={adv} onApply={setAdv}
+        extra={isBP ? <PartnerFixedFilters value={pf} onChange={setPf} /> : null} onReset={() => { setQ(''); setPf({ type: '', status: '' }); }} />}
+      {isBP && !advOpen && <div className="toolbar"><PartnerFixedFilters value={pf} onChange={setPf} /></div>}
+      {isBP && <PartnerNotices rows={rows} partnerError={bp.partnerError} onMsg={(t, e) => { setMsg(t); setErr(e || ''); }} />}
       <ErrorBox error={error} />
       {msg && <div className="ok-box" style={{ marginBottom: 10 }}>{msg}</div>}
       {err && <div className="error-box" style={{ whiteSpace: 'pre-line' }}>{err}</div>}
+      {isAdmin && cat.seed && !loading && rows.length > 0 && cat.seed.some((x) => !rows.some((r) => r._id === docIdOf(cat, x))) && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          Danh mục chưa có dòng mặc định mới: {cat.seed.filter((x) => !rows.some((r) => r._id === docIdOf(cat, x))).map((x) => `${x.code} ${x.name || ''}`).join(', ')}.{' '}
+          <button className="btn sm primary" onClick={() => seed(cat.seed.filter((x) => !rows.some((r) => r._id === docIdOf(cat, x))))}>Thêm</button>
+        </div>
+      )}
       {isAdmin && cat.seed && !loading && rows.length === 0 && (
         <div className="card" style={{ marginBottom: 12 }}>
-          Danh mục đang trống. <button className="btn sm primary" onClick={seed}>Tạo dữ liệu mặc định ({cat.seed.map((s) => s.code).join(', ')})</button>
+          Danh mục đang trống. <button className="btn sm primary" onClick={() => seed()}>Tạo dữ liệu mặc định ({cat.seed.map((s) => s.code).join(', ')})</button>
         </div>
       )}
       <div className="table-wrap">
@@ -162,10 +193,12 @@ function Catalog({ cat }) {
           </table>
         )}
       </div>
-      {editing && (
+      {editing && (isBP ? (
+        <PartnerForm row={editing} existing={rows} onClose={() => setEditing(null)} onSaved={(t) => { setEditing(null); setMsg(t); setErr(''); }} />
+      ) : (
         <EditForm cat={cat} fields={fields} row={editing} existing={rows} onClose={() => setEditing(null)}
-          onSaved={(t) => { setEditing(null); setMsg(t); setErr(''); }} />
-      )}
+          onSaved={(t, _id, _f, e2) => { setEditing(null); setMsg(t); setErr(e2 || ''); }} />
+      ))}
     </div>
   );
 }
@@ -234,6 +267,8 @@ export function EditForm({ cat, fields, row, existing = [], onClose, onSaved }) 
       } else {
         await setDoc(doc(db, cat.key, id), { ...final, updatedAt: serverTimestamp(), updatedBy: email }, { merge: true });
       }
+      // Khách hàng / NCC: cập nhật hồ sơ đối tác cùng mã (không chặn nếu lỗi)
+      await syncFromCatalog(cat.key, [{ id, data: final }], { email });
       onSaved(isNew ? 'Đã thêm.' : 'Đã lưu.', id, final);
     } catch (e2) {
       setErr(e2.code === 'permission-denied' ? 'Không có quyền ghi (kiểm tra phân quyền).' : e2.message);
@@ -278,6 +313,7 @@ export function EditForm({ cat, fields, row, existing = [], onClose, onSaved }) 
         <ErrorBox error={err} />
         <div className="form-actions">
           {!isNew && (isSuper || editable) && <button type="button" className="btn danger" onClick={remove} style={{ marginRight: 'auto' }}>{isSuper ? 'Xóa' : 'Đề nghị xóa'}</button>}
+          {!isNew && ['soldto', 'suppliers'].includes(cat.key) && <AddRoleButton catKey={cat.key} row={row} onDone={(t, e2) => onSaved(t, row._id, null, e2)} />}
           <button type="button" className="btn" onClick={onClose}>Đóng</button>
           {editable && <button className="btn primary" disabled={busy}>{busy ? 'Đang lưu…' : 'Lưu'}</button>}
         </div>
@@ -384,5 +420,6 @@ async function importRows(cat, fields, file, app) {
     });
     await batch.commit();
   }
-  return { added: list.filter((w) => w.isNew).length, updated: list.filter((w) => !w.isNew).length, skipped, incomplete };
+  const written = list.map(({ id, r, isNew }) => ({ id, data: { ...(isNew ? defaultsOf(fields) : existingMap.get(id)), ...r } }));
+  return { added: list.filter((w) => w.isNew).length, updated: list.filter((w) => !w.isNew).length, skipped, incomplete, written };
 }

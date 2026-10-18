@@ -38,7 +38,7 @@ export function useSlips(type, from, to, waitStatus) {
 }
 
 // Loại đơn của phiếu (phiếu cũ chưa ghi orderType: đoán theo tiền tố số đơn)
-export const orderTypeOf = (m) => m.orderType || (String(m.orderId || '').match(/^(SO|PO|STO)/) || [])[1] || '';
+export const orderTypeOf = (m) => m.orderType || (String(m.orderId || '').match(/^(SO|PO|STO|DRT)/) || [])[1] || '';
 
 // Phiếu xuất được lập từ đâu: dự kiến xuất kho, kế hoạch phân bổ (đơn lập từ phân bổ) hay lập trực tiếp
 // allocs: dòng kế hoạch phân bổ (kể cả dòng "Gắn SO" vào đơn có sẵn)

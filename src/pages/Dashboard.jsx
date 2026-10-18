@@ -42,7 +42,7 @@ export default function Dashboard() {
   };
   const stoHere = openOrders.filter((o) => o.type === 'STO' && (o.lines || []).flatMap((l) => [l.fromWarehouse || o.fromWarehouse, l.toWarehouse || o.toWarehouse]).some((w) => inMyWarehouses(w) && (!wh || w === wh)));
   const stoTransit = stoHere.reduce((s, o) => s + orderTotals(o).transit, 0);
-  const byStatus = ['KTC', 'HTC', 'DGC'].map((c) => [c, sumKg(stock.filter((r) => r.goodsStatus === c))]);
+  const byStatus = ['KTC', 'HTC', 'DGC', 'BLK'].map((c) => [c, sumKg(stock.filter((r) => r.goodsStatus === c))]);
 
   return (
     <div>

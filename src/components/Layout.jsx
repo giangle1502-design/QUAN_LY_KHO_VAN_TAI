@@ -102,14 +102,17 @@ export default function Layout() {
       { to: '/kho/out', cls: srcTab(false), ico: '📤', label: 'Lập phiếu xuất kho', show: hasRole('thu_kho') },
       { to: '/don-hang?tab=DO', cls: slipTab('DO', ''), ico: '🚚', label: 'Danh sách đơn hàng xuất kho DO' },
       { to: '/xe/giao-hang', ico: '✅', label: 'Xác nhận giao hàng', show: isAdmin },
+      { to: '/don-hang?tab=DRT', cls: orderTab('DRT'), ico: '↩️', label: 'Danh sách SO trả hàng (DRT)' },
       { to: '/kho/in?src=so', cls: srcTab('so'), ico: '↩️', label: 'Thu hồi / khách trả hàng (MVT 651)', show: isAdmin },
+      { to: '/dm/partners?nhom=kh', ico: '🤝', label: 'Đối tác (khách hàng)' },
     ] },
     { key: 'mua', title: '🛒 Mua hàng (PO → nhập)', items: [
       { to: '/don-hang?tab=PO&new=1', cls: noActive, ico: '➕', label: 'Lập PO mới', show: canSO },
       { to: '/don-hang?tab=PO', cls: orderTab('PO'), ico: '🛒', label: 'Đơn mua (PO)' },
       { to: '/phan-bo', ico: '📋', label: 'Kế hoạch phân bổ hàng mua' },
       { to: '/kho/in', cls: srcTab(false), ico: '📝', label: 'Lập phiếu nhập kho', show: isAdmin },
-      { to: '/don-hang?tab=cho-nhap', cls: slipTab('cho-nhap', ''), ico: '📥', label: 'Danh sách đơn chờ nhập' },
+      { to: '/don-hang?tab=cho-nhap', cls: slipTab('cho-nhap', ''), ico: '📥', label: 'IB · Danh sách đơn chờ nhập' },
+      { to: '/dm/partners?nhom=ncc', ico: '🤝', label: 'Đối tác (nhà cung cấp)' },
       { to: '/kho/nhan-hang', ico: '📥', label: 'Nhận hàng (chờ nhập)', show: hasRole('thu_kho') },
     ] },
     { key: 'sto', title: '🔁 Chuyển kho (STO)', items: [

@@ -452,7 +452,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
           return (
             <ItemStockModal item={l.item} itemName={itemMap.get(l.item)?.name || ''} whCode={l[whKey]} warehouses={warehouses} company={h.company}
               pickRows={false} pickLabel="Chọn làm kho xuất" curLabel="Đang chọn"
-              blocked={(r) => !sto && ((r.goodsStatus !== 'HTC' && statuses.find((x) => x.code === r.goodsStatus)?.allowOutbound === false) || (l.goodsStatus && r.goodsStatus !== l.goodsStatus && r.goodsStatus !== 'HTC'))}
+              blocked={(r) => !sto && ((r.goodsStatus !== 'HTC' && (r.goodsStatus === 'BLK' || statuses.find((x) => x.code === r.goodsStatus)?.allowOutbound === false)) || (l.goodsStatus && r.goodsStatus !== l.goodsStatus && r.goodsStatus !== 'HTC'))}
               allowWh={(c) => (sto ? fromOpts.some((w) => w.code === c) && c !== l.toWarehouse : true)}
               need={n(l.qtyKg)}
               note={<>Dòng {stockAt + 1}: chọn kho đang có hàng làm <b>kho xuất</b>{sto ? ' (kho nhập phải khác kho xuất; thủ kho chỉ chọn được kho mình phụ trách)' : ''}. Bấm vào kho để xem chi tiết lot, vị trí, tình trạng.</>}

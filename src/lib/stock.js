@@ -1,7 +1,7 @@
 import { doc, runTransaction } from 'firebase/firestore';
 import { db } from '../firebase';
 import { catalogByKey } from '../catalogs';
-import { applyOrder, summarizeLines } from './orders';
+import { applyOrder, drtToSo, summarizeLines } from './orders';
 import { palletEffects, palletManaged, readPallets } from './pallets';
 
 // ============================================================================
@@ -160,6 +160,8 @@ async function commit(tx, mv, user, at, newOrder, bump) {
   if (orderRef && !orderSnap.exists()) throw new Error(`Không tìm thấy đơn ${mv.orderId}.`);
   if (orderSnap) mv.orderType = orderSnap.data().type;
   const orderUpd = orderRef ? applyOrder({ ...orderSnap.data(), id: mv.orderId }, mv, 1) : null;
+  // Phiếu nhập theo SO trả hàng (DRT): ghi luôn "khách trả về" của SO gốc
+  const soLink = orderSnap ? await readDrtSo(tx, { ...orderSnap.data(), id: mv.orderId }, mv, 1) : null;
   // Pallet nhập / xuất kèm hàng: chỉ ghi tồn pallet ở kho có "Quản lý pallet"; đọc trước, ghi sau cùng
   let writePallets = null;
   if (mv.type === 'out' || mv.type === 'in') {
@@ -174,9 +176,26 @@ async function commit(tx, mv, user, at, newOrder, bump) {
     direct.po.bump();
   }
   if (orderRef) tx.update(orderRef, { ...orderUpd, lastMovement: id, updatedAt: at, updatedBy: user.email });
+  if (soLink) soLink.write(id, at, user);
   if (bump) bump();
   tx.set(doc(db, 'movements', id), mv);
   return direct ? { id, orderId: direct.order.id } : id;
+}
+
+// Phiếu nhập theo DRT: đọc SO gốc (trước mọi lệnh ghi của giao dịch), trả về hàm ghi "khách trả về" lên dòng SO.
+// sign = +1 ghi phiếu, −1 hủy phiếu; then (khi sửa phiếu) = phiếu mới ghi lại sau khi đảo phiếu cũ
+async function readDrtSo(tx, order, m, sign, then = null) {
+  if (order.type !== 'DRT' || !order.originalSoId) return null;
+  const ref = doc(db, 'orders', order.originalSoId);
+  const snap = await tx.get(ref);
+  if (!snap.exists()) return null;
+  const so = { ...snap.data(), id: order.originalSoId };
+  let upd = applyOrder(so, drtToSo(order, m), sign);
+  if (then) upd = applyOrder({ ...so, lines: upd.lines }, drtToSo(order, then), 1);
+  return {
+    // Thủ kho chỉ được đổi lines / lastMovement / updatedAt / updatedBy của SO (quy tắc Firestore)
+    write: (mid, at, user) => tx.update(ref, { lines: upd.lines, lastMovement: mid, updatedAt: at, updatedBy: user.email }),
+  };
 }
 
 // Hủy phiếu (quản trị): đảo ngược toàn bộ biến động
@@ -195,12 +214,14 @@ export async function cancelMovement(m, reason, user) {
     const orderRef = m.orderId ? doc(db, 'orders', m.orderId) : null;
     const orderSnap = orderRef ? await tx.get(orderRef) : null;
     const orderUpd = orderSnap?.exists() ? applyOrder({ ...orderSnap.data(), id: m.orderId }, m, -1) : null;
+    const soLink = orderSnap?.exists() ? await readDrtSo(tx, { ...orderSnap.data(), id: m.orderId }, m, -1) : null;
     const cur0 = cur.data();
     const writePallets = ['in', 'out'].includes(cur0.type) ? await readPallets(tx, palletEffects(cur0, -1)) : null;
     await applyEffects(tx, { ...m, id: m.id }, effectsOf(m, -1), user);
     if (writePallets) writePallets(user, m.id);
     const at = new Date().toISOString();
     if (orderUpd) tx.update(orderRef, { ...orderUpd, lastMovement: m.id, updatedAt: at, updatedBy: user.email });
+    if (soLink) soLink.write(m.id, at, user);
     tx.update(ref, { status: 'cancelled', cancelReason: reason, cancelledAt: at, cancelledBy: user.email,
       history: [...(m.history || []), { at, by: user.email, byName: user.name, action: `Hủy phiếu: ${reason}` }] });
   });
@@ -228,6 +249,8 @@ export async function editMovement(id, patch, reason, user) {
     const orderRef = old.orderId ? doc(db, 'orders', old.orderId) : null;
     const orderSnap = orderRef ? await tx.get(orderRef) : null;
     let orderUpd = null;
+    let soLink = null;
+    if (orderSnap?.exists() && orderSnap.data().type === 'DRT') soLink = await readDrtSo(tx, { ...orderSnap.data(), id: old.orderId }, old, -1, next);
     if (orderSnap?.exists()) {
       const ord = { ...orderSnap.data(), id: old.orderId };
       const back = applyOrder(ord, old, -1);
@@ -241,6 +264,7 @@ export async function editMovement(id, patch, reason, user) {
     await applyEffects(tx, next, [...effectsOf(old, -1), ...effectsOf(next, 1)], user);
     if (writePallets) writePallets(user, id);
     if (orderUpd) tx.update(orderRef, { ...orderUpd, lastMovement: id, updatedAt: at, updatedBy: user.email });
+    if (soLink) soLink.write(id, at, user);
     tx.set(ref, next);
     return { old, next };
   });

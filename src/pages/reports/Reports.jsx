@@ -42,7 +42,7 @@ export const REPORTS = [
 const n = (v) => Number(v) || 0;
 const T = (kg) => n(kg);
 const t3 = (kg) => fmtNum(T(kg), 2);
-const STATUS_ORDER = ['KTC', 'HTC', 'DGC'];
+const STATUS_ORDER = ['KTC', 'HTC', 'DGC', 'BLK'];
 const rankSt = (c) => (STATUS_ORDER.includes(c) ? STATUS_ORDER.indexOf(c) : 99);
 
 // Cột có mã danh mục → liên kết sẵn (thêm được cột lấy từ danh mục đó). Bảng khác truyền links riêng.

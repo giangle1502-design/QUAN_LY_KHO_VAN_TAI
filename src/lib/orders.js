@@ -15,16 +15,33 @@ export const ORDER_TYPES = {
   PO: { label: 'Đơn mua (PO)', short: 'PO', party: 'suppliers', partyLabel: 'Nhà cung cấp', moveType: 'in', done: 'Đã nhận', left: 'Còn chưa về', due: 'Ngày hàng về (ETA)' },
   // Lệnh chuyển kho: kho đi lập phiếu xuất kho, kho đến lập phiếu nhập kho. Đã xuất − đã nhận = hàng đang đi đường
   STO: { label: 'Lệnh chuyển kho (STO)', short: 'STO', party: null, partyLabel: 'Kho đi → kho đến', moveType: 'both', done: 'Đã xuất', left: 'Còn phải xuất', due: 'Ngày chuyển', received: 'Đã nhận', transit: 'Đang đi đường' },
+  // SO trả hàng: khách trả lại 1 phần / toàn bộ hàng của 1 SO đã giao. Lập từ SO gốc (originalSoId), là 1 IB (chờ nhập):
+  // phiếu nhập kho theo DRT (MVT 651) cộng "đã nhận về" của DRT và "khách trả về" của dòng SO gốc (soLine) trong cùng giao dịch
+  DRT: { label: 'SO trả hàng (DRT)', short: 'DRT', party: 'soldto', partyLabel: 'Khách hàng', moveType: 'in', done: 'Đã nhận về', left: 'Còn chờ nhận về', due: 'Ngày trả' },
 };
+// Lý do trả hàng & tình trạng hàng trả về (DRT)
+export const RETURN_CONDITIONS = ['Bình thường', 'Hư hỏng / cần kiểm tra'];
 // Đơn nào được chọn trên phiếu xuất / phiếu nhập. Phiếu nhập theo SO = hàng khách trả về
-export const ORDER_FOR_MOVE = { out: ['SO', 'STO'], in: ['PO', 'STO', 'SO'] };
+export const ORDER_FOR_MOVE = { out: ['SO', 'STO'], in: ['PO', 'STO', 'SO', 'DRT'] };
 // Nguồn nhập kho: trực tiếp (tạo PO kèm phiếu nhập) hoặc từ chứng từ có sẵn
 export const IN_SOURCES = {
   direct: { label: 'Nhập trực tiếp (tạo PO và nhập kho luôn)', short: 'Nhập trực tiếp' },
   PO: { label: 'Theo đơn mua (PO) đã có', short: 'Theo PO' },
   STO: { label: 'Theo lệnh chuyển kho (STO)', short: 'Nhận hàng chuyển kho' },
   SO: { label: 'Hàng trả về theo đơn bán (SO)', short: 'Hàng trả về (SO)' },
+  DRT: { label: 'Theo SO trả hàng (DRT) đã lập', short: 'SO trả hàng (DRT)' },
 };
+// Phiếu nhập theo DRT: dòng phiếu (orderLine = dòng DRT) đổi sang dòng SO gốc để ghi "khách trả về" của SO
+export function drtToSo(drt, m) {
+  return { ...m, type: 'in', lines: m.lines.map((l) => ({ ...l, orderLine: (drt.lines || []).find((x) => x.no === l.orderLine)?.soLine })) };
+}
+// SO gốc còn được trả bao nhiêu ở mỗi dòng: đã giao − đã trả về − phần DRT khác đang chờ nhận
+export function soReturnable(so, drts = []) {
+  const pending = {};
+  drts.filter((d) => d.originalSoId === so.id && OPEN_STATUSES.includes(d.status))
+    .forEach((d) => (d.lines || []).forEach((l) => { pending[l.soLine] = (pending[l.soLine] || 0) + leftKg(l); }));
+  return Object.fromEntries((so.lines || []).map((l) => [l.no, Math.max(0, returnableKg(l) - (pending[l.no] || 0))]));
+}
 export const isReturn = (o, moveType) => o?.type === 'SO' && moveType === 'in';
 // Kho chung ở đầu đơn (rỗng nếu các dòng khác kho)
 export const orderWarehouse = (o, moveType) => (o.type === 'STO' ? (moveType === 'in' ? o.toWarehouse : o.fromWarehouse) : o.warehouse) || '';
@@ -132,7 +149,7 @@ export function applyOrder(order, m, sign) {
     if (i < 0) throw new Error(`Dòng ${ml.item} không khớp dòng nào của đơn ${order.id}.`);
     if (lines[i].item !== ml.item) throw new Error(`Mã hàng ${ml.item} khác mã hàng dòng đơn (${lines[i].item}).`);
     // Hàng trả về nhận ở kho nào cũng được
-    const lw = returning ? '' : lineWh(order, lines[i], m.type);
+    const lw = returning || order.type === 'DRT' ? '' : lineWh(order, lines[i], m.type);
     if (lw && lw !== m.warehouse) throw new Error(`Dòng ${ml.item} của ${order.id} ${m.type === 'out' ? 'xuất từ' : 'nhập về'} kho ${lw}, phiếu đang ở kho ${m.warehouse}.`);
     lines[i][k] = Math.round((n(lines[i][k]) + sign * Math.abs(n(ml.kg))) * 1000) / 1000;
     if (lines[i][k] < -EPS) lines[i][k] = 0;
@@ -173,7 +190,7 @@ export function matchOrderLine(order, item, usedKg = {}, moveType = 'out', opts 
   let bestLeft = -Infinity;
   for (const l of order?.lines || []) {
     if (l.item !== item) continue;
-    if (opts.warehouse && !isReturn(order, moveType) && lineWh(order, l, moveType) && lineWh(order, l, moveType) !== opts.warehouse) continue;
+    if (opts.warehouse && !isReturn(order, moveType) && order.type !== 'DRT' && lineWh(order, l, moveType) && lineWh(order, l, moveType) !== opts.warehouse) continue;
     // opts.status: 1 tình trạng hoặc danh sách (hàng HTC tự giải chấp khi xuất khớp cả dòng HTC lẫn DGC/KTC)
     if (opts.status && l.goodsStatus && ![].concat(opts.status).includes(l.goodsStatus)) continue;
     const left = openKg(order, l, moveType) - (usedKg[l.no] || 0);

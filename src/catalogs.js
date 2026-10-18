@@ -43,6 +43,15 @@ export const ROLES = [
 ];
 export const roleLabel = (r) => ROLES.find((x) => x[0] === r)?.[1] || r || '';
 
+// Loại đơn (gợi ý giống movetype): SO mặc định DBH, PO mặc định PON
+export const SO_KIND_LABELS = { DBH: 'DBH - Bán hàng thông thường', DMH: 'DMH - Mượn hàng của khách', DRT: 'DRT - Khách trả hàng (lập từ SO gốc)' };
+export const PO_KIND_LABELS = { PON: 'PON - Mua hàng của nhà cung cấp', POK: 'POK - Mua lại hàng của khách hàng' };
+export const kindOf = (o) => o?.orderKind || (o?.type === 'PO' ? 'PON' : o?.type === 'SO' ? 'DBH' : o?.type || '');
+
+// Danh mục Tình trạng hàng hóa tạo trước khi có BLK: vẫn chọn được BLK (khóa xuất bán)
+export const BLOCK_STATUS = { code: 'BLK', name: 'Block (hàng không bán được)', allowOutbound: false };
+export const withBlock = (rows) => (rows.length && !rows.some((r) => r.code === 'BLK') ? [...rows, { ...BLOCK_STATUS, _id: 'BLK' }] : rows);
+
 const num = (v) => (v === '' || v == null ? null : Number(v));
 
 export const CATALOGS = [
@@ -79,6 +88,33 @@ export const CATALOGS = [
         bizRegInfo: 'do Sở Kế hoạch và Đầu tư thành phố Hồ Chí Minh cấp, đăng ký lần đầu ngày 28/05/2020, đăng ký thay đổi lần thứ 1 ngày 17/11/2022, và các lần đăng ký thay đổi, bổ sung (nếu có)',
         address: 'Số A7 Khu dân cư ấp Mới 1, đường Liên xã Tân Xuân - Trung Chánh, Xã Hóc Môn, Thành phố Hồ Chí Minh, Việt Nam',
         representative: 'HOÀNG TRẦN HỒNG PHÚC', repTitle: 'Giám đốc', place: 'HCM' },
+    ],
+  },
+  // ---------------- Đối tác (BP) ----------------
+  // Mỗi công ty 1 mã đối tác, tích "Là khách hàng" / "Là nhà cung cấp" (được tích cả hai).
+  // Dữ liệu cũ giữ nguyên: Soldto và Nhà cung cấp vẫn là nơi SO / PO / phiếu kho đọc; lưu đối tác tự đồng bộ sang hai danh mục đó (cùng mã)
+  {
+    key: 'partners', group: 'Khách hàng', icon: '🤝', title: 'Đối tác (BP · khách hàng + nhà cung cấp)', short: 'Đối tác (BP)', idField: 'code', editRoles: ['kinh_doanh', 'ke_toan'],
+    help: 'Một công ty một mã. Tích Là khách hàng / Là nhà cung cấp (được tích cả hai, đổi lúc nào cũng được, mã và lịch sử giữ nguyên). Lưu ở đây tự cập nhật Soldto và Nhà cung cấp cùng mã.',
+    fields: [
+      { key: 'code', label: 'Mã đối tác', type: 'text', required: true, help: 'Nên trùng mã trên Ecount. Khách hàng / NCC cũ giữ nguyên mã' },
+      { key: 'name', label: 'Tên công ty', type: 'text', required: true },
+      { key: 'isCustomer', label: 'Là khách hàng', type: 'checkbox', default: false },
+      { key: 'isVendor', label: 'Là nhà cung cấp', type: 'checkbox', default: false },
+      { key: 'status', label: 'Tình trạng sử dụng', type: 'select', options: ['active', 'inactive'], labels: { active: 'Sử dụng', inactive: 'Ngừng sử dụng' }, default: 'active', fixedChoices: true },
+      { key: 'taxCode', label: 'Mã số thuế', type: 'text' },
+      { key: 'billingAddress', label: 'Địa chỉ đăng ký (xuất hóa đơn)', type: 'textarea' },
+      { key: 'representativeName', label: 'Người đại diện', type: 'text' },
+      { key: 'businessType', label: 'Loại hình doanh nghiệp', type: 'select', options: ['TNHH', 'Cổ phần', 'Tư nhân', 'Hộ kinh doanh', 'Nước ngoài', 'Khác'] },
+      { key: 'businessLine', label: 'Ngành hàng / lĩnh vực', type: 'text' },
+      { key: 'phone', label: 'Điện thoại', type: 'text' },
+      { key: 'mobile', label: 'Di động', type: 'text' },
+      { key: 'fax', label: 'Fax', type: 'text' },
+      { key: 'email', label: 'Email', type: 'email' },
+      { key: 'partnerGroup', label: 'Nhóm / cấp độ', type: 'text', help: 'VD: KH chiến lược, NCC nhập khẩu, NCC nội địa…' },
+      { key: 'keywords', label: 'Từ khóa tìm kiếm', type: 'text', help: 'Tên viết tắt, tên gọi khác… cách nhau bởi dấu phẩy' },
+      { key: 'creditLimit', label: 'Hạn mức công nợ', type: 'currency' },
+      { key: 'note', label: 'Ghi chú', type: 'textarea' },
     ],
   },
   // ---------------- Khách hàng ----------------
@@ -164,6 +200,7 @@ export const CATALOGS = [
       { code: 'KTC', name: 'Không thế chấp', allowOutbound: true },
       { code: 'HTC', name: 'Hàng thế chấp', allowOutbound: false, note: 'Chỉ xuất được sau khi giải chấp (DGC)' },
       { code: 'DGC', name: 'Đã giải chấp', allowOutbound: true },
+      { code: 'BLK', name: 'Block (hàng không bán được)', allowOutbound: false, note: 'Hàng hư hỏng / chờ kiểm tra / không đạt: không xuất bán, vẫn chuyển kho, chuyển vị trí được' },
     ],
   },
   {
@@ -187,10 +224,12 @@ export const CATALOGS = [
       { key: 'code', label: 'Mã nhà cung cấp', type: 'text', required: true },
       { key: 'name', label: 'Tên nhà cung cấp', type: 'text', required: true },
       { key: 'taxCode', label: 'Mã số thuế', type: 'text' },
+      { key: 'vendorKind', label: 'Loại nhà cung cấp', type: 'select', options: ['Nhập khẩu', 'Nội địa'] },
       { key: 'country', label: 'Quốc gia', type: 'text' },
       { key: 'address', label: 'Địa chỉ', type: 'textarea' },
       { key: 'phone', label: 'Điện thoại', type: 'text' },
       { key: 'email', label: 'Email', type: 'email' },
+      { key: 'active', label: 'Đang giao dịch', type: 'checkbox', default: true },
     ],
   },
 
@@ -379,6 +418,7 @@ export const CATALOGS = [
       { code: 'SO', name: 'Đơn bán', prefix: 'SO', digits: 6, next: 1 },
       { code: 'PO', name: 'Đơn mua', prefix: 'PO', digits: 6, next: 1 },
       { code: 'STO', name: 'Lệnh chuyển kho', prefix: 'STO', digits: 6, next: 1 },
+      { code: 'DRT', name: 'SO trả hàng (khách trả về)', prefix: 'DRT', digits: 6, next: 1 },
       { code: 'PN', name: 'Phiếu nhập kho', prefix: 'PN', digits: 6, next: 1 },
       { code: 'PX', name: 'Phiếu xuất kho', prefix: 'PX', digits: 6, next: 1 },
       { code: 'CV', name: 'Phiếu chuyển vị trí', prefix: 'CV', digits: 6, next: 1 },
@@ -415,6 +455,8 @@ export const FORM_DEFS = [
   {
     key: 'soHead', group: 'Biểu mẫu đơn hàng', icon: '🧾', title: 'Đơn bán (SO) – phần chung', short: 'SO phần chung', form: true,
     fields: [
+      { key: 'orderKind', label: 'Loại SO', type: 'select', options: ['DBH', 'DMH'], labels: SO_KIND_LABELS, default: 'DBH', fixedChoices: true, listCol: true,
+        help: 'DBH: bán hàng thông thường. DMH: mượn hàng của khách. Khách trả hàng (DRT) lập từ SO gốc: mở SO → ↩ Tạo đơn trả hàng'},
       { key: 'date', label: 'Ngày tạo đơn', type: 'date', required: true },
       { key: 'company', label: 'Công ty xuất', type: 'ref', ref: 'companies', required: true },
       { key: 'partyCode', label: 'Khách hàng', type: 'ref', ref: 'soldto', required: true },
@@ -447,6 +489,8 @@ FORM_DEFS.push(
     fields: [
       { key: 'date', label: 'Ngày tạo đơn', type: 'date', required: true },
       { key: 'company', label: 'Công ty mua', type: 'ref', ref: 'companies', required: true },
+      { key: 'orderKind', label: 'Loại PO', type: 'select', options: ['PON', 'POK'], labels: PO_KIND_LABELS, default: 'PON', fixedChoices: true, listCol: true,
+        help: 'PON: mua của nhà cung cấp (thông thường). POK: mua lại hàng của khách hàng (khách cũng là NCC: tích "Là nhà cung cấp" ở Đối tác)' },
       { key: 'partyCode', label: 'Nhà cung cấp', type: 'ref', ref: 'suppliers', required: true },
       { key: 'sales', label: 'Sale phụ trách', type: 'email', help: 'Sale chỉ thấy đơn của mình (trừ người được cho xem đơn của mọi sale)' },
       { key: 'tolerancePct', label: 'Dung sai cho phép (%)', type: 'percent', help: 'Được nhận vượt số đặt tối đa bao nhiêu %' },
@@ -464,7 +508,7 @@ FORM_DEFS.push(
       { key: 'itemName', label: 'Tên hàng', type: 'text', system: true },
       { key: 'qtyKg', label: 'Số lượng (kg)', type: 'number', required: true },
       { key: 'qtyT', label: 'Số lượng (tấn)', type: 'number', system: true, help: 'Tự quy đổi từ số kg; dùng được trong công thức (vd. đơn giá theo tấn)' },
-      { key: 'goodsStatus', label: 'TTHH khi nhập', type: 'select', options: ['KTC', 'HTC', 'DGC'], help: 'Điền sẵn tình trạng trên phiếu nhập kho' },
+      { key: 'goodsStatus', label: 'TTHH khi nhập', type: 'select', options: ['KTC', 'HTC', 'DGC', 'BLK'], help: 'Điền sẵn tình trạng trên phiếu nhập kho' },
       { key: 'packing', label: 'Kiện / Xá', type: 'select', options: ['Kiện', 'Xá'], help: 'Kiện = hàng có pallet (thủ kho kiểm tra pallet gỗ hay nhựa khi nhập, xuất); Xá = hàng rời không pallet' },
       { key: 'note', label: 'Ghi chú', type: 'text' },
     ],
@@ -488,7 +532,7 @@ FORM_DEFS.push(
       { key: 'itemName', label: 'Tên hàng', type: 'text', system: true },
       { key: 'qtyKg', label: 'Số lượng (kg)', type: 'number', required: true },
       { key: 'qtyT', label: 'Số lượng (tấn)', type: 'number', system: true, help: 'Tự quy đổi từ số kg; dùng được trong công thức (vd. đơn giá theo tấn)' },
-      { key: 'goodsStatus', label: 'TTHH', type: 'select', options: ['KTC', 'HTC', 'DGC'], help: 'Bỏ trống = tình trạng nào cũng được' },
+      { key: 'goodsStatus', label: 'TTHH', type: 'select', options: ['KTC', 'HTC', 'DGC', 'BLK'], help: 'Bỏ trống = tình trạng nào cũng được' },
       { key: 'packing', label: 'Kiện / Xá', type: 'select', options: ['Kiện', 'Xá'], help: 'Kiện = hàng có pallet (thủ kho kiểm tra pallet gỗ hay nhựa khi nhập, xuất); Xá = hàng rời không pallet' },
       { key: 'note', label: 'Ghi chú', type: 'text' },
     ],

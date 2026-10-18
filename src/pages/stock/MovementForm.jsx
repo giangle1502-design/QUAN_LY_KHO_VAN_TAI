@@ -1,3 +1,4 @@
+import { withBlock } from '../../catalogs';
 import { notifySlip } from '../../lib/chat';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
@@ -60,7 +61,8 @@ function Form({ type }) {
   const relTo = releaseStatusOfWh(wh);
   const items = useCollection('items').rows;
   const locations = useCollection('locations').rows.filter((l) => l.warehouse === whCode);
-  const statuses = useCollection('goodsStatus').rows;
+  const statusRows = useCollection('goodsStatus').rows;
+  const statuses = useMemo(() => withBlock(statusRows), [statusRows]);
   const pledgees = useCollection('pledgees').rows;
   const suppliers = useCollection('suppliers').rows;
   const soldto = useCollection('soldto').rows;
@@ -94,7 +96,7 @@ function Form({ type }) {
   const grp = useMemo(() => groupCodes(companies), [companies]);
   const [crossCo, setCrossCo] = useState(false);
   // Phiếu nhập: nguồn nhập (trực tiếp / theo PO / theo STO / hàng trả về theo SO)
-  const [source, setSource] = useState(type === 'in' ? ({ sto: 'STO', so: 'SO', po: 'PO' }[params.get('src')] || 'direct') : '');
+  const [source, setSource] = useState(type === 'in' ? ({ sto: 'STO', so: 'SO', po: 'PO', drt: 'DRT' }[params.get('src')] || 'direct') : '');
   // Hàng thu hồi (nhập trả về theo SO, MVT 651): giao vận tải đi lấy hàng ở khách (điểm nhận = mã giao của khách)
   const [ret, setRet] = useState({ carrier: '', ship: '', date: '', plate: '' });
   const [head, setHead] = useState({ refNo: '', company: opCo, date: vnDate(), tripId: params.get('trip') || '', orderId: params.get('order') || '', partyCode: '', partyName: '', shipCode: '', reason: '', note: '', ...EMPTY_TRANSPORT });
@@ -146,7 +148,7 @@ function Form({ type }) {
   const order = orders.find((o) => o.id === head.orderId);
   const orderOpts = orders.filter((o) => {
     if (type === 'in' && o.type !== source) return false;
-    return (isReturn(o, type) || orderInWarehouse(o, type, whCode)) && (o.type === 'STO' || !head.partyCode || o.partyCode === head.partyCode || o.id === head.orderId);
+    return (isReturn(o, type) || o.type === 'DRT' || orderInWarehouse(o, type, whCode)) && (o.type === 'STO' || !head.partyCode || o.partyCode === head.partyCode || o.id === head.orderId);
   }).sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')));
   const [autoFill, setAutoFill] = useState('');
   const [fillNote, setFillNote] = useState('');
@@ -188,6 +190,8 @@ function Form({ type }) {
       .map((l) => l.carrier).filter(Boolean))] : [];
     const car = cars.length === 1 ? { carrier: cars[0], carrierName: carriers.find((c) => c.code === cars[0])?.name || '', carrierAuto: true } : { carrier: '', carrierName: '', carrierAuto: false };
     setHead((h) => ({ ...h, orderId: id, ...party, ...(o.company ? { company: o.company } : {}), ...(!h.carrier || h.carrierAuto ? car : {}) }));
+    // SO trả hàng: ghi chú sẵn SO gốc, lý do, tình trạng hàng để thủ kho kiểm khi nhận
+    if (o.type === 'DRT') setHead((h) => ({ ...h, note: h.note || `Khách trả hàng theo ${o.originalSoId}: ${[...new Set(o.lines.map((l) => [l.reason, l.condition].filter(Boolean).join(', ')).filter(Boolean))].join('; ')}` }));
     palFromOrder(o, (l) => inPlan(l) && (!tw || !lineWh(o, l, type) || lineWh(o, l, type) === tw));
     // Nhập theo STO: luôn lấy hàng từ phiếu xuất ở kho đi (mã, lot, NSX, HSD, TTHH, số lượng), không phải nhập lại
     if (type === 'in' && o.type === 'STO') { fillFromTransfer(o, tw); return; }
@@ -502,7 +506,8 @@ function Form({ type }) {
   const isSTO = order?.type === 'STO';
   // Hàng HTC xuất bán không bị khóa: khi lưu phiếu, phần HTC tự vào đề nghị giải chấp và đổi tình trạng ngay
   const releasable = (r) => type === 'out' && !isSTO && r?.goodsStatus === 'HTC';
-  const blocked = (r) => type === 'out' && !isSTO && !releasable(r) && statusMap.get(r.goodsStatus)?.allowOutbound === false;
+  // BLK (Block): hàng không bán được, chỉ chuyển kho / chuyển vị trí
+  const blocked = (r) => type === 'out' && !isSTO && !releasable(r) && (r.goodsStatus === 'BLK' || statusMap.get(r.goodsStatus)?.allowOutbound === false);
   // Lập phiếu xuất từ Dự kiến xuất kho của Sale (xem bên dưới)
   const [shipPlan, setShipPlan] = useState(null);
   // Tồn của công ty xuất ở kho này không đủ cho phần cần xuất: cảnh báo, gợi ý lấy tồn công ty cùng chủ (chuyển pháp nhân)
@@ -549,7 +554,7 @@ function Form({ type }) {
   }, [head.carrier, head.carrierName, carriers]);
   const pickDriver = (v) => { const d = drivers.find((x) => x.idCard === v); setHead((h) => ({ ...h, idCard: v, ...(d ? { driverName: d.name || '', driverPhone: d.phone || '' } : {}) })); };
 
-  const parties = type === 'in' && source !== 'SO' ? suppliers : soldto;
+  const parties = type === 'in' && !['SO', 'DRT'].includes(source) ? suppliers : soldto;
   // Pháp nhân xuất hóa đơn theo hợp đồng của khách (VAP / PLA / VAP/PLA): nhắc trên phiếu xuất, lệch thì cảnh báo (không chặn)
   const invEntity = type === 'out' && !isSTO ? soldto.find((x) => x.code === head.partyCode)?.invoiceEntity || '' : '';
   const invOk = !invEntity || !head.company || invEntity.split('/').includes(head.company);
@@ -611,7 +616,7 @@ function Form({ type }) {
     if (!wh) return setErr('Chọn kho.');
     if (type === 'in' && !head.company) return setErr('Chọn công ty chủ hàng.');
     if (type === 'in' && source === 'direct' && !head.partyCode.trim()) return setErr('Chọn nhà cung cấp (bấm + để thêm nhà cung cấp mới).');
-    if (type === 'in' && source !== 'direct' && !head.orderId) return setErr(`Chọn ${{ PO: 'đơn mua (PO)', STO: 'lệnh chuyển kho (STO)', SO: 'đơn bán (SO) của hàng trả về' }[source]}.`);
+    if (type === 'in' && source !== 'direct' && !head.orderId) return setErr(`Chọn ${{ PO: 'đơn mua (PO)', STO: 'lệnh chuyển kho (STO)', SO: 'đơn bán (SO) của hàng trả về', DRT: 'SO trả hàng (DRT)' }[source]}.`);
     if (type === 'adjust' && !head.reason) return setErr('Chọn lý do điều chỉnh.');
     if (type === 'out' && shipRequired && !head.shipCode) return setErr(`Khách hàng ${head.partyCode} có ${shipOpts.length} mã giao hàng: chọn mã giao (Giao đến).`);
     if (type === 'out' && head.shipCode && shipOpts.length && !shipOpts.some((s) => s.shipCode === head.shipCode)) return setErr(`Mã giao ${head.shipCode} không thuộc khách hàng ${head.partyCode}.`);
@@ -736,6 +741,8 @@ function Form({ type }) {
         const pids = planIdsOf(oid);
         const res = await mk({
           ...base, ...(k > 0 && type === 'out' ? { pallets: [] } : {}), orderId: oid, orderRef: pc.order?.refNo || '', lines: pc.lines,
+          // Nhập theo SO trả hàng: ghi SO gốc để cộng "khách trả về" của SO
+          ...(pc.order?.type === 'DRT' ? { originalSoId: pc.order.originalSoId || '' } : {}),
           ...(pids.length === 1 ? { planId: pids[0] } : {}),
           ...(groupId ? { groupId, groupOrders: pieces.map((x) => x.order.id), groupIndex: k } : {}),
         });
@@ -762,7 +769,7 @@ function Form({ type }) {
         }
       }
       const mvId = ids[0];
-      if (type === 'in' && source === 'SO' && ret.carrier && mvId) {
+      if (type === 'in' && ['SO', 'DRT'].includes(source) && ret.carrier && mvId) {
         try {
           const shipCode = ret.ship || head.shipCode || order?.lines?.map((l) => lineShip(order, l)).find(Boolean) || '';
           const c = carriers.find((x) => x.code === ret.carrier) || { code: ret.carrier };
@@ -777,7 +784,7 @@ function Form({ type }) {
       setShipPlan(null); setExtra([]); setGroupPlans([]);
       setDoneGroup(groupId ? { id: groupId, ids, orders: pieces.map((x) => x.order.id) } : null);
       setDone(mvId);
-      if (!(type === 'in' && source === 'SO' && ret.carrier)) setDoneTrip('');
+      if (!(type === 'in' && ['SO', 'DRT'].includes(source) && ret.carrier)) setDoneTrip('');
       setRet({ carrier: '', ship: '', date: '', plate: '' });
       setDoneRel(rel.length ? { wait: true } : null);
       setLines([type === 'in' ? newLine() : stockLine()]);
@@ -842,11 +849,11 @@ function Form({ type }) {
                 </Field>
               )}
               {!(type === 'in' && source === 'STO') && (
-                <Field label={type === 'out' ? 'Khách hàng' : source === 'SO' ? 'Khách hàng trả hàng' : 'Nhà cung cấp'} required={type === 'in' && source === 'direct'}>
+                <Field label={type === 'out' ? 'Khách hàng' : ['SO', 'DRT'].includes(source) ? 'Khách hàng trả hàng' : 'Nhà cung cấp'} required={type === 'in' && source === 'direct'}>
                   <div className="cell-add pair">
                     <input list="dl-mv-party" value={head.partyCode} placeholder="Mã" className="code"
                       onChange={(e) => { const p = parties.find((x) => x.code === e.target.value); setHead((h) => ({ ...h, partyCode: e.target.value, partyName: p ? p.name : h.partyName, shipCode: '', orderId: '' })); }} />
-                    <QuickAdd catKey={type === 'in' && source !== 'SO' ? 'suppliers' : 'soldto'} onAdded={(id, r) => setHead((h) => ({ ...h, partyCode: r?.code || id, partyName: r?.name || h.partyName, shipCode: '', orderId: '' }))} />
+                    <QuickAdd catKey={type === 'in' && !['SO', 'DRT'].includes(source) ? 'suppliers' : 'soldto'} onAdded={(id, r) => setHead((h) => ({ ...h, partyCode: r?.code || id, partyName: r?.name || h.partyName, shipCode: '', orderId: '' }))} />
                     <input value={head.partyName} placeholder="Tên" title={head.partyName} onChange={(e) => setH('partyName', e.target.value)} />
                   </div>
                 </Field>
@@ -930,7 +937,7 @@ function Form({ type }) {
               {pal.palletMode && <button type="button" className="btn sm ghost" onClick={() => setPal({ palletMode: '', pallets: [] })}>Bỏ chọn</button>}
             </div>
           )}
-          {type === 'in' && source === 'SO' && (
+          {type === 'in' && ['SO', 'DRT'].includes(source) && (
             <div className="transport-box span2">
               <div className="section-head">🚚 Xe đi thu hồi hàng ở khách <i className="help-tip" title="Chọn đơn vị vận tải thì khi lập phiếu sẽ tạo luôn chuyến: điểm nhận hàng là mã giao của khách, giao về kho này. Để trống nếu khách tự chở hàng về."> ⓘ</i></div>
               <div className="form-grid">
@@ -1469,4 +1476,4 @@ function OrderPicker({ orders, myWh, whCode, onClose, onPick }) {
 }
 
 // Movetype của phiếu nhập theo nguồn
-const IN_MVT = { direct: 501, PO: 101, STO: 101, SO: 651 };
+const IN_MVT = { direct: 501, PO: 101, STO: 101, SO: 651, DRT: 651 };

@@ -11,7 +11,7 @@ export const MVT = {
   502: { label: 'Hủy nhập trực tiếp', sign: -1 },
   561: { label: 'Nhập tồn đầu kỳ', sign: 1 },
   562: { label: 'Hủy nhập tồn đầu kỳ', sign: -1 },
-  651: { label: 'Nhập hàng khách trả về (theo SO)', sign: 1 },
+  651: { label: 'Nhập hàng khách trả về (theo SO / SO trả hàng DRT)', sign: 1 },
   652: { label: 'Hủy nhập hàng trả về', sign: -1 },
   601: { label: 'Xuất bán cho khách (SO)', sign: -1 },
   602: { label: 'Hủy xuất bán', sign: 1 },
@@ -45,7 +45,7 @@ export function lineCode(m, l) {
   if (m.type === 'in') {
     const src = m.source || (m.orderId ? (String(m.orderId).startsWith('SO') ? 'SO' : 'PO') : '');
     if (src === 'PO' || src === 'STO') return 101;
-    if (src === 'SO') return 651;
+    if (src === 'SO' || src === 'DRT') return 651;
     if (src === 'direct') return 501;
     return /tồn đầu kỳ/i.test(m.reason || '') ? 561 : 501;
   }
