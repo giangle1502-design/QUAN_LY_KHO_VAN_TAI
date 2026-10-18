@@ -119,6 +119,9 @@ export const CATALOGS = [
       { key: 'keywords', label: 'Từ khóa tìm kiếm', type: 'text', help: 'Tên viết tắt, tên gọi khác… cách nhau bởi dấu phẩy' },
       { key: 'creditLimit', label: 'Hạn mức công nợ', type: 'currency' },
       { key: 'note', label: 'Ghi chú', type: 'textarea' },
+      // Xem nhanh trên danh sách (sửa ở thẻ "Khách hàng · điểm giao hàng" của hồ sơ, lưu ở Soldto cùng mã)
+      { key: '_salesVirgin', label: 'Sale hạt nhựa nguyên sinh', type: 'text', system: true },
+      { key: '_salesRecycled', label: 'Sale hạt nhựa tái sinh', type: 'text', system: true },
     ],
   },
   // ---------------- Khách hàng ----------------

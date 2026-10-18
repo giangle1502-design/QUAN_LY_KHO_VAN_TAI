@@ -63,7 +63,7 @@ export function mergePartners(partners, soldto, suppliers) {
     // Hồ sơ tạo từ 1 phía (vd. lưu ở trang Soldto) chưa ghi vai trò kia: lấy theo danh mục cũ
     if (p && p.isCustomer == null) base.isCustomer = !!s && s.active !== false;
     if (p && p.isVendor == null) base.isVendor = !!v && v.active !== false;
-    out.push({ ...base, code: base.code || code, _soldto: s || null, _supplier: v || null });
+    out.push({ ...base, code: base.code || code, _soldto: s || null, _supplier: v || null, _salesVirgin: s?.salesVirgin || '', _salesRecycled: s?.salesRecycled || '' });
   }
   return out;
 }

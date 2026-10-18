@@ -147,7 +147,7 @@ export function PartnerForm({ row, existing, onClose, onSaved }) {
   const [busy, setBusy] = useState(false);
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
   const setRole = (c, k, v) => setRoles((r) => ({ ...r, [c]: { ...r[c], [k]: v } }));
-  const general = fields.filter((f) => !f.custom && !f.hidden && !['isCustomer', 'isVendor'].includes(f.key));
+  const general = fields.filter((f) => !f.custom && !f.hidden && !f.key.startsWith('_') && !['isCustomer', 'isVendor'].includes(f.key));
   const extra = fields.filter((f) => f.custom && !f.hidden);
   const tabs = [['chung', 'Thông tin chung'], ...(form.isCustomer ? [['kh', '🏢 Khách hàng · điểm giao hàng']] : []), ...(form.isVendor ? [['ncc', '🏭 Nhà cung cấp']] : []), ['them', `Thông tin bổ sung${extra.length ? ` (${extra.length})` : ''}`]];
   const curTab = tabs.some(([k]) => k === tab) ? tab : 'chung';
