@@ -5,6 +5,7 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useCollection, useOrders, useStock, useWaitingOut } from './hooks';
 import { leftKg } from './orders';
+import { blockLocSet, inBlockLoc } from '../catalogs';
 
 const num = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? 0 : Number(v));
 const r3 = (x) => Math.round(x * 1000) / 1000;
@@ -85,12 +86,15 @@ export function useShortfall(wh = '') {
   const { rows: stock, loading } = useStock(wh);
   const { rows: orders } = useOrders('SO', true);
   const statuses = useCollection('goodsStatus').rows;
+  const locations = useCollection('locations').rows;
   const pending = usePendingRelease();
   const waiting = useWaitingOut();
   const rows = useMemo(() => {
     const locked = new Set(statuses.filter((s) => s.allowOutbound === false).map((s) => s.code));
     if (!statuses.length) locked.add('HTC');
-    return computeShortfall({ stock, orders: wh ? orders.map((o) => ({ ...o, lines: o.lines.filter((l) => (l.warehouse || o.warehouse) === wh) })) : orders, locked, pending, waiting });
-  }, [stock, orders, statuses, pending, waiting, wh]);
+    // Hàng ở khu block không tính là hàng bán được
+    const bl = blockLocSet(locations);
+    return computeShortfall({ stock: stock.filter((r) => !inBlockLoc(r, bl)), orders: wh ? orders.map((o) => ({ ...o, lines: o.lines.filter((l) => (l.warehouse || o.warehouse) === wh) })) : orders, locked, pending, waiting });
+  }, [stock, orders, statuses, locations, pending, waiting, wh]);
   return { rows, loading };
 }

@@ -1,4 +1,5 @@
-import { kindOf, withBlock } from '../../catalogs';
+import { blockLocSet, inBlockLoc, kindOf, withBlock } from '../../catalogs';
+import { RETURN_CONDITIONS } from '../../lib/orders';
 import { notifySlip } from '../../lib/chat';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
@@ -208,7 +209,10 @@ function Form({ type }) {
       const it = itemMap.get(l.item);
       const kg = openK(o, l, 'in');
       const bags = num(it?.bagWeight) ? Math.round(kg / num(it.bagWeight)) : '';
-      return { ...newLine(), item: l.item, orderLine: l.no, bags, pallets: suggestPallets(it, bags), kg, ...(l.goodsStatus ? { goodsStatus: l.goodsStatus } : {}) };
+      // SO trả hàng: hàng hư hỏng / cần kiểm tra → gợi ý vị trí khu hàng block (TTHH giữ nguyên)
+      const toBlock = o.type === 'DRT' && l.condition === RETURN_CONDITIONS[1];
+      const blockLoc = toBlock ? locations.find((x) => x.blockStock && !x.locked)?.code || '' : '';
+      return { ...newLine(), item: l.item, orderLine: l.no, bags, pallets: suggestPallets(it, bags), kg, ...(l.goodsStatus && l.goodsStatus !== 'BLK' ? { goodsStatus: l.goodsStatus } : {}), ...(toBlock ? { toBlock: true, location: blockLoc } : {}) };
     });
     if (next.length) setLines(next);
     // Kế hoạch phân bổ đã ghi vị trí nhận (kho cảng, kho mua nội địa): chia dòng theo vị trí, điền sẵn vị trí
@@ -311,9 +315,9 @@ function Form({ type }) {
   const fifoFor = (o, pl, used, tag) => {
     const fifoSort = (a, b) => ownFirst(o.company || '')(a, b) || String(a.inDate).localeCompare(String(b.inDate)) || String(a.location).localeCompare(String(b.location));
     const mine = [...stock].filter((r) => r.warehouse === whCode && coOk(r, o.company));
-    const fifo = mine.filter((r) => o.type === 'STO' || statusMap.get(r.goodsStatus)?.allowOutbound !== false).sort(fifoSort);
+    const fifo = mine.filter((r) => o.type === 'STO' || (statusMap.get(r.goodsStatus)?.allowOutbound !== false && !inBlockLoc(r, blockLocSet(locations)))).sort(fifoSort);
     // Xuất bán thiếu KTC/DGC: lấy tiếp hàng HTC (nhập trước trước), khi lưu phiếu tự đưa vào đề nghị giải chấp và đổi tình trạng
-    const htcRows = o.type === 'STO' ? [] : mine.filter((r) => r.goodsStatus === 'HTC').sort(fifoSort);
+    const htcRows = o.type === 'STO' ? [] : mine.filter((r) => r.goodsStatus === 'HTC' && !inBlockLoc(r, blockLocSet(locations))).sort(fifoSort);
     const next = [];
     const short = [];
     let htcKg = 0;
@@ -510,7 +514,8 @@ function Form({ type }) {
   // Hàng HTC xuất bán không bị khóa: khi lưu phiếu, phần HTC tự vào đề nghị giải chấp và đổi tình trạng ngay
   const releasable = (r) => type === 'out' && !isSTO && r?.goodsStatus === 'HTC';
   // BLK (Block): hàng không bán được, chỉ chuyển kho / chuyển vị trí
-  const blocked = (r) => type === 'out' && !isSTO && !releasable(r) && (r.goodsStatus === 'BLK' || statusMap.get(r.goodsStatus)?.allowOutbound === false);
+  const blockLocs = useMemo(() => blockLocSet(locations), [locations]);
+  const blocked = (r) => type === 'out' && !isSTO && (inBlockLoc(r, blockLocs) || (!releasable(r) && statusMap.get(r.goodsStatus)?.allowOutbound === false));
   // Lập phiếu xuất từ Dự kiến xuất kho của Sale (xem bên dưới)
   const [shipPlan, setShipPlan] = useState(null);
   // Tồn của công ty xuất ở kho này không đủ cho phần cần xuất: cảnh báo, gợi ý lấy tồn công ty cùng chủ (chuyển pháp nhân)
@@ -635,7 +640,7 @@ function Form({ type }) {
         // Vị trí: thủ kho chọn khi nhận hàng (quản trị lập phiếu có thể để trống)
         if (!num(l.kg) && !num(l.bags) && !num(l.pallets)) return setErr(no + 'nhập số kg, pallet hoặc số bao.');
         if (l.goodsStatus === 'HTC' && !l.pledgee) return setErr(no + 'hàng HTC cần chọn bên nhận thế chấp.');
-        out.push({ ...(l.orderLine != null ? { orderLine: l.orderLine } : {}), item: l.item, itemName: itemMap.get(l.item).name, lot: l.lot.trim(), mfgDate: l.mfgDate, expDate: l.expDate,
+        out.push({ ...(l.orderLine != null ? { orderLine: l.orderLine } : {}), ...(l.toBlock ? { toBlock: true } : {}), item: l.item, itemName: itemMap.get(l.item).name, lot: l.lot.trim(), mfgDate: l.mfgDate, expDate: l.expDate,
           location: l.location, goodsStatus: l.goodsStatus, pledgee: l.goodsStatus === 'HTC' ? l.pledgee : '', company: l.company || head.company,
           bags: num(l.bags), pallets: num(l.pallets), kg: num(l.kg) });
         continue;
@@ -1154,7 +1159,7 @@ function LocationSelect({ value, onChange, locations, exclude, wh }) {
       <option value="">-- Vị trí --</option>
       {locations.filter((x) => x.code !== exclude).sort((a, b) => a.code.localeCompare(b.code)).map((x) => {
         const free = num(x.capacity) - num(x.currentPallets);
-        return <option key={x.code} value={x.code} disabled={x.locked}>{x.code} · trống {fmtNum(free, 1)}/{fmtNum(x.capacity)} pallet{x.locked ? ' (khóa)' : ''}</option>;
+        return <option key={x.code} value={x.code} disabled={x.locked}>{x.blockStock ? '🚫 ' : ''}{x.code} · trống {fmtNum(free, 1)}/{fmtNum(x.capacity)} pallet{x.locked ? ' (khóa)' : ''}{x.blockStock ? ' · khu hàng block' : ''}</option>;
       })}
     </Select>
     </WithAdd>
@@ -1200,7 +1205,10 @@ export function InLine({ l, set, itemMap, locations, statuses, pledgees, locRequ
         <Field label="NSX"><input type="date" value={l.mfgDate} onChange={(e) => set({ mfgDate: e.target.value })} /></Field>
         <Field label="HSD"><input type="date" value={l.expDate} onChange={(e) => set({ expDate: e.target.value })} /></Field>
       </>}
-      <Field label="Vị trí" required={locRequired} help={locRequired ? '' : 'Thủ kho chọn khi nhận hàng'}><LocationSelect value={l.location} onChange={(v) => set({ location: v })} locations={locations} /></Field>
+      <Field label="Vị trí" required={locRequired} help={locRequired ? '' : 'Thủ kho chọn khi nhận hàng'}><LocationSelect value={l.location} onChange={(v) => set({ location: v })} locations={locations} />
+        {l.toBlock && !locations.find((x) => x.code === l.location)?.blockStock && <small className="small" style={{ color: 'var(--amber)' }}>Hàng khách trả hư hỏng / cần kiểm tra: nên để ở vị trí 🚫 khu hàng block{locations.some((x) => x.blockStock) ? '' : ' (kho chưa có, tích "Khu hàng block" ở Vị trí lưu trữ)'}</small>}
+        {locations.find((x) => x.code === l.location)?.blockStock && <small className="small" style={{ color: 'var(--red)' }}>🚫 Khu hàng block: không xuất bán được</small>}
+      </Field>
       <Field label="Tình trạng">
         <WithAdd cat="goodsStatus" onAdded={(id) => set({ goodsStatus: id })}>
           <Select value={l.goodsStatus} onChange={(e) => set({ goodsStatus: e.target.value })}>

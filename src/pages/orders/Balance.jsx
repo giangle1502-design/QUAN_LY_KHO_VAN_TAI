@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useOpCompany, useOpWarehouse, useOrders, useStock } from '../../lib/hooks';
 import { leftKg, transitKg } from '../../lib/orders';
+import { blockLocSet, inBlockLoc } from '../../catalogs';
 import { exportSheets } from '../../lib/excel';
 import { vnDate } from '../../lib/trips';
 import { fmtNum, norm } from '../../lib/utils';
@@ -21,12 +22,14 @@ export default function Balance() {
   const stock = useMemo(() => (co ? allStock.filter((r) => (r.company || '') === co) : allStock), [allStock, co]);
   const orders = useMemo(() => (co ? allOrders.filter((o) => (o.company || '') === co) : allOrders), [allOrders, co]);
   const statuses = useCollection('goodsStatus').rows;
+  const locations = useCollection('locations').rows;
   const items = useCollection('items').rows;
   const [q, setQ] = useState('');
   const [onlyShort, setOnlyShort] = useState(false);
 
   const rows = useMemo(() => {
     const locked = new Set(statuses.filter((s) => s.allowOutbound === false).map((s) => s.code));
+    const bl = blockLocSet(locations);
     const names = new Map(items.map((i) => [i.code, i.name]));
     const m = new Map();
     const get = (code, nm) => {
@@ -35,7 +38,7 @@ export default function Balance() {
     };
     for (const r of stock) {
       const x = get(r.item, r.itemName);
-      if (locked.has(r.goodsStatus)) x.locked += Number(r.kg) || 0;
+      if (locked.has(r.goodsStatus) || inBlockLoc(r, bl)) x.locked += Number(r.kg) || 0;
       else x.usable += Number(r.kg) || 0;
     }
     // Đơn chưa gắn kho được tính vào mọi kho
@@ -67,7 +70,7 @@ export default function Balance() {
     }
     return [...m.values()].map((x) => ({ ...x, now: x.usable - x.so, plan: x.usable + x.transit + x.po - x.so }))
       .sort((a, b) => a.plan - b.plan || a.item.localeCompare(b.item));
-  }, [stock, orders, statuses, items, inMyWarehouses, wh]);
+  }, [stock, orders, statuses, locations, items, inMyWarehouses, wh]);
 
   const f = norm(q);
   const list = rows.filter((r) => (!f || norm(`${r.item} ${r.name}`).includes(f)) && (!onlyShort || r.now < 0 || r.plan < 0));

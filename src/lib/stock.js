@@ -304,6 +304,8 @@ async function applyEffects(tx, mv, effects, user) {
     const ls = locSnaps.get(lid);
     if (!ls.exists()) throw new Error(`Vị trí ${e.location} không có trong kho ${e.warehouse}.`);
     if (e.receive && e.dPallets > EPS && ls.data().locked) throw new Error(`Vị trí ${e.location} đang bị khóa.`);
+    if (e.ship && mv.orderType !== 'STO' && ls.data().blockStock)
+      throw new Error(`Hàng ${e.item} lot ${e.lot || '-'} đang ở khu hàng block (${e.location}): không xuất bán được. Chuyển sang vị trí thường trước khi xuất.`);
     const s = stockSnaps.get(id);
     const cur = s.exists() ? s.data() : { bags: 0, pallets: 0, kg: 0 };
     const bags = n(cur.bags) + e.dBags;

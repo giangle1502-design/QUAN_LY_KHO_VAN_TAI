@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
+import { blockLocSet, inBlockLoc } from '../catalogs';
 import { useCollection, useOpWarehouse, useOrders, useStock, useTrips } from '../lib/hooks';
 import { orderTotals } from '../lib/orders';
 import { ACTIVE, ST, STATUS_META, fmtDuration, minutesBetween, noYard, nowISO, vnDate } from '../lib/trips';
@@ -42,7 +43,9 @@ export default function Dashboard() {
   };
   const stoHere = openOrders.filter((o) => o.type === 'STO' && (o.lines || []).flatMap((l) => [l.fromWarehouse || o.fromWarehouse, l.toWarehouse || o.toWarehouse]).some((w) => inMyWarehouses(w) && (!wh || w === wh)));
   const stoTransit = stoHere.reduce((s, o) => s + orderTotals(o).transit, 0);
-  const byStatus = ['KTC', 'HTC', 'DGC', 'BLK'].map((c) => [c, sumKg(stock.filter((r) => r.goodsStatus === c))]);
+  const byStatus = ['KTC', 'HTC', 'DGC', 'BLK'].map((c) => [c, sumKg(stock.filter((r) => r.goodsStatus === c))]).filter(([c, kg]) => c !== 'BLK' || kg > 0);
+  // Hàng ở khu block (không bán được), TTHH vẫn là KTC / HTC / DGC
+  const blockKg = sumKg(stock.filter((r) => inBlockLoc(r, blockLocSet(locations))));
 
   return (
     <div>
@@ -102,6 +105,7 @@ export default function Dashboard() {
             {byStatus.map(([c, kg]) => (
               <tr key={c}><td><span className={'badge ' + (c === 'HTC' ? 'red' : c === 'DGC' ? 'green' : '')}>{c}</span></td><td className="num">{fmtNum(kg, 0)} kg</td></tr>
             ))}
+            {blockKg > 0 && <tr><td><span className="badge red">🚫 Khu block</span> <span className="small">(không bán, đã tính trong TTHH ở trên)</span></td><td className="num">{fmtNum(blockKg, 0)} kg</td></tr>}
           </tbody></table>
           <p className="small" style={{ marginTop: 8 }}>{locations.length} vị trí · {empty} vị trí trống · {full.length} vị trí ≥ 85%</p>
           <Link to="/kho/ton">Xem tồn kho →</Link>

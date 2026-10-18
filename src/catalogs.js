@@ -48,9 +48,13 @@ export const SO_KIND_LABELS = { DBH: 'DBH - Bán hàng thông thường', DMH: '
 export const PO_KIND_LABELS = { PON: 'PON - Mua hàng của nhà cung cấp', POK: 'POK - Mua lại hàng của khách hàng' };
 export const kindOf = (o) => o?.orderKind || (o?.type === 'PO' ? 'PON' : o?.type === 'SO' ? 'DBH' : o?.type || '');
 
-// Danh mục Tình trạng hàng hóa tạo trước khi có BLK: vẫn chọn được BLK (khóa xuất bán)
-export const BLOCK_STATUS = { code: 'BLK', name: 'Block (hàng không bán được)', allowOutbound: false };
-export const withBlock = (rows) => (rows.length && !rows.some((r) => r.code === 'BLK') ? [...rows, { ...BLOCK_STATUS, _id: 'BLK' }] : rows);
+// Hàng block (không bán được) KHÔNG phải một TTHH: hàng block vẫn có thể là KTC / HTC / DGC.
+// Block = hàng nằm ở vị trí "Khu hàng block" (danh mục Vị trí lưu trữ). Muốn block / mở block: chuyển vị trí.
+// TTHH BLK (bản 18/10/2026) chỉ còn để đọc dữ liệu cũ: vẫn khóa xuất bán nhưng không cho chọn mới.
+export const BLOCK_STATUS = { code: 'BLK', name: 'Block (dữ liệu cũ)', allowOutbound: false };
+export const withBlock = (rows) => rows.filter((r) => r.code !== 'BLK');
+export const blockLocSet = (locations = []) => new Set(locations.filter((l) => l.blockStock).map((l) => `${l.warehouse}__${l.code}`));
+export const inBlockLoc = (r, set) => !!r && (r.goodsStatus === 'BLK' || set.has(`${r.warehouse}__${r.location}`));
 
 const num = (v) => (v === '' || v == null ? null : Number(v));
 
@@ -200,7 +204,6 @@ export const CATALOGS = [
       { code: 'KTC', name: 'Không thế chấp', allowOutbound: true },
       { code: 'HTC', name: 'Hàng thế chấp', allowOutbound: false, note: 'Chỉ xuất được sau khi giải chấp (DGC)' },
       { code: 'DGC', name: 'Đã giải chấp', allowOutbound: true },
-      { code: 'BLK', name: 'Block (hàng không bán được)', allowOutbound: false, note: 'Hàng hư hỏng / chờ kiểm tra / không đạt: không xuất bán, vẫn chuyển kho, chuyển vị trí được' },
     ],
   },
   {
@@ -272,6 +275,8 @@ export const CATALOGS = [
         computed: (r) => (num(r.capacity) ? Math.round((num(r.currentPallets) || 0) / num(r.capacity) * 1000) / 10 : null) },
       { key: 'emptyBin', label: 'Empty bin', type: 'checkbox', computed: (r) => !num(r.currentPallets) },
       { key: 'locked', label: 'Khóa vị trí', type: 'checkbox', help: 'Không cho xếp hàng vào vị trí này' },
+      { key: 'blockStock', label: 'Khu hàng block (không bán)', type: 'checkbox',
+        help: 'Hàng nằm ở vị trí này không xuất bán được (hư hỏng, chờ kiểm tra, không đạt), TTHH vẫn giữ KTC / HTC / DGC. Vẫn chuyển kho, chuyển vị trí được. Hết block: chuyển hàng sang vị trí thường' },
       { key: 'needInvoice', label: 'Cần thông tin xuất hóa đơn', type: 'checkbox',
         help: 'Tích với vị trí ở nơi riêng: cảng (Cát Lái SP-ITC…), kho mua nội địa (Plastic Đất Đỏ Đồng Nai, Vĩnh Cường Bình Tân…). Vị trí lưu trữ thường (A01, A02…) không tích: lấy theo kho' },
       { key: 'invoiceInfo', label: 'Thông tin xuất hóa đơn', type: 'textarea', help: 'VD: Cảng Cát Lái SP-ITC, TP Thủ Đức. In trên hóa đơn / bảng kê cước khi xe nhận hàng ở vị trí này' },
@@ -508,7 +513,7 @@ FORM_DEFS.push(
       { key: 'itemName', label: 'Tên hàng', type: 'text', system: true },
       { key: 'qtyKg', label: 'Số lượng (kg)', type: 'number', required: true },
       { key: 'qtyT', label: 'Số lượng (tấn)', type: 'number', system: true, help: 'Tự quy đổi từ số kg; dùng được trong công thức (vd. đơn giá theo tấn)' },
-      { key: 'goodsStatus', label: 'TTHH khi nhập', type: 'select', options: ['KTC', 'HTC', 'DGC', 'BLK'], help: 'Điền sẵn tình trạng trên phiếu nhập kho' },
+      { key: 'goodsStatus', label: 'TTHH khi nhập', type: 'select', options: ['KTC', 'HTC', 'DGC'], help: 'Điền sẵn tình trạng trên phiếu nhập kho' },
       { key: 'packing', label: 'Kiện / Xá', type: 'select', options: ['Kiện', 'Xá'], help: 'Kiện = hàng có pallet (thủ kho kiểm tra pallet gỗ hay nhựa khi nhập, xuất); Xá = hàng rời không pallet' },
       { key: 'note', label: 'Ghi chú', type: 'text' },
     ],
@@ -532,7 +537,7 @@ FORM_DEFS.push(
       { key: 'itemName', label: 'Tên hàng', type: 'text', system: true },
       { key: 'qtyKg', label: 'Số lượng (kg)', type: 'number', required: true },
       { key: 'qtyT', label: 'Số lượng (tấn)', type: 'number', system: true, help: 'Tự quy đổi từ số kg; dùng được trong công thức (vd. đơn giá theo tấn)' },
-      { key: 'goodsStatus', label: 'TTHH', type: 'select', options: ['KTC', 'HTC', 'DGC', 'BLK'], help: 'Bỏ trống = tình trạng nào cũng được' },
+      { key: 'goodsStatus', label: 'TTHH', type: 'select', options: ['KTC', 'HTC', 'DGC'], help: 'Bỏ trống = tình trạng nào cũng được' },
       { key: 'packing', label: 'Kiện / Xá', type: 'select', options: ['Kiện', 'Xá'], help: 'Kiện = hàng có pallet (thủ kho kiểm tra pallet gỗ hay nhựa khi nhập, xuất); Xá = hàng rời không pallet' },
       { key: 'note', label: 'Ghi chú', type: 'text' },
     ],

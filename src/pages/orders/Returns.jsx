@@ -53,7 +53,7 @@ export function DrtCreate({ so, onClose, onDone }) {
   const [head, setHead] = useState({ date: vnDate(), warehouse: firstWh, note: '' });
   const [lines, setLines] = useState(() => (so.lines || []).filter((l) => n(l.doneKg) - n(l.returnedKg) > 0.001).map((l) => ({
     soLine: l.no, item: l.item, itemName: l.itemName || '', deliveredKg: n(l.doneKg), returnedKg: n(l.returnedKg), shipCode: lineShip(so, l),
-    qtyKg: '', reason: '', condition: RETURN_CONDITIONS[0], goodsStatus: l.goodsStatus === 'HTC' ? 'KTC' : l.goodsStatus || 'KTC',
+    qtyKg: '', reason: '', condition: RETURN_CONDITIONS[0], goodsStatus: ['KTC', 'HTC', 'DGC'].includes(l.goodsStatus) ? l.goodsStatus : 'KTC',
   })));
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -132,13 +132,13 @@ export function DrtCreate({ so, onClose, onDone }) {
                       </Select>
                     </WithAdd>
                   </td>
-                  <td><Select value={l.condition} onChange={(e) => { setL(i, 'condition', e.target.value); setL(i, 'goodsStatus', e.target.value === RETURN_CONDITIONS[0] ? 'KTC' : 'BLK'); }}>{RETURN_CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}</Select></td>
-                  <td><Select value={l.goodsStatus} onChange={(e) => setL(i, 'goodsStatus', e.target.value)}>{[['KTC', 'KTC'], ['DGC', 'DGC'], ['BLK', 'BLK – Block, không bán']].map(([c, lb]) => <option key={c} value={c}>{lb}</option>)}</Select></td>
+                  <td><Select value={l.condition} onChange={(e) => setL(i, 'condition', e.target.value)}>{RETURN_CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}</Select></td>
+                  <td><Select value={l.goodsStatus} onChange={(e) => setL(i, 'goodsStatus', e.target.value)}>{[['KTC', 'KTC'], ['HTC', 'HTC'], ['DGC', 'DGC']].map(([c, lb]) => <option key={c} value={c}>{lb}</option>)}</Select></td>
                 </tr>
               ))}</tbody>
             </table>
           </div>
-          <p className="small">Hàng hư hỏng / cần kiểm tra tự nhập kho ở tình trạng <b>BLK (Block)</b>: không xuất bán được cho tới khi kế toán đổi tình trạng. Còn được trả = đã giao − đã nhận trả về − phần đang nằm trong đơn trả hàng khác chưa nhận. Tổng trả lần này: <b>{t(total)} kg</b>.</p>
+          <p className="small">TTHH giữ theo SO gốc (KTC / HTC / DGC). Hàng hư hỏng / cần kiểm tra được gợi ý nhập vào vị trí <b>🚫 khu hàng block</b>: không xuất bán được, TTHH vẫn giữ nguyên; kiểm xong thì chuyển sang vị trí thường là bán được. Còn được trả = đã giao − đã nhận trả về − phần đang nằm trong đơn trả hàng khác chưa nhận. Tổng trả lần này: <b>{t(total)} kg</b>.</p>
           <ErrorBox error={err} />
           <div className="form-actions">
             <button type="button" className="btn" onClick={all} style={{ marginRight: 'auto' }}>Trả toàn bộ phần còn được trả</button>
