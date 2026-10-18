@@ -216,7 +216,7 @@ service cloud.firestore {
     // Cấp số chứng từ: nhân viên vận hành chỉ được tăng "Số tiếp theo"
     function opStaff() { return hasRole('bao_ve') || hasRole('thu_kho') || hasRole('ke_toan') || hasRole('kinh_doanh') || hasRole('van_tai'); }
     match /codeRules/{code} {
-      allow create: if opStaff() && code in ['GRP', 'SP', 'PN', 'PX', 'CV', 'TC', 'DC', 'SO', 'PO', 'STO', 'DRT']
+      allow create: if opStaff() && code in ['GRP', 'SP', 'PN', 'PX', 'CV', 'TC', 'DC', 'SO', 'PO', 'STO', 'DRT', 'RTV']
         && request.resource.data.next > 1;
       allow update: if opStaff()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['next'])
@@ -389,7 +389,8 @@ service cloud.firestore {
           || (exists(mvPath(mid)) && get(mvPath(mid)).data.status in ['pending', 'wait_release']
             && getAfter(mvPath(mid)).data.status == 'posted' && getAfter(mvPath(mid)).data.confirmedBy == me()))
         // Phiếu nhập theo SO trả hàng (DRT) cập nhật cả SO gốc (originalSoId)
-        && (getAfter(mvPath(mid)).data.orderId == oid || getAfter(mvPath(mid)).data.get('originalSoId', '') == oid);
+        && (getAfter(mvPath(mid)).data.orderId == oid || getAfter(mvPath(mid)).data.get('originalSoId', '') == oid
+          || getAfter(mvPath(mid)).data.get('originalPoId', '') == oid);
     }
     // STO: kho xuất ghi theo từng dòng (fromWarehouses); lệnh cũ ghi ở đầu đơn (fromWarehouse)
     function allMine(list) {
@@ -403,7 +404,7 @@ service cloud.firestore {
       allow create: if (isAdmin() || (orderMgr() && mySale(request.resource.data))
           || (hasRole('thu_kho') && request.resource.data.type == 'STO' && stoFromMine(request.resource.data)))
         && request.resource.data.id == id && request.resource.data.createdBy == me()
-        && request.resource.data.status == 'open' && request.resource.data.type in ['SO', 'PO', 'STO', 'DRT']
+        && request.resource.data.status == 'open' && request.resource.data.type in ['SO', 'PO', 'STO', 'DRT', 'RTV']
         // Nhập trực tiếp: thủ kho lập PO đã nhận đủ cùng lúc với phiếu nhập kho gắn PO đó
         || ((isAdmin() || hasRole('thu_kho')) && request.resource.data.type == 'PO' && request.resource.data.direct == true
           && request.resource.data.id == id && request.resource.data.createdBy == me() && request.resource.data.status == 'done'

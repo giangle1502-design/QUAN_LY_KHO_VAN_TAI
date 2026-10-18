@@ -45,7 +45,7 @@ export const roleLabel = (r) => ROLES.find((x) => x[0] === r)?.[1] || r || '';
 
 // Loại đơn (gợi ý giống movetype): SO mặc định DBH, PO mặc định PON
 export const SO_KIND_LABELS = { DBH: 'DBH - Bán hàng thông thường', DMH: 'DMH - Mượn hàng của khách', DRT: 'DRT - Khách trả hàng (lập từ SO gốc)' };
-export const PO_KIND_LABELS = { PON: 'PON - Mua hàng của nhà cung cấp', POK: 'POK - Mua lại hàng của khách hàng' };
+export const PO_KIND_LABELS = { PON: 'PON - Mua hàng của nhà cung cấp', POK: 'POK - Mua lại hàng của khách hàng', RTV: 'RTV - Trả hàng NCC (lập từ PO gốc)' };
 export const kindOf = (o) => o?.orderKind || (o?.type === 'PO' ? 'PON' : o?.type === 'SO' ? 'DBH' : o?.type || '');
 
 // Hàng block (không bán được) KHÔNG phải một TTHH: hàng block vẫn có thể là KTC / HTC / DGC.
@@ -427,6 +427,7 @@ export const CATALOGS = [
       { code: 'PO', name: 'Đơn mua', prefix: 'PO', digits: 6, next: 1 },
       { code: 'STO', name: 'Lệnh chuyển kho', prefix: 'STO', digits: 6, next: 1 },
       { code: 'DRT', name: 'SO trả hàng (khách trả về)', prefix: 'DRT', digits: 6, next: 1 },
+      { code: 'RTV', name: 'PO trả hàng nhà cung cấp', prefix: 'RTV', digits: 6, next: 1 },
       { code: 'PN', name: 'Phiếu nhập kho', prefix: 'PN', digits: 6, next: 1 },
       { code: 'PX', name: 'Phiếu xuất kho', prefix: 'PX', digits: 6, next: 1 },
       { code: 'CV', name: 'Phiếu chuyển vị trí', prefix: 'CV', digits: 6, next: 1 },

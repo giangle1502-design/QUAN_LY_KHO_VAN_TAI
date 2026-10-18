@@ -196,6 +196,7 @@ function Form({ type }) {
     setHead((h) => ({ ...h, orderId: id, ...party, ...(o.company ? { company: o.company } : {}), ...(!h.carrier || h.carrierAuto ? car : {}) }));
     // SO trả hàng: ghi chú sẵn SO gốc, lý do, tình trạng hàng để thủ kho kiểm khi nhận
     if (o.type === 'DRT') setHead((h) => ({ ...h, note: h.note || `Khách trả hàng theo ${o.originalSoId}: ${[...new Set(o.lines.map((l) => [l.reason, l.condition].filter(Boolean).join(', ')).filter(Boolean))].join('; ')}` }));
+    if (o.type === 'RTV') setHead((h) => ({ ...h, note: h.note || `Trả hàng NCC theo ${o.originalPoId}: ${[...new Set(o.lines.map((l) => l.reason).filter(Boolean))].join('; ')}` }));
     palFromOrder(o, (l) => inPlan(l) && (!tw || !lineWh(o, l, type) || lineWh(o, l, type) === tw));
     // Nhập theo STO: luôn lấy hàng từ phiếu xuất ở kho đi (mã, lot, NSX, HSD, TTHH, số lượng), không phải nhập lại
     if (type === 'in' && o.type === 'STO') { fillFromTransfer(o, tw); return; }
@@ -315,7 +316,11 @@ function Form({ type }) {
   const fifoFor = (o, pl, used, tag) => {
     const fifoSort = (a, b) => ownFirst(o.company || '')(a, b) || String(a.inDate).localeCompare(String(b.inDate)) || String(a.location).localeCompare(String(b.location));
     const mine = [...stock].filter((r) => r.warehouse === whCode && coOk(r, o.company));
-    const fifo = mine.filter((r) => o.type === 'STO' || (statusMap.get(r.goodsStatus)?.allowOutbound !== false && !inBlockLoc(r, blockLocSet(locations)))).sort(fifoSort);
+    // Trả NCC (RTV): lấy được cả hàng ở khu block (thường là hàng không đạt), ưu tiên khu block trước
+    const rtv = o.type === 'RTV';
+    const bl = blockLocSet(locations);
+    const fifo = mine.filter((r) => o.type === 'STO' || (statusMap.get(r.goodsStatus)?.allowOutbound !== false && (rtv || !inBlockLoc(r, bl))))
+      .sort((a, b) => (rtv ? (inBlockLoc(b, bl) ? 1 : 0) - (inBlockLoc(a, bl) ? 1 : 0) : 0) || fifoSort(a, b));
     // Xuất bán thiếu KTC/DGC: lấy tiếp hàng HTC (nhập trước trước), khi lưu phiếu tự đưa vào đề nghị giải chấp và đổi tình trạng
     const htcRows = o.type === 'STO' ? [] : mine.filter((r) => r.goodsStatus === 'HTC' && !inBlockLoc(r, blockLocSet(locations))).sort(fifoSort);
     const next = [];
@@ -515,7 +520,8 @@ function Form({ type }) {
   const releasable = (r) => type === 'out' && !isSTO && r?.goodsStatus === 'HTC';
   // BLK (Block): hàng không bán được, chỉ chuyển kho / chuyển vị trí
   const blockLocs = useMemo(() => blockLocSet(locations), [locations]);
-  const blocked = (r) => type === 'out' && !isSTO && (inBlockLoc(r, blockLocs) || (!releasable(r) && statusMap.get(r.goodsStatus)?.allowOutbound === false));
+  const isRTV = order?.type === 'RTV';
+  const blocked = (r) => type === 'out' && !isSTO && ((!isRTV && inBlockLoc(r, blockLocs)) || (!releasable(r) && statusMap.get(r.goodsStatus)?.allowOutbound === false));
   // Lập phiếu xuất từ Dự kiến xuất kho của Sale (xem bên dưới)
   const [shipPlan, setShipPlan] = useState(null);
   // Tồn của công ty xuất ở kho này không đủ cho phần cần xuất: cảnh báo, gợi ý lấy tồn công ty cùng chủ (chuyển pháp nhân)
@@ -562,9 +568,9 @@ function Form({ type }) {
   }, [head.carrier, head.carrierName, carriers]);
   const pickDriver = (v) => { const d = drivers.find((x) => x.idCard === v); setHead((h) => ({ ...h, idCard: v, ...(d ? { driverName: d.name || '', driverPhone: d.phone || '' } : {}) })); };
 
-  const parties = type === 'in' && !['SO', 'DRT'].includes(source) ? suppliers : soldto;
+  const parties = (type === 'in' && !['SO', 'DRT'].includes(source)) || isRTV ? suppliers : soldto;
   // Pháp nhân xuất hóa đơn theo hợp đồng của khách (VAP / PLA / VAP/PLA): nhắc trên phiếu xuất, lệch thì cảnh báo (không chặn)
-  const invEntity = type === 'out' && !isSTO ? soldto.find((x) => x.code === head.partyCode)?.invoiceEntity || '' : '';
+  const invEntity = type === 'out' && !isSTO && !isRTV ? soldto.find((x) => x.code === head.partyCode)?.invoiceEntity || '' : '';
   const invOk = !invEntity || !head.company || invEntity.split('/').includes(head.company);
   const invText = { VAP: 'Hóa đơn chỉ xuất pháp nhân VAP', PLA: 'Hóa đơn chỉ xuất pháp nhân PLA', 'VAP/PLA': 'Hóa đơn xuất cả hai pháp nhân VAP/PLA' }[invEntity] || invEntity;
   // Lập phiếu xuất từ Dự kiến xuất kho của Sale: ?plan=DK…&ship=mã giao → chọn sẵn đơn, số lượng từng dòng, mã giao
@@ -608,7 +614,7 @@ function Form({ type }) {
 
   // Mã giao của khách: chỉ có 1 mã thì luôn mặc định mã đó; nhiều mã thì bắt buộc chọn
   const shipOpts = useMemo(() => (type === 'out' && head.partyCode ? shipto.filter((s) => s.customerCode === head.partyCode) : []), [type, head.partyCode, shipto]);
-  const shipRequired = shipOpts.length > 1 && order?.type !== 'STO';
+  const shipRequired = shipOpts.length > 1 && !['STO', 'RTV'].includes(order?.type);
   useEffect(() => {
     if (shipOpts.length === 1 && head.shipCode !== shipOpts[0].shipCode && !shipto.some((s) => s.shipCode === head.shipCode && s.customerCode === head.partyCode)) setHead((h) => ({ ...h, shipCode: shipOpts[0].shipCode }));
   }, [shipOpts]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -751,6 +757,8 @@ function Form({ type }) {
           ...base, ...(k > 0 && type === 'out' ? { pallets: [] } : {}), orderId: oid, orderRef: pc.order?.refNo || '', lines: pc.lines,
           // Nhập theo SO trả hàng: ghi SO gốc để cộng "khách trả về" của SO
           ...(pc.order?.type === 'DRT' ? { originalSoId: pc.order.originalSoId || '' } : {}),
+          // Xuất trả NCC theo RTV: ghi PO gốc để cộng "đã trả NCC" của PO
+          ...(pc.order?.type === 'RTV' ? { originalPoId: pc.order.originalPoId || '' } : {}),
           ...(pids.length === 1 ? { planId: pids[0] } : {}),
           ...(groupId ? { groupId, groupOrders: pieces.map((x) => x.order.id), groupIndex: k } : {}),
         });
@@ -871,7 +879,7 @@ function Form({ type }) {
                   <input value={head.refNo} onChange={(e) => setH('refNo', e.target.value)} />
                 </Field>
               )}
-              {!(type === 'in' && source === 'direct') && <Field label={type === 'out' ? 'Theo đơn bán (SO) / lệnh chuyển kho (STO)' : IN_SOURCES[source].label} required={type === 'in'}
+              {!(type === 'in' && source === 'direct') && <Field label={type === 'out' ? 'Theo đơn bán (SO) / lệnh chuyển kho (STO) / trả NCC (RTV)' : IN_SOURCES[source].label} required={type === 'in'}
                 help={orderOpts.length ? (source === 'SO' ? 'Phiếu sẽ ghi nhận phần khách trả về của đơn' : 'Phiếu sẽ tự trừ phần còn lại của đơn') : source === 'SO' ? 'Không có đơn bán nào đã giao hàng' : 'Không có đơn đang mở phù hợp'}>
                 <div className="cell-add">
                 <Select searchable value={head.orderId} onChange={(e) => pickOrder(e.target.value)}>
@@ -887,7 +895,7 @@ function Form({ type }) {
               </Field>}
               {ordPicking && <OrderPicker orders={orders} myWh={warehouses} whCode={whCode} onClose={() => setOrdPicking(false)}
                 onPick={(id, pl, w) => { setOrdPicking(false); pickOrder(id, { plan: pl, wh: w, force: true }); }} />}
-              {type === 'out' && (
+              {type === 'out' && !isRTV && (
                 <Field label="Điểm giao hàng" required={shipRequired}
                   help={shipOpts.length === 1 ? 'Khách chỉ có 1 mã giao: tự chọn sẵn' : shipRequired ? `Khách có ${shipOpts.length} mã giao: bắt buộc chọn` : ''}>
                   <WithAdd cat="shipto" preset={{ customerCode: head.partyCode, customerName: head.partyName }} onAdded={(id, r) => setH('shipCode', r?.shipCode || id)}>

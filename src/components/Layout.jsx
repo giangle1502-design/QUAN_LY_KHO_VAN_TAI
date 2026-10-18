@@ -112,6 +112,7 @@ export default function Layout() {
       { to: '/phan-bo', ico: '📋', label: 'Kế hoạch phân bổ hàng mua' },
       { to: '/kho/in', cls: srcTab(false), ico: '📝', label: 'Lập phiếu nhập kho', show: isAdmin },
       { to: '/don-hang?tab=cho-nhap', cls: slipTab('cho-nhap', ''), ico: '📥', label: 'IB · Danh sách đơn chờ nhập' },
+      { to: '/don-hang?tab=RTV', cls: orderTab('RTV'), ico: '↩️', label: 'Danh sách PO trả hàng NCC (RTV)' },
       { to: '/dm/partners?nhom=ncc', ico: '🤝', label: 'Khách hàng / NCC · nhà cung cấp' },
       { to: '/kho/nhan-hang', ico: '📥', label: 'Nhận hàng (chờ nhập)', show: hasRole('thu_kho') },
     ] },

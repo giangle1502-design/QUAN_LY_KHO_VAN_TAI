@@ -16,6 +16,8 @@ export const MVT = {
   601: { label: 'Xuất bán cho khách (SO)', sign: -1 },
   602: { label: 'Hủy xuất bán', sign: 1 },
   641: { label: 'Xuất chuyển kho (STO)', sign: -1 },
+  122: { label: 'Xuất trả hàng nhà cung cấp (RTV, theo PO gốc)', sign: -1 },
+  121: { label: 'Hủy xuất trả nhà cung cấp', sign: 1 },
   642: { label: 'Hủy xuất chuyển kho', sign: 1 },
   201: { label: 'Xuất khác (không theo đơn)', sign: -1 },
   202: { label: 'Hủy xuất khác', sign: 1 },
@@ -32,7 +34,7 @@ export const MVT = {
 // Thứ tự hiện trong bảng tra cứu
 export const MVT_GROUPS = [
   ['Nhập kho', [101, 102, 501, 502, 561, 562, 651, 652]],
-  ['Xuất kho', [601, 602, 641, 642, 201, 202]],
+  ['Xuất kho', [601, 602, 641, 642, 122, 121, 201, 202]],
   ['Trong kho', [311, 312, 343, 344, 321, 322, 701, 702]],
 ];
 
@@ -51,6 +53,7 @@ export function lineCode(m, l) {
   }
   if (m.type === 'out') {
     if (m.orderType === 'STO' || String(m.orderId || '').startsWith('STO')) return 641;
+    if (m.orderType === 'RTV' || String(m.orderId || '').startsWith('RTV')) return 122;
     if (m.orderId) return 601;
     return 201;
   }

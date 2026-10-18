@@ -18,11 +18,17 @@ export const ORDER_TYPES = {
   // SO trả hàng: khách trả lại 1 phần / toàn bộ hàng của 1 SO đã giao. Lập từ SO gốc (originalSoId), là 1 IB (chờ nhập):
   // phiếu nhập kho theo DRT (MVT 651) cộng "đã nhận về" của DRT và "khách trả về" của dòng SO gốc (soLine) trong cùng giao dịch
   DRT: { label: 'SO trả hàng (DRT)', short: 'DRT', party: 'soldto', partyLabel: 'Khách hàng', moveType: 'in', done: 'Đã nhận về', left: 'Còn chờ nhận về', due: 'Ngày trả' },
+  // PO trả hàng nhà cung cấp (Return to vendor): trả lại NCC 1 phần / toàn bộ hàng đã nhận của 1 PO. Lập từ PO gốc (originalPoId),
+  // kho lập phiếu xuất kho theo RTV (MVT 122): tồn giảm, "đã xuất trả" của RTV và "đã trả NCC" (returnedKg) của dòng PO gốc (poLine) cùng cập nhật.
+  // Không phải SO: không doanh thu, không vào báo cáo bán hàng
+  RTV: { label: 'PO trả hàng NCC (RTV)', short: 'RTV', party: 'suppliers', partyLabel: 'Nhà cung cấp', moveType: 'out', done: 'Đã xuất trả', left: 'Còn chờ xuất trả', due: 'Ngày trả' },
 };
 // Lý do trả hàng & tình trạng hàng trả về (DRT)
 export const RETURN_CONDITIONS = ['Bình thường', 'Hư hỏng / cần kiểm tra'];
 // Đơn nào được chọn trên phiếu xuất / phiếu nhập. Phiếu nhập theo SO = hàng khách trả về
-export const ORDER_FOR_MOVE = { out: ['SO', 'STO'], in: ['PO', 'STO', 'SO', 'DRT'] };
+export const ORDER_FOR_MOVE = { out: ['SO', 'STO', 'RTV'], in: ['PO', 'STO', 'SO', 'DRT'] };
+// Lý do trả hàng NCC (RTV)
+export const RTV_REASONS = ['Hàng không đạt chất lượng', 'Giao sai quy cách / sai mã', 'Giao dư so với đơn', 'Hàng hư hỏng khi nhận', 'Khác'];
 // Nguồn nhập kho: trực tiếp (tạo PO kèm phiếu nhập) hoặc từ chứng từ có sẵn
 export const IN_SOURCES = {
   direct: { label: 'Nhập trực tiếp (tạo PO và nhập kho luôn)', short: 'Nhập trực tiếp' },
@@ -41,6 +47,26 @@ export function soReturnable(so, drts = []) {
   drts.filter((d) => d.originalSoId === so.id && OPEN_STATUSES.includes(d.status))
     .forEach((d) => (d.lines || []).forEach((l) => { pending[l.soLine] = (pending[l.soLine] || 0) + leftKg(l); }));
   return Object.fromEntries((so.lines || []).map((l) => [l.no, Math.max(0, returnableKg(l) - (pending[l.no] || 0))]));
+}
+// Phiếu xuất theo RTV: dòng phiếu (orderLine = dòng RTV) ghi "đã trả NCC" (returnedKg) lên dòng PO gốc (poLine)
+export function applyPoReturn(po, rtv, m, sign) {
+  const lines = (po.lines || []).map((l) => ({ ...l }));
+  for (const ml of m.lines || []) {
+    const no = (rtv.lines || []).find((x) => x.no === ml.orderLine)?.poLine;
+    const i = lines.findIndex((l) => l.no === no);
+    if (i < 0) continue;
+    lines[i].returnedKg = Math.max(0, Math.round((n(lines[i].returnedKg) + sign * Math.abs(n(ml.kg))) * 1000) / 1000);
+  }
+  const over = lines.find((l) => n(l.returnedKg) > n(l.doneKg) + EPS);
+  if (sign > 0 && over) throw new Error(`Trả NCC vượt hàng đã nhận theo ${po.id}: ${over.item} mới nhận ${n(over.doneKg)} kg, tổng trả sẽ là ${n(over.returnedKg)} kg.`);
+  return { lines };
+}
+// PO gốc còn được trả NCC bao nhiêu ở mỗi dòng: đã nhận − đã trả NCC − phần RTV khác chưa xuất
+export function poReturnable(po, rtvs = []) {
+  const pending = {};
+  rtvs.filter((d) => d.originalPoId === po.id && OPEN_STATUSES.includes(d.status))
+    .forEach((d) => (d.lines || []).forEach((l) => { pending[l.poLine] = (pending[l.poLine] || 0) + leftKg(l); }));
+  return Object.fromEntries((po.lines || []).map((l) => [l.no, Math.max(0, returnableKg(l) - (pending[l.no] || 0))]));
 }
 export const isReturn = (o, moveType) => o?.type === 'SO' && moveType === 'in';
 // Kho chung ở đầu đơn (rỗng nếu các dòng khác kho)
@@ -149,7 +175,7 @@ export function applyOrder(order, m, sign) {
     if (i < 0) throw new Error(`Dòng ${ml.item} không khớp dòng nào của đơn ${order.id}.`);
     if (lines[i].item !== ml.item) throw new Error(`Mã hàng ${ml.item} khác mã hàng dòng đơn (${lines[i].item}).`);
     // Hàng trả về nhận ở kho nào cũng được
-    const lw = returning || order.type === 'DRT' ? '' : lineWh(order, lines[i], m.type);
+    const lw = returning || ['DRT', 'RTV'].includes(order.type) ? '' : lineWh(order, lines[i], m.type);
     if (lw && lw !== m.warehouse) throw new Error(`Dòng ${ml.item} của ${order.id} ${m.type === 'out' ? 'xuất từ' : 'nhập về'} kho ${lw}, phiếu đang ở kho ${m.warehouse}.`);
     lines[i][k] = Math.round((n(lines[i][k]) + sign * Math.abs(n(ml.kg))) * 1000) / 1000;
     if (lines[i][k] < -EPS) lines[i][k] = 0;
@@ -160,7 +186,7 @@ export function applyOrder(order, m, sign) {
   }
   if (!sto && !returning && sign < 0) {
     const bad = lines.find((l) => n(l.returnedKg) > n(l.doneKg) + EPS);
-    if (bad) throw new Error(`Khách đã trả về ${n(bad.returnedKg)} kg ${bad.item} theo ${order.id}: hủy phiếu nhập hàng trả về trước.`);
+    if (bad) throw new Error(order.type === 'PO' ? `Đã trả NCC ${n(bad.returnedKg)} kg ${bad.item} theo ${order.id} (RTV): hủy phiếu xuất trả NCC trước.` : `Khách đã trả về ${n(bad.returnedKg)} kg ${bad.item} theo ${order.id}: hủy phiếu nhập hàng trả về trước.`);
   }
   if (returning) {
     if (sign > 0 && order.status === 'cancelled') throw new Error(`Đơn ${order.id} đã hủy.`);
@@ -190,7 +216,7 @@ export function matchOrderLine(order, item, usedKg = {}, moveType = 'out', opts 
   let bestLeft = -Infinity;
   for (const l of order?.lines || []) {
     if (l.item !== item) continue;
-    if (opts.warehouse && !isReturn(order, moveType) && order.type !== 'DRT' && lineWh(order, l, moveType) && lineWh(order, l, moveType) !== opts.warehouse) continue;
+    if (opts.warehouse && !isReturn(order, moveType) && !['DRT', 'RTV'].includes(order.type) && lineWh(order, l, moveType) && lineWh(order, l, moveType) !== opts.warehouse) continue;
     // opts.status: 1 tình trạng hoặc danh sách (hàng HTC tự giải chấp khi xuất khớp cả dòng HTC lẫn DGC/KTC)
     if (opts.status && l.goodsStatus && ![].concat(opts.status).includes(l.goodsStatus)) continue;
     const left = openKg(order, l, moveType) - (usedKg[l.no] || 0);

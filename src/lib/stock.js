@@ -1,7 +1,7 @@
 import { doc, runTransaction } from 'firebase/firestore';
 import { db } from '../firebase';
 import { catalogByKey } from '../catalogs';
-import { applyOrder, drtToSo, summarizeLines } from './orders';
+import { applyOrder, applyPoReturn, drtToSo, summarizeLines } from './orders';
 import { palletEffects, palletManaged, readPallets } from './pallets';
 
 // ============================================================================
@@ -184,14 +184,18 @@ async function commit(tx, mv, user, at, newOrder, bump) {
 
 // Phiếu nhập theo DRT: đọc SO gốc (trước mọi lệnh ghi của giao dịch), trả về hàm ghi "khách trả về" lên dòng SO.
 // sign = +1 ghi phiếu, −1 hủy phiếu; then (khi sửa phiếu) = phiếu mới ghi lại sau khi đảo phiếu cũ
+// Phiếu xuất theo RTV (trả hàng NCC): tương tự, ghi "đã trả NCC" lên dòng PO gốc
 async function readDrtSo(tx, order, m, sign, then = null) {
-  if (order.type !== 'DRT' || !order.originalSoId) return null;
-  const ref = doc(db, 'orders', order.originalSoId);
+  const rtv = order.type === 'RTV';
+  const srcId = rtv ? order.originalPoId : order.type === 'DRT' ? order.originalSoId : '';
+  if (!srcId) return null;
+  const ref = doc(db, 'orders', srcId);
   const snap = await tx.get(ref);
   if (!snap.exists()) return null;
-  const so = { ...snap.data(), id: order.originalSoId };
-  let upd = applyOrder(so, drtToSo(order, m), sign);
-  if (then) upd = applyOrder({ ...so, lines: upd.lines }, drtToSo(order, then), 1);
+  const so = { ...snap.data(), id: srcId };
+  const step = (base, mv, sg) => (rtv ? applyPoReturn(base, order, mv, sg) : applyOrder(base, drtToSo(order, mv), sg));
+  let upd = step(so, m, sign);
+  if (then) upd = step({ ...so, lines: upd.lines }, then, 1);
   return {
     // Thủ kho chỉ được đổi lines / lastMovement / updatedAt / updatedBy của SO (quy tắc Firestore)
     write: (mid, at, user) => tx.update(ref, { lines: upd.lines, lastMovement: mid, updatedAt: at, updatedBy: user.email }),
@@ -250,7 +254,7 @@ export async function editMovement(id, patch, reason, user) {
     const orderSnap = orderRef ? await tx.get(orderRef) : null;
     let orderUpd = null;
     let soLink = null;
-    if (orderSnap?.exists() && orderSnap.data().type === 'DRT') soLink = await readDrtSo(tx, { ...orderSnap.data(), id: old.orderId }, old, -1, next);
+    if (orderSnap?.exists() && ['DRT', 'RTV'].includes(orderSnap.data().type)) soLink = await readDrtSo(tx, { ...orderSnap.data(), id: old.orderId }, old, -1, next);
     if (orderSnap?.exists()) {
       const ord = { ...orderSnap.data(), id: old.orderId };
       const back = applyOrder(ord, old, -1);
@@ -304,7 +308,7 @@ async function applyEffects(tx, mv, effects, user) {
     const ls = locSnaps.get(lid);
     if (!ls.exists()) throw new Error(`Vị trí ${e.location} không có trong kho ${e.warehouse}.`);
     if (e.receive && e.dPallets > EPS && ls.data().locked) throw new Error(`Vị trí ${e.location} đang bị khóa.`);
-    if (e.ship && mv.orderType !== 'STO' && ls.data().blockStock)
+    if (e.ship && !['STO', 'RTV'].includes(mv.orderType) && ls.data().blockStock)
       throw new Error(`Hàng ${e.item} lot ${e.lot || '-'} đang ở khu hàng block (${e.location}): không xuất bán được. Chuyển sang vị trí thường trước khi xuất.`);
     const s = stockSnaps.get(id);
     const cur = s.exists() ? s.data() : { bags: 0, pallets: 0, kg: 0 };

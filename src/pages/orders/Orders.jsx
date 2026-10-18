@@ -17,6 +17,7 @@ import Balance from './Balance';
 import SlipList from './Slips';
 import SOForm from './SOForm';
 import DrtList, { DrtButton } from './Returns';
+import RtvList, { RtvButton } from './VendorReturns';
 import { ColumnPicker, WithAdd } from '../../components/FormTools';
 import { displayValue } from '../../components/FieldInput';
 import { moneyUnit } from '../../lib/currency';
@@ -101,7 +102,7 @@ export function Progress({ o }) {
 
 // Trang Đơn hàng: SO → DO (phiếu xuất theo đơn), PO / STO → Danh sách đơn chờ nhập, Cân đối theo mã hàng.
 // Mỗi người tự kéo thả thứ tự các thẻ (lưu trên trình duyệt).
-export const ORDER_TABS = [['SO', '🧾 SO đã tạo'], ['DO', '🚚 Danh sách đơn hàng xuất kho DO'], ['PO', '🛒 Đơn mua (PO)'], ['cho-nhap', '📥 IB · Danh sách đơn chờ nhập'], ['DRT', '↩ SO trả hàng (DRT)'], ['STO', '🔁 Chuyển kho (STO)'], ['can-doi', '⚖️ Cân đối theo mã hàng']];
+export const ORDER_TABS = [['SO', '🧾 SO đã tạo'], ['DO', '🚚 Danh sách đơn hàng xuất kho DO'], ['PO', '🛒 Đơn mua (PO)'], ['cho-nhap', '📥 IB · Danh sách đơn chờ nhập'], ['DRT', '↩ SO trả hàng (DRT)'], ['RTV', '↩ PO trả hàng NCC (RTV)'], ['STO', '🔁 Chuyển kho (STO)'], ['can-doi', '⚖️ Cân đối theo mã hàng']];
 export default function Orders() {
   const [params, setParams] = useSearchParams();
   const keys = ORDER_TABS.map(([k]) => k);
@@ -128,6 +129,7 @@ export default function Orders() {
       </div>
       {tab === 'can-doi' ? <Balance /> : tab === 'DO' ? <SlipList key={"DO" + (params.get('loai') || '')} kind="DO" loai={params.get('loai') || ''} /> : tab === 'cho-nhap' ? <SlipList key={"IN" + (params.get('loai') || '')} kind="IN" loai={params.get('loai') || ''} />
         : tab === 'DRT' ? <DrtList initialQ={params.get('q') || ''} />
+        : tab === 'RTV' ? <RtvList initialQ={params.get('q') || ''} />
         : <OrderList key={tab} type={tab} initialQ={params.get('q') || ''} startNew={params.get('new') === '1'} onNewDone={() => setParams({ tab })} />}
     </div>
   );
@@ -432,7 +434,7 @@ function OrderDetail({ o, onClose, onEdit }) {
       </div>
       <div className="table-wrap" style={{ marginBottom: 12 }}>
         <table>
-          <thead><tr><th>#</th><th>{meta.due}</th>{sto ? <><th>Kho xuất</th><th>Kho nhập</th></> : <th>{so ? 'Kho xuất' : 'Kho nhập'}</th>}<th>Mã hàng</th><th>Tên hàng</th>{so && <th>Mã giao</th>}<th>TTHH</th>{lineCustom.map((f) => <th key={f.key}>{f.label}</th>)}<th className="num">Đặt (kg)</th><th className="num">{meta.done}</th>{hasRet && <th className="num">Khách trả về</th>}
+          <thead><tr><th>#</th><th>{meta.due}</th>{sto ? <><th>Kho xuất</th><th>Kho nhập</th></> : <th>{so ? 'Kho xuất' : 'Kho nhập'}</th>}<th>Mã hàng</th><th>Tên hàng</th>{so && <th>Mã giao</th>}<th>TTHH</th>{lineCustom.map((f) => <th key={f.key}>{f.label}</th>)}<th className="num">Đặt (kg)</th><th className="num">{meta.done}</th>{hasRet && <th className="num">{o.type === 'PO' ? 'Đã trả NCC' : 'Khách trả về'}</th>}
             {sto && <><th className="num">{meta.transit}</th><th className="num">{meta.received}</th></>}<th className="num">{meta.left}</th>{o.type !== 'PO' && <th>Vận tải</th>}<th>Ghi chú</th></tr></thead>
           <tbody>{o.lines.map((l) => (
             <tr key={l.no}><td>{l.no}</td><td className="nowrap">{fmtDate(lineDue(o, l))}</td>{sto ? <><td>{lineFrom(o, l)}</td><td>{lineTo(o, l)}</td></> : <td>{lineWh(o, l) || 'Kho nào cũng được'}</td>}<td>{l.item}</td><td>{l.itemName}</td>
@@ -447,6 +449,7 @@ function OrderDetail({ o, onClose, onEdit }) {
       {o.type === 'PO' && !o.direct && <PoAllocations o={o} />}
       <div className="form-actions" style={{ justifyContent: 'flex-start', marginBottom: 8 }}><MoveButtons o={o} pend={pendIn.get(o.id)} wait={waitOut.get(o.id)} />
         <DrtButton so={o} />
+        <RtvButton po={o} />
         {isAdmin && o.type !== 'PO' && isOpen && <button type="button" className="btn" onClick={() => setAssign(true)}>🚛 Giao đơn vị vận tải</button>}</div>
       {assign && <AssignCarrier o={o} onClose={() => setAssign(false)} />}
       <div className="section-head">Phiếu {sto || hasRet ? 'xuất / nhập kho' : MOVE_TYPES[moveType].label.toLowerCase()} theo đơn ({moves.length})</div>
