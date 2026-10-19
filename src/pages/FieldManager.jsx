@@ -246,7 +246,7 @@ export default function FieldManager() {
   );
 }
 
-const viewerText = (v) => v.map((x) => ROLES.find((r) => r[0] === x)?.[1] || x).join(', ');
+const viewerText = (v) => v.map((x) => (x === 'sale_admin' ? 'Sale quản trị' : ROLES.find((r) => r[0] === x)?.[1] || x)).join(', ');
 
 // Chọn người / vai trò được xem 1 trường đơn hàng (quản trị luôn xem được)
 function ViewersPicker({ field, hasSales, onClose, onSave }) {
@@ -262,7 +262,7 @@ function ViewersPicker({ field, hasSales, onClose, onSave }) {
           <span><b>Sale phụ trách của đơn</b> xem được giá trị trong đơn của mình (vd. Giá bán: sale nào thấy đơn của sale đó). Người / vai trò chọn dưới đây xem được tất cả.</span></label>
       )}
       <div className="section-head">Người / vai trò xem được tất cả · theo vai trò</div>
-      <div className="tags">{ROLES.filter((r) => r[0] !== 'admin').map(([k, l]) => (
+      <div className="tags">{[...ROLES.filter((r) => r[0] !== 'admin'), ...(hasSales ? [['sale_admin', 'Sale quản trị (xem đơn của mọi sale)']] : [])].map(([k, l]) => (
         <label key={k} className={'chip' + (sel.includes(k) ? ' on' : '')}><input type="checkbox" hidden checked={sel.includes(k)} onChange={() => toggle(k)} />{l}</label>
       ))}</div>
       <div className="section-head" style={{ marginTop: 10 }}>Theo người dùng</div>

@@ -149,7 +149,9 @@ export function fillEmptyLinks(fields, row, recFor) {
 // Trường chỉ người được chỉ định xem (email hoặc mã vai trò); quản trị luôn xem được
 // salesSees: sale phụ trách của đơn cũng xem được giá trị trong đơn của mình (vd. Giá bán)
 export const isPrivate = (f) => !!(f.custom && (f.viewers?.length || f.salesSees) && f.type !== 'formula');
-export const isViewer = (f, me) => !!(me.isAdmin || f.viewers?.includes(me.email) || f.viewers?.includes(me.role));
+// 'sale_admin' = Sale quản trị (kinh doanh được tích "xem đơn của mọi sale"), vd. chỉ sale quản trị xem Giá mua
+export const SALE_ADMIN = 'sale_admin';
+export const isViewer = (f, me) => !!(me.isAdmin || f.viewers?.includes(me.email) || f.viewers?.includes(me.role) || (me.saleAdmin && f.viewers?.includes(SALE_ADMIN)));
 export function canSeeField(f, me) {
   if (!isPrivate(f) || isViewer(f, me)) return true;
   return !!(f.salesSees && me.role === 'kinh_doanh' && me.ownSale !== false);

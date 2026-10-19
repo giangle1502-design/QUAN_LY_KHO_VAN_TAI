@@ -40,7 +40,7 @@ export function writeSecrets(tx, order, lines, secrets, by) {
 
 // Nghe các giá trị riêng tư mình được xem → Map số đơn → { head: {key: v}, lines: { no: {key: v} } }
 export function useOrderSecrets(type) {
-  const { isAdmin, email, role, allowed } = useApp();
+  const { isAdmin, email, role, allowed, salesOnly } = useApp();
   const [docs, setDocs] = useState({});
   useEffect(() => {
     if (!allowed || !email) return undefined;
@@ -49,7 +49,9 @@ export function useOrderSecrets(type) {
       ? [type ? query(col, where('orderType', '==', type)) : col]
       : [query(col, where('viewers', 'array-contains', email)), ...(role ? [query(col, where('viewers', 'array-contains', role))] : []),
         // Sale phụ trách xem giá trị (vd. Giá bán) trong đơn của mình
-        ...(role === 'kinh_doanh' ? [query(col, where('salesSees', '==', true), where('sales', '==', email))] : [])];
+        ...(role === 'kinh_doanh' ? [query(col, where('salesSees', '==', true), where('sales', '==', email))] : []),
+        // Sale quản trị: trường chỉ sale quản trị xem (vd. Giá mua)
+        ...(role === 'kinh_doanh' && !salesOnly ? [query(col, where('viewers', 'array-contains', 'sale_admin'))] : [])];
     const parts = {};
     const offs = sources.map((q, i) => onSnapshot(q, (snap) => {
       parts[i] = snap.docs.map((d) => ({ _id: d.id, ...d.data() }));
@@ -58,7 +60,7 @@ export function useOrderSecrets(type) {
       setDocs(all);
     }, () => { parts[i] = []; }));
     return () => offs.forEach((off) => off());
-  }, [isAdmin, email, role, allowed, type]);
+  }, [isAdmin, email, role, allowed, type, salesOnly]);
   return useMemo(() => {
     const m = new Map();
     for (const s of Object.values(docs)) {

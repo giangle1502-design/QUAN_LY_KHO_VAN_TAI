@@ -445,7 +445,9 @@ service cloud.firestore {
     // salesSees: sale phụ trách của đơn (sales) xem được giá trị trong đơn của mình, vd. Giá bán
     function seesSecret(d) {
       return isAdmin() || me() in d.viewers || (isActive() && profile().get('role', '') in d.viewers)
-        || (d.get('salesSees', false) == true && d.get('sales', '') == me() && hasRole('kinh_doanh'));
+        || (d.get('salesSees', false) == true && d.get('sales', '') == me() && hasRole('kinh_doanh'))
+        // Sale quản trị (kinh doanh được xem đơn của mọi sale)
+        || ('sale_admin' in d.viewers && hasRole('kinh_doanh') && profile().get('seeAllOrders', false) == true);
     }
     match /orderSecrets/{id} {
       allow read: if isStaff() && seesSecret(resource.data);

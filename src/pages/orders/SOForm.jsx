@@ -67,7 +67,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
   const { email, name, fieldsOf, isAdmin, hasRole, role, salesOnly } = useApp();
   // Chỉ các trường người dùng được xem (trường riêng tư, công thức dùng trường riêng tư bị ẩn).
   // Trường "sale phụ trách xem được" (vd. Giá bán): sale chỉ nhập / xem trong đơn của mình
-  const me = { isAdmin, email, role, ownSale: order ? order.sales === email : role === 'kinh_doanh' };
+  const me = { isAdmin, email, role, saleAdmin: role === 'kinh_doanh' && !salesOnly, ownSale: order ? order.sales === email : role === 'kinh_doanh' };
   const headFields = visibleFields(fieldsOf(cfg.head), me, fieldsOf(cfg.line)).filter((f) => !f.hidden);
   const lineFields = visibleFields(fieldsOf(cfg.line), me, fieldsOf(cfg.head)).filter((f) => !f.hidden);
   const salesUsers = useCollection(sto || salesOnly ? '' : 'users').rows.filter((u) => u.role === 'kinh_doanh' && u.active !== false);

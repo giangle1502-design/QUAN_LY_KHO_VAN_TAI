@@ -78,8 +78,9 @@ export function AppProvider({ children }) {
   // Kinh doanh chỉ thấy đơn SO/PO có Sale phụ trách là mình (trừ người được cho xem đơn của mọi sale)
   const salesOnly = role === 'kinh_doanh' && userDoc?.seeAllOrders !== true;
   // Trường chỉ người được chỉ định xem
-  const seeField = useCallback((f) => canSeeField(f, { isAdmin, email, role }), [isAdmin, email, role]);
-  const seenFieldsOf = useCallback((key, ...others) => visibleFields(fieldsOf(key), { isAdmin, email, role }, ...others), [fieldsOf, isAdmin, email, role]);
+  const saleAdmin = role === 'kinh_doanh' && !salesOnly;
+  const seeField = useCallback((f) => canSeeField(f, { isAdmin, email, role, saleAdmin }), [isAdmin, email, role, saleAdmin]);
+  const seenFieldsOf = useCallback((key, ...others) => visibleFields(fieldsOf(key), { isAdmin, email, role, saleAdmin }, ...others), [fieldsOf, isAdmin, email, role, saleAdmin]);
 
   const value = useMemo(() => ({
     user, email, role, isAdmin, isSuper, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, myCarrier, myThreepl, myIdCard, carrierDoc, can3PL, userDoc,
