@@ -20,6 +20,7 @@ import SalesAnalysis from './SalesAnalysis';
 import IOPlan from './IOPlan';
 import Overview from './Overview';
 import LegalTransfer from './LegalTransfer';
+import StockInbound from './StockInbound';
 
 // ============================================================================
 // Báo cáo: mỗi báo cáo = bộ lọc + 1 hoặc nhiều bảng; bảng nào cũng xuất Excel và in được.
@@ -31,6 +32,7 @@ export const REPORTS = [
   ['ton-theo-kho', '🏭', 'Tồn kho tổng theo kho'],
   ['ton-theo-vi-tri', '📍', 'Tồn kho theo vị trí'],
   ['ton-theo-trang-thai', '🔒', 'Tồn kho theo trạng thái'],
+  ['ton-kho-hang-ve', '🚢', 'Tồn kho và hàng về'],
   ['ton-cho-sale', '💼', 'Tồn kho cho Sale'],
   ['don-chua-giao', '📤', 'Đơn hàng chưa giao'],
   ['po-chua-nhap', '📥', 'Đơn mua chưa nhập kho'],
@@ -147,7 +149,7 @@ export default function Reports() {
   const [q, setQ] = useState('');
   const props = { wh, co, q: norm(q) };
   const Body = { 'ton-theo-kho': ByWarehouse, 'ton-theo-vi-tri': ByLocation, 'ton-theo-trang-thai': ByStatus,
-    'ton-cho-sale': ForSales, 'don-chua-giao': OpenSO, 'po-chua-nhap': OpenPO, 'phan-tich-ban-hang': SalesAnalysis, 'ke-hoach-xuat-nhap': IOPlan, 'tong-quan': Overview, 'chuyen-phap-nhan': LegalTransfer }[cur[0]];
+    'ton-kho-hang-ve': StockInbound, 'ton-cho-sale': ForSales, 'don-chua-giao': OpenSO, 'po-chua-nhap': OpenPO, 'phan-tich-ban-hang': SalesAnalysis, 'ke-hoach-xuat-nhap': IOPlan, 'tong-quan': Overview, 'chuyen-phap-nhan': LegalTransfer }[cur[0]];
   return (
     <div className="report-page">
       <div className="page-head">
