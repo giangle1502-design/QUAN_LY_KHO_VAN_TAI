@@ -383,7 +383,7 @@ function OrderDetail({ o, onClose, onEdit }) {
   const pendIn = usePendingIn();
   const waitOut = useWaitingOut();
   const meta = ORDER_TYPES[o.type];
-  const { hasRole, isAdmin, email, name, fieldsOf, seenFieldsOf } = useApp();
+  const { hasRole, isAdmin, email, name, fieldsOf, seenFieldsOf, salesOnly } = useApp();
   const [assign, setAssign] = useState(false);
   const so = o.type === 'SO';
   const fk = o.type.toLowerCase();
@@ -393,7 +393,8 @@ function OrderDetail({ o, onClose, onEdit }) {
   const headCustom = headAll.filter((f) => (f.custom || f.fx || f.listCol) && !f.hidden && hv(f) !== '' && hv(f) != null);
   const lineCustom = lineAll.filter((f) => f.custom && !f.hidden);
   const unitOf = (f) => moneyUnit(f, o, [lineAll, headAll]);
-  const canManage = canManageOrders(hasRole, o.type);
+  // Sale chỉ được xem đơn mua / đơn nhập của người khác (để biết hàng sắp về mà chào), sửa được đơn mình phụ trách
+  const canManage = canManageOrders(hasRole, o.type) && (!salesOnly || o.type === 'STO' || o.sales === email);
   const sto = o.type === 'STO';
   const [moves, setMoves] = useState([]);
   const [trips, setTrips] = useState([]);

@@ -400,7 +400,8 @@ service cloud.firestore {
       return 'fromWarehouses' in d ? d.fromWarehouses.size() > 0 && allMine(d.fromWarehouses) : inMyWarehouse(d.fromWarehouse);
     }
     match /orders/{id} {
-      allow read: if isStaff() && mySale(resource.data);
+      // Sale chỉ bị giới hạn ở đơn bán (SO); đơn mua / hàng nhập (PO, STO, DRT, RTV) mọi sale đều xem được
+      allow read: if isStaff() && (resource.data.type != 'SO' || mySale(resource.data));
       allow create: if (isAdmin() || (orderMgr() && mySale(request.resource.data))
           || (hasRole('thu_kho') && request.resource.data.type == 'STO' && stoFromMine(request.resource.data)))
         && request.resource.data.id == id && request.resource.data.createdBy == me()

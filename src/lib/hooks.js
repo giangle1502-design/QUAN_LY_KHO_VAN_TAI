@@ -97,17 +97,25 @@ export function useItemStock(item) {
 }
 
 // Đơn bán / đơn mua (realtime). type: 'SO' | 'PO' | '' (cả hai); onlyOpen: chỉ đơn chưa xong
+const NON_SO_TYPES = ['PO', 'STO', 'DRT', 'RTV'];
 export function useOrders(type, onlyOpen = false) {
   const { salesOnly, email } = useApp();
   // Lọc trên server theo loại đơn (và sale phụ trách nếu người dùng chỉ được xem đơn của mình), lọc trạng thái trên trình duyệt
-  const st = useShared(type === '__none__' ? '' : `orders|${type}|${salesOnly ? email : ''}`, () => {
-    const conds = [...(type ? [where('type', '==', type)] : []), ...(salesOnly ? [where('sales', '==', email || '-')] : [])];
+  // Sale chỉ bị giới hạn ở đơn bán (SO: chỉ đơn mình phụ trách). Đơn mua / hàng nhập (PO, STO, DRT, RTV) mọi sale đều xem được để biết hàng mà chào
+  const own = salesOnly && (!type || type === 'SO');
+  const st = useShared(type === '__none__' ? '' : `orders|${type}|${own ? email : ''}`, () => {
+    const conds = own ? [where('type', '==', 'SO'), where('sales', '==', email || '-')] : type ? [where('type', '==', type)] : [];
     return conds.length ? query(collection(db, 'orders'), ...conds) : collection(db, 'orders');
   });
-  return useMemo(() => ({
-    rows: st.snap ? st.snap.docs.map((d) => ({ ...d.data(), id: d.id })).filter((o) => !onlyOpen || ['open', 'partial'].includes(o.status)) : [],
-    loading: st.loading, error: st.error,
-  }), [st, onlyOpen]);
+  // Sale xem mọi loại đơn (type rỗng): thêm các đơn không phải SO
+  const st2 = useShared(type === '' && salesOnly ? 'orders|nonSO' : '', () => query(collection(db, 'orders'), where('type', 'in', NON_SO_TYPES)));
+  return useMemo(() => {
+    const docs = [...(st.snap?.docs || []), ...(st2.snap?.docs || [])];
+    return {
+      rows: docs.map((d) => ({ ...d.data(), id: d.id })).filter((o) => !onlyOpen || ['open', 'partial'].includes(o.status)),
+      loading: st.loading || st2.loading, error: st.error || st2.error,
+    };
+  }, [st, st2, onlyOpen]);
 }
 
 // Phiếu nhập đã lập, chờ thủ kho nhận hàng (chưa cập nhật đơn): Map số đơn → { ids: [số phiếu], byLine: { dòng đơn: kg } }
