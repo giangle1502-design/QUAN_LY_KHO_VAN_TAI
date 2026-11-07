@@ -8,6 +8,8 @@ import { fmtDate, fmtNum, today } from '../../lib/utils';
 import { CompanyPicker, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox } from '../../components/ui';
 import { canMove } from './MovementForm';
+import { ReportTable, toSheet } from '../reports/Reports';
+import { StockDetailModal } from '../../components/StockDetail';
 
 const sum = (rows, k) => rows.reduce((s, r) => s + (Number(r[k]) || 0), 0);
 const AGE = [['0–30 ngày', 0, 30], ['31–60 ngày', 31, 60], ['61–90 ngày', 61, 90], ['Trên 90 ngày', 91, 1e9]];
@@ -48,18 +50,28 @@ export default function Stock() {
   }, [list]);
 
   const statusCodes = statuses.length ? statuses.map((s) => s.code) : ['KTC', 'HTC', 'DGC'];
+  const [detail, setDetail] = useState(null);
+  // Bảng dùng chung của báo cáo: chọn cột, đổi thứ tự, sắp xếp nhiều cấp, lọc từng cột (lưu riêng người dùng)
+  const detailCols = [
+    { key: 'warehouse', label: 'Kho' }, { key: 'company', label: 'Công ty' }, { key: 'location', label: 'Vị trí', nowrap: true },
+    { key: 'item', label: 'Mã hàng', nowrap: true }, { key: 'itemName', label: 'Tên hàng' }, { key: 'lot', label: 'Lot', nowrap: true },
+    ...(hasDates ? [{ key: 'mfgDate', label: 'NSX', date: true, nowrap: true }, { key: 'expDate', label: 'HSD', date: true, nowrap: true }] : []),
+    { key: 'goodsStatus', label: 'Tình trạng', render: (r) => <span className={'badge ' + (r.goodsStatus === 'HTC' ? 'red' : r.goodsStatus === 'DGC' ? 'green' : '')}>{r.goodsStatus}{r.pledgee ? ` · ${r.pledgee}` : ''}</span>, excel: (r) => r.goodsStatus },
+    { key: 'pledgee', label: 'Bên nhận thế chấp' },
+    { key: 'bags', label: 'Số bao', num: true, sum: true }, { key: 'pallets', label: 'Pallet', num: true, digits: 2, sum: true }, { key: 'kg', label: 'Kg', num: true, digits: 2, sum: true },
+    { key: 'inDate', label: 'Ngày nhập', date: true, nowrap: true }, { key: 'age', label: 'Tuổi tồn (ngày)', num: true, sortVal: (r) => ageDays(r.inDate), render: (r) => ageDays(r.inDate), excel: (r) => ageDays(r.inDate) },
+  ];
+  const byItemRows = byItem.map((x) => ({ ...x, _k: `${x.warehouse}__${x.company}__${x.item}`, ...Object.fromEntries(statusCodes.map((c) => [`st_${c}`, x.st[c] || 0])) }));
+  const itemCols = [
+    { key: 'warehouse', label: 'Kho' }, { key: 'company', label: 'Công ty' }, { key: 'item', label: 'Mã hàng', nowrap: true }, { key: 'itemName', label: 'Tên hàng' },
+    { key: 'bags', label: 'Số bao', num: true, sum: true }, { key: 'pallets', label: 'Pallet', num: true, digits: 2, sum: true }, { key: 'kg', label: 'Kg', num: true, digits: 2, sum: true },
+    ...statusCodes.map((c) => ({ key: `st_${c}`, label: `Kg ${c}`, num: true, sum: true })),
+  ];
   const totals = statusCodes.map((c) => [c, sum(rows.filter((r) => r.goodsStatus === c), 'kg')]);
 
   const exportExcel = () => exportSheets(`Ton_kho_${today()}`, {
-    'Chi tiết': list.map((r, i) => ({
-      STT: i + 1, Kho: r.warehouse, 'Công ty': r.company || '', 'Vị trí': r.location, 'Mã hàng': r.item, 'Tên hàng': r.itemName, Lot: r.lot,
-      ...(hasDates ? { NSX: r.mfgDate, HSD: r.expDate } : {}), 'Tình trạng': r.goodsStatus, 'Bên nhận thế chấp': r.pledgee,
-      'Số bao': r.bags, Pallet: r.pallets, Kg: r.kg, 'Ngày nhập': r.inDate, 'Tuổi tồn (ngày)': ageDays(r.inDate),
-    })),
-    'Theo mã hàng': byItem.map((x, i) => ({
-      STT: i + 1, Kho: x.warehouse, 'Công ty': x.company, 'Mã hàng': x.item, 'Tên hàng': x.itemName, 'Số bao': x.bags, Pallet: x.pallets, Kg: x.kg,
-      ...Object.fromEntries(statusCodes.map((c) => [`Kg ${c}`, x.st[c] || 0])),
-    })),
+    'Chi tiết': toSheet(detailCols, list),
+    'Theo mã hàng': toSheet(itemCols, byItemRows),
     'Tuổi tồn': AGE.map(([l, a, b]) => ({ 'Tuổi tồn': l, Kg: sum(list.filter((r) => { const d = ageDays(r.inDate); return d >= a && d <= b; }), 'kg') })),
   });
 
@@ -96,40 +108,15 @@ export default function Stock() {
         </div>
       </div>
       <ErrorBox error={error} />
-      <div className="table-wrap">
-        {loading ? <Empty text="Đang tải…" /> : !list.length ? <Empty text="Chưa có tồn kho." /> : view === 'detail' ? (
-          <table>
-            <thead><tr><th className="stt">STT</th><th>Kho</th><th>Công ty</th><th>Vị trí</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th>{hasDates && <th>HSD</th>}<th>Tình trạng</th>
-              <th className="num">Số bao</th><th className="num">Pallet</th><th className="num">Kg</th><th>Ngày nhập</th><th className="num">Tuổi tồn</th></tr></thead>
-            <tbody>
-              {list.map((r, i) => (
-                <tr key={r._id}>
-                  <td className="stt">{i + 1}</td><td>{r.warehouse}</td><td>{r.company}</td><td className="nowrap">{r.location}</td><td className="nowrap">{r.item}</td><td>{r.itemName}</td>
-                  <td className="nowrap">{r.lot}</td>{hasDates && <td className="nowrap">{fmtDate(r.expDate)}</td>}
-                  <td><span className={'badge ' + (r.goodsStatus === 'HTC' ? 'red' : r.goodsStatus === 'DGC' ? 'green' : '')}>{r.goodsStatus}{r.pledgee ? ` · ${r.pledgee}` : ''}</span></td>
-                  <td className="num">{fmtNum(r.bags)}</td><td className="num">{fmtNum(r.pallets, 2)}</td><td className="num">{fmtNum(r.kg)}</td>
-                  <td className="nowrap">{fmtDate(r.inDate)}</td><td className="num">{ageDays(r.inDate)}</td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot><tr><td colSpan={9}>Cộng</td><td className="num">{fmtNum(sum(list, 'bags'))}</td><td className="num">{fmtNum(sum(list, 'pallets'), 2)}</td><td className="num">{fmtNum(sum(list, 'kg'))}</td><td colSpan={2} /></tr></tfoot>
-          </table>
-        ) : (
-          <table>
-            <thead><tr><th className="stt">STT</th><th>Kho</th><th>Công ty</th><th>Mã hàng</th><th>Tên hàng</th><th className="num">Số bao</th><th className="num">Pallet</th><th className="num">Kg</th>
-              {statusCodes.map((c) => <th key={c} className="num">Kg {c}</th>)}</tr></thead>
-            <tbody>
-              {byItem.map((x, i) => (
-                <tr key={x.warehouse + x.company + x.item}>
-                  <td className="stt">{i + 1}</td><td>{x.warehouse}</td><td>{x.company}</td><td>{x.item}</td><td>{x.itemName}</td>
-                  <td className="num">{fmtNum(x.bags)}</td><td className="num">{fmtNum(x.pallets, 2)}</td><td className="num">{fmtNum(x.kg)}</td>
-                  {statusCodes.map((c) => <td key={c} className="num">{fmtNum(x.st[c] || 0)}</td>)}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      {loading ? <div className="table-wrap"><Empty text="Đang tải…" /></div> : view === 'detail' ? (
+        <ReportTable id="stock:detail" cols={detailCols} rows={list} empty="Chưa có tồn kho." defaultSort={[{ key: 'warehouse', dir: 'asc' }, { key: 'item', dir: 'asc' }, { key: 'inDate', dir: 'asc' }]} />
+      ) : (
+        <>
+          <p className="hint">Bấm một dòng để xem mã hàng đó đang nằm ở vị trí nào.</p>
+          <ReportTable id="stock:item" cols={itemCols} rows={byItemRows} empty="Chưa có tồn kho." onRowClick={(r) => setDetail({ warehouse: r.warehouse, item: r.item, company: r.company })} rowTitle="Bấm để xem vị trí" />
+        </>
+      )}
+      {detail && <StockDetailModal stock={rows} filter={detail} onClose={() => setDetail(null)} />}
     </div>
   );
 }

@@ -40,6 +40,11 @@ service cloud.firestore {
         && (resource == null || (resource.data.get('role', '') in ['tai_xe', 'tpl'] && resource.data.get('carrier', '') == myCarrier()));
     }
 
+    // Cài đặt hiển thị riêng của từng người (định dạng ngày / số, cột, sắp xếp, lọc, mẫu hiển thị): chỉ chính mình đọc / ghi
+    match /userPrefs/{email} {
+      allow read, create, update: if signedIn() && email == me();
+    }
+
     // Cấu hình hạng mục và cài đặt chung
     match /settings/{id} {
       allow read: if isStaff();

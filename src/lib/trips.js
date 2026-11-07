@@ -1,6 +1,7 @@
 import { doc, runTransaction } from 'firebase/firestore';
 import { db } from '../firebase';
 import { catalogByKey } from '../catalogs';
+import { fmtClock, fmtDayMonth, vnParts } from './utils';
 
 // ============================================================================
 // Luồng xe (giống app QLVT): Xe đến kho → Chờ vào cửa → Đang xuất/nhập → Chờ ra cổng
@@ -61,10 +62,9 @@ export { afterExit };
 export const nowISO = () => new Date().toISOString();
 export function fmtTime(iso) {
   if (!iso) return '—';
-  const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
-  }).formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
-  return `${p.day}/${p.month} ${p.hour}:${p.minute}`;
+  // Ngày/tháng giờ:phút theo cài đặt hiển thị của người dùng
+  const p = vnParts(iso);
+  return p ? `${fmtDayMonth(p.ymd)} ${fmtClock(p.h, p.mi)}` : '—';
 }
 export function vnDate(iso) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(iso ? new Date(iso) : new Date());

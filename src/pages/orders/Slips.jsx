@@ -16,6 +16,7 @@ import { MovementDetail } from '../stock/Movements';
 import EditSlip, { canEditSlip } from '../../components/EditSlip';
 import { ColumnPicker } from '../../components/FormTools';
 import { dragHeadProps, orderCols } from '../../lib/colOrder';
+import { ViewPresets, useTableTools } from '../../components/TableTools';
 import Select from '../../components/Select';
 
 const n = (v) => Number(v) || 0;
@@ -219,7 +220,7 @@ export default function SlipList({ kind, loai = '' }) {
       { key: 'confirmedBy', label: 'Thủ kho nhận', hideDefault: true, cls: 'small', render: (r) => r.m.confirmedByName || r.m.confirmedBy || '' }] : []),
     { key: 'note', label: 'Ghi chú', hideDefault: true, cls: 'small', render: (r) => r.m.note || '' },
     { key: 'createdBy', label: 'Người lập', hideDefault: true, cls: 'small', render: (r) => r.m.createdByName || r.m.createdBy || '' },
-    { key: 'left', label: isDO ? 'Đơn còn phải xuất' : 'Đơn còn phải nhập', num: true, title: isDO ? 'SL đơn − đã xuất − phiếu xuất chờ giải chấp' : 'PO: SL đơn − đã nhận − phiếu chờ nhận; STO: đang đi đường − phiếu chờ nhận',
+    { key: 'left', label: isDO ? 'Đơn còn phải xuất' : 'Đơn còn phải nhập', num: true, sortVal: (r) => orderLeft(r) ?? '', title: isDO ? 'SL đơn − đã xuất − phiếu xuất chờ giải chấp' : 'PO: SL đơn − đã nhận − phiếu chờ nhận; STO: đang đi đường − phiếu chờ nhận',
       render: (r) => { const left = orderLeft(r); return left == null ? '' : left > 0.001 ? t(left) : <span className="badge green">đủ</span>; } },
   ];
   const [hidden, setHidden] = usePref(`slips:${kind}:hidden`, cols.filter((c) => c.hideDefault).map((c) => c.key));
@@ -227,10 +228,13 @@ export default function SlipList({ kind, loai = '' }) {
   const ordered = orderCols(cols, colOrder);
   const colKeys = ordered.map((c) => c.key);
   const shown = ordered.filter((c) => c.locked || !hidden.includes(c.key));
+  // Sắp xếp nhiều cấp + lọc kiểu Excel từng cột (riêng từng người)
+  const tools = useTableTools(`slips:${kind}`, cols, list);
+  const view = tools.rows;
 
   const exportExcel = () => {
     const out = [];
-    list.forEach((r) => (r.m.lines || []).forEach((l) => out.push({
+    view.forEach((r) => (r.m.lines || []).forEach((l) => out.push({
       [isDO ? 'Số phiếu xuất' : 'Số phiếu nhập']: r.m.id || '(chưa lập)', Ngày: r.m.date, 'Loại đơn': r.type, 'Số đơn': r.m.orderId, 'Số Ecount': r.o?.refNo || '',
       ...(isDO ? { Nguồn: r.src?.label.replace(/^\S+\s/, '') || '', 'Số dự kiến / PO phân bổ / chuyến': r.src?.ref || '', 'Mã giao': r.m.shipCode || '' } : {}),
       [isDO ? 'Khách / tuyến' : 'NCC / tuyến']: party(r), Kho: r.m.warehouse, 'Công ty': r.o?.company || r.m.company || '',
@@ -276,18 +280,23 @@ export default function SlipList({ kind, loai = '' }) {
         </Select>}
         <input type="search" placeholder="Tìm số phiếu, đơn, khách, mã hàng, số xe…" value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="actions" style={{ marginLeft: 'auto' }}>
+          {tools.toolbar}
           <ColumnPicker cols={cols.map((c) => ({ key: c.key, label: c.label, locked: c.locked }))} hidden={hidden} setHidden={setHidden} order={colOrder} setOrder={setColOrder} />
+          <ViewPresets pid={`slips:${kind}`} snapshot={() => ({ ...tools.snapshot(), hidden, colOrder })} restore={(v) => { tools.restore(v); if (v?.hidden) setHidden(v.hidden); setColOrder(v?.colOrder || []); }} />
           <button className="btn" onClick={exportExcel}>⬇ Excel</button></div>
       </div>
+      {tools.advPanel}
+      {tools.popup}
       <ErrorBox error={error} />
       <div className="table-wrap">
         {!list.length ? <Empty text={isDO ? 'Chưa có DO trong khoảng ngày này' : 'Không có đơn chờ nhập'} /> : (
           <table>
             <thead><tr>
-              {shown.map((c) => <th key={c.key} className={c.num ? 'num' : undefined} title={c.title} {...dragHeadProps(c.key, colKeys, setColOrder)}>{c.label}</th>)}<th></th>
+              {shown.map((c) => <th key={c.key} className={c.num ? 'num' : undefined} title={c.title} {...dragHeadProps(c.key, colKeys, setColOrder)} {...tools.headProps(c)}>{c.label}{tools.headMark(c)}</th>)}<th></th>
             </tr></thead>
             <tbody>
-              {list.map((r) => {
+              {!view.length && <tr><td colSpan={shown.length + 1}><Empty text="Không có dòng nào khớp điều kiện lọc." /></td></tr>}
+              {view.map((r) => {
                 const m = r.m;
                 return (
                   <tr key={r.key} onClick={() => !r.virtual && setOpen(m.id)} style={{ cursor: r.virtual ? 'default' : 'pointer', opacity: m.status === 'cancelled' ? 0.55 : 1 }}>

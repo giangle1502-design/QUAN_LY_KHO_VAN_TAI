@@ -18,6 +18,9 @@ import { deleteOrRequest } from '../lib/deletes';
 import { usePref } from '../lib/prefs';
 import DynamicFilterPanel, { AdvButton, activeConds, applyFilter, EMPTY_FILTER } from '../components/DynamicFilterPanel';
 import { matchType, syncFromCatalog, syncPartnersToRoles } from '../lib/partners';
+import { ColumnPicker } from '../components/FormTools';
+import { ViewPresets, useTableTools } from '../components/TableTools';
+import { dragHeadProps, orderCols } from '../lib/colOrder';
 import { AddRoleButton, PartnerFixedFilters, PartnerForm, PartnerNotices, usePartnerRows } from './Partners';
 
 // Bố cục thẻ tìm kiếm gợi ý cho Đối tác (giống MISA); người dùng tự chỉnh lại được
@@ -87,11 +90,21 @@ function Catalog({ cat }) {
   }, [mine, q, shown, onlyMissing, adv, pf, isBP]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const editable = canEdit(cat);
+  // Cột hiển thị, thứ tự cột, sắp xếp nhiều cấp, lọc từng cột: riêng từng người, từng danh mục (lưu theo tài khoản)
+  const [hiddenCols, setHiddenCols] = usePref(`catCols:${cat.key}:hidden`, []);
+  const [colOrder, setColOrder] = usePref(`catCols:${cat.key}:order`, []);
+  const tableCols = useMemo(() => shown.map((f) => ({ key: f.key, label: f.label, f, num: NUMERIC_TYPES.includes(f.type), date: f.type === 'date' || f.type === 'datetime',
+    sortVal: ['select', 'checkbox', 'multiref'].includes(f.type) ? (r) => displayValue(f, r[f.key]) : undefined })), [shown]);
+  const orderedCols = orderCols(tableCols, colOrder);
+  const colKeys = orderedCols.map((c) => c.key);
+  const viewCols = orderedCols.filter((c) => !hiddenCols.includes(c.key));
+  const tools = useTableTools(`cat:${cat.key}`, tableCols, visible);
+  const list = tools.rows;
 
   const exportExcel = () => {
-    const data = visible.map((r, i) => {
+    const data = list.map((r, i) => {
       const o = { STT: i + 1 };
-      shown.forEach((f) => { o[f.label] = displayValue(f, r[f.key], true); });
+      viewCols.forEach(({ f }) => { o[f.label] = displayValue(f, r[f.key], true); });
       return o;
     });
     exportSheets(`${cat.short}_${today()}`, { [cat.short]: data.length ? data : [{ STT: '' }] });
@@ -153,7 +166,12 @@ function Catalog({ cat }) {
         <input type="search" placeholder={isBP ? 'Tìm nhanh: mã, tên, MST, điện thoại…' : 'Tìm kiếm…'} value={q} onChange={(e) => setQ(e.target.value)} />
         <AdvButton open={advOpen} n={activeConds(adv)} onClick={() => setAdvOpen(!advOpen)} />
         {!advOpen && activeConds(adv) > 0 && <button type="button" className="btn sm ghost" onClick={() => setAdv(EMPTY_FILTER)}>✕ Bỏ lọc nâng cao</button>}
-        <span className="small">{visible.length} / {mine.length} dòng</span>
+        <span className="small">{list.length} / {mine.length} dòng</span>
+        <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6, flexWrap: 'wrap' }}>
+          {tools.toolbar}
+          <ColumnPicker cols={tableCols.map((c) => ({ key: c.key, label: c.label, locked: c.key === cat.idField }))} hidden={hiddenCols} setHidden={setHiddenCols} order={colOrder} setOrder={setColOrder} />
+          <ViewPresets pid={`cat:${cat.key}`} snapshot={() => ({ ...tools.snapshot(), hiddenCols, colOrder })} restore={(v) => { tools.restore(v); setHiddenCols(v?.hiddenCols || []); setColOrder(v?.colOrder || []); }} />
+        </span>
         {(missingCount > 0 || onlyMissing) && (
           <label className="small" style={{ color: 'var(--amber)' }}>
             <input type="checkbox" checked={onlyMissing} onChange={(e) => setOnlyMissing(e.target.checked)} /> Chỉ dòng còn thiếu thông tin ({missingCount})
@@ -164,6 +182,8 @@ function Catalog({ cat }) {
         extra={isBP ? <PartnerFixedFilters value={pf} onChange={setPf} /> : null} onReset={() => { setQ(''); setPf({ type: '', status: '' }); }} />}
       {isBP && !advOpen && <div className="toolbar"><PartnerFixedFilters value={pf} onChange={setPf} /></div>}
       {isBP && <PartnerNotices rows={rows} partnerError={bp.partnerError} onMsg={(t, e) => { setMsg(t); setErr(e || ''); }} />}
+      {tools.advPanel}
+      {tools.popup}
       <ErrorBox error={error} />
       {msg && <div className="ok-box" style={{ marginBottom: 10 }}>{msg}</div>}
       {err && <div className="error-box" style={{ whiteSpace: 'pre-line' }}>{err}</div>}
@@ -184,16 +204,17 @@ function Catalog({ cat }) {
             <thead>
               <tr>
                 <th className="stt">STT</th>
-                {shown.map((f) => <th key={f.key} className={NUMERIC_TYPES.includes(f.type) ? 'num' : ''}>{f.label}</th>)}
+                {viewCols.map((c) => <th key={c.key} className={(c.num ? 'num ' : '') + 'col-drag'} {...dragHeadProps(c.key, colKeys, setColOrder)} {...tools.headProps(c)}>{c.label}{tools.headMark(c)}</th>)}
               </tr>
             </thead>
             <tbody>
-              {visible.map((r, i) => (
+              {!list.length && <tr><td colSpan={viewCols.length + 1}><Empty text="Không có dòng nào khớp điều kiện lọc." /></td></tr>}
+              {list.map((r, i) => (
                 <tr key={r._id} onClick={() => setEditing(r)} style={{ cursor: 'pointer' }}>
                   <td className="stt" title={missingOf(r).length ? 'Còn thiếu: ' + missingOf(r).map((f) => f.label).join(', ') : undefined}>
                     {i + 1}{missingOf(r).length ? <span style={{ color: 'var(--amber)' }}> ⚠</span> : null}
                   </td>
-                  {shown.map((f) => <td key={f.key} className={NUMERIC_TYPES.includes(f.type) ? 'num' : f.type === 'textarea' ? '' : 'nowrap'}><Cell f={f} r={r} /></td>)}
+                  {viewCols.map(({ f }) => <td key={f.key} className={NUMERIC_TYPES.includes(f.type) ? 'num' : f.type === 'textarea' ? '' : 'nowrap'}><Cell f={f} r={r} /></td>)}
                 </tr>
               ))}
             </tbody>

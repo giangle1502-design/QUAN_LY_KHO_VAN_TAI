@@ -27,6 +27,7 @@ import { useShortfall } from '../../lib/shortfall';
 import { dragHeadProps, orderCols } from '../../lib/colOrder';
 import Select from '../../components/Select';
 import DynamicFilterPanel, { AdvButton, activeConds, applyFilter, EMPTY_FILTER } from '../../components/DynamicFilterPanel';
+import { SortButton, ViewPresets, useTableTools } from '../../components/TableTools';
 import { salesFor, typesOf } from '../../lib/plasticSales';
 
 // Đơn vị chính là kg; tấn chỉ là quy đổi (dòng phụ)
@@ -241,31 +242,31 @@ function OrderList({ type, initialQ = '', startNew = false, onNewDone }) {
     { key: 'id', label: 'Số đơn', locked: true, cls: 'mono nowrap', render: (o) => <>{o.id}{o.direct ? <span className="badge" title="Lập tự động khi nhập kho trực tiếp" style={{ marginLeft: 4 }}>trực tiếp</span> : null}</> },
     { key: 'company', label: 'Công ty', render: (o) => <b>{o.company}</b> },
     { key: 'refNo', label: 'Số Ecount', cls: 'mono', render: (o) => o.refNo, hideDefault: true },
-    { key: 'date', label: 'Ngày tạo đơn', cls: 'nowrap', render: (o) => fmtDate(o.date) },
-    ...(sto ? [] : [{ key: 'party', label: meta.partyLabel, cls: 'nowrap', render: (o) => partyText(o) }, { key: 'sales', label: 'Sale phụ trách', cls: 'small', render: (o) => o.sales || '' }]),
-    ...customHead.map((f) => ({ key: f.key, label: f.label, render: (o) => displayValue(f, f.key === 'orderKind' ? kindOf(o) : o[f.key], false, moneyUnit(f, o, fxLists)) })),
-    ...(sto ? [{ key: 'from', label: 'Kho xuất', render: (o) => uniqText(o, lineFrom) }, { key: 'to', label: 'Kho nhập', render: (o) => uniqText(o, lineTo) }]
-      : [{ key: 'warehouse', label: so ? 'Kho xuất' : 'Kho nhập', render: (o) => uniqText(o, lineWh) }]),
-    ...(so ? [{ key: 'ship', label: 'Mã giao', render: (o) => uniqText(o, lineShip) }] : []),
-    { key: 'items', label: 'Mã hàng', render: (o) => [...new Set(o.lines.map((l) => l.item))].join(', ') },
-    { key: 'itemNames', label: 'Tên hàng', render: (o) => [...new Set(o.lines.map((l) => l.itemName).filter(Boolean))].join(', ') },
-    { key: 'qty', label: 'Đặt (kg)', num: true, render: (o, c) => t(c.x.qty) },
-    { key: 'done', label: meta.done, num: true, render: (o, c) => t(c.x.done) },
-    ...(sto ? [{ key: 'transit', label: meta.transit, num: true, render: (o, c) => t(c.x.transit) }] : []),
-    { key: 'left', label: meta.left, num: true, render: (o, c) => <b>{OPEN_STATUSES.includes(o.status) ? t(c.x.left) : '–'}</b> },
-    { key: 'progress', label: 'Tiến độ', render: (o) => <div style={{ width: 130 }}><Progress o={o} /></div> },
-    { key: 'due', label: so ? 'Ngày giao (sớm nhất)' : pl ? 'ETA (sớm nhất)' : 'Ngày chuyển (sớm nhất)', cls: 'nowrap', style: (o, c) => (c.isLate ? { color: 'var(--red)', fontWeight: 600 } : undefined), render: (o, c) => <>{fmtDate(o.dueDate)}{c.isLate ? ' ⚠' : ''}</> },
-    { key: 'status', label: 'Trạng thái', locked: true, render: (o) => <OrderStatus status={o.status} /> },
+    { key: 'date', label: 'Ngày tạo đơn', cls: 'nowrap', date: true, render: (o) => fmtDate(o.date) },
+    ...(sto ? [] : [{ key: 'party', label: meta.partyLabel, cls: 'nowrap', sortVal: (o) => partyText(o), render: (o) => partyText(o) }, { key: 'sales', label: 'Sale phụ trách', cls: 'small', render: (o) => o.sales || '' }]),
+    ...customHead.map((f) => ({ key: f.key, label: f.label, num: NUMERIC.includes(f.type), date: f.type === 'date', sortVal: (o) => (f.key === 'orderKind' ? kindOf(o) : o[f.key]), render: (o) => displayValue(f, f.key === 'orderKind' ? kindOf(o) : o[f.key], false, moneyUnit(f, o, fxLists)) })),
+    ...(sto ? [{ key: 'from', label: 'Kho xuất', sortVal: (o) => uniqText(o, lineFrom), render: (o) => uniqText(o, lineFrom) }, { key: 'to', label: 'Kho nhập', sortVal: (o) => uniqText(o, lineTo), render: (o) => uniqText(o, lineTo) }]
+      : [{ key: 'warehouse', label: so ? 'Kho xuất' : 'Kho nhập', sortVal: (o) => uniqText(o, lineWh), render: (o) => uniqText(o, lineWh) }]),
+    ...(so ? [{ key: 'ship', label: 'Mã giao', sortVal: (o) => uniqText(o, lineShip), render: (o) => uniqText(o, lineShip) }] : []),
+    { key: 'items', label: 'Mã hàng', sortVal: (o) => [...new Set(o.lines.map((l) => l.item))], render: (o) => [...new Set(o.lines.map((l) => l.item))].join(', ') },
+    { key: 'itemNames', label: 'Tên hàng', sortVal: (o) => [...new Set(o.lines.map((l) => l.itemName).filter(Boolean))].join(', '), render: (o) => [...new Set(o.lines.map((l) => l.itemName).filter(Boolean))].join(', ') },
+    { key: 'qty', label: 'Đặt (kg)', num: true, sortVal: (o) => orderTotals(o).qty, render: (o, c) => t(c.x.qty) },
+    { key: 'done', label: meta.done, num: true, sortVal: (o) => orderTotals(o).done, render: (o, c) => t(c.x.done) },
+    ...(sto ? [{ key: 'transit', label: meta.transit, num: true, sortVal: (o) => orderTotals(o).transit, render: (o, c) => t(c.x.transit) }] : []),
+    { key: 'left', label: meta.left, num: true, sortVal: (o) => (OPEN_STATUSES.includes(o.status) ? orderTotals(o).left : 0), render: (o, c) => <b>{OPEN_STATUSES.includes(o.status) ? t(c.x.left) : '–'}</b> },
+    { key: 'progress', label: 'Tiến độ (%)', num: true, sortVal: (o) => { const x = orderTotals(o); return x.qty ? Math.round((x.done / x.qty) * 1000) / 10 : 0; }, render: (o) => <div style={{ width: 130 }}><Progress o={o} /></div> },
+    { key: 'due', label: so ? 'Ngày giao (sớm nhất)' : pl ? 'ETA (sớm nhất)' : 'Ngày chuyển (sớm nhất)', cls: 'nowrap', date: true, sortVal: (o) => o.dueDate || '', style: (o, c) => (c.isLate ? { color: 'var(--red)', fontWeight: 600 } : undefined), render: (o, c) => <>{fmtDate(o.dueDate)}{c.isLate ? ' ⚠' : ''}</> },
+    { key: 'status', label: 'Trạng thái', locked: true, sortVal: (o) => ORDER_STATUS[o.status]?.label || o.status, render: (o) => <OrderStatus status={o.status} /> },
     // Cột thêm: mặc định ẩn, người dùng tự bật trong ⚙ Cột hiển thị
-    ...(type === 'PO' ? [] : [{ key: 'carrier', extra: true, label: 'Đơn vị vận tải', render: (o) => uniqText(o, (_, l) => (l.carrier ? carrierName.get(l.carrier) || l.carrier : '')) || <span className="small">–</span> }]),
+    ...(type === 'PO' ? [] : [{ key: 'carrier', extra: true, label: 'Đơn vị vận tải', sortVal: (o) => uniqText(o, (_, l) => (l.carrier ? carrierName.get(l.carrier) || l.carrier : '')), render: (o) => uniqText(o, (_, l) => (l.carrier ? carrierName.get(l.carrier) || l.carrier : '')) || <span className="small">–</span> }]),
     // Trường tự thêm ở dòng hàng (kể cả công thức như Thành tiền, trường riêng tư mình được xem): mỗi dòng một giá trị
     ...customLine.map((f) => ({ key: `l_${f.key}`, extra: true, label: f.label, cls: 'nowrap', num: NUMERIC.includes(f.type) || (f.type === 'formula' && f.resultType !== 'text'),
-      render: (o) => lineValues(o, f, moneyUnit(f, o, fxLists)) })),
-    { key: 'goodsStatus', extra: true, label: 'TTHH', render: (o) => uniqText(o, (_, l) => l.goodsStatus) },
-    { key: 'lineNote', extra: true, label: 'Ghi chú dòng', cls: 'small', render: (o) => uniqText(o, (_, l) => l.note) },
+      sortVal: (o) => (o.lines || []).map((l) => l[f.key]).filter((v) => v !== '' && v != null), render: (o) => lineValues(o, f, moneyUnit(f, o, fxLists)) })),
+    { key: 'goodsStatus', extra: true, label: 'TTHH', sortVal: (o) => uniqText(o, (_, l) => l.goodsStatus), render: (o) => uniqText(o, (_, l) => l.goodsStatus) },
+    { key: 'lineNote', extra: true, label: 'Ghi chú dòng', cls: 'small', sortVal: (o) => uniqText(o, (_, l) => l.note), render: (o) => uniqText(o, (_, l) => l.note) },
     { key: 'note', extra: true, label: 'Ghi chú đơn', cls: 'small', render: (o) => o.note || '' },
-    { key: 'createdBy', extra: true, label: 'Người lập', cls: 'small', render: (o) => o.createdByName || o.createdBy || '' },
-    { key: 'updatedAt', extra: true, label: 'Sửa lần cuối', cls: 'small nowrap', render: (o) => (o.updatedAt ? fmtTime(o.updatedAt) : '') },
+    { key: 'createdBy', extra: true, label: 'Người lập', cls: 'small', sortVal: (o) => o.createdByName || o.createdBy || '', render: (o) => o.createdByName || o.createdBy || '' },
+    { key: 'updatedAt', extra: true, label: 'Sửa lần cuối', cls: 'small nowrap', sortVal: (o) => String(o.updatedAt || ''), render: (o) => (o.updatedAt ? fmtTime(o.updatedAt) : '') },
   ];
   const [hiddenBase, setHiddenBase] = usePref(`orderListHidden:${type}`, cols.filter((c) => c.hideDefault).map((c) => c.key));
   const extraKeys = cols.filter((c) => c.extra).map((c) => c.key);
@@ -276,6 +277,9 @@ function OrderList({ type, initialQ = '', startNew = false, onNewDone }) {
   const orderedCols = orderCols(cols, colOrder);
   const colKeys = orderedCols.map((c) => c.key);
   const shownCols = orderedCols.filter((c) => c.locked || !hidden.includes(c.key));
+  // Sắp xếp nhiều cấp + lọc kiểu Excel từng cột (riêng từng người, từng loại đơn)
+  const tools = useTableTools(`orders:${type}`, cols, list);
+  const view = tools.rows;
 
   // Đơn cũ chưa có Sale phụ trách: gán = người lập đơn nếu người đó là kinh doanh
   const users = useCollection(isAdmin && !sto ? 'users' : '').rows;
@@ -291,7 +295,7 @@ function OrderList({ type, initialQ = '', startNew = false, onNewDone }) {
 
   const exportExcel = () => {
     const out = [];
-    list.forEach((o) => o.lines.forEach((l) => out.push({
+    view.forEach((o) => o.lines.forEach((l) => out.push({
       'Số đơn': o.id, 'Công ty': o.company || '', 'Ngày đơn': o.date,
       ...(sto ? { 'Kho xuất': lineFrom(o, l), 'Kho nhập': lineTo(o, l) } : { [`Mã ${meta.partyLabel}`]: o.partyCode, [`Tên ${meta.partyLabel}`]: o.partyName, 'Sale phụ trách': o.sales || '' }),
       ...Object.fromEntries(customHead.map((f) => [f.label, displayValue(f, o[f.key], true)])),
@@ -325,7 +329,11 @@ function OrderList({ type, initialQ = '', startNew = false, onNewDone }) {
         <AdvButton open={advOpen} n={advN} onClick={() => setAdvOpen(!advOpen)} />
         {!advOpen && advN > 0 && <button type="button" className="btn sm ghost" onClick={() => setAdv(EMPTY_FILTER)}>✕ Bỏ lọc nâng cao</button>}
         <div className="actions" style={{ marginLeft: 'auto' }}>
+          <SortButton cols={cols} sorts={tools.sorts} setSorts={tools.setSorts} />
+          {tools.filtered && <button type="button" className="btn sm ghost" onClick={() => tools.setColFilters({})}>✕ Bỏ lọc cột</button>}
           <ColumnPicker cols={cols.map((c) => ({ key: c.key, label: c.extra ? `➕ ${c.label}` : c.label, locked: c.locked }))} hidden={hidden} setHidden={setHidden} order={colOrder} setOrder={setColOrder} />
+          <ViewPresets pid={`orders:${type}`} snapshot={() => ({ ...tools.snapshot(), hiddenBase, shownExtra, colOrder, adv })}
+            restore={(v) => { tools.restore(v); setHiddenBase(v?.hiddenBase || []); setShownExtra(v?.shownExtra || []); setColOrder(v?.colOrder || []); setAdv(v?.adv || EMPTY_FILTER); }} />
           <button className="btn" onClick={exportExcel}>⬇ Excel</button>
           {canManage && !sto && <ImportOrders type={type} existing={rows} onDone={setMsg} />}
           {isAdmin && noSales.length > 0 && <button className="btn" onClick={fillSales} title="Sale chỉ thấy đơn có Sale phụ trách là mình">Gán sale cho {noSales.length} đơn cũ</button>}
@@ -334,14 +342,16 @@ function OrderList({ type, initialQ = '', startNew = false, onNewDone }) {
       </div>
       {msg && <div className="ok-box" style={{ marginBottom: 10 }}>{msg}</div>}
       {advOpen && <DynamicFilterPanel scope={`orders:${type}`} fields={advFields} value={adv} onApply={(v) => { setAdv(v); if (activeConds(v) && status === 'opening') setStatus(''); }} />}
+      {tools.popup}
       {type === 'SO' && <ShortBanner co={co} />}
       <ErrorBox error={error} />
       <div className="table-wrap">
         {!list.length ? <Empty /> : (
           <table>
-            <thead><tr>{shownCols.map((c) => <th key={c.key} className={(c.num ? 'num ' : '') + 'col-drag'} {...dragHeadProps(c.key, colKeys, setColOrder)}>{c.label}</th>)}<th></th></tr></thead>
+            <thead><tr>{shownCols.map((c) => <th key={c.key} className={(c.num ? 'num ' : '') + 'col-drag'} {...dragHeadProps(c.key, colKeys, setColOrder)} {...tools.headProps(c)}>{c.label}{tools.headMark(c)}</th>)}<th></th></tr></thead>
             <tbody>
-              {list.map((o) => {
+              {!view.length && <tr><td colSpan={shownCols.length + 1}><Empty text="Không có đơn nào khớp điều kiện lọc của cột." /></td></tr>}
+              {view.map((o) => {
                 const ctx = { x: orderTotals(o), isLate: OPEN_STATUSES.includes(o.status) && o.dueDate && o.dueDate < today };
                 return (
                   <tr key={o.id} onClick={() => setOpen(o.id)} style={{ cursor: 'pointer', opacity: ['closed', 'cancelled'].includes(o.status) ? 0.6 : 1 }}>

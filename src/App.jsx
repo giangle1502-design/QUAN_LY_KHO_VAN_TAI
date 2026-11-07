@@ -32,6 +32,7 @@ import Hauling from './pages/transport/Hauling';
 import Driver from './pages/transport/Driver';
 import ResetData from './pages/admin/ResetData';
 import PrintDesigner from './pages/PrintDesigner';
+import Settings from './pages/Settings';
 import Chat from './pages/Chat';
 import ChatRules from './pages/admin/ChatRules';
 
@@ -90,6 +91,7 @@ export default function App() {
         {canDesign && <Route path="mau-in/:id" element={<PrintDesigner />} />}
         <Route path="quan-tri/xoa" element={<Deletes />} />
         <Route path="tro-chuyen" element={<Chat />} />
+        <Route path="cai-dat" element={<Settings />} />
         {isAdmin && <Route path="quan-tri/tin-nhan" element={<ChatRules />} />}
         {isSuper && <Route path="quan-tri/du-lieu" element={<ResetData />} />}
         <Route path="*" element={<Navigate to="/" />} />

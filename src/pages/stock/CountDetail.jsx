@@ -6,7 +6,7 @@ import { useApp } from '../../context/AppContext';
 import { useCollection } from '../../lib/hooks';
 import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
 import { exportSheets } from '../../lib/excel';
-import { fmtDate, fmtNum, norm } from '../../lib/utils';
+import { fmtDate, fmtDateTime, fmtNum, norm } from '../../lib/utils';
 import {
   COUNT_KINDS, COUNT_STATUS, addFoundLine, adjustPlan, countValue, inLocRange, lineResult, locCmp, postAdjust, saveCount, scopeText, setCountStatus, specOf,
 } from '../../lib/counts';
@@ -142,7 +142,7 @@ export default function CountDetail() {
           </table>
         </div>
       )}
-      {count.history?.length ? <div className="small" style={{ marginTop: 12 }}>{count.history.map((h, i) => <div key={i}>{new Date(h.at).toLocaleString('vi-VN')} · {h.byName || h.by}: {h.action}</div>)}</div> : null}
+      {count.history?.length ? <div className="small" style={{ marginTop: 12 }}>{count.history.map((h, i) => <div key={i}>{fmtDateTime(h.at)} · {h.byName || h.by}: {h.action}</div>)}</div> : null}
       {adjusting && <AdjustModal count={count} lines={lines} user={user} onClose={() => setAdjusting(false)} />}
     </div>
   );

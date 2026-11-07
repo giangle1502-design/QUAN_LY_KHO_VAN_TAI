@@ -19,7 +19,7 @@ const PARENT = { key: 'dm-all', title: '📚 Danh mục & thiết lập' };
 const isSub = (k) => k === 'thiet-lap' || k === 'quan-tri' || k.startsWith('dm:');
 
 export default function Layout() {
-  const { name, email, role, isAdmin, isSuper, can3PL, canDesign, hasRole, logout, settings } = useApp();
+  const { name, email, role, isAdmin, isSuper, can3PL, canDesign, hasRole, logout, settings, fmtKey } = useApp();
   const [open, setOpen] = useState(false);
   const loc = useLocation();
   const orderTab = (k) => ({ isActive }) => (isActive && (new URLSearchParams(loc.search).get('tab') || 'SO') === k ? 'active' : '');
@@ -301,7 +301,10 @@ export default function Layout() {
         </div>
         <div className="me">
           <div title={email}><b>{name}</b><small className="me-mail">{email}</small><small className="role">{roleLabel(role)}</small></div>
-          <button className="btn ghost sm" onClick={logout}>Đăng xuất</button>
+          <span style={{ display: 'flex', gap: 6, flex: 'none' }}>
+            <NavLink className="btn ghost sm" to="/cai-dat" title="Cài đặt hiển thị: kiểu ngày, giờ, dấu thập phân, hàng nghìn">⚙</NavLink>
+            <button className="btn ghost sm" onClick={logout}>Đăng xuất</button>
+          </span>
         </div>
       </aside>
       {open && <div className="side-bg" onClick={close} />}
@@ -338,7 +341,7 @@ export default function Layout() {
           </div>
         )}
         </div>
-        <Outlet />
+        <Outlet key={fmtKey} />
       </main>
     </div>
   );

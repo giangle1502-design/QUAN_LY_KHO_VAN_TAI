@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useCollection } from '../lib/hooks';
 import { roleLabel } from '../catalogs';
-import { matchQ } from '../lib/utils';
+import { fmtClock, fmtDate, matchQ, vnParts } from '../lib/utils';
 import {
   SYS_ALL, atMs, dmId, isUnread, loadOlder, markRead, saveGroup, sendMessage, useChatReads, useMessages, useMyChats,
 } from '../lib/chat';
@@ -17,7 +17,7 @@ export function fmtWhen(ms, full = false) {
   if (!ms) return '';
   const d = new Date(ms);
   const now = new Date();
-  const hm = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  const hm = fmtClock(vnParts(d)?.h ?? 0, vnParts(d)?.mi ?? 0);
   const same = d.toDateString() === now.toDateString();
   if (same && !full) return hm;
   const dm = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -252,7 +252,7 @@ function Conversation({ chat, me, title, nameOf, reads, onBack, onEditGroup }) {
         {!live.loading && !msgs.length && <div className="small" style={{ textAlign: 'center', padding: 20 }}>{chat._new ? `Bắt đầu trò chuyện với ${title}.` : 'Chưa có tin nhắn.'}</div>}
         {msgs.map((m) => {
           const ms = atMs(m.at);
-          const day = ms ? new Date(ms).toLocaleDateString('vi-VN') : '';
+          const day = ms ? fmtDate(vnParts(new Date(ms))?.ymd) : '';
           const sep = day && day !== lastDay ? day : '';
           if (sep) lastDay = day;
           const mine = m.by === me.email && !m.sys;

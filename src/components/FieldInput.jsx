@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { useCollection } from '../lib/hooks';
 import { catalogByKey, refLabel, refValue } from '../catalogs';
 import { QuickAdd } from './FormTools';
-import { fmtDate, fmtNum } from '../lib/utils';
+import { fmtClock, fmtDate, fmtNum } from '../lib/utils';
 import Select from './Select';
 import { addChoice, canChoose } from '../lib/fields';
 
@@ -164,7 +164,7 @@ export function displayValue(f, v, forExcel, unit = 'đ') {
   if (f.type === 'formula') return displayValue({ type: f.resultType || 'number' }, v, forExcel, unit);
   if (f.type === 'currency') return forExcel ? Number(v) : `${fmtNum(v, unit === 'USD' ? 4 : 0)} ${unit || 'đ'}`;
   if (f.type === 'percent') return forExcel ? Number(v) : `${fmtNum(v, 2)}%`;
-  if (f.type === 'datetime') return forExcel ? String(v).replace('T', ' ') : `${fmtDate(String(v).slice(0, 10))} ${String(v).slice(11, 16)}`;
+  if (f.type === 'datetime') return forExcel ? String(v).replace('T', ' ') : `${fmtDate(String(v).slice(0, 10))} ${String(v).length > 11 ? fmtClock(String(v).slice(11, 13), String(v).slice(14, 16)) : ''}`;
   if (f.type === 'checkbox') return v ? (forExcel ? 'x' : '✓') : '';
   if (f.type === 'multiref') return (v || []).join(', ');
   if (f.type === 'select') return f.labels?.[v] || v;

@@ -7,7 +7,7 @@ import { useCollection, useMyWarehouses } from '../../lib/hooks';
 import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
 import { exportSheets } from '../../lib/excel';
 import { vnDate } from '../../lib/trips';
-import { fmtDate, fmtNum, matchQ } from '../../lib/utils';
+import { fmtDate, fmtDateTime, fmtNum, matchQ } from '../../lib/utils';
 import { MOVE_KINDS, palletManaged, postPalletMove } from '../../lib/pallets';
 import { WithAdd } from '../../components/FormTools';
 import Select from '../../components/Select';
@@ -58,7 +58,7 @@ export default function Pallets() {
             <tbody>{lentRows.map((r) => (
               <tr key={r._id}>
                 <td><b>{r.carrierName || r.carrier}</b> <span className="small">{r.carrier}</span></td><td>{r.code}</td><td>{r.name}</td><td>{r.material}</td>
-                <td className="num"><b>{fmtNum(r.qty)}</b></td><td className="mono small">{String(r.lastRef || "").startsWith("PX") ? r.lastRef : ""}</td><td className="small">{r.updatedAt ? new Date(r.updatedAt).toLocaleString('vi-VN') : ''}</td>
+                <td className="num"><b>{fmtNum(r.qty)}</b></td><td className="mono small">{String(r.lastRef || "").startsWith("PX") ? r.lastRef : ""}</td><td className="small">{r.updatedAt ? fmtDateTime(r.updatedAt) : ''}</td>
                 <td>{canManage && <button className="btn sm primary" onClick={() => setForm({ kind: 'return', carrier: r.carrier, carrierName: r.carrierName, code: r.code, qty: r.qty })}>Nhận trả</button>}</td>
               </tr>
             ))}</tbody>
@@ -73,7 +73,7 @@ export default function Pallets() {
               <tr key={r._id} style={Number(r.qty) < 0 ? { background: 'var(--red-soft)' } : undefined}>
                 <td>{r.warehouse}</td><td>{r.code}</td><td>{r.name}</td><td>{r.material}</td>
                 <td className="num"><b>{fmtNum(r.qty)}</b>{Number(r.qty) < 0 ? <div className="small">tồn âm: nhập tồn đầu pallet</div> : null}</td>
-                <td className="small">{r.updatedAt ? new Date(r.updatedAt).toLocaleString('vi-VN') : ''}</td>
+                <td className="small">{r.updatedAt ? fmtDateTime(r.updatedAt) : ''}</td>
               </tr>
             ))}</tbody>
           </table>

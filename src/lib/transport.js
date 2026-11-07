@@ -3,6 +3,7 @@ import { enrichLine } from './dispatch';
 import { db } from '../firebase';
 import { ST, firstStatus, noYard, nowISO, reserveCodes, vnDate } from './trips';
 import { calcFreight, matchRate } from './freight';
+import { fmtNum } from './utils';
 
 // ============================================================================
 // Vận tải theo chuyến: admin giao đơn vị vận tải trên đơn → điều phối chia xe thành chuyến (status 'planned')
@@ -147,7 +148,7 @@ export async function createPlannedTrips({ wh, carrier, trips }, user, action = 
   }
   return gids;
 }
-const fmtT = (kg) => (Math.round(kg) / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 3 });
+const fmtT = (kg) => fmtNum(Math.round(kg) / 1000, 3);
 
 // Nén ảnh chụp phiếu (JPEG, cạnh dài tối đa 1280px) để lưu thẳng vào Firestore (< ~700 KB)
 export function compressImage(file, maxSide = 1280) {

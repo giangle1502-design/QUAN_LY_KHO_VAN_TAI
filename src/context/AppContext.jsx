@@ -3,6 +3,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db, SUPER_ADMINS } from '../firebase';
 import { canSeeField, mergeFields, visibleFields } from '../lib/fields';
+import { setFormat } from '../lib/utils';
 
 const Ctx = createContext(null);
 export const useApp = () => useContext(Ctx);
@@ -23,6 +24,18 @@ export function AppProvider({ children }) {
     if (!email) { setUserDoc(undefined); return; }
     return onSnapshot(doc(db, 'users', email), (s) => setUserDoc(s.exists() ? s.data() : null), () => setUserDoc(null));
   }, [email]);
+
+  // Cấu hình hiển thị riêng của người dùng (định dạng, cột, sắp xếp…) lưu trên tài khoản
+  const [remotePrefs, setRemotePrefs] = useState(null);
+  const [fmtTick, setFmtTick] = useState(0);
+  useEffect(() => {
+    if (!email) { setRemotePrefs(null); return; }
+    return onSnapshot(doc(db, 'userPrefs', email), (s) => setRemotePrefs(s.exists() ? s.data() : {}), () => setRemotePrefs({}));
+  }, [email]);
+  // Định dạng ngày / giờ / số: bản trên tài khoản, chưa có thì bản trên trình duyệt
+  const fmtRaw = remotePrefs?.fmt ?? (() => { try { return localStorage.getItem(`pref:${email}:fmt`); } catch { return null; } })();
+  const fmtKey = fmtRaw || '';
+  useMemo(() => { try { setFormat(fmtRaw ? JSON.parse(fmtRaw) : null); } catch { setFormat(null); } }, [fmtRaw]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const active = userDoc && userDoc.active !== false;
   const allowed = !!user && (isSuper || !!active);
@@ -85,10 +98,10 @@ export function AppProvider({ children }) {
   const value = useMemo(() => ({
     user, email, role, isAdmin, isSuper, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, myCarrier, myThreepl, myIdCard, carrierDoc, can3PL, userDoc,
     name: userDoc?.name || user?.displayName || email,
-    fieldConfig, fieldsOf, settings, salesOnly, seeField, seenFieldsOf,
+    fieldConfig, fieldsOf, settings, salesOnly, seeField, seenFieldsOf, remotePrefs, fmtKey, bumpFormat: () => setFmtTick((t) => t + 1),
     loading: user === undefined || (!!user && userDoc === undefined && !isSuper),
     logout: () => signOut(auth),
-  }), [user, email, role, isAdmin, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, myCarrier, myThreepl, myIdCard, carrierDoc, can3PL, userDoc, fieldConfig, fieldsOf, settings, isSuper, salesOnly, seeField, seenFieldsOf]);
+  }), [user, email, role, isAdmin, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, myCarrier, myThreepl, myIdCard, carrierDoc, can3PL, userDoc, fieldConfig, fieldsOf, settings, isSuper, salesOnly, seeField, seenFieldsOf, remotePrefs, fmtKey, fmtTick]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

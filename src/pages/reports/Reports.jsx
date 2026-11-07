@@ -13,14 +13,16 @@ import { vnDate } from '../../lib/trips';
 import { exportSheets } from '../../lib/excel';
 import { useOrderSecrets, viewOrder } from '../../lib/orderSecrets';
 import { moneyUnit } from '../../lib/currency';
-import { fmtDate, fmtNum, norm } from '../../lib/utils';
+import { fmtDate, fmtDateTime, fmtNum, norm } from '../../lib/utils';
 import { CompanyPicker, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox } from '../../components/ui';
+import { ViewPresets, useTableTools } from '../../components/TableTools';
+import { StockDetailModal } from '../../components/StockDetail';
 import SalesAnalysis from './SalesAnalysis';
 import IOPlan from './IOPlan';
 import Overview from './Overview';
 import LegalTransfer from './LegalTransfer';
-import StockInbound from './StockInbound';
+import StockInbound, { SaleItemModal } from './StockInbound';
 
 // ============================================================================
 // Báo cáo: mỗi báo cáo = bộ lọc + 1 hoặc nhiều bảng; bảng nào cũng xuất Excel và in được.
@@ -57,7 +59,7 @@ const SHOWN = new WeakMap();
 // Mỗi người tự chọn / sắp xếp cột (⚙ Cột hiển thị, lưu trên trình duyệt) và thêm cột:
 //  - extra: cột tùy chọn bảng tự có (vd. trường tự thêm của đơn hàng), mặc định ẩn
 //  - links: [{ key, cat, label?, id?(row) }] → mọi trường (có sẵn + tự thêm) của danh mục liên kết, vd. Mã hàng › Nhóm hàng
-export function ReportTable({ cols: baseCols, rows, empty = 'Không có dữ liệu.', rowStyle, id, links, extra = [] }) {
+export function ReportTable({ cols: baseCols, rows, empty = 'Không có dữ liệu.', rowStyle, id, links, extra = [], onRowClick, rowTitle, defaultSort }) {
   const { pathname } = useLocation();
   const { seenFieldsOf } = useApp();
   const pid = id || `${pathname}|${baseCols.slice(0, 3).map((c) => c.key).join(',')}`;
@@ -67,7 +69,7 @@ export function ReportTable({ cols: baseCols, rows, empty = 'Không có dữ li�
   const linkCols = linkList.flatMap((lk) => {
     const cat = catalogByKey(lk.cat);
     return seenFieldsOf(lk.cat).filter((f) => !f.hidden && f.key !== cat.idField && f.type !== 'formula')
-      .map((f) => ({ key: `L:${lk.key}:${f.key}`, label: `${lk.label} › ${f.label}`, link: lk, field: f, num: NUM_TYPES.includes(f.type) }));
+      .map((f) => ({ key: `L:${lk.key}:${f.key}`, label: `${lk.label} › ${f.label}`, link: lk, field: f, num: NUM_TYPES.includes(f.type), date: f.type === 'date' }));
   });
   const optCols = [...extra, ...linkCols];
   const optKeys = optCols.map((c) => c.key);
@@ -91,37 +93,50 @@ export function ReportTable({ cols: baseCols, rows, empty = 'Không có dữ li�
     return code == null || code === '' ? undefined : lookups[c.link.cat]?.get(String(code))?.[c.field.key];
   };
   const all = [...baseCols, ...optCols.map((c) => (c.link
-    ? { ...c, render: (r) => displayValue(c.field, linkVal(c, r)), excel: (r) => displayValue(c.field, linkVal(c, r), true) }
+    ? { ...c, render: (r) => displayValue(c.field, linkVal(c, r)), excel: (r) => displayValue(c.field, linkVal(c, r), true), sortVal: (r) => linkVal(c, r) }
     : c))];
   const ordered = orderCols(all, order);
   const cols = ordered.filter((c) => !hidden.includes(c.key));
-  SHOWN.set(baseCols, cols);
   const keys = ordered.map((c) => c.key);
+  // Sắp xếp nhiều cấp + lọc từng cột / nâng cao (lưu riêng người dùng, từng bảng)
+  const tools = useTableTools(pid, all, rows, { defaultSort });
+  const list = tools.rows;
+  SHOWN.set(baseCols, { cols, rows: list });
 
   if (!rows.length) return <Empty text={empty} />;
-  const show = (c, r) => (c.render ? c.render(r) : c.ton ? t3(r[c.key]) : c.num ? fmtNum(r[c.key], c.digits ?? 0) : r[c.key]);
+  const show = (c, r) => (c.render ? c.render(r) : c.ton ? t3(r[c.key]) : c.num ? fmtNum(r[c.key], c.digits ?? 0) : c.date ? fmtDate(r[c.key]) : r[c.key]);
   const hasSum = cols.some((c) => c.sum);
   return (
     <>
       <div className="report-cols no-print">
+        {tools.toolbar}
         <ColumnPicker cols={all.map((c) => ({ key: c.key, label: c.link ? `🔗 ${c.label}` : optKeys.includes(c.key) ? `➕ ${c.label}` : c.label }))}
           hidden={hidden} setHidden={setHidden} order={order} setOrder={setOrder} />
+        <ViewPresets pid={pid} snapshot={() => ({ ...tools.snapshot(), hiddenBase, shownOpt, order })}
+          restore={(v) => { tools.restore(v); setHiddenBase(v?.hiddenBase || []); setShownOpt(v?.shownOpt || []); setOrder(v?.order || []); }} />
+        {list.length !== rows.length && <span className="small">Đang lọc: {list.length} / {rows.length} dòng</span>}
       </div>
+      {tools.advPanel}
+      {tools.popup}
       <div className="table-wrap report-table">
         <table>
-          <thead><tr><th className="stt">STT</th>{cols.map((c) => <th key={c.key} className={(c.num || c.ton ? 'num ' : '') + 'col-drag'} {...dragHeadProps(c.key, keys, setOrder)}>{c.label}</th>)}</tr></thead>
+          <thead><tr><th className="stt">STT</th>{cols.map((c) => <th key={c.key} className={(c.num || c.ton ? 'num ' : '') + 'col-drag'} {...dragHeadProps(c.key, keys, setOrder)} {...tools.headProps(c)}>{c.label}{tools.headMark(c)}</th>)}</tr></thead>
           <tbody>
-            {rows.map((r, i) => (
-              <tr key={r._k ?? i} style={rowStyle?.(r)}>
+            {!list.length && <tr><td colSpan={cols.length + 1}><Empty text="Không có dòng nào khớp điều kiện lọc." /></td></tr>}
+            {list.map((r, i) => (
+              <tr key={r._k ?? i} style={{ ...(rowStyle?.(r) || {}), ...(onRowClick ? { cursor: 'pointer' } : {}) }} onClick={onRowClick ? () => onRowClick(r) : undefined} title={rowTitle}>
                 <td className="stt">{i + 1}</td>
-                {cols.map((c) => <td key={c.key} className={(c.num || c.ton ? 'num' : '') + (c.nowrap ? ' nowrap' : '')} style={c.style?.(r)}>{show(c, r)}</td>)}
+                {cols.map((c) => (
+                  <td key={c.key} className={(c.num || c.ton ? 'num' : '') + (c.nowrap ? ' nowrap' : '') + (c.onClick ? ' cell-link' : '')} style={c.style?.(r)}
+                    onClick={c.onClick ? (e) => { e.stopPropagation(); c.onClick(r); } : undefined} title={c.onClick ? c.clickTitle || 'Bấm để xem chi tiết' : undefined}>{show(c, r)}</td>
+                ))}
               </tr>
             ))}
           </tbody>
-          {hasSum && (
+          {hasSum && list.length > 0 && (
             <tfoot><tr><td />{cols.map((c, i) => (
               <td key={c.key} className={c.num || c.ton ? 'num' : ''}>
-                {c.sum ? (c.ton ? t3(rows.reduce((s, r) => s + n(r[c.key]), 0)) : fmtNum(rows.reduce((s, r) => s + n(r[c.key]), 0), c.digits ?? 0)) : i === 0 ? 'Cộng' : ''}
+                {c.sum ? (c.ton ? t3(list.reduce((s, r) => s + n(r[c.key]), 0)) : fmtNum(list.reduce((s, r) => s + n(r[c.key]), 0), c.digits ?? 0)) : i === 0 ? 'Cộng' : ''}
               </td>
             ))}</tr></tfoot>
           )}
@@ -132,8 +147,11 @@ export function ReportTable({ cols: baseCols, rows, empty = 'Không có dữ li�
 }
 const NUM_TYPES = ['number', 'currency', 'percent'];
 // Dòng Excel theo đúng cột trên màn hình (cột người dùng đã chọn; số kg xuất dạng số)
-export const toSheet = (baseCols, rows) => {
-  const cols = SHOWN.get(baseCols) || baseCols;
+export const toSheet = (baseCols, rows0) => {
+  const shown = SHOWN.get(baseCols);
+  const cols = shown?.cols || baseCols;
+  // Excel theo đúng bảng trên màn hình: các dòng đã lọc + sắp xếp
+  const rows = shown?.rows && shown.rows.length <= rows0.length ? shown.rows : rows0;
   return (rows.length ? rows : [{}]).map((r, i) => ({
     STT: rows.length ? i + 1 : '',
     ...Object.fromEntries(cols.filter((c) => !c.noExcel).map((c) => [c.label + (c.ton ? ' (kg)' : ''),
@@ -164,7 +182,7 @@ export default function Reports() {
         <CompanyPicker value={co} onChange={setCo} />
         <input type="search" placeholder="Tìm mã hàng, tên hàng, khách, NCC…" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
-      <p className="print-only small">Kho: {wh || 'Tất cả kho được giao'} · Công ty: {co || 'Tất cả'}{q ? ` · Lọc: ${q}` : ''} · In lúc {new Date().toLocaleString('vi-VN')}</p>
+      <p className="print-only small">Kho: {wh || 'Tất cả kho được giao'} · Công ty: {co || 'Tất cả'}{q ? ` · Lọc: ${q}` : ''} · In lúc {fmtDateTime(new Date())}</p>
       <Body key={cur[0]} {...props} />
     </div>
   );
@@ -197,9 +215,12 @@ const matchItem = (q, ...xs) => !q || norm(xs.join(' ')).includes(q);
 
 // ---------------------------------------------------------------------------
 // 1. Tồn kho tổng theo từng kho
+const DetailBtn = ({ onClick }) => <button type="button" className="btn sm" onClick={(e) => { e.stopPropagation(); onClick(); }} title="Xem hàng đang nằm ở vị trí nào">🔍 Xem chi tiết</button>;
+
 function ByWarehouse({ wh, co, q }) {
   const { stock, error, statusCodes, warehouses } = useBase(wh, co);
   const locations = useCollection('locations').rows;
+  const [detail, setDetail] = useState(null); // { item?, warehouse? } → bảng tồn theo vị trí
   const list = stock.filter((r) => matchItem(q, r.item, r.itemName));
 
   const whRows = warehouses.map((w) => {
@@ -215,7 +236,7 @@ function ByWarehouse({ wh, co, q }) {
     };
   });
   const whCols = [
-    { key: 'code', label: 'Kho' }, { key: 'name', label: 'Tên kho' },
+    { key: 'code', label: 'Kho', onClick: (r) => setDetail({ warehouse: r.code }), clickTitle: 'Bấm để xem tồn từng vị trí của kho' }, { key: 'name', label: 'Tên kho' },
     { key: 'kg', label: 'Tồn (kg)', ton: true, sum: true },
     ...statusCodes.map((c) => ({ key: `st_${c}`, label: c, ton: true, sum: true })),
     { key: 'bags', label: 'Số bao', num: true, sum: true }, { key: 'pallets', label: 'Pallet', num: true, digits: 1, sum: true },
@@ -223,6 +244,7 @@ function ByWarehouse({ wh, co, q }) {
     { key: 'used', label: 'Vị trí đang dùng', render: (r) => `${r.used}/${r.locs}`, excel: (r) => `${r.used}/${r.locs}` },
     { key: 'cap', label: 'Sức chứa (pallet)', num: true, sum: true },
     { key: 'fill', label: '% lấp đầy', num: true, digits: 1 },
+    { key: 'detail', label: 'Chi tiết', noSort: true, noFilter: true, noExcel: true, render: (r) => <DetailBtn onClick={() => setDetail({ warehouse: r.code })} /> },
   ];
 
   // Ma trận mã hàng × kho
@@ -236,8 +258,12 @@ function ByWarehouse({ wh, co, q }) {
     }
     return [...m.values()].sort((a, b) => a.item.localeCompare(b.item));
   }, [list]);
-  const pivotCols = [{ key: 'item', label: 'Mã hàng', nowrap: true }, { key: 'itemName', label: 'Tên hàng' },
-    ...warehouses.map((w) => ({ key: `w_${w.code}`, label: w.code, ton: true, sum: true })), { key: 'total', label: 'Tổng', ton: true, sum: true }];
+  // Bấm ô số lượng → hàng đó trong kho đó đang ở vị trí nào (vd. KVAC: Cảng Cát Lái 2,000 kg, VICT 30,000 kg)
+  const pivotCols = [{ key: 'item', label: 'Mã hàng', nowrap: true, onClick: (r) => setDetail({ item: r.item }), clickTitle: 'Bấm để xem mã hàng ở các kho / vị trí' }, { key: 'itemName', label: 'Tên hàng' },
+    ...warehouses.map((w) => ({ key: `w_${w.code}`, label: w.code, ton: true, sum: true,
+      onClick: (r) => n(r[`w_${w.code}`]) && setDetail({ item: r.item, warehouse: w.code }), clickTitle: `Bấm để xem ${w.code} đang để ở vị trí nào` })),
+    { key: 'total', label: 'Tổng', ton: true, sum: true, onClick: (r) => setDetail({ item: r.item }) },
+    { key: 'detail', label: 'Chi tiết', noSort: true, noFilter: true, noExcel: true, render: (r) => <DetailBtn onClick={() => setDetail({ item: r.item })} /> }];
 
   const excel = () => exportSheets(`BC_ton_theo_kho_${vnDate()}`, { 'Theo kho': toSheet(whCols, whRows), 'Mã hàng x kho': toSheet(pivotCols, pivot) });
   return (
@@ -247,7 +273,9 @@ function ByWarehouse({ wh, co, q }) {
       <div className="section-head">Tổng theo kho</div>
       <ReportTable cols={whCols} rows={whRows} links={[{ key: 'code', cat: 'warehouses' }]} />
       <div className="section-head" style={{ marginTop: 16 }}>Theo mã hàng và kho (kg)</div>
+      <p className="hint no-print">Bấm vào số tồn của một kho (hoặc nút 🔍 Xem chi tiết) để xem hàng đang nằm ở vị trí nào.</p>
       <ReportTable cols={pivotCols} rows={pivot} empty="Chưa có tồn kho." />
+      {detail && <StockDetailModal stock={list} filter={detail} onClose={() => setDetail(null)} />}
     </>
   );
 }
@@ -258,6 +286,7 @@ function ByLocation({ wh, co, q }) {
   const { stock, error, inMyWarehouses } = useBase(wh, co);
   const locations = useCollection('locations').rows;
   const [mode, setMode] = useState('');
+  const [detail, setDetail] = useState(null);
   const rows = useMemo(() => {
     const byLoc = new Map();
     for (const r of stock) {
@@ -307,8 +336,10 @@ function ByLocation({ wh, co, q }) {
         <span className="small">{rows.length} vị trí · {cnt((x) => !x.empty)} đang chứa · {cnt((x) => x.empty && !x.locked)} trống</span>
         <span style={{ marginLeft: 'auto' }}><Actions onExcel={excel} /></span>
       </div>
-      <ReportTable cols={cols} rows={rows} empty="Không có vị trí nào."
+      <ReportTable cols={cols} rows={rows} empty="Không có vị trí nào." defaultSort={[{ key: 'warehouse', dir: 'asc' }, { key: 'code', dir: 'asc' }]}
+        onRowClick={(r) => !r.empty && setDetail({ warehouse: r.warehouse, location: r.code })} rowTitle="Bấm để xem hàng trong vị trí"
         links={[{ key: 'code', cat: 'locations', id: (r) => `${r.warehouse}__${r.code}` }, { key: 'warehouse', cat: 'warehouses' }]} />
+      {detail && <StockDetailModal stock={stock} filter={detail} onClose={() => setDetail(null)} />}
     </>
   );
 }
@@ -318,6 +349,7 @@ function ByLocation({ wh, co, q }) {
 function ByStatus({ wh, co, q }) {
   const { stock, error, statusCodes, statuses } = useBase(wh, co);
   const pledgees = useCollection('pledgees').rows;
+  const [detail, setDetail] = useState(null);
   const list = stock.filter((r) => matchItem(q, r.item, r.itemName, r.pledgee));
   const total = list.reduce((s, r) => s + n(r.kg), 0);
   const sumRows = statusCodes.map((c) => {
@@ -372,7 +404,8 @@ function ByStatus({ wh, co, q }) {
       <div className="section-head">Tổng theo trạng thái</div>
       <ReportTable cols={sumCols} rows={sumRows} />
       <div className="section-head" style={{ marginTop: 16 }}>Theo mã hàng (kg)</div>
-      <ReportTable cols={itemCols} rows={byItem} empty="Chưa có tồn kho." />
+      <ReportTable cols={itemCols} rows={byItem} empty="Chưa có tồn kho." onRowClick={(r) => setDetail({ warehouse: r.warehouse, item: r.item })} rowTitle="Bấm để xem vị trí" />
+      {detail && <StockDetailModal stock={list} filter={detail} onClose={() => setDetail(null)} />}
       <div className="section-head" style={{ marginTop: 16 }}>Hàng thế chấp (HTC) theo bên nhận thế chấp</div>
       <ReportTable cols={pledgeCols} rows={pledged} empty="Không có hàng thế chấp." />
     </>
@@ -392,6 +425,7 @@ function useOpenOrders(wh, co) {
 // 4. Tồn kho cho Sale: tồn, sắp về, chưa giao, có thể bán
 function ForSales({ wh, co, q }) {
   const { stock, error, locked, itemMap } = useBase(wh, co);
+  const [pick, setPick] = useState(''); // mã hàng đang xem chi tiết (đơn chưa xuất, hàng về theo ngày, vị trí)
   const { orders, inScope } = useOpenOrders(wh, co);
   const today = vnDate();
   const rows = useMemo(() => {
@@ -455,7 +489,9 @@ function ForSales({ wh, co, q }) {
       </p>
       <ErrorBox error={error} />
       <Actions onExcel={excel} />
-      <ReportTable cols={cols} rows={rows} empty="Chưa có tồn kho hoặc đơn hàng." />
+      <p className="hint no-print">Bấm vào một dòng để xem: đơn chưa xuất còn bao nhiêu, ai đặt; hàng sắp về ngày gần nhất, các ngày khác, phần chưa có lịch; tồn từng kho / vị trí.</p>
+      <ReportTable cols={cols} rows={rows} empty="Chưa có tồn kho hoặc đơn hàng." onRowClick={(r) => setPick(r.item)} rowTitle="Bấm để xem chi tiết" />
+      {pick && <SaleItemModal item={pick} wh={wh} co={co} onClose={() => setPick('')} />}
     </>
   );
 }

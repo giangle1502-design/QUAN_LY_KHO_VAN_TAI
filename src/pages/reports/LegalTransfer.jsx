@@ -5,7 +5,7 @@ import { useMovesRange } from '../../lib/slips';
 import { crossLines, markMovementDone, setNoticeDone, useLegalNotices } from '../../lib/legalTransfer';
 import { exportSheets } from '../../lib/excel';
 import { vnDate } from '../../lib/trips';
-import { fmtDate, fmtNum, norm } from '../../lib/utils';
+import { fmtDate, fmtNum, norm, vnParts } from '../../lib/utils';
 import { ErrorBox } from '../../components/ui';
 import Select from '../../components/Select';
 import { ReportTable, toSheet } from './Reports';
@@ -41,7 +41,7 @@ export default function LegalTransfer({ wh, co, q }) {
           _k: `${m.id}|${i}`, m, first: i === 0, date: m.date, id: m.id, status: m.status === 'wait_release' ? 'Chờ giải chấp' : 'Đã xuất',
           orderId: m.orderId || '', party: m.partyName || m.partyCode || '', warehouse: m.warehouse, item: l.item, itemName: l.itemName || '',
           lot: l.lot || '', goodsStatus: l.goodsStatus || '', kg: Math.abs(n(l.kg)), from: l.company, to: m.company,
-          done: done ? `✓ ${nt.doneByName || nt.doneBy}${nt.doneAt?.seconds ? ` ${new Date(nt.doneAt.seconds * 1000).toLocaleDateString('vi-VN')}` : ''}` : 'Chưa',
+          done: done ? `✓ ${nt.doneByName || nt.doneBy}${nt.doneAt?.seconds ? ` ${fmtDate(vnParts(new Date(nt.doneAt.seconds * 1000))?.ymd)}` : ''}` : 'Chưa',
           isDone: done, notice: nt,
         });
       });
