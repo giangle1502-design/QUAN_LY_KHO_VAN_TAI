@@ -12,6 +12,7 @@ import { fmtDate, fmtNum, matchQ } from '../../lib/utils';
 import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
 import { WithAdd } from '../../components/FormTools';
 import Select from '../../components/Select';
+import { ExtraFields, useExtraFields } from '../../components/ExtraFields';
 
 // ============================================================================
 // SO trả hàng (DRT): khách từ chối nhận / trả lại hàng của 1 SO đã giao (số trả ≤ số đã giao).
@@ -58,6 +59,7 @@ export function DrtCreate({ so, onClose, onDone }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState('');
+  const ex = useExtraFields('drtForm');
   const setL = (i, k, v) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
   const all = () => setLines((ls) => ls.map((l) => ({ ...l, qtyKg: max[l.soLine] || 0 })));
   const total = lines.reduce((a, l) => a + n(l.qtyKg), 0);
@@ -71,12 +73,13 @@ export function DrtCreate({ so, onClose, onDone }) {
       if (!l.reason) return setErr(`${l.item}: chọn lý do trả hàng.`);
     }
     if (!head.warehouse) return setErr('Chọn kho nhận hàng trả về.');
+    if (ex.missing()) return setErr(`Vui lòng nhập: ${ex.missing()}`);
     setBusy(true);
     try {
       const ship = pick.map((l) => l.shipCode).find(Boolean) || so.shipCode || '';
       const id = await createOrder({
         type: 'DRT', originalSoId: so.id, company: so.company || '', partyCode: so.partyCode || '', partyName: so.partyName || '', sales: so.sales || '',
-        shipCode: ship, warehouse: head.warehouse, warehouses: [head.warehouse], date: head.date, dueDate: head.date, note: head.note.trim(), tolerancePct: 0,
+        shipCode: ship, warehouse: head.warehouse, warehouses: [head.warehouse], date: head.date, dueDate: head.date, note: head.note.trim(), tolerancePct: 0, ...ex.values(),
         lines: pick.map((l) => ({ soLine: l.soLine, item: l.item, itemName: l.itemName, deliveredKg: l.deliveredKg, qtyKg: Math.round(n(l.qtyKg) * 1000) / 1000,
           reason: l.reason, condition: l.condition, goodsStatus: l.goodsStatus, warehouse: head.warehouse, dueDate: head.date, shipCode: l.shipCode || ship, note: '' })),
       }, { email, name }, {});
@@ -105,13 +108,16 @@ export function DrtCreate({ so, onClose, onDone }) {
           <div className="form-grid">
             <Field label="Ngày trả hàng" required><input type="date" value={head.date} onChange={(e) => setHead((h) => ({ ...h, date: e.target.value }))} /></Field>
             <Field label="Kho nhận hàng trả về" required>
-              <Select value={head.warehouse} onChange={(e) => setHead((h) => ({ ...h, warehouse: e.target.value }))}>
-                <option value="">-- Chọn --</option>
-                {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-              </Select>
+              <WithAdd cat="warehouses" onAdded={(id) => setHead((h) => ({ ...h, warehouse: id }))}>
+                <Select value={head.warehouse} onChange={(e) => setHead((h) => ({ ...h, warehouse: e.target.value }))}>
+                  <option value="">-- Chọn --</option>
+                  {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
+                </Select>
+              </WithAdd>
             </Field>
             <Field label="Ghi chú" size={{ width: 480 }}><input value={head.note} onChange={(e) => setHead((h) => ({ ...h, note: e.target.value }))} /></Field>
           </div>
+          <ExtraFields ex={ex} />
           <div className="table-wrap" style={{ margin: '10px 0' }}>
             <table>
               <thead><tr><th>Dòng SO</th><th>Mã hàng</th><th>Tên hàng</th><th className="num">Đã giao</th><th className="num">Đã trả</th><th className="num">Còn được trả</th>

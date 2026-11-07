@@ -13,6 +13,7 @@ import { fmtDate, fmtNum, matchQ, norm } from '../../lib/utils';
 import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
 import { WithAdd } from '../../components/FormTools';
 import Select from '../../components/Select';
+import { ExtraFields, useExtraFields } from '../../components/ExtraFields';
 
 const kg = (v) => fmtNum(Number(v) || 0, 2);
 const r3 = (x) => Math.round(x * 1000) / 1000;
@@ -214,6 +215,7 @@ function PlanForm({ plan, orderId, plans, onClose }) {
   const priceField = lineSeen.find((f) => f.key === priceKey);
   const [date, setDate] = useState(plan?.date || vnDate());
   const [note, setNote] = useState(plan?.note || '');
+  const ex = useExtraFields('shipPlan', plan);
   // Đơn vị vận tải: chỉ định ở đây thì chuyến tự vào Vận chuyển → Chờ giao vận tải để admin kiểm tra, giao
   const carriers = useCollection('carriers').rows.filter((c) => c.active !== false);
   const [carrier, setCarrier] = useState(plan?.carrier ?? null);
@@ -281,6 +283,7 @@ function PlanForm({ plan, orderId, plans, onClose }) {
     setErr('');
     if (!date) return setErr('Chọn ngày dự kiến xuất.');
     if (!chosen.length) return setErr('Tích chọn ít nhất 1 dòng đơn trong bảng.');
+    if (ex.missing()) return setErr(`Vui lòng nhập: ${ex.missing()}`);
     if (chosen.some(clash)) return setErr('Chỉ gộp 1 xe các dòng cùng khách hàng và cùng công ty xuất. Bỏ tích các dòng khác khách / khác công ty.');
     const byOrder = new Map();
     for (const r of chosen) {
@@ -303,7 +306,7 @@ function PlanForm({ plan, orderId, plans, onClose }) {
       for (const g of groups) {
         const o = g.o._raw || g.o;
         const head = { orderId: o.id, orderRef: o.refNo || '', company: o.company || '', partyCode: o.partyCode || '', partyName: o.partyName || '',
-          sales: o.sales || '', salesName: o.salesName || '', date, note: note.trim(), carrier: carrierVal,
+          sales: o.sales || '', salesName: o.salesName || '', date, note: note.trim(), carrier: carrierVal, ...ex.values(),
           ...(groupId ? { groupId, groupOrders: groups.map((x) => x.o.id) } : {}) };
         if (plan) await updatePlan(plan.id, { ...head, lines: g.lines.map((l) => ({ ...l, doneKg: 0 })) }, { email, name });
         else await createPlan({ ...head, lines: g.lines }, { email, name });
@@ -324,6 +327,7 @@ function PlanForm({ plan, orderId, plans, onClose }) {
           <option value="">-- Chưa chỉ định --</option>{carriers.map((c) => <option key={c.code} value={c.code}>{c.code} – {c.name}</option>)}</Select></WithAdd></Field>
         <Field label="Ghi chú"><input value={note} onChange={(e) => setNote(e.target.value)} /></Field>
       </div>
+      <ExtraFields ex={ex} />
       <div className="section-head" style={{ marginTop: 10 }}>1. Chọn dòng đơn bán (SO) {!plan && <span className="small">· tích nhiều dòng, nhiều SO cùng khách = 1 xe đi nhiều đơn</span>}</div>
       <div className="filters">
         <input type="search" autoFocus placeholder="Tìm khách hàng, mã hàng, số SO, mã giao, kho…" value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: 1, minWidth: 240 }} />

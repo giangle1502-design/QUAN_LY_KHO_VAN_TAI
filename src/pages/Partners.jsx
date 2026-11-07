@@ -9,6 +9,7 @@ import { saleSeesCustomer } from '../lib/plasticSales';
 import FieldInput from '../components/FieldInput';
 import { Empty, ErrorBox, Field, Modal } from '../components/ui';
 import Select from '../components/Select';
+import { AddFieldButton } from '../components/FormTools';
 import { EditForm } from './CatalogPage';
 
 // Danh sách đối tác = hồ sơ partners gộp với Soldto + NCC theo mã (mã chưa có hồ sơ vẫn hiện)
@@ -198,14 +199,14 @@ export function PartnerForm({ row, existing, onClose, onSaved }) {
         )}
         {curTab === 'kh' && (
           <>
-            <p className="small">Thiết lập riêng khi bán hàng cho đối tác này (lưu ở danh mục Soldto, mã {form.code || '…'}).</p>
+            <div className="section-head"><span className="grow small" style={{ fontWeight: 400 }}>Thiết lập riêng khi bán hàng cho đối tác này (lưu ở danh mục Soldto, mã {form.code || '…'}).</span><AddFieldButton formKey="soldto" /></div>
             <div className="form-grid">{custFields.map((f) => input(f, roles.soldto[f.key], (v) => setRole('soldto', f.key, v), !editable))}</div>
             <ShipTos code={String(form.code || '').trim()} partner={form} saved={!isNew && !!row._soldto} />
           </>
         )}
         {curTab === 'ncc' && (
           <>
-            <p className="small">Thiết lập riêng khi mua hàng của đối tác này (lưu ở danh mục Nhà cung cấp, mã {form.code || '…'}).</p>
+            <div className="section-head"><span className="grow small" style={{ fontWeight: 400 }}>Thiết lập riêng khi mua hàng của đối tác này (lưu ở danh mục Nhà cung cấp, mã {form.code || '…'}).</span><AddFieldButton formKey="suppliers" /></div>
             <div className="form-grid">{vendFields.map((f) => input(f, roles.suppliers[f.key], (v) => setRole('suppliers', f.key, v), !editable))}</div>
           </>
         )}
@@ -213,7 +214,8 @@ export function PartnerForm({ row, existing, onClose, onSaved }) {
           <>
             {extra.length ? <div className="form-grid">{extra.map((f) => input(f, form[f.key], (v) => set(f.key, v), !editable))}</div>
               : <Empty text="Chưa có trường bổ sung." />}
-            {canDesign && <p className="small"><Link to="/hang-muc?dm=partners">🧩 Thêm trường bổ sung</Link> (vd. Loại hình XNK, Lĩnh vực…): trường mới tự có trong form, danh sách và bảng tìm kiếm nâng cao.</p>}
+            {canDesign && <div className="form-actions" style={{ justifyContent: 'flex-start' }}><AddFieldButton formKey="partners" />
+              <span className="small">Trường mới (vd. Loại hình XNK, Lĩnh vực…) tự có trong form, danh sách và bảng tìm kiếm nâng cao.</span></div>}
           </>
         )}
         {!isNew && row.updatedBy && <p className="small">Sửa lần cuối bởi {row.updatedBy}</p>}

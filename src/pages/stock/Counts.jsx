@@ -10,6 +10,7 @@ import { fmtDate, fmtNum, matchQ } from '../../lib/utils';
 import { COUNT_KINDS, COUNT_STATUS, createCount, lineResult, loadLines, pickStock, scopeText } from '../../lib/counts';
 import { WithAdd } from '../../components/FormTools';
 import Select from '../../components/Select';
+import { ExtraFields, useExtraFields } from '../../components/ExtraFields';
 
 // Kiểm kê (toàn kho / theo vị trí) và cycle count (khu vực, mã có giao dịch trong ngày): danh sách, lập phiếu, báo cáo
 export default function Counts() {
@@ -115,15 +116,17 @@ function CreateCount({ onClose }) {
   const locs = useCollection('locations').rows.filter((l) => l.warehouse === f.warehouse).map((l) => l.code);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const ex = useExtraFields('stockCount');
   const scope = { locFrom: f.locFrom.trim(), locTo: f.locTo.trim(), areas: f.areas.trim(), items: f.items.trim(), ...(f.moved ? { movedOn: f.movedOn } : {}) };
   const preview = useMemo(() => pickStock(stock, { ...scope, company: f.company }, null), [stock, f.company, scope.locFrom, scope.locTo, scope.areas, scope.items]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = async () => {
     setErr('');
     if (!f.warehouse) return setErr('Chọn kho.');
+    if (ex.missing()) return setErr(`Vui lòng nhập: ${ex.missing()}`);
     setBusy(true);
     try {
-      const id = await createCount({ kind: f.kind, company: f.company, warehouse: f.warehouse, date: f.date, scope, blind: f.blind, note: f.note.trim() }, stock, itemMap, { email, name });
+      const id = await createCount({ kind: f.kind, company: f.company, warehouse: f.warehouse, date: f.date, scope, blind: f.blind, note: f.note.trim(), ...ex.values() }, stock, itemMap, { email, name });
       setOpWh(f.warehouse);
       onClose(id);
     } catch (e) {
@@ -164,6 +167,7 @@ function CreateCount({ onClose }) {
         </Field>
         <Field label="Ghi chú" full><input value={f.note} onChange={(e) => set({ note: e.target.value })} /></Field>
       </div>
+      <ExtraFields ex={ex} />
       <datalist id="kk-locs">{locs.map((l) => <option key={l} value={l} />)}</datalist>
       <p className="small">
         {loading ? 'Đang tải tồn kho…' : <>Phạm vi hiện có <b>{preview.length}</b> dòng tồn ({fmtNum(preview.reduce((s, r) => s + Number(r.kg || 0), 0), 2)} kg) ở {new Set(preview.map((r) => r.location)).size} vị trí{f.moved ? '; sẽ lọc tiếp theo mã có giao dịch ngày đã chọn khi lập phiếu' : ''}.</>}

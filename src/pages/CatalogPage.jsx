@@ -12,6 +12,7 @@ import { applyComputed, cleanValue, defaultsOf, docIdOf, keyFieldsOf } from '../
 import { exportSheets, exportTemplate, readFirstSheet, toNumber, toYmd } from '../lib/excel';
 import { norm, today } from '../lib/utils';
 import FieldInput, { displayValue } from '../components/FieldInput';
+import { AddFieldButton } from '../components/FormTools';
 import { Empty, ErrorBox, Field, Modal } from '../components/ui';
 import { deleteOrRequest } from '../lib/deletes';
 import { usePref } from '../lib/prefs';
@@ -239,10 +240,13 @@ export function EditForm({ cat, fields, row, existing = [], onClose, onSaved }) 
 
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
   const onPickRef = (f, refRow) => {
-    if (!f.fill) return;
+    // Trường tự thêm có "Liên kết với" ô chọn này: tự điền theo bản ghi vừa chọn
+    const linked = fields.filter((x) => x.link?.via === f.key);
+    if (!f.fill && !linked.length) return;
     setForm((p) => {
       const n = { ...p };
-      Object.entries(f.fill).forEach(([to, from]) => { n[to] = refRow[from] ?? ''; });
+      Object.entries(f.fill || {}).forEach(([to, from]) => { n[to] = refRow[from] ?? ''; });
+      linked.forEach((x) => { n[x.key] = refRow[x.link.field] ?? ''; });
       return n;
     });
   };
@@ -301,6 +305,11 @@ export function EditForm({ cat, fields, row, existing = [], onClose, onSaved }) 
   return (
     <Modal title={(isNew ? 'Thêm ' : editable ? 'Sửa ' : 'Xem ') + cat.short} onClose={onClose}>
       <form onSubmit={save}>
+        {editable && (
+          <div className="form-tools-bar" style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginBottom: 6 }}>
+            <AddFieldButton formKey={cat.key} vias={fields.filter((f) => f.type === 'ref' && catalogByKey(f.ref)).map((f) => ({ key: f.key, label: f.label, ref: f.ref }))} />
+          </div>
+        )}
         <div className="form-grid">
           {shownFields.map((f) => {
             const ro = !editable || f.computed || f.system || (!isNew && keys.includes(f.key));

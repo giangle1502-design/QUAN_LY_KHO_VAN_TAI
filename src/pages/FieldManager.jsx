@@ -22,7 +22,7 @@ export default function FieldManager() {
   const [catKey, setCatKey] = useState(() => (catalogByKey(params.get('dm')) ? params.get('dm') : CATALOGS[0].key));
   const cat = catalogByKey(catKey);
   // Biểu mẫu đơn hàng: phần chung ↔ dòng hàng tra tên trường của nhau (công thức SUM, dùng giá trị phần chung)
-  const otherKey = cat?.form ? (catKey.endsWith('Head') ? catKey.replace(/Head$/, 'Line') : catKey.replace(/Line$/, 'Head')) : '';
+  const otherKey = cat?.form && !cat.ops ? (catKey.endsWith('Head') ? catKey.replace(/Head$/, 'Line') : catKey.replace(/Line$/, 'Head')) : '';
   const other = otherKey ? fieldsOf(otherKey) : [];
   const [viewersOf, setViewersOf] = useState(null); // vị trí trường đang chọn người xem
   const [list, setList] = useState([]);
@@ -100,7 +100,7 @@ export default function FieldManager() {
     });
     // Đổi người được xem trường đơn hàng: chuyển dữ liệu đã nhập sang / ra khỏi phần riêng tư
     const before = fieldsOf(catKey);
-    const changed = cat.form ? out.filter((o) => o.custom && o.type !== 'formula'
+    const changed = cat.form && !cat.ops ? out.filter((o) => o.custom && o.type !== 'formula'
       && ((before.find((b) => b.key === o.key)?.viewers || []).join(',') !== (o.viewers || []).join(',')
         || !!before.find((b) => b.key === o.key)?.salesSees !== !!o.salesSees)) : [];
     try {
@@ -127,7 +127,9 @@ export default function FieldManager() {
                 {CATALOGS.filter((c) => c.group === g).map((c) => <option key={c.key} value={c.key}>{c.title}</option>)}
               </optgroup>
             ))}
-            <optgroup label="Biểu mẫu đơn hàng">{FORM_DEFS.map((c) => <option key={c.key} value={c.key}>{c.title}</option>)}</optgroup>
+            {[...new Set(FORM_DEFS.map((c) => c.group))].map((g) => (
+              <optgroup key={g} label={g}>{FORM_DEFS.filter((c) => c.group === g).map((c) => <option key={c.key} value={c.key}>{c.title}</option>)}</optgroup>
+            ))}
           </Select>
           <button className="btn primary" disabled={!dirty} onClick={save}>Lưu thay đổi</button>
         </div>
@@ -142,7 +144,7 @@ export default function FieldManager() {
       <div className="table-wrap">
         <table>
           <thead>
-            <tr><th className="stt">STT</th><th>Tên trường</th><th>Kiểu dữ liệu</th><th>Danh sách chọn / Công thức</th><th>Mặc định</th><th title="Độ rộng / cao ô nhập trên form">Rộng × Cao</th>{cat.form && <th>Người được xem</th>}<th>Bắt buộc</th><th>Ẩn</th><th></th></tr>
+            <tr><th className="stt">STT</th><th>Tên trường</th><th>Kiểu dữ liệu</th><th>Danh sách chọn / Công thức</th><th>Mặc định</th><th title="Độ rộng / cao ô nhập trên form">Rộng × Cao</th>{cat.form && !cat.ops && <th>Người được xem</th>}<th>Bắt buộc</th><th>Ẩn</th><th></th></tr>
           </thead>
           <tbody>
             {list.map((f, i) => {
@@ -203,7 +205,7 @@ export default function FieldManager() {
                     <Select value={Number(f.height) || 0} onChange={(e) => upd(i, { height: Number(e.target.value) })} title="Độ cao" style={{ marginLeft: 4 }}>
                       {HEIGHT_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
                   </td>
-                  {cat.form && (
+                  {cat.form && !cat.ops && (
                     <td>
                       {!f.custom ? <span className="small">Mọi người</span>
                         : f.type === 'formula' ? <span className="small" title="Chỉ hiện với người xem được mọi trường trong công thức">Theo trường trong công thức</span>

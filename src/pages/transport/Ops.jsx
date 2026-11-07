@@ -8,6 +8,7 @@ import { ST, STATUS_META, afterExit, afterProcess, matchesTrip, noYard, nowISO }
 import { TripCard, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox } from '../../components/ui';
 import Select from '../../components/Select';
+import { WithAdd } from '../../components/FormTools';
 
 // Cập nhật chuyến xe + ghi lịch sử thao tác
 export function useTripAction() {
@@ -113,6 +114,7 @@ export function Dock() {
           return (
             <TripCard key={t.id} trip={t} timeLabel="Vào cổng" timeValue={t.gateConfirmTime}>
               {opts.length ? (
+                <WithAdd cat="docks" preset={{ warehouse: t.warehouse }} onAdded={(id, r) => setPick({ ...pick, [t.id]: r?.code || String(id).split('__').pop() })}>
                 <Select value={v} onChange={(e) => setPick({ ...pick, [t.id]: e.target.value })}>
                   <option value="">-- Chọn cửa --</option>
                   {opts.map((d) => {
@@ -120,8 +122,11 @@ export function Dock() {
                     return <option key={d.code} value={d.code}>{d.code}{d.name ? ` – ${d.name}` : ''}{by ? ` (đang có xe ${by})` : ''}</option>;
                   })}
                 </Select>
+                </WithAdd>
               ) : (
-                <input placeholder="Số cửa" value={v} onChange={(e) => setPick({ ...pick, [t.id]: e.target.value })} style={{ width: 110 }} />
+                <WithAdd cat="docks" preset={{ warehouse: t.warehouse }} onAdded={(id, r) => setPick({ ...pick, [t.id]: r?.code || String(id).split('__').pop() })}>
+                  <input placeholder="Số cửa" value={v} onChange={(e) => setPick({ ...pick, [t.id]: e.target.value })} style={{ width: 110 }} />
+                </WithAdd>
               )}
               <button className="btn primary" disabled={!v} onClick={() => act(t, { status: ST.PROCESSING, dock: v, dockAssignTime: nowISO() }, `Vào cửa ${v}`)}>Xác nhận cửa</button>
             </TripCard>

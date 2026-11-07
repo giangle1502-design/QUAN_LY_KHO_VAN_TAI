@@ -16,6 +16,7 @@ import { pageToPdf, savePdf } from '../../lib/pdf';
 import { TemplatePage, useTemplateChoice } from '../../components/PrintTemplate';
 import { WithAdd } from '../../components/FormTools';
 import Select from '../../components/Select';
+import { ExtraFields, useExtraFields } from '../../components/ExtraFields';
 
 // ============================================================================
 // Đề nghị giải chấp: kế toán chọn hàng HTC (1 công ty, 1 ngân hàng, 1 kho), in đề nghị
@@ -403,6 +404,7 @@ function ReleaseForm({ onClose, preset }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const whName = myWh.find((w) => w.code === h.warehouse)?.name || h.warehouse;
+  const ex = useExtraFields('releaseReq');
 
   // Chỉ còn phần chưa nằm trong đề nghị khác đang chờ ngân hàng duyệt
   const htc = useMemo(() => stock.filter((r) => r.goodsStatus === 'HTC' && (!h.pledgee || r.pledgee === h.pledgee) && (r.company || '') === h.company)
@@ -421,6 +423,7 @@ function ReleaseForm({ onClose, preset }) {
     e.preventDefault(); setErr('');
     if (!h.company || !h.pledgee || !h.warehouse) return setErr('Chọn công ty, ngân hàng và kho.');
     if (!chosen.length) return setErr('Tích ít nhất 1 dòng hàng cần giải chấp.');
+    if (ex.missing()) return setErr(`Vui lòng nhập: ${ex.missing()}`);
     const lines = [];
     for (const r of chosen) {
       const p = cur(r);
@@ -434,7 +437,7 @@ function ReleaseForm({ onClose, preset }) {
     const c = companies.find((x) => x.code === h.company);
     setBusy(true);
     try {
-      const data = { ...h, pledgeeName: pl?.name || h.pledgee, companyName: c?.name || h.company, lines };
+      const data = { ...h, ...ex.values(), pledgeeName: pl?.name || h.pledgee, companyName: c?.name || h.company, lines };
       const id = await createRelease(data, { email, name });
       // Lưu đề nghị là đổi ngay HTC → DGC; đề nghị chỉ còn để in PDF, ký số, gửi ngân hàng
       try {
@@ -475,6 +478,7 @@ function ReleaseForm({ onClose, preset }) {
             <input value={h.bct} onChange={(e) => setBct(e.target.value)} />
           </Field>
         </div>
+        <ExtraFields ex={ex} />
         {preset && <p className="hint">Đã tích sẵn hàng HTC (nhập trước giải chấp trước) để bù phần thiếu cho đơn bán: {preset.note}. Kiểm tra lại, nhập số BCT rồi bấm Lập đề nghị.</p>}
         <h4 style={{ margin: '12px 0 6px' }}>Hàng đang thế chấp (HTC){h.pledgee ? ` tại ${h.pledgee}` : ''}</h4>
         <div className="table-wrap">

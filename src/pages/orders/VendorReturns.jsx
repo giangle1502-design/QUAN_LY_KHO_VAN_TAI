@@ -11,6 +11,8 @@ import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum, matchQ } from '../../lib/utils';
 import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
 import Select from '../../components/Select';
+import { WithAdd } from '../../components/FormTools';
+import { ExtraFields, useExtraFields } from '../../components/ExtraFields';
 
 // ============================================================================
 // PO trả hàng nhà cung cấp (RTV, Return to vendor): trả lại NCC 1 phần / toàn bộ hàng đã nhận của 1 PO (số trả ≤ đã nhận).
@@ -46,6 +48,7 @@ function RtvCreate({ po, onClose }) {
   const { email, name } = useApp();
   const rtvs = useOrders('RTV').rows;
   const warehouses = useCollection('warehouses').rows;
+  const reasons = useCollection('reasons').rows.filter((r) => ['Xuất kho', 'Trả hàng', 'Hàng lỗi'].includes(r.appliesTo) && !RTV_REASONS.includes(r.name));
   const max = useMemo(() => poReturnable(po, rtvs), [po, rtvs]);
   const firstWh = (po.lines || []).map((l) => lineWh(po, l)).find(Boolean) || '';
   const [head, setHead] = useState({ date: vnDate(), warehouse: firstWh, note: '', poPaid: false });
@@ -55,6 +58,7 @@ function RtvCreate({ po, onClose }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState('');
+  const ex = useExtraFields('rtvForm');
   const setL = (i, k, v) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
   const all = () => setLines((ls) => ls.map((l) => ({ ...l, qtyKg: max[l.poLine] || 0 })));
   const total = lines.reduce((a, l) => a + n(l.qtyKg), 0);
@@ -68,11 +72,12 @@ function RtvCreate({ po, onClose }) {
       if (!l.reason) return setErr(`${l.item}: chọn lý do trả hàng.`);
     }
     if (!head.warehouse) return setErr('Chọn kho xuất trả.');
+    if (ex.missing()) return setErr(`Vui lòng nhập: ${ex.missing()}`);
     setBusy(true);
     try {
       const id = await createOrder({
         type: 'RTV', originalPoId: po.id, company: po.company || '', partyCode: po.partyCode || '', partyName: po.partyName || '', sales: po.sales || '',
-        warehouse: head.warehouse, warehouses: [head.warehouse], date: head.date, dueDate: head.date, note: head.note.trim(), tolerancePct: 0, poPaid: !!head.poPaid,
+        warehouse: head.warehouse, warehouses: [head.warehouse], date: head.date, dueDate: head.date, note: head.note.trim(), tolerancePct: 0, poPaid: !!head.poPaid, ...ex.values(),
         lines: pick.map((l) => ({ poLine: l.poLine, item: l.item, itemName: l.itemName, receivedKg: l.receivedKg, qtyKg: Math.round(n(l.qtyKg) * 1000) / 1000,
           reason: l.reason, goodsStatus: '', warehouse: head.warehouse, dueDate: head.date, note: '' })),
       }, { email, name }, {});
@@ -108,13 +113,16 @@ function RtvCreate({ po, onClose }) {
           <div className="form-grid">
             <Field label="Ngày trả hàng" required><input type="date" value={head.date} onChange={(e) => setHead((h) => ({ ...h, date: e.target.value }))} /></Field>
             <Field label="Kho xuất trả" required>
-              <Select value={head.warehouse} onChange={(e) => setHead((h) => ({ ...h, warehouse: e.target.value }))}>
-                <option value="">-- Chọn --</option>
-                {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-              </Select>
+              <WithAdd cat="warehouses" onAdded={(id) => setHead((h) => ({ ...h, warehouse: id }))}>
+                <Select value={head.warehouse} onChange={(e) => setHead((h) => ({ ...h, warehouse: e.target.value }))}>
+                  <option value="">-- Chọn --</option>
+                  {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
+                </Select>
+              </WithAdd>
             </Field>
             <Field label="Ghi chú" size={{ width: 480 }}><input value={head.note} onChange={(e) => setHead((h) => ({ ...h, note: e.target.value }))} placeholder="VD: số biên bản không đạt, số tờ khai…" /></Field>
           </div>
+          <ExtraFields ex={ex} />
           <label style={{ display: 'block', margin: '8px 0' }}>
             <input type="checkbox" checked={head.poPaid} onChange={(e) => setHead((h) => ({ ...h, poPaid: e.target.checked }))} /> <b>PO đã thanh toán cho NCC</b>
             <span className="small"> · tích thì app báo kế toán (chuông 🔔) treo công nợ phải thu NCC cho phần hàng trả này trên phần mềm kế toán</span>
@@ -128,10 +136,11 @@ function RtvCreate({ po, onClose }) {
                   <td>{l.poLine}</td><td>{l.item}</td><td>{l.itemName}</td><td className="num">{t(l.receivedKg)}</td><td className="num">{t(l.returnedKg)}</td>
                   <td className="num"><b>{t(max[l.poLine])}</b></td>
                   <td><input type="number" min="0" step="any" style={{ width: 110 }} value={l.qtyKg} onChange={(e) => setL(i, 'qtyKg', e.target.value)} disabled={!(max[l.poLine] > 0)} /></td>
-                  <td><Select value={l.reason} onChange={(e) => setL(i, 'reason', e.target.value)} style={{ minWidth: 180 }}>
+                  <td><WithAdd cat="reasons" preset={{ appliesTo: 'Trả hàng' }} onAdded={(id, r) => setL(i, 'reason', r?.name || id)}><Select value={l.reason} onChange={(e) => setL(i, 'reason', e.target.value)} style={{ minWidth: 180 }}>
                     <option value="">-- Chọn --</option>
                     {RTV_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
-                  </Select></td>
+                    {reasons.map((r) => <option key={r.code} value={r.name}>{r.name}</option>)}
+                  </Select></WithAdd></td>
                 </tr>
               ))}</tbody>
             </table>

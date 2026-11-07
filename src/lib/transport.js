@@ -135,6 +135,8 @@ export async function createPlannedTrips({ wh, carrier, trips }, user, action = 
         ...(l.planId ? { planId: l.planId } : {}), ...(l.allocId ? { allocId: l.allocId } : {}), ...(l.movementId ? { movementId: l.movementId } : {}) })),
       company: t.company || '', carrierKind: carrier.kind || '', selfPickup: carrier.kind === 'Khách tự lấy',
       orderIds: [...new Set(t.lines.map((l) => l.orderId))],
+      // Trường bổ sung của biểu mẫu chuyến điều phối (+ Thêm trường)
+      ...(t.extra || {}),
       status: ST.PLANNED, gateConfirmTime: null, dock: null, dockAssignTime: null, processDoneTime: null, gateExitTime: null, deliveryCompleteTime: null,
       createdBy: user.email, createdAt: at,
       history: [{ at, by: user.email, byName: user.name || user.email, action: `${action}: ${fmtT(t.lines.reduce((s, l) => s + l.kg, 0))} tấn`, status: ST.PLANNED }],

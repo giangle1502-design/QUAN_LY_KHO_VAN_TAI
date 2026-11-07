@@ -14,6 +14,8 @@ import { CompanyPicker, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox, Modal } from '../../components/ui';
 import { WithAdd } from '../../components/FormTools';
 import EditSlip, { canEditSlip } from '../../components/EditSlip';
+import { ExtraView } from '../../components/ExtraFields';
+import { MV_FORM } from '../../catalogs';
 import Select from '../../components/Select';
 
 const addDays = (ymd, n) => { const d = new Date(ymd + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
@@ -191,6 +193,7 @@ export function MovementDetail({ m, onClose }) {
         {m.reason ? ` · Lý do: ${m.reason}` : ''}
       </p>
       {m.note && <p className="small">Ghi chú: {m.note}</p>}
+      <ExtraView formKey={MV_FORM[m.type]} rec={m} />
       <p><Link className="btn sm" to={`/kho/phieu/${m.id}/in`} target="_blank">🖨 In phiếu</Link>
         {m.status === 'pending' && <> <Link className="btn sm primary" to={`/kho/nhan-hang/${m.id}`}>📥 Thủ kho nhận hàng</Link></>}
         {m.type === 'in' && m.status === 'posted' && <> <Link className="btn sm" to={`/kho/phieu/${m.id}/nhan`} target="_blank">🏷️ In nhãn pallet</Link></>}

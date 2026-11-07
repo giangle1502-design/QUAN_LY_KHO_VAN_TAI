@@ -1,4 +1,5 @@
-import { blockLocSet, inBlockLoc, kindOf, withBlock } from '../../catalogs';
+import { MV_FORM, blockLocSet, inBlockLoc, kindOf, withBlock } from '../../catalogs';
+import { ExtraFields, useExtraFields } from '../../components/ExtraFields';
 import { RETURN_CONDITIONS } from '../../lib/orders';
 import { notifySlip } from '../../lib/chat';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -102,6 +103,8 @@ function Form({ type }) {
   const [ret, setRet] = useState({ carrier: '', ship: '', date: '', plate: '' });
   const [head, setHead] = useState({ refNo: '', company: opCo, date: vnDate(), tripId: params.get('trip') || '', orderId: params.get('order') || '', partyCode: '', partyName: '', shipCode: '', reason: '', note: '', ...EMPTY_TRANSPORT });
   const vehicles = useCollection('vehicles').rows;
+  // Trường bổ sung do người thiết kế biểu mẫu thêm (+ Thêm trường), riêng cho từng loại phiếu
+  const ex = useExtraFields(MV_FORM[type] || 'mvIn');
   const carriers = useCollection('carriers').rows;
   const drivers = useCollection('drivers').rows;
   const [lines, setLines] = useState(() => [type === 'in' ? newLine() : stockLine()]);
@@ -632,6 +635,7 @@ function Form({ type }) {
     if (type === 'in' && source === 'direct' && !head.partyCode.trim()) return setErr('Chọn nhà cung cấp (bấm + để thêm nhà cung cấp mới).');
     if (type === 'in' && source !== 'direct' && !head.orderId) return setErr(`Chọn ${{ PO: 'đơn mua (PO)', STO: 'lệnh chuyển kho (STO)', SO: 'đơn bán (SO) của hàng trả về', DRT: 'SO trả hàng (DRT)' }[source]}.`);
     if (type === 'adjust' && !head.reason) return setErr('Chọn lý do điều chỉnh.');
+    if (ex.missing()) return setErr(`Vui lòng nhập: ${ex.missing()}`);
     if (type === 'out' && shipRequired && !head.shipCode) return setErr(`Khách hàng ${head.partyCode} có ${shipOpts.length} mã giao hàng: chọn mã giao (Giao đến).`);
     if (type === 'out' && head.shipCode && shipOpts.length && !shipOpts.some((s) => s.shipCode === head.shipCode)) return setErr(`Mã giao ${head.shipCode} không thuộc khách hàng ${head.partyCode}.`);
     if (type === 'out') { const pe = palletError(pal, head, 'out', { managed: palletManaged(wh) }); if (pe) return setErr(pe); }
@@ -740,7 +744,7 @@ function Form({ type }) {
         type, warehouse: wh.code, company: head.company || '', date: head.date, tripId: head.tripId || '',
         ...(type === 'in' ? { source } : {}),
         partyCode: head.partyCode.trim(), partyName: head.partyName.trim(), shipCode: head.shipCode,
-        reason: head.reason, note: head.note.trim(),
+        reason: head.reason, note: head.note.trim(), ...ex.values(),
         ...(type === 'out' ? Object.fromEntries(Object.keys(EMPTY_TRANSPORT).map((k) => [k, String(head[k] || '').trim()])) : {}),
         ...(type === 'out' ? cleanPallets(pal, head, 'out', { managed: palletManaged(wh) }) : {}),
         ...(type === 'in' ? cleanPallets(pal, head, 'in', { managed: palletManaged(wh) }) : {}),
@@ -806,6 +810,7 @@ function Form({ type }) {
       setLines([type === 'in' ? newLine() : stockLine()]);
       setPal({ palletMode: '', pallets: [] });
       setHead((h) => ({ ...h, tripId: '', orderId: '', partyCode: '', partyName: '', shipCode: '', refNo: '', note: '', ...EMPTY_TRANSPORT }));
+      ex.reset();
     } catch (e2) {
       const msg = e2.code === 'permission-denied' ? 'Bạn không có quyền lập phiếu cho kho này.' : e2.message;
       setErr(ids.length ? `Đã lập phiếu ${ids.join(', ')}; phiếu cho đơn tiếp theo bị lỗi: ${msg}. Kiểm tra Phiếu kho trước khi lập lại phần còn thiếu.` : msg);
@@ -994,6 +999,7 @@ function Form({ type }) {
           )}
           <Field label="Ghi chú" size={{ width: type === 'in' || type === 'out' ? 480 : 720 }}><textarea rows={1} value={head.note} onChange={(e) => setH('note', e.target.value)} /></Field>
         </div>
+        <ExtraFields ex={ex} title={`Thông tin bổ sung của ${meta.label.toLowerCase()}`} />
       </div>
 
       {order && <OrderBox order={order} lines={extra.length ? lines.filter((l) => !l.orderId) : lines} type={type} stockById={stockById} wh={whCode} onStock={type === 'in' ? null : setStockItem} pend={type === 'in' && !isReturn(order, type) ? pendIn.get(order.id) : null}

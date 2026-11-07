@@ -11,6 +11,7 @@ import { fmtDate, fmtNum, matchQ } from '../../lib/utils';
 import { MOVE_KINDS, palletManaged, postPalletMove } from '../../lib/pallets';
 import { WithAdd } from '../../components/FormTools';
 import Select from '../../components/Select';
+import { ExtraFields, useExtraFields } from '../../components/ExtraFields';
 
 // Quản lý pallet gỗ / nhựa: tồn theo kho, vận tải đang mượn (nhận trả), sổ pallet
 export default function Pallets() {
@@ -92,17 +93,19 @@ function MoveForm({ init, warehouses, catalog, onClose }) {
   const [busy, setBusy] = useState(false);
   const set = (p) => setF((x) => ({ ...x, ...p }));
   const pal = catalog.find((p) => p.code === f.code);
+  const ex = useExtraFields('palletMove');
   const save = async () => {
     setErr('');
     if (!f.warehouse) return setErr('Chọn kho.');
     if (!pal) return setErr('Chọn mã pallet.');
     if (!(Number(f.qty) > 0)) return setErr('Nhập số lượng.');
     if (f.kind === 'return' && !f.carrier) return setErr('Chọn đơn vị vận tải trả pallet.');
+    if (ex.missing()) return setErr(`Vui lòng nhập: ${ex.missing()}`);
     setBusy(true);
     try {
       const qty = f.kind === 'adjust' && f.sign === '-' ? -Number(f.qty) : Number(f.qty);
       await postPalletMove({ kind: f.kind, warehouse: f.warehouse, date: f.date, code: pal.code, name: pal.name, material: pal.material, qty,
-        ...(f.kind === 'return' ? { carrier: f.carrier, carrierName: f.carrierName || carriers.find((c) => c.code === f.carrier)?.name || f.carrier } : {}), note: f.note.trim() }, { email, name });
+        ...(f.kind === 'return' ? { carrier: f.carrier, carrierName: f.carrierName || carriers.find((c) => c.code === f.carrier)?.name || f.carrier } : {}), note: f.note.trim(), ...ex.values() }, { email, name });
       onClose(`Đã ghi ${MOVE_KINDS[f.kind].toLowerCase()}: ${pal.code} ${qty > 0 ? '+' : ''}${fmtNum(qty)} cái tại kho ${f.warehouse}.`);
     } catch (e) { setErr(e.code === 'permission-denied' ? 'Bạn không có quyền ghi pallet cho kho này.' : e.message); setBusy(false); }
   };
@@ -147,6 +150,7 @@ function MoveForm({ init, warehouses, catalog, onClose }) {
         <Field label="Số lượng (cái)" required><input type="number" min="0" step="1" value={f.qty} onChange={(e) => set({ qty: e.target.value })} /></Field>
         <Field label="Ghi chú" full><input value={f.note} onChange={(e) => set({ note: e.target.value })} /></Field>
       </div>
+      <ExtraFields ex={ex} />
       <ErrorBox error={err} />
       <div className="form-actions"><button className="btn" onClick={() => onClose('')}>Đóng</button><button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Đang ghi…' : 'Ghi'}</button></div>
     </Modal>

@@ -9,6 +9,7 @@ import { PURPOSES, firstStatus, nowISO, reserveCodes, vnDate, STATUS_META } from
 import { ErrorBox, Field } from '../../components/ui';
 import { WithAdd } from '../../components/FormTools';
 import Select from '../../components/Select';
+import { ExtraFields, useExtraFields } from '../../components/ExtraFields';
 
 const emptyLine = () => ({ partyCode: '', partyName: '', shipCode: '', address: '', payload: '', orderId: '' });
 const emptyForm = () => ({ purpose: 'export', plate: '', carrier: '', carrierName: '', vehicleType: '', idCard: '', driverName: '', driverPhone: '', note: '' });
@@ -30,6 +31,7 @@ export default function Register() {
   const [errs, setErrs] = useState([]);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
+  const ex = useExtraFields('tripReg');
 
   const parties = form.purpose === 'import' ? suppliers : soldto.filter((c) => c.active !== false);
   // SO/PO của khách / nhà cung cấp, và lệnh chuyển kho (STO) đi từ / về kho này
@@ -93,6 +95,7 @@ export default function Register() {
     if (!form.plate.trim()) er.push('Nhập biển số xe.');
     if (!form.driverName.trim()) er.push('Nhập tên tài xế.');
     if (!form.idCard.trim()) er.push('Nhập số CCCD.');
+    if (ex.missing()) er.push(`Nhập: ${ex.missing()}.`);
     lines.forEach((l, i) => { if (!l.partyCode.trim() && !l.partyName.trim()) er.push(`Dòng ${i + 1}: chọn ${form.purpose === 'import' ? 'nhà cung cấp' : 'khách hàng'}.`); });
     setErrs(er);
     if (er.length) return;
@@ -108,7 +111,7 @@ export default function Register() {
         plate: form.plate.trim().toUpperCase(), vehicleType: form.vehicleType,
         carrier: form.carrier.trim(), carrierName: form.carrierName.trim(),
         idCard: form.idCard.trim(), driverName: form.driverName.trim(), driverPhone: form.driverPhone.trim(),
-        note: form.note.trim(),
+        note: form.note.trim(), ...ex.values(),
         lines: lines.map((l, i) => ({
           id: sids[i], partyCode: l.partyCode.trim(), partyName: l.partyName.trim(),
           shipCode: l.shipCode, address: l.address, payload: l.payload === '' ? null : Number(l.payload),
@@ -125,7 +128,7 @@ export default function Register() {
       };
       await setDoc(doc(db, 'trips', gid), trip);
       setDone({ id: gid, plate: trip.plate, sids, status });
-      setForm(emptyForm()); setLines([emptyLine()]);
+      setForm(emptyForm()); setLines([emptyLine()]); ex.reset();
     } catch (e2) {
       setErrs([e2.code === 'permission-denied' ? 'Bạn không có quyền đăng ký xe cho kho này.' : e2.message]);
     }
@@ -225,6 +228,7 @@ export default function Register() {
         ))}
         {lines.length < 10 && <button type="button" className="btn sm" onClick={() => setLines((ls) => [...ls, emptyLine()])}>+ Thêm {form.purpose === 'import' ? 'nhà cung cấp' : 'khách hàng'}</button>}
         <Field label="Ghi chú" full><textarea rows={2} value={form.note} onChange={(e) => set('note', e.target.value)} /></Field>
+        <ExtraFields ex={ex} />
       </div>
       {wh && wh.hasGuard === false && <p className="hint">Kho {wh.code} không có bảo vệ: xe vào thẳng bước Chờ vào cửa, không qua bước ra cổng.</p>}
       <div className="form-actions"><button className="btn primary" disabled={busy}>{busy ? 'Đang lưu…' : 'Đăng ký'}</button></div>

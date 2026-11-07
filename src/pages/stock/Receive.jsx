@@ -12,6 +12,7 @@ import { Empty, ErrorBox } from '../../components/ui';
 import { InLine, OverCapConfirm, newLine, splitLineAt } from './MovementForm';
 import { OVER_CAP_CONFIRM, OVER_CAP_MSG, capacityCheck } from '../../lib/capacity';
 import PalletChoice from '../../components/PalletChoice';
+import { ExtraView } from '../../components/ExtraFields';
 import { cleanPallets, packingMode, palletError, palletManaged } from '../../lib/pallets';
 
 // Nhận hàng: quản trị lập và in phiếu nhập trước; thủ kho nhận hàng ngoài hiện trường,
@@ -155,6 +156,7 @@ function ReceiveForm({ id }) {
           {' · '}Công ty {mv.company} · Lập bởi {mv.createdByName || mv.createdBy}
         </p>
         {mv.note && <p className="small" style={{ margin: '6px 0 0' }}>Ghi chú: {mv.note}</p>}
+        <ExtraView formKey="mvIn" rec={mv} />
         {!pending && <div className="error-box" style={{ marginTop: 8 }}>Phiếu này {mv.status === 'cancelled' ? 'đã bị hủy' : 'đã được xác nhận nhận hàng'}.</div>}
       </div>
       <div className="card" style={{ marginBottom: 12 }}>

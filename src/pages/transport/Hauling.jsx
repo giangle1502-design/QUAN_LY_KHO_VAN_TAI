@@ -21,6 +21,7 @@ import { ColumnPicker, WithAdd } from '../../components/FormTools';
 import { dragHeadProps, orderCols } from '../../lib/colOrder';
 import { BASE_COST_FIELDS, COST_GROUPS, TRIP_VARS, calcCosts, checkCostFormula, costFieldsWith, freightTotalOf, groupTotalOf, useCostConfig, useCostFields } from '../../lib/tripCosts';
 import Select from '../../components/Select';
+import { ExtraFields, useExtraFields } from '../../components/ExtraFields';
 
 // Vận chuyển theo chuyến: đơn cần chia xe → chuyến xe (tài xế xác nhận từng bước) → chi phí & cước
 const n = (v) => (v === '' || v == null ? 0 : Number(v) || 0);
@@ -112,6 +113,7 @@ function SplitModal({ rows, carrier, onClose, action = 'Chia xe' }) {
   useEffect(() => { const p = n(vehicles[0]?.payload); if (p && cap === 30) { setCap(p); setLoads(make(p)); } }, [vehicles.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const ex = useExtraFields('tripPlan');
   const setLoad = (i, p) => setLoads((ls) => ls.map((l, j) => (j === i ? { ...l, ...p } : l)));
   const setQ = (i, key, tons) => setLoads((ls) => ls.map((l, j) => (j === i ? { ...l, q: { ...l.q, [key]: Math.round(n(tons) * 1000) } } : l)));
   const pickPlate = (i, v) => { const veh = vehicles.find((x) => x.plate === v.trim().toUpperCase()); setLoad(i, { plate: v.toUpperCase(), ...(veh ? { vehicleType: veh.vehicleType || '', cap: n(veh.payload) || loads[i].cap } : {}) }); };
@@ -129,11 +131,12 @@ function SplitModal({ rows, carrier, onClose, action = 'Chia xe' }) {
     if (over >= 0) return setErr(`Chuyến ${over + 1}: ${t3(rowKg(loads[over]))} tấn vượt tải trọng ${loads[over].cap} tấn.`);
     const used = loads.filter((l) => rowKg(l) > 0);
     if (!used.length) return setErr('Chưa xếp hàng cho chuyến nào.');
+    if (ex.missing()) return setErr(`Vui lòng nhập: ${ex.missing()}`);
     setBusy(true);
     try {
       const wh = warehouses.find((w) => w.code === rows[0].warehouse) || { code: rows[0].warehouse };
       await createPlannedTrips({ wh, carrier, trips: used.map((l) => ({ ...l, date, company: rows[0].company || '', lines: rows.filter((r) => n(l.q[r.key]) > 0).map((r) => ({ ...r, kg: n(l.q[r.key]) })),
-        threeplName: threepl.find((x) => x.code === l.threepl)?.name || '' })) }, { email, name }, action);
+        threeplName: threepl.find((x) => x.code === l.threepl)?.name || '', extra: ex.values() })) }, { email, name }, action);
       onClose(true);
     } catch (e) { setErr(e.code === 'permission-denied' ? 'Không có quyền tạo chuyến (kiểm tra phân quyền / firestore.rules).' : e.message); }
     setBusy(false);
@@ -180,6 +183,7 @@ function SplitModal({ rows, carrier, onClose, action = 'Chia xe' }) {
       </table></div>
       <datalist id="dl-sp-plate">{vehicles.map((v) => <option key={v.plate} value={v.plate}>{v.vehicleType} {v.payload ? `${v.payload} tấn` : ''}</option>)}</datalist>
       <datalist id="dl-sp-driver">{drivers.map((d) => <option key={d.idCard} value={d.idCard}>{d.name}</option>)}</datalist>
+      <ExtraFields ex={ex} title="Thông tin bổ sung (áp cho mọi chuyến tạo ra)" />
       <ErrorBox error={err} />
       <div className="form-actions"><button className="btn" onClick={() => onClose(false)}>Thôi</button><button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Đang tạo…' : `Tạo ${loads.filter((l) => rowKg(l) > 0).length} chuyến`}</button></div>
     </Modal>

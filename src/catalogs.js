@@ -547,6 +547,26 @@ FORM_DEFS.push(
     ],
   },
 );
+// Biểu mẫu nghiệp vụ (phiếu kho, chuyến xe, dự kiến xuất…): chưa có trường có sẵn nào cấu hình được,
+// người thiết kế biểu mẫu bấm "+ Thêm trường" ngay trên form để thêm trường bổ sung (lưu kèm bản ghi)
+const OPS = 'Biểu mẫu nghiệp vụ';
+FORM_DEFS.push(
+  { key: 'mvIn', group: OPS, icon: '📥', title: 'Phiếu nhập kho (PN)', short: 'Phiếu nhập kho', form: true, ops: true, fields: [] },
+  { key: 'mvOut', group: OPS, icon: '📤', title: 'Phiếu xuất kho (PX)', short: 'Phiếu xuất kho', form: true, ops: true, fields: [] },
+  { key: 'mvMove', group: OPS, icon: '🔀', title: 'Phiếu chuyển vị trí (CV)', short: 'Phiếu chuyển vị trí', form: true, ops: true, fields: [] },
+  { key: 'mvStatus', group: OPS, icon: '🔒', title: 'Phiếu đổi tình trạng (TC)', short: 'Phiếu đổi tình trạng', form: true, ops: true, fields: [] },
+  { key: 'mvAdjust', group: OPS, icon: '⚖️', title: 'Phiếu điều chỉnh tồn (DC)', short: 'Phiếu điều chỉnh', form: true, ops: true, fields: [] },
+  { key: 'tripReg', group: OPS, icon: '🚚', title: 'Đăng ký xe vào cổng', short: 'Đăng ký xe', form: true, ops: true, fields: [] },
+  { key: 'tripPlan', group: OPS, icon: '🚛', title: 'Chia xe / chuyến điều phối', short: 'Chuyến điều phối', form: true, ops: true, fields: [] },
+  { key: 'shipPlan', group: OPS, icon: '🗓️', title: 'Dự kiến xuất kho', short: 'Dự kiến xuất', form: true, ops: true, fields: [] },
+  { key: 'stockCount', group: OPS, icon: '📋', title: 'Phiếu kiểm kê / cycle count', short: 'Phiếu kiểm kê', form: true, ops: true, fields: [] },
+  { key: 'releaseReq', group: OPS, icon: '🏦', title: 'Đề nghị giải chấp', short: 'Đề nghị giải chấp', form: true, ops: true, fields: [] },
+  { key: 'drtForm', group: OPS, icon: '↩', title: 'Đơn khách trả hàng (DRT)', short: 'Đơn trả hàng DRT', form: true, ops: true, fields: [] },
+  { key: 'rtvForm', group: OPS, icon: '↩', title: 'Trả hàng nhà cung cấp (RTV)', short: 'Trả hàng NCC', form: true, ops: true, fields: [] },
+  { key: 'palletMove', group: OPS, icon: '🪵', title: 'Nhập / điều chỉnh / trả pallet', short: 'Phiếu pallet', form: true, ops: true, fields: [] },
+);
+// Mã biểu mẫu trường bổ sung của phiếu kho theo loại phiếu
+export const MV_FORM = { in: 'mvIn', out: 'mvOut', move: 'mvMove', status: 'mvStatus', adjust: 'mvAdjust' };
 export const catalogByKey = (k) => CATALOGS.find((c) => c.key === k) || FORM_DEFS.find((c) => c.key === k);
 // Tên hiển thị của 1 bản ghi khi được chọn ở trường ref
 export const refLabel = (row) => (row ? [row.code || row.plate || row.idCard || row.email, row.name].filter(Boolean).join(' – ') : '');

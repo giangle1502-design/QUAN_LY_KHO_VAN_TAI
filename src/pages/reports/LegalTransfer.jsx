@@ -7,6 +7,7 @@ import { exportSheets } from '../../lib/excel';
 import { vnDate } from '../../lib/trips';
 import { fmtDate, fmtNum, norm } from '../../lib/utils';
 import { ErrorBox } from '../../components/ui';
+import Select from '../../components/Select';
 import { ReportTable, toSheet } from './Reports';
 
 const n = (v) => Number(v) || 0;
@@ -105,9 +106,9 @@ export default function LegalTransfer({ wh, co, q }) {
       <div className="filters no-print" style={{ alignItems: 'center' }}>
         <label className="small">Từ ngày <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
         <label className="small">Đến ngày <input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
-        <select value={state} onChange={(e) => setState(e.target.value)}>
+        <Select value={state} onChange={(e) => setState(e.target.value)}>
           <option value="">Tất cả</option><option value="open">Kế toán chưa chuyển</option><option value="done">Kế toán đã chuyển</option>
-        </select>
+        </Select>
         <span style={{ flex: 1 }} />
         <button className="btn" onClick={excel}>⬇ Excel</button>
         <button className="btn" onClick={() => window.print()}>🖨 In</button>
