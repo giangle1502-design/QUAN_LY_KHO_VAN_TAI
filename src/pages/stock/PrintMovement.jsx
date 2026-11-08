@@ -72,6 +72,12 @@ export default function PrintMovement({ pick = false }) {
     </>
   );
   const multi = (m.orderIds?.length || 0) > 1;
+  // Phiếu gộp nhiều đơn: cộng theo từng đơn (in dưới bảng hàng)
+  const byOrder = multi ? m.orderIds.map((oid) => {
+    const ls = m.lines.filter((l) => l.orderId === oid);
+    return { oid, ref: ls[0]?.orderRef || '', kg: ls.reduce((a, l) => a + (Number(l.kg) || 0), 0), bags: ls.reduce((a, l) => a + (Number(l.bags) || 0), 0), pallets: ls.reduce((a, l) => a + (Number(l.pallets) || 0), 0), n: ls.length };
+  }) : [];
+  const ordWord = String(m.orderIds?.[0] || m.orderId || '').startsWith('STO') ? 'lệnh chuyển kho' : m.type === 'in' ? 'đơn mua' : 'đơn bán';
   // Mẫu in tự thiết kế: phiếu giao hàng cũng in 3 liên; dòng pallet thêm vào bảng hàng, trường {{Liên}}, {{Pallet xuất kèm}}
   if (choice.tpl && m.type === 'out' && !pick) {
     const pals = (c) => (m.palletMode !== 'pallet' || !managed ? [] : (m.pallets || []).filter((p) => c.key !== 'customer' || p.to !== 'carrier'));
@@ -141,23 +147,25 @@ export default function PrintMovement({ pick = false }) {
         {(m.carrier || m.carrierName) && <tr><td>Đơn vị vận tải</td><td>{m.carrierName || m.carrier}</td></tr>}
         {m.plate && <tr><td>Số xe</td><td>{m.plate}</td></tr>}
         {m.driverName && <tr><td>Tài xế</td><td>{m.driverName}{m.idCard ? ` · CCCD ${m.idCard}` : ''}{m.driverPhone ? ` · ĐT ${m.driverPhone}` : ''}</td></tr>}
-        {m.orderId && <tr><td>{m.orderType === 'STO' || String(m.orderId).startsWith('STO') ? 'Theo lệnh chuyển kho' : m.type === 'in' && m.orderType === 'SO' ? 'Hàng trả về theo đơn bán' : m.type === 'in' ? (m.source === 'direct' ? 'Nhập trực tiếp, đơn mua' : 'Theo đơn mua') : multi ? `Theo ${m.orderIds.length} đơn bán (1 xe)` : 'Theo đơn bán'}</td><td>{m.orderId}{m.orderRef ? ` (số ${m.source === 'direct' ? 'chứng từ NCC' : 'Ecount'} ${m.orderRef})` : ''}</td></tr>}
+        {multi && <tr><td>Phiếu gộp</td><td><b>1 xe {m.orderIds.length} {ordWord}</b>: {m.orderIds.join(', ')} (mã gộp {m.groupId})</td></tr>}
+        {m.orderId && !multi && <tr><td>{m.orderType === 'STO' || String(m.orderId).startsWith('STO') ? 'Theo lệnh chuyển kho' : m.type === 'in' && m.orderType === 'SO' ? 'Hàng trả về theo đơn bán' : m.type === 'in' ? (m.source === 'direct' ? 'Nhập trực tiếp, đơn mua' : 'Theo đơn mua') : 'Theo đơn bán'}</td><td>{m.orderId}{m.orderRef ? ` (số ${m.source === 'direct' ? 'chứng từ NCC' : 'Ecount'} ${m.orderRef})` : ''}</td></tr>}
         {trip && <tr><td>Xe</td><td>{trip.plate} · {trip.driverName} · CCCD {trip.idCard}{trip.carrierName ? ` · ${trip.carrierName}` : ''} · chuyến {m.tripId}{trip.dock ? ` · cửa ${trip.dock}` : ''}</td></tr>}
         {m.reason && <tr><td>Lý do</td><td>{m.reason}</td></tr>}
         {m.note && <tr><td>Ghi chú</td><td>{m.note}</td></tr>}
       </tbody></table>
       {summary ? (
       <table className="print-lines">
-        <thead><tr><th>STT</th><th>Mã hàng</th><th>Tên hàng</th>{multi && <th>Theo đơn bán (SO)</th>}<th className="num">Số lượng (kg)</th><th className="num">Số bao</th></tr></thead>
+        <thead><tr><th>STT</th><th>Mã hàng</th><th>Tên hàng</th>{multi && <th>Số đơn</th>}<th className="num">Số lượng (kg)</th><th className="num">Số bao</th></tr></thead>
         <tbody>{groups.map((g, i) => <tr key={g.item}><td>{i + 1}</td><td>{g.item}</td><td>{g.itemName}</td>
           {multi && <td>{[...g.bySO].map(([so, k]) => <div key={so}>{so}{g.bySO.size > 1 ? `: ${fmtNum(k, 2)} kg` : ''}</div>)}</td>}
           <td className="num">{fmtNum(g.kg, 2)}</td><td className="num">{fmtNum(g.bags)}</td></tr>)}
           </tbody>
-        <tfoot><tr><td colSpan={multi ? 4 : 3}>Cộng</td><td className="num">{fmtNum(tot('kg'), 2)}<div className="small">= {fmtNum(tot('kg') / 1000, 3, 3)} tấn</div></td><td className="num">{fmtNum(tot('bags'))}</td></tr></tfoot>
+        <tfoot>{byOrder.map((x) => <tr key={x.oid} className="sub-total"><td colSpan={4}>Cộng đơn {x.oid}{x.ref ? ` (${x.ref})` : ''}</td><td className="num">{fmtNum(x.kg, 2)}</td><td className="num">{fmtNum(x.bags)}</td></tr>)}
+          <tr><td colSpan={multi ? 4 : 3}>{multi ? 'Tổng cộng cả xe' : 'Cộng'}</td><td className="num">{fmtNum(tot('kg'), 2)}<div className="small">= {fmtNum(tot('kg') / 1000, 3, 3)} tấn</div></td><td className="num">{fmtNum(tot('bags'))}</td></tr></tfoot>
       </table>
       ) : pick ? (
       <table className="print-lines">
-        <thead><tr><th>STT</th><th>Vị trí</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th>{hasDates && <><th>NSX</th><th>HSD</th></>}<th>Tình trạng</th>{multi && <th>Đơn (SO)</th>}<th className="num">Số kg</th><th className="num">Pallet</th><th className="num">Số bao</th><th>Đã soạn</th></tr></thead>
+        <thead><tr><th>STT</th><th>Vị trí</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th>{hasDates && <><th>NSX</th><th>HSD</th></>}<th>Tình trạng</th>{multi && <th>Số đơn</th>}<th className="num">Số kg</th><th className="num">Pallet</th><th className="num">Số bao</th><th>Đã soạn</th></tr></thead>
         <tbody>{pickLines.map((l, i) => (
           <tr key={i}><td>{i + 1}</td><td><b>{l.location}</b></td><td>{l.item}</td><td>{l.itemName}</td><td>{l.lot}</td>{hasDates && <><td>{fmtDate(l.mfgDate)}</td><td>{fmtDate(l.expDate)}</td></>}
             <td>{l.goodsStatus}{l.pledgee ? ` (${l.pledgee})` : ''}</td>{multi && <td className="small">{l.sos.join(', ')}</td>}<td className="num">{fmtNum(l.kg, 2)}</td><td className="num">{fmtNum(l.pallets, 2)}</td><td className="num">{fmtNum(l.bags)}</td><td style={{ textAlign: 'center' }}>☐</td></tr>
@@ -166,16 +174,17 @@ export default function PrintMovement({ pick = false }) {
       </table>
       ) : (
       <table className="print-lines">
-        <thead><tr><th>STT</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th><th>Vị trí</th>{m.type === 'move' && <th>Đến vị trí</th>}
+        <thead><tr><th>STT</th>{multi && <th>Số đơn</th>}<th>Mã hàng</th><th>Tên hàng</th><th>Lot</th><th>Vị trí</th>{m.type === 'move' && <th>Đến vị trí</th>}
           <th>Tình trạng</th>{m.type === 'status' && <th>Tình trạng mới</th>}<th className="num">{pend ? 'Dự kiến (kg)' : 'Số kg'}</th><th className="num">Pallet</th><th className="num">Số bao</th>{pend && <><th>Thực nhận (kg)</th><th>Vị trí thực</th></>}</tr></thead>
         <tbody>
-          {m.lines.map((l, i) => (
-            <tr key={i}><td>{i + 1}</td><td>{l.item}</td><td>{l.itemName}</td><td>{l.lot}</td><td>{l.location}</td>{m.type === 'move' && <td>{l.toLocation}</td>}
+          {(multi ? byOrder.flatMap((x) => m.lines.filter((l) => l.orderId === x.oid)) : m.lines).map((l, i) => (
+            <tr key={i}><td>{i + 1}</td>{multi && <td className="mono">{l.orderId}</td>}<td>{l.item}</td><td>{l.itemName}</td><td>{l.lot}</td><td>{l.location}</td>{m.type === 'move' && <td>{l.toLocation}</td>}
               <td>{l.goodsStatus}</td>{m.type === 'status' && <td>{l.toStatus}{l.toPledgee ? ` (${l.toPledgee})` : ''}</td>}
               <td className="num">{fmtNum(l.kg, 2)}</td><td className="num">{fmtNum(l.pallets, 2)}</td><td className="num">{fmtNum(l.bags)}</td>{pend && <><td style={{ minWidth: 90 }}></td><td style={{ minWidth: 70 }}></td></>}</tr>
           ))}
         </tbody>
-        <tfoot><tr><td colSpan={m.type === 'move' || m.type === 'status' ? 7 : 6}>Cộng</td><td className="num">{fmtNum(tot('kg'), 2)}<div className="small">= {fmtNum(tot('kg') / 1000, 3, 3)} tấn</div></td><td className="num">{fmtNum(tot('pallets'), 2)}</td><td className="num">{fmtNum(tot('bags'))}</td>{pend && <><td></td><td></td></>}</tr></tfoot>
+        <tfoot>{byOrder.map((x) => <tr key={x.oid} className="sub-total"><td colSpan={7}>Cộng đơn {x.oid}{x.ref ? ` (${x.ref})` : ''} · {x.n} dòng</td><td className="num">{fmtNum(x.kg, 2)}</td><td className="num">{fmtNum(x.pallets, 2)}</td><td className="num">{fmtNum(x.bags)}</td>{pend && <><td></td><td></td></>}</tr>)}
+          <tr><td colSpan={(m.type === 'move' || m.type === 'status' ? 7 : 6) + (multi ? 1 : 0)}>{multi ? 'Tổng cộng cả xe' : 'Cộng'}</td><td className="num">{fmtNum(tot('kg'), 2)}<div className="small">= {fmtNum(tot('kg') / 1000, 3, 3)} tấn</div></td><td className="num">{fmtNum(tot('pallets'), 2)}</td><td className="num">{fmtNum(tot('bags'))}</td>{pend && <><td></td><td></td></>}</tr></tfoot>
       </table>
       )}
       {(summary || m.type === 'in') && <PalletTable m={m} rows={summary ? palRows(copy) : m.palletMode === 'pallet' && managed ? m.pallets || [] : []} />}
@@ -271,11 +280,12 @@ function DeliveryNote({ m, copy, co, wh, buyer, trip, groups, multi, tot, palRow
       </div>
       <p style={{ margin: '10px 0 4px' }}><b>Thông tin hàng hóa</b></p>
       <table className="print-lines">
-        <thead><tr><th>Số thứ tự</th><th>Mã hàng</th><th>Tên mặt hàng</th>{multi && <th>Theo đơn (SO)</th>}<th>Đơn vị</th><th className="num">Số lượng xuất</th><th className="num">Số bao</th><th>Ghi chú</th></tr></thead>
+        <thead><tr><th>Số thứ tự</th><th>Mã hàng</th><th>Tên mặt hàng</th>{multi && <th>Số đơn</th>}<th>Đơn vị</th><th className="num">Số lượng xuất</th><th className="num">Số bao</th><th>Ghi chú</th></tr></thead>
         <tbody>{groups.map((g, i) => <tr key={g.item}><td style={{ textAlign: 'center' }}>{i + 1}</td><td>{g.item}</td><td>{g.itemName}</td>
           {multi && <td>{[...g.bySO].map(([so, k]) => <div key={so}>{so}{g.bySO.size > 1 ? `: ${fmtNum(k, 2)} kg` : ''}</div>)}</td>}
           <td style={{ textAlign: 'center' }}>{unitOf(g)}</td><td className="num">{fmtNum(g.kg, 2)}</td><td className="num">{fmtNum(g.bags)}</td><td></td></tr>)}</tbody>
-        <tfoot><tr><td colSpan={multi ? 5 : 4} style={{ textAlign: 'center' }}><b>Tổng cộng</b></td><td className="num"><b>{fmtNum(tot('kg'), 2)}</b></td><td className="num"><b>{fmtNum(tot('bags'))}</b></td><td></td></tr></tfoot>
+        <tfoot>{multi && m.orderIds.map((oid) => { const ls = m.lines.filter((l) => l.orderId === oid); return <tr key={oid} className="sub-total"><td colSpan={5} style={{ textAlign: 'center' }}>Cộng đơn {oid}</td><td className="num">{fmtNum(ls.reduce((a, l) => a + (Number(l.kg) || 0), 0), 2)}</td><td className="num">{fmtNum(ls.reduce((a, l) => a + (Number(l.bags) || 0), 0))}</td><td></td></tr>; })}
+          <tr><td colSpan={multi ? 5 : 4} style={{ textAlign: 'center' }}><b>Tổng cộng</b></td><td className="num"><b>{fmtNum(tot('kg'), 2)}</b></td><td className="num"><b>{fmtNum(tot('bags'))}</b></td><td></td></tr></tfoot>
       </table>
       <PalletTable m={m} rows={palRows} />
       <div className="dn-signs">

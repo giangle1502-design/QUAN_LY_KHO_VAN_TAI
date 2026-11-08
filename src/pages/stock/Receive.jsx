@@ -1,7 +1,7 @@
 import { withBlock } from '../../catalogs';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { useCollection } from '../../lib/hooks';
@@ -32,7 +32,27 @@ function ReceiveList() {
   useEffect(() => onSnapshot(query(collection(db, 'movements'), where('status', '==', 'pending')),
     (s) => setRows(s.docs.map((d) => d.data()).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))),
     (e) => setError(e.message)), []);
-  const list = rows.filter((m) => m.type === 'in' && inMyWarehouses(m.warehouse));
+  // Phiếu nhập gộp (1 xe về nhiều đơn): các phiếu con cùng mã gộp hiện 1 dòng, thủ kho nhận 1 lần cho cả xe
+  const list = useMemo(() => {
+    const out = [];
+    const byG = new Map();
+    for (const m of rows.filter((x) => x.type === 'in' && inMyWarehouses(x.warehouse))) {
+      if (!m.groupId) { out.push({ ...m, pieces: [m] }); continue; }
+      const g = byG.get(m.groupId);
+      if (g) { g.pieces.push(m); continue; }
+      const row = { ...m, pieces: [m] };
+      byG.set(m.groupId, row);
+      out.push(row);
+    }
+    for (const r of out) {
+      if (r.pieces.length < 2) continue;
+      r.pieces.sort((a, b) => num(a.groupIndex) - num(b.groupIndex));
+      r.id = r.pieces[0].id;
+      r.orderId = r.pieces.map((x) => x.orderId).filter(Boolean).join(', ');
+      r.lines = r.pieces.flatMap((x) => x.lines || []);
+    }
+    return out;
+  }, [rows, inMyWarehouses]);
   return (
     <div>
       <div className="page-head"><h1>📥 Nhận hàng (phiếu nhập chờ nhận)</h1><Link className="btn" to="/kho/phieu">Danh sách phiếu</Link></div>
@@ -46,12 +66,12 @@ function ReceiveList() {
               {list.map((m) => (
                 <tr key={m.id}>
                   <td className="mono">{m.id}</td><td className="nowrap">{fmtDate(m.date)}</td><td>{m.warehouse}</td>
-                  <td>{IN_SOURCES[m.source]?.short || ''}</td><td>{m.partyName || m.partyCode}</td><td className="mono">{m.orderId}</td>
+                  <td>{IN_SOURCES[m.source]?.short || ''}</td><td>{m.partyName || m.partyCode}</td><td className="mono">{m.orderId}{m.pieces.length > 1 && <div className="small" title={`Phiếu con: ${m.pieces.map((x) => x.id).join(', ')}`}>📦 gộp {m.pieces.length} đơn ({m.groupId})</div>}</td>
                   <td>{[...new Set((m.lines || []).map((l) => l.item))].join(', ')}</td>
                   <td className="num">{t((m.lines || []).reduce((s, l) => s + num(l.kg), 0))}</td>
                   <td className="small">{m.createdByName || m.createdBy}</td>
                   <td className="nowrap">
-                    <Link className="btn primary sm" to={`/kho/nhan-hang/${m.id}`}>📥 Nhận hàng</Link>{' '}
+                    <Link className="btn primary sm" to={`/kho/nhan-hang/${m.id}`}>📥 Nhận hàng{m.pieces.length > 1 ? ' cả xe' : ''}</Link>{' '}
                     <Link className="btn sm" to={`/kho/phieu/${m.id}/in`} target="_blank">🖨 In</Link>
                   </td>
                 </tr>
@@ -82,13 +102,25 @@ function ReceiveForm({ id }) {
   const warehouses = useCollection('warehouses').rows;
   // Hàng về Kiện (pallet gỗ / nhựa, số pallet) hay Xá: thủ kho kiểm tra thực tế
   const [pal, setPal] = useState({ palletMode: '', pallets: [] });
+  // Phiếu nhập gộp: các phiếu con (mỗi đơn 1 phiếu) cùng mã gộp đang chờ nhận; dòng hàng ghi phiếu con / số đơn (_mv, _oid)
+  const [pieces, setPieces] = useState([]);
   useEffect(() => {
-    getDoc(doc(db, 'movements', id)).then((s) => {
-      const m = s.exists() ? s.data() : null;
+    getDoc(doc(db, 'movements', id)).then(async (s) => {
+      const m0 = s.exists() ? s.data() : null;
+      let ps = m0 ? [m0] : [];
+      if (m0?.groupId && m0.status === 'pending') {
+        try {
+          const g = await getDocs(query(collection(db, 'movements'), where('groupId', '==', m0.groupId)));
+          const list = g.docs.map((d) => d.data()).filter((x) => x.type === 'in' && x.status === 'pending').sort((a, b) => num(a.groupIndex) - num(b.groupIndex));
+          if (list.length > 1) ps = list;
+        } catch { /* không đọc được nhóm: nhận riêng phiếu này */ }
+      }
+      const m = m0 && ps.length > 1 ? { ...ps[0], orderId: ps.map((x) => x.orderId).filter(Boolean).join(', ') } : m0;
+      setPieces(ps);
       setMv(m);
       if (!m) return;
-      setLines(m.lines.map((l) => ({ ...newLine(), ...l, plannedKg: l.kg })));
-      if (m.palletMode) setPal({ palletMode: m.palletMode, pallets: (m.pallets || []).map((p) => ({ ...p })) });
+      setLines(ps.flatMap((p) => p.lines.map((l) => ({ ...newLine(), ...l, plannedKg: l.kg, _mv: p.id, _oid: p.orderId || '' }))));
+      if (m.palletMode) setPal({ palletMode: m.palletMode, pallets: ps.flatMap((p) => p.pallets || []).map((p) => ({ ...p })) });
       // Phiếu chưa ghi Kiện / Xá: lấy theo dòng đơn (đơn chỉ ghi Kiện / Xá, loại pallet do thủ kho chọn)
       else if (m.orderId) getDoc(doc(db, 'orders', m.orderId)).then((o) => {
         if (!o.exists()) return;
@@ -115,10 +147,11 @@ function ReceiveForm({ id }) {
       if (!l.item || !itemMap.has(l.item)) return setErr(no + 'chọn mã hàng có trong danh mục.');
       if (!l.location) return setErr(no + 'chọn vị trí nhận hàng.');
       if (l.goodsStatus === 'HTC' && !l.pledgee) return setErr(no + 'hàng HTC cần chọn bên nhận thế chấp.');
-      // Dòng thêm mới (khác lot…) lấy dòng đơn của dòng cùng mã hàng trên phiếu
-      const ol = l.orderLine ?? mv.lines.find((x) => x.item === l.item)?.orderLine;
-      if (mv.orderId && ol == null) return setErr(no + `mã hàng ${l.item} không có trong phiếu / đơn ${mv.orderId}.`);
-      out.push({ ...(ol != null ? { orderLine: ol } : {}), item: l.item, itemName: itemMap.get(l.item).name, lot: String(l.lot || '').trim(), mfgDate: l.mfgDate || '', expDate: l.expDate || '',
+      // Dòng thêm mới (khác lot…) lấy dòng đơn của dòng cùng mã hàng trên phiếu (phiếu gộp: trong phiếu con của dòng)
+      const pc = pieces.find((x) => x.id === l._mv) || pieces[0] || mv;
+      const ol = l.orderLine ?? pc.lines.find((x) => x.item === l.item)?.orderLine;
+      if (pc.orderId && ol == null) return setErr(no + `mã hàng ${l.item} không có trong phiếu / đơn ${pc.orderId}.`);
+      out.push({ _mv: pc.id, ...(ol != null ? { orderLine: ol } : {}), item: l.item, itemName: itemMap.get(l.item).name, lot: String(l.lot || '').trim(), mfgDate: l.mfgDate || '', expDate: l.expDate || '',
         location: l.location, goodsStatus: l.goodsStatus, pledgee: l.goodsStatus === 'HTC' ? l.pledgee : '', company: l.company || mv.company || '',
         bags: num(l.bags), pallets: num(l.pallets), kg: num(l.kg) });
     }
@@ -127,12 +160,24 @@ function ReceiveForm({ id }) {
     const managed = palletManaged(warehouses.find((w) => w.code === mv.warehouse));
     const pe = palletError(pal, mv, 'in', { managed });
     if (pe) return setErr(pe);
+    // Phiếu gộp: phiếu con nào cũng phải có ít nhất 1 dòng thực nhận
+    const list = pieces.length ? pieces : [mv];
+    const empty = list.find((p) => !out.some((l) => l._mv === p.id));
+    if (empty) return setErr(`Đơn ${empty.orderId || ''} (phiếu ${empty.id}) chưa có dòng thực nhận nào. Nhập số thực nhận, hoặc nhờ quản trị hủy phiếu ${empty.id} nếu đơn này không về.`);
     setBusy(true);
+    const ok = [];
     try {
-      const res = await confirmIn(id, out, { email, name }, cleanPallets(pal, mv, 'in', { managed }));
-      setDone(typeof res === 'string' ? { id: res } : res);
+      const pals = cleanPallets(pal, mv, 'in', { managed });
+      for (const [k, p] of list.entries()) {
+        const mine = out.filter((l) => l._mv === p.id).map(({ _mv, ...l }) => l); // eslint-disable-line no-unused-vars
+        // Pallet nhập kèm ghi ở phiếu đầu của xe
+        const res = await confirmIn(p.id, mine, { email, name }, k === 0 ? pals : { palletMode: pals.palletMode, pallets: [] });
+        ok.push(typeof res === 'string' ? { id: res } : res);
+      }
+      setDone({ ...ok[0], ids: ok.map((x) => x.id), group: list.length > 1 });
     } catch (e2) {
-      setErr(e2.code === 'permission-denied' ? 'Bạn không có quyền nhận hàng cho kho này.' : e2.message);
+      const msg = e2.code === 'permission-denied' ? 'Bạn không có quyền nhận hàng cho kho này.' : e2.message;
+      setErr(ok.length ? `Đã xác nhận phiếu ${ok.map((x) => x.id).join(', ')}; phiếu tiếp theo bị lỗi: ${msg}. Mở lại phiếu còn lại ở danh sách chờ nhận.` : msg);
     }
     setBusy(false);
   };
@@ -140,8 +185,8 @@ function ReceiveForm({ id }) {
   if (done) return (
     <div>
       <div className="page-head"><h1>📥 Nhận hàng {id}</h1></div>
-      <div className="ok-box">Đã xác nhận nhận hàng phiếu <b className="mono">{done.id}</b>{done.orderId ? <> và lập đơn mua <b className="mono">{done.orderId}</b> theo số thực nhận</> : null}. Tồn kho đã cập nhật.{' '}
-        <Link to={`/kho/phieu/${done.id}/in`} target="_blank">🖨 In phiếu</Link> · <Link className="btn primary" to={`/kho/phieu/${done.id}/nhan`} target="_blank">🏷️ In nhãn pallet</Link> · <Link to="/kho/nhan-hang">← Phiếu chờ nhận khác</Link></div>
+      <div className="ok-box">Đã xác nhận nhận hàng phiếu <b className="mono">{done.group ? done.ids.join(', ') : done.id}</b>{done.group ? ` (phiếu nhập gộp ${mv.groupId}, ${done.ids.length} đơn)` : ''}{done.orderId ? <> và lập đơn mua <b className="mono">{done.orderId}</b> theo số thực nhận</> : null}. Tồn kho đã cập nhật.{' '}
+        <Link to={`/kho/phieu/${done.id}/in`} target="_blank">🖨 In phiếu</Link> · {(done.ids || [done.id]).map((x) => <Link key={x} className="btn primary" to={`/kho/phieu/${x}/nhan`} target="_blank" style={{ marginRight: 4 }}>🏷️ In nhãn pallet{done.group ? ` ${x}` : ''}</Link>)} · <Link to="/kho/nhan-hang">← Phiếu chờ nhận khác</Link></div>
     </div>
   );
   const pending = mv.status === 'pending';
@@ -152,7 +197,7 @@ function ReceiveForm({ id }) {
         <p style={{ margin: 0 }}>
           Kho <b>{mv.warehouse}</b> · Ngày {fmtDate(mv.date)} · {IN_SOURCES[mv.source]?.label || 'Phiếu nhập'}
           {mv.partyCode || mv.partyName ? <> · {mv.source === 'SO' ? 'Khách trả hàng' : 'Nhà cung cấp'}: <b>{mv.partyCode} {mv.partyName}</b></> : null}
-          {mv.orderId ? <> · Đơn <b className="mono">{mv.orderId}</b></> : null}{mv.directPO?.refNo ? <> · Chứng từ NCC {mv.directPO.refNo}</> : null}
+          {mv.orderId ? <> · {pieces.length > 1 ? `Phiếu nhập gộp ${mv.groupId} · ${pieces.length} đơn` : 'Đơn'} <b className="mono">{mv.orderId}</b></> : null}{mv.directPO?.refNo ? <> · Chứng từ NCC {mv.directPO.refNo}</> : null}
           {' · '}Công ty {mv.company} · Lập bởi {mv.createdByName || mv.createdBy}
         </p>
         {mv.note && <p className="small" style={{ margin: '6px 0 0' }}>Ghi chú: {mv.note}</p>}
@@ -165,14 +210,14 @@ function ReceiveForm({ id }) {
         {lines.map((l, i) => (
           <div key={i} className="mv-line">
             <div style={{ flex: 1 }}>
-              {l.plannedKg != null && <div className="small">Dự kiến trên phiếu: <b>{t(l.plannedKg)} kg</b></div>}
+              {(l.plannedKg != null || pieces.length > 1) && <div className="small">{pieces.length > 1 && <span className="badge blue" title={`Phiếu con ${l._mv}`}>Đơn {l._oid || l._mv}</span>} {l.plannedKg != null && <>Dự kiến trên phiếu: <b>{t(l.plannedKg)} kg</b></>}</div>}
               <InLine l={l} set={(p) => setLine(i, p)} itemMap={itemMap} locations={locations} statuses={statuses} pledgees={pledgees}
                 cap={caps[i]} onSplit={() => setLines((ls) => splitLineAt(ls, i, caps[i]))} />
             </div>
             <button type="button" className="btn ghost" disabled={lines.length === 1} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>✕</button>
           </div>
         ))}
-        <button type="button" className="btn sm" onClick={() => setLines((ls) => [...ls, { ...newLine(), item: ls[ls.length - 1]?.item || '', goodsStatus: ls[ls.length - 1]?.goodsStatus || 'KTC', pledgee: ls[ls.length - 1]?.pledgee || '' }])}>+ Thêm dòng (lot khác)</button>
+        <button type="button" className="btn sm" onClick={() => setLines((ls) => [...ls, { ...newLine(), item: ls[ls.length - 1]?.item || '', goodsStatus: ls[ls.length - 1]?.goodsStatus || 'KTC', pledgee: ls[ls.length - 1]?.pledgee || '', _mv: ls[ls.length - 1]?._mv, _oid: ls[ls.length - 1]?._oid }])}>+ Thêm dòng (lot khác)</button>
       </div>
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="section-head">🪵 Hàng về Kiện / Xá <span className="req">*</span></div>

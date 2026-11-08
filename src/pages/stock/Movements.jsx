@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { collection, doc, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
+import { collection, doc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useOpCompany, useOpWarehouse } from '../../lib/hooks';
@@ -122,7 +122,7 @@ export default function Movements() {
                   <td className="nowrap">{fmtDate(m.date)}</td>
                   <td className="nowrap" title={st.title} onClick={(e) => e.stopPropagation()}>{m.status === 'pending' ? <Link className={'badge ' + st.tone} to={`/kho/nhan-hang/${m.id}`}>{st.label}</Link>
                     : m.status === 'wait_release' ? <Link className={'badge ' + st.tone} to="/kho/giai-chap">{st.label}</Link>
-                    : <span className={'badge ' + st.tone}>{st.label}</span>}</td><td>{m.warehouse}</td><td>{m.company || [...new Set((m.lines || []).map((l) => l.company).filter(Boolean))].join(', ')}</td><td className="mono">{m.plate ? <span className="plate">{m.plate}</span> : m.tripId}</td><td className="mono">{m.orderId}{m.groupId && <div className="small" title="1 xe giao nhiều đơn: in chung 1 phiếu soạn hàng, 1 phiếu giao hàng">🚚 gộp xe: {(m.groupOrders || []).filter((x) => x !== m.orderId).join(', ')}</div>}</td>
+                    : <span className={'badge ' + st.tone}>{st.label}</span>}</td><td>{m.warehouse}</td><td>{m.company || [...new Set((m.lines || []).map((l) => l.company).filter(Boolean))].join(', ')}</td><td className="mono">{m.plate ? <span className="plate">{m.plate}</span> : m.tripId}</td><td className="mono">{m.orderId}{m.groupId && <div className="small" title={`Phiếu gộp ${m.groupId}: 1 xe ${m.type === 'in' ? 'về' : 'đi'} nhiều đơn, mỗi đơn 1 phiếu con, in chung 1 bộ phiếu`}>{m.type === 'in' ? '📦' : '🚚'} gộp {m.groupId}: {(m.groupOrders || []).filter((x) => x !== m.orderId).join(', ')}</div>}</td>
                   <td>{m.partyName || m.partyCode}</td><td>{[...new Set(m.lines.map((l) => l.item))].join(', ')}</td>
                   <td className="num">{qtyCell(m, 'bags')}</td><td className="num">{qtyCell(m, 'kg')}</td>
                   <td className="small">{m.createdByName || m.createdBy}</td>
@@ -168,18 +168,37 @@ export function MovementDetail({ m, onClose }) {
   const [reason, setReason] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  // Phiếu gộp (1 xe nhiều đơn): các phiếu con cùng mã gộp
+  const [group, setGroup] = useState([]);
+  useEffect(() => {
+    if (!m.groupId) { setGroup([]); return undefined; }
+    return onSnapshot(query(collection(db, 'movements'), where('groupId', '==', m.groupId)),
+      (snap) => setGroup(snap.docs.map((d) => d.data()).sort((a, b) => (Number(a.groupIndex) || 0) - (Number(b.groupIndex) || 0))), () => setGroup([]));
+  }, [m.groupId]);
+  const cancelOne = async (x) => {
+    await cancelMovement(x, reason, { email, name });
+    // Phiếu xuất lập từ dự kiến xuất: trả lại số lượng cho dự kiến để lập phiếu khác
+    if (x.type === 'out' && x.planId) {
+      try { await revertMovementFromPlan(x.planId, x, { email, name }); }
+      catch (e2) { setErr(`Đã hủy phiếu ${x.id} nhưng chưa cập nhật được dự kiến xuất ${x.planId}: ${e2.message}`); }
+    } else if (x.type === 'out' && x.orderId) {
+      try { await revertMovementFromOrderPlans(x.orderId, x, { email, name }); } catch (e2) { setErr(`Đã hủy phiếu ${x.id} nhưng chưa cập nhật được dự kiến xuất của ${x.orderId}: ${e2.message}`); }
+    }
+  };
   const cancel = async () => {
     setErr(''); setBusy(true);
+    try { await cancelOne(m); } catch (e) { setErr(e.message); }
+    setBusy(false);
+  };
+  // Hủy cả phiếu gộp: hủy lần lượt mọi phiếu con chưa hủy
+  const cancelGroup = async () => {
+    const live = group.filter((x) => x.status !== 'cancelled');
+    if (!window.confirm(`Hủy cả phiếu gộp ${m.groupId}: ${live.length} phiếu con (${live.map((x) => `${x.id} · ${x.orderId}`).join(', ')})?`)) return;
+    setErr(''); setBusy(true);
+    const done = [];
     try {
-      await cancelMovement(m, reason, { email, name });
-      // Phiếu xuất lập từ dự kiến xuất: trả lại số lượng cho dự kiến để lập phiếu khác
-      if (m.type === 'out' && m.planId) {
-        try { await revertMovementFromPlan(m.planId, m, { email, name }); }
-        catch (e2) { setErr(`Đã hủy phiếu nhưng chưa cập nhật được dự kiến xuất ${m.planId}: ${e2.message}`); }
-      } else if (m.type === 'out' && m.orderId) {
-        try { await revertMovementFromOrderPlans(m.orderId, m, { email, name }); } catch (e2) { setErr(`Đã hủy phiếu nhưng chưa cập nhật được dự kiến xuất của ${m.orderId}: ${e2.message}`); }
-      }
-    } catch (e) { setErr(e.message); }
+      for (const x of live) { await cancelOne(x); done.push(x.id); }
+    } catch (e) { setErr(`${done.length ? `Đã hủy ${done.join(', ')}; ` : ''}lỗi khi hủy phiếu tiếp theo: ${e.message}`); }
     setBusy(false);
   };
   return (
@@ -193,6 +212,11 @@ export function MovementDetail({ m, onClose }) {
         {m.reason ? ` · Lý do: ${m.reason}` : ''}
       </p>
       {m.note && <p className="small">Ghi chú: {m.note}</p>}
+      {m.groupId && group.length > 1 && (
+        <div className="hint" style={{ marginBottom: 8 }}>{m.type === 'in' ? '📦' : '🚚'} Thuộc <b>phiếu gộp {m.groupId}</b> (1 xe {group.length} đơn, mỗi đơn 1 phiếu con, in chung 1 bộ):{' '}
+          {group.map((x) => <span key={x.id} className={'badge ' + (x.status === 'cancelled' ? 'red' : x.id === m.id ? 'blue' : '')} style={{ marginRight: 4 }}>{x.id} · {x.orderId}{x.status === 'cancelled' ? ' (đã hủy)' : ''}</span>)}
+          <Link className="btn sm" to={`/kho/phieu/${m.id}/in`} target="_blank">🖨 In cả phiếu gộp</Link></div>
+      )}
       <ExtraView formKey={MV_FORM[m.type]} rec={m} />
       <p><Link className="btn sm" to={`/kho/phieu/${m.id}/in`} target="_blank">🖨 In phiếu</Link>
         {m.status === 'pending' && <> <Link className="btn sm primary" to={`/kho/nhan-hang/${m.id}`}>📥 Thủ kho nhận hàng</Link></>}
@@ -221,7 +245,8 @@ export function MovementDetail({ m, onClose }) {
       {isAdmin && m.status !== 'cancelled' && (
         <div className="form-actions">
           <input placeholder="Lý do hủy phiếu" value={reason} onChange={(e) => setReason(e.target.value)} />
-          <button className="btn danger" disabled={!reason.trim() || busy} onClick={cancel}>{['pending', 'wait_release'].includes(m.status) ? 'Hủy phiếu' : 'Hủy phiếu (đảo tồn kho)'}</button>
+          <button className="btn danger" disabled={!reason.trim() || busy} onClick={cancel}>{['pending', 'wait_release'].includes(m.status) ? 'Hủy phiếu' : 'Hủy phiếu (đảo tồn kho)'}{group.length > 1 ? ` ${m.id} (đơn ${m.orderId})` : ''}</button>
+          {group.filter((x) => x.status !== 'cancelled').length > 1 && <button className="btn danger" disabled={!reason.trim() || busy} onClick={cancelGroup} title="Hủy mọi phiếu con của phiếu gộp">Hủy cả phiếu gộp {m.groupId} ({group.filter((x) => x.status !== 'cancelled').length} phiếu)</button>}
         </div>
       )}
     </Modal>
@@ -254,8 +279,17 @@ function TransportBox({ m }) {
     setErr(''); setBusy(true);
     const at = new Date().toISOString();
     try {
-      await updateDoc(doc(db, 'movements', m.id), { ...Object.fromEntries(TRANSPORT.map((k) => [k, String(h[k] || '').trim()])), updatedAt: at, updatedBy: email,
-        history: [...(m.history || []), { at, by: email, byName: name, action: 'Cập nhật thông tin vận tải' }] });
+      // Phiếu xuất gộp (1 xe nhiều đơn): cùng xe nên cập nhật cho mọi phiếu con
+      let list = [m];
+      if (m.groupId) {
+        const g = await getDocs(query(collection(db, 'movements'), where('groupId', '==', m.groupId))).catch(() => null);
+        if (g) list = g.docs.map((d) => d.data()).filter((x) => x.status !== 'cancelled');
+        if (!list.some((x) => x.id === m.id)) list.push(m);
+      }
+      for (const x of list) {
+        await updateDoc(doc(db, 'movements', x.id), { ...Object.fromEntries(TRANSPORT.map((k) => [k, String(h[k] || '').trim()])), updatedAt: at, updatedBy: email,
+          history: [...(x.history || []), { at, by: email, byName: name, action: `Cập nhật thông tin vận tải${list.length > 1 ? ` (phiếu gộp ${m.groupId})` : ''}` }] });
+      }
       setEdit(false);
     } catch (e) { setErr(e.code === 'permission-denied' ? 'Bạn không có quyền sửa phiếu của kho này.' : e.message); }
     setBusy(false);
