@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { collection, doc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
@@ -16,6 +16,7 @@ import { Empty, ErrorBox, Modal } from '../../components/ui';
 import Balance from './Balance';
 import SlipList from './Slips';
 import SOForm from './SOForm';
+import { ScanButton } from '../../components/ScanSlip';
 import DrtList, { DrtButton } from './Returns';
 import RtvList, { RtvButton } from './VendorReturns';
 import { ColumnPicker, WithAdd } from '../../components/FormTools';
@@ -131,12 +132,12 @@ export default function Orders() {
       {tab === 'can-doi' ? <Balance /> : tab === 'DO' ? <SlipList key={"DO" + (params.get('loai') || '')} kind="DO" loai={params.get('loai') || ''} /> : tab === 'cho-nhap' ? <SlipList key={"IN" + (params.get('loai') || '')} kind="IN" loai={params.get('loai') || ''} />
         : tab === 'DRT' ? <DrtList initialQ={params.get('q') || ''} />
         : tab === 'RTV' ? <RtvList initialQ={params.get('q') || ''} />
-        : <OrderList key={tab} type={tab} initialQ={params.get('q') || ''} startNew={params.get('new') === '1'} onNewDone={() => setParams({ tab })} />}
+        : <OrderList key={tab} type={tab} initialQ={params.get('q') || ''} startNew={params.get('new') === '1'} startScan={params.get('scan') === '1'} onNewDone={() => setParams({ tab })} />}
     </div>
   );
 }
 
-function OrderList({ type, initialQ = '', startNew = false, onNewDone }) {
+function OrderList({ type, initialQ = '', startNew = false, startScan = false, onNewDone }) {
   const pendIn = usePendingIn();
   const waitOut = useWaitingOut();
   const meta = ORDER_TYPES[type];
@@ -168,6 +169,9 @@ function OrderList({ type, initialQ = '', startNew = false, onNewDone }) {
   const [q, setQ] = useState(initialQ);
   const [open, setOpen] = useState(null);
   const [edit, setEdit] = useState(null); // null | 'new' | order
+  // Đơn nháp đọc từ ảnh phiếu Ecount (có thể khác loại đơn đang xem: dán Phiếu đề nghị nhập kho ở thẻ SO → PO)
+  const [draft, setDraft] = useState(null);
+  const navigate = useNavigate();
   const [msg, setMsg] = useState('');
   // Mở thẳng form lập đơn mới từ menu / thanh yêu thích (?new=1)
   useEffect(() => { if (startNew && canManage) setEdit('new'); }, [startNew]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -337,6 +341,7 @@ function OrderList({ type, initialQ = '', startNew = false, onNewDone }) {
           <button className="btn" onClick={exportExcel}>⬇ Excel</button>
           {canManage && !sto && <ImportOrders type={type} existing={rows} onDone={setMsg} />}
           {isAdmin && noSales.length > 0 && <button className="btn" onClick={fillSales} title="Sale chỉ thấy đơn có Sale phụ trách là mình">Gán sale cho {noSales.length} đơn cũ</button>}
+          {canManage && <ScanButton want={type} autoOpen={startScan} onAutoDone={onNewDone} onDraft={setDraft} />}
           {canManage && <button className="btn primary" onClick={() => setEdit('new')}>+ Lập {meta.short}</button>}
         </div>
       </div>
@@ -366,6 +371,12 @@ function OrderList({ type, initialQ = '', startNew = false, onNewDone }) {
       </div>
       {current && !edit && <OrderDetail o={current} onClose={() => setOpen(null)} onEdit={() => setEdit(current)} />}
       {edit && <SOForm type={type} order={edit === 'new' ? null : edit} onClose={(id) => { setEdit(null); if (id) setOpen(id); if (startNew) onNewDone?.(); }} />}
+      {draft && <SOForm key={draft.scan.slipNo + draft.type} type={draft.type} draft={draft} onClose={(id) => {
+        const t = draft.type;
+        setDraft(null);
+        if (!id) return;
+        if (t === type) setOpen(id); else navigate(`/don-hang?tab=${t}&q=${id}`);
+      }} />}
     </div>
   );
 }
@@ -433,6 +444,11 @@ function OrderDetail({ o, onClose, onEdit }) {
         {headCustom.map((f) => <span key={f.key}> · {f.label}: <b>{displayValue(f, hv(f), false, unitOf(f))}</b></span>)}
         {Number(o.tolerancePct) ? ` · Dung sai ${o.tolerancePct}%` : ''}
       </p>
+      {o.ecount && (o.ecount.slipNo || o.ecount.plate || o.ecount.carrierName) && (
+        <p className="small">📷 Lập từ ảnh phiếu Ecount <b className="mono">{o.ecount.slipNo}</b>
+          {[o.ecount.carrierName && `ĐVVT ${o.ecount.carrierName}`, o.ecount.plate && `xe ${o.ecount.plate}`, o.ecount.driverName && `tài xế ${o.ecount.driverName}`, o.ecount.idCard && `CCCD ${o.ecount.idCard}`].filter(Boolean).map((x) => ` · ${x}`).join('')}
+          {' '}(điền sẵn vào phiếu {o.type === 'SO' ? 'xuất' : 'nhập'} kho)</p>
+      )}
       {o.direct && <p className="small">Đơn mua lập tự động khi <b>nhập kho trực tiếp</b> (hàng về không có PO trước).</p>}
       {o.note && <p className="small">Ghi chú: {o.note}</p>}
       {o.closeReason && <p className="small">Lý do {o.status === 'cancelled' ? 'hủy' : 'đóng'}: {o.closeReason}</p>}

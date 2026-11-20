@@ -226,6 +226,14 @@ function Form({ type }) {
       .map((l) => l.carrier).filter(Boolean))] : [];
     const car = cars.length === 1 ? { carrier: cars[0], carrierName: carriers.find((c) => c.code === cars[0])?.name || '', carrierAuto: true } : { carrier: '', carrierName: '', carrierAuto: false };
     setHead((h) => ({ ...h, orderId: id, ...party, ...(o.company ? { company: o.company } : {}), ...(!h.carrier || h.carrierAuto ? car : {}) }));
+    // Đơn lập từ ảnh phiếu Ecount: điền sẵn số xe, tài xế, đơn vị vận tải, số phiếu Ecount (ô nào phiếu đã ghi thì giữ)
+    const ec = o.ecount;
+    if (ec && (type === 'out' ? ['SO', 'STO'].includes(o.type) : ['PO', 'STO'].includes(o.type))) {
+      // Phiếu nhập không có ô vận tải: ghi đơn vị vận tải, số xe / cont vào ghi chú
+      if (type === 'in') setHead((h) => ({ ...h, refNo: h.refNo || ec.slipNo || '', note: h.note || [ec.slipNo && `Ecount ${ec.slipNo}`, ec.carrierName && `ĐVVT ${ec.carrierName}`, ec.plate && `xe/cont ${ec.plate}`].filter(Boolean).join(' · ') }));
+      else setHead((h) => ({ ...h, plate: h.plate || ec.plate || '', idCard: h.idCard || ec.idCard || '', driverName: h.driverName || ec.driverName || '', refNo: h.refNo || ec.slipNo || '',
+        ...((!h.carrier || h.carrierAuto) && (ec.carrier || ec.carrierName) ? { carrier: ec.carrier || '', carrierName: ec.carrierName || '', carrierAuto: false } : {}) }));
+    }
     // SO trả hàng: ghi chú sẵn SO gốc, lý do, tình trạng hàng để thủ kho kiểm khi nhận
     if (o.type === 'DRT') setHead((h) => ({ ...h, note: h.note || `Khách trả hàng theo ${o.originalSoId}: ${[...new Set(o.lines.map((l) => [l.reason, l.condition].filter(Boolean).join(', ')).filter(Boolean))].join('; ')}` }));
     if (o.type === 'RTV') setHead((h) => ({ ...h, note: h.note || `Trả hàng NCC theo ${o.originalPoId}: ${[...new Set(o.lines.map((l) => l.reason).filter(Boolean))].join('; ')}` }));

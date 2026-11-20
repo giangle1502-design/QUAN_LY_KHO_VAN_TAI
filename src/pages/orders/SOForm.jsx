@@ -18,6 +18,7 @@ import { usePref } from '../../lib/prefs';
 import { vnDate } from '../../lib/trips';
 import { fmtNum } from '../../lib/utils';
 import Select from '../../components/Select';
+import { ScanPanel } from '../../components/ScanSlip';
 import { itemAllowed, saleSeesCustomer, saleTypes, salesFor, typesOf } from '../../lib/plasticSales';
 
 // Đơn bán (SO) / đơn mua (PO) gồm 2 phần:
@@ -61,7 +62,8 @@ function orderChanges(order, head, lines, headFields, lineFields) {
   return out;
 }
 
-export default function SOForm({ type = 'SO', order, onClose }) {
+// draft (tùy chọn): đơn nháp đọc từ ảnh phiếu Ecount (components/ScanSlip.jsx) → điền sẵn, hiện bảng đối chiếu với ảnh
+export default function SOForm({ type = 'SO', order, onClose, draft }) {
   const cfg = CFG[type];
   const sto = type === 'STO';
   const { email, name, fieldsOf, isAdmin, hasRole, role, salesOnly } = useApp();
@@ -106,14 +108,19 @@ export default function SOForm({ type = 'SO', order, onClose }) {
     // Đơn cũ chưa có đơn vị tiền tệ = VNĐ
     if (order) return { ...order, tolerancePct: order.tolerancePct || '', ...(sto ? {} : { currency: order.currency || 'VNĐ', fxRate: order.fxRate ?? '' }) };
     const d = defaultsOf(headFields);
-    return { partyCode: '', partyName: '', tolerancePct: '', note: '', ...d, company: d.company || defaultCo, date: d.date || vnDate(), sales: d.sales || (role === 'kinh_doanh' ? email : '') };
+    const base = { partyCode: '', partyName: '', tolerancePct: '', note: '', ...d, company: d.company || defaultCo, date: d.date || vnDate(), sales: d.sales || (role === 'kinh_doanh' ? email : '') };
+    if (!draft) return base;
+    // Đơn từ ảnh: chỉ ghi đè những ô đọc được
+    const dh = Object.fromEntries(Object.entries(draft.head).filter(([, v]) => v !== '' && v != null));
+    return { ...base, ...dh, ...(dh.note && base.note ? { note: `${base.note}\n${dh.note}` } : {}) };
   });
   const blankLine = () => ({ dueDate: '', warehouse: '', fromWarehouse: '', toWarehouse: '', item: '', itemName: '', qtyKg: '', shipCode: '', goodsStatus: '', note: '', ...defaultsOf(lineFields) });
   // Đơn cũ (kho / mã giao / hạn giao ở đầu đơn): chép xuống từng dòng
   const [lines, setLines] = useState(() => (order
     ? order.lines.map((l) => ({ ...l, warehouse: l.warehouse || order.warehouse || '', shipCode: l.shipCode || order.shipCode || '', dueDate: l.dueDate || order.dueDate || '', goodsStatus: l.goodsStatus || '', note: l.note || '',
       ...(sto ? { fromWarehouse: l.fromWarehouse || order.fromWarehouse || '', toWarehouse: l.toWarehouse || order.toWarehouse || '' } : {}) }))
-    : [blankLine()]));
+    : draft?.lines?.length ? draft.lines.map((l) => ({ ...blankLine(), ...Object.fromEntries(Object.entries(l).filter(([, v]) => v !== '' && v != null)) }))
+      : [blankLine()]));
   const [hiddenCols, setHiddenCols] = usePref(`${type}LineHiddenCols`, []);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -275,7 +282,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
       ...sp.head, type, company: h.company, date: h.date, ...(sto ? {} : { sales: autoSale || (salesOnly ? email : String(h.sales || '').trim().toLowerCase()) }),
       ...(sto ? { partyCode: sum.toWarehouses.join(', '), partyName: `Chuyển đến kho ${sum.toWarehouses.map(whName).join(', ')}` }
         : { partyCode: h.partyCode.trim(), partyName: String(h.partyName || recOf.partyCode(h.partyCode.trim())?.name || '').trim() }),
-      refNo: order?.refNo || '', tolerancePct: h.tolerancePct === '' ? 0 : Number(h.tolerancePct), note: String(h.note || '').trim(),
+      refNo: order ? order.refNo || '' : String(h.refNo || '').trim(), ...(h.ecount ? { ecount: h.ecount } : {}), tolerancePct: h.tolerancePct === '' ? 0 : Number(h.tolerancePct), note: String(h.note || '').trim(),
       lines: sp.lines, ...sum,
     };
     setBusy(true);
@@ -388,7 +395,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
   const viaLabel = (vias, k) => vias.find((v) => v.key === k)?.label || k;
 
   return (
-    <Modal title={order ? `Sửa ${order.id}` : `Lập ${cfg.title}`} onClose={() => onClose()} wide>
+    <Modal title={order ? `Sửa ${order.id}` : `Lập ${cfg.title}${draft ? ' từ ảnh phiếu Ecount' : ''}`} onClose={() => onClose()} wide>
       <form onSubmit={submit}>
         {finished && (
           <div style={{ marginBottom: 10, padding: 10, border: '1px solid var(--amber)', background: 'var(--amber-soft)', borderRadius: 8 }}>
@@ -397,6 +404,7 @@ export default function SOForm({ type = 'SO', order, onClose }) {
             <Field label="Lý do sửa" required><input value={editReason} onChange={(e) => setEditReason(e.target.value)} placeholder="vd. Sai đơn giá, khách đổi mã giao…" /></Field>
           </div>
         )}
+        {draft && !order && <ScanPanel draft={draft} type={type} h={h} setH={setH} setHead={setHead} lines={lines} setLine={setLine} party={recOf.partyCode} />}
         <div className="so-section">
           <div className="section-head"><span className="grow">Thông tin chung của đơn</span><AddFieldButton formKey={cfg.head} vias={HEAD_VIAS} /></div>
           <div className="form-grid">

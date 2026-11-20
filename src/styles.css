@@ -760,3 +760,21 @@ th[data-sortable]:hover { color: var(--text); }
 td.cell-link { cursor: pointer; color: var(--primary); text-decoration: underline dotted; text-underline-offset: 3px; }
 td.cell-link:hover { background: var(--primary-soft); }
 @media print { .th-tools { display: none; } .table-wrap th + th, .table-wrap td + td { border-left-color: #ccc; } }
+/* Lập đơn từ ảnh phiếu Ecount */
+.scan-drop { border: 2px dashed var(--line); border-radius: 10px; padding: 18px; text-align: center; cursor: pointer; background: #fafcff; }
+.scan-drop:hover { border-color: var(--primary); }
+.scan-drop img { max-width: 100%; max-height: 360px; }
+.scan-panel { border: 1px solid var(--primary); background: #f7fbff; }
+.scan-grid { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+.scan-grid > .kv-table { flex: 1; min-width: 300px; }
+.scan-thumb img { width: 280px; max-width: 100%; border: 1px solid var(--line); border-radius: 6px; display: block; }
+.kv-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.kv-table th, .kv-table td { padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; text-align: left; }
+.kv-table th { white-space: nowrap; color: var(--muted); font-weight: 600; width: 1%; }
+.kv-table.scan-lines { margin-top: 8px; }
+.kv-table.scan-lines thead th { background: #1f2a37; color: #fff; width: auto; }
+.kv-table.scan-lines thead th + th { border-left: 1px solid #5b6675; }
+.kv-table td.num, .kv-table th.num { text-align: right; }
+.scan-transport { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.scan-transport .cell-add { min-width: 220px; }
+label.inline { display: inline-flex; gap: 4px; align-items: center; margin-right: 10px; cursor: pointer; }
