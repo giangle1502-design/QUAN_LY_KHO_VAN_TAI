@@ -10,6 +10,7 @@ import { saleSeesCustomer } from '../lib/plasticSales';
 import { CATALOGS, catalogByKey, NUMERIC_TYPES } from '../catalogs';
 import { applyComputed, cleanValue, defaultsOf, docIdOf, keyFieldsOf } from '../lib/fields';
 import { exportSheets, exportTemplate, readFirstSheet, toNumber, toYmd } from '../lib/excel';
+import { fieldNote, matchOption, optionLabel, TRUE_WORDS } from '../lib/templateNotes';
 import { norm, today } from '../lib/utils';
 import FieldInput, { displayValue } from '../components/FieldInput';
 import { AddFieldButton } from '../components/FormTools';
@@ -150,7 +151,7 @@ function Catalog({ cat }) {
           {editable && (
             <>
               <button className="btn" onClick={() => fileRef.current.click()}>⬆ Nhập Excel</button>
-              <button className="btn ghost" onClick={() => exportTemplate(`Mau_${cat.short}`, shown.filter((f) => !f.computed && !f.system).map((f) => f.label))}>File mẫu</button>
+              <button className="btn ghost" onClick={() => { const tf = shown.filter((f) => !f.computed && !f.system && f.type !== 'formula'); exportTemplate(`Mau_${cat.short}`, tf.map((f) => f.label), tf.map((f) => fieldNote(cat, f))); }}>File mẫu</button>
               <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" hidden onChange={(e) => e.target.files[0] && importExcel(e.target.files[0])} />
             </>
           )}
@@ -374,7 +375,6 @@ async function findUsage(cat, id) {
 // ---------------------------------------------------------------------------
 // Nhập Excel: khớp tiêu đề cột với tên trường (không phân biệt dấu/hoa thường)
 // ---------------------------------------------------------------------------
-const TRUE_WORDS = ['x', 'co', 'c', '1', 'true', 'yes', 'y', '✓', 'v'];
 
 async function importRows(cat, fields, file, app) {
   const sheet = await readFirstSheet(file);
@@ -410,16 +410,25 @@ async function importRows(cat, fields, file, app) {
     const line = idx + 2;
     if (cells.every((c) => String(c ?? '').trim() === '')) return;
     const r = {};
+    // Thiếu thông tin hoặc mã tham chiếu chưa có: vẫn nhập, ghi chú lại để bổ sung sau (chỉ bỏ qua khi thiếu mã/khóa)
+    const notes = [];
     for (const f of inputFields) {
       if (colOf[f.key] === undefined) continue;
       const raw = cells[colOf[f.key]];
       if (NUMERIC_TYPES.includes(f.type)) r[f.key] = toNumber(raw);
       else if (f.type === 'date') r[f.key] = toYmd(raw);
-      else if (f.type === 'checkbox') r[f.key] = TRUE_WORDS.includes(norm(raw));
+      // Ô trống: không ghi (dòng mới lấy mặc định, dòng đã có giữ nguyên)
+      else if (f.type === 'checkbox') { if (String(raw ?? '').trim() !== '') r[f.key] = TRUE_WORDS.includes(norm(raw)); }
+      else if (f.type === 'select' && f.options?.length) {
+        // Nhận cả mã (active) lẫn tên hiển thị (Sử dụng / Ngừng sử dụng), không phân biệt dấu
+        const v = matchOption(f, raw);
+        if (v) r[f.key] = v; // ô trống: dòng mới lấy mặc định, dòng đã có giữ nguyên
+        else if (v === '') continue;
+        else if (f.fixedChoices) { notes.push(`${f.label} "${String(raw).trim()}" không hợp lệ (chọn: ${f.options.filter((o) => o !== '').map((o) => optionLabel(f, o)).join(' | ')})`); }
+        else r[f.key] = String(raw ?? '').trim();
+      }
       else r[f.key] = cleanValue(f, raw instanceof Date ? toYmd(raw) : String(raw ?? ''));
     }
-    // Thiếu thông tin hoặc mã tham chiếu chưa có: vẫn nhập, ghi chú lại để bổ sung sau (chỉ bỏ qua khi thiếu mã/khóa)
-    const notes = [];
     for (const f of inputFields.filter((x) => x.type === 'ref' && r[x.key])) {
       const ref = refData[f.ref]?.get(r[f.key]);
       if (!ref) { notes.push(`${f.label} "${r[f.key]}" chưa có trong danh mục`); continue; }

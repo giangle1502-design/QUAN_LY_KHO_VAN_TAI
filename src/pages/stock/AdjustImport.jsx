@@ -26,6 +26,20 @@ const COLS = [
   ['inDate', 'Ngày nhập', ['ngay nhap', 'ngay nhap kho']],
   ['note', 'Ghi chú', ['ghi chu', 'note']],
 ];
+const COL_NOTES = {
+  company: 'Kiểu: Chữ (mã công ty chủ hàng). Nên ghi để khớp đúng dòng tồn; mã có trong danh mục Công ty. VD: VAP, PLA, DAM.',
+  location: 'Kiểu: Chữ. BẮT BUỘC. Mã vị trí trong kho đang chọn. Ví dụ: A-01-01',
+  item: 'Kiểu: Chữ. BẮT BUỘC. Mã hàng có trong danh mục Mã hàng. Ví dụ: PP-1102K',
+  lot: 'Kiểu: Chữ. Không bắt buộc. Số lô / batch. Ví dụ: L2611A',
+  goodsStatus: 'Kiểu: Chữ. Tình trạng hàng hóa: KTC | HTC | DGC. Để trống = KTC.',
+  pledgee: 'Kiểu: Chữ. Không bắt buộc. Ngân hàng nhận thế chấp (khi hàng HTC). Ví dụ: VCB',
+  sign: 'Kiểu: Chữ. + (hoặc để trống) = tăng; - / Giảm = giảm. Có thể nhập số âm thay cho cột này. Dòng giảm phải khớp đúng 1 dòng tồn.',
+  bags: 'Kiểu: Số. Số bao. Ví dụ: 1,000',
+  pallets: 'Kiểu: Số. Không bắt buộc, để trống tự tính theo quy cách mã hàng. Ví dụ: 25',
+  kg: 'Kiểu: Số (kg). Không bắt buộc, để trống tự tính theo quy cách mã hàng. Ví dụ: 25,000',
+  inDate: 'Kiểu: Ngày (dd/mm/yyyy). Không bắt buộc. Ngày nhập kho để tính FIFO. Ví dụ: 01/11/2026',
+  note: 'Kiểu: Chữ. Không bắt buộc.',
+};
 const CHUNK = 150;
 const n = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? 0 : Number(v));
 
@@ -144,7 +158,7 @@ export default function AdjustImport() {
         <h1>⚖️ Điều chỉnh tồn từ Excel</h1>
         <div className="actions">
           <Link className="btn" to="/kho/adjust">Điều chỉnh từng dòng</Link>
-          <button className="btn ghost" onClick={() => exportTemplate('Mau_dieu_chinh_ton', COLS.map((c) => c[1]))}>File mẫu</button>
+          <button className="btn ghost" onClick={() => exportTemplate('Mau_dieu_chinh_ton', COLS.map((c) => c[1]), COLS.map((c) => COL_NOTES[c[0]]))}>File mẫu</button>
         </div>
       </div>
       <p className="hint">

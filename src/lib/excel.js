@@ -14,13 +14,62 @@ export function exportSheets(fileName, sheets) {
   XLSX.writeFile(wb, `${fileName}.xlsx`);
 }
 
-// File mẫu chỉ có dòng tiêu đề
-export function exportTemplate(fileName, headers) {
+// File mẫu: dòng tiêu đề + ghi chú (comment) hướng dẫn trên từng ô tiêu đề
+// notes: mảng song song với headers (kiểu dữ liệu, bắt buộc hay không, giá trị hợp lệ, ví dụ).
+// Thêm sheet "Huong dan" liệt kê lại toàn bộ ghi chú (sheet nhập vẫn là sheet đầu tiên).
+export function exportTemplate(fileName, headers, notes = []) {
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet([headers]);
-  ws['!cols'] = headers.map((h) => ({ wch: Math.max(12, h.length + 2) }));
+  ws['!cols'] = headers.map((h) => ({ wch: Math.max(14, String(h).length + 4) }));
+  headers.forEach((h, i) => {
+    if (!notes[i]) return;
+    const cell = ws[XLSX.utils.encode_cell({ r: 0, c: i })];
+    cell.c = [{ a: 'Hướng dẫn', t: `${h}:\n${notes[i]}` }];
+    cell.c.hidden = true;
+  });
   XLSX.utils.book_append_sheet(wb, ws, 'Mau');
-  XLSX.writeFile(wb, `${fileName}.xlsx`);
+  if (notes.some(Boolean)) {
+    const guide = XLSX.utils.aoa_to_sheet([
+      ['Cột', 'Hướng dẫn nhập'],
+      ...headers.map((h, i) => [h, notes[i] || '']),
+      [],
+      ['', 'Nhập dữ liệu ở sheet "Mau" (sheet đầu tiên), dòng 1 giữ nguyên tiêu đề, dữ liệu từ dòng 2. Rê chuột vào ô tiêu đề (góc có dấu đỏ) để xem ghi chú.'],
+    ]);
+    guide['!cols'] = [{ wch: Math.max(16, ...headers.map((h) => String(h).length + 2)) }, { wch: 110 }];
+    XLSX.utils.book_append_sheet(wb, guide, 'Huong dan');
+  }
+  const data = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+  download(`${fileName}.xlsx`, notes.some(Boolean) ? widenNotes(data) : data);
+}
+
+// Khung ghi chú mặc định của thư viện chỉ 2 cột × 4 dòng (cắt chữ): nới rộng khung để đọc hết
+function widenNotes(data) {
+  try {
+    const zip = XLSX.CFB.read(new Uint8Array(data), { type: 'array' });
+    let changed = false;
+    zip.FullPaths.forEach((path, i) => {
+      if (!/vmlDrawing\d*\.vml$/i.test(path)) return;
+      const entry = zip.FileIndex[i];
+      const xml = new TextDecoder().decode(entry.content);
+      const out = xml
+        .replace(/width:104pt;height:64pt/g, 'width:300pt;height:150pt')
+        .replace(/<x:Anchor>(\d+),0,(\d+),0,\d+,20,\d+,20<\/x:Anchor>/g,
+          (m, c, r) => `<x:Anchor>${c},0,${r},0,${+c + 4},20,${+r + 10},20</x:Anchor>`);
+      if (out !== xml) { entry.content = new TextEncoder().encode(out); entry.size = entry.content.length; changed = true; }
+    });
+    return changed ? XLSX.CFB.write(zip, { type: 'array', fileType: 'zip' }) : data;
+  } catch {
+    return data;
+  }
+}
+
+function download(name, data) {
+  const blob = new Blob([data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
 // Đọc sheet đầu tiên: dòng 1 là tiêu đề → mảng object theo tiêu đề

@@ -24,6 +24,20 @@ const COLS = [
   ['kg', 'Kg', ['kg', 'so luong (kg)', 'trong luong']],
   ['inDate', 'Ngày nhập', ['ngay nhap', 'ngay nhap kho']],
 ];
+const COL_NOTES = {
+  company: 'Kiểu: Chữ (mã công ty chủ hàng). BẮT BUỘC, mã có trong danh mục Công ty. VD: VAP, PLA, DAM.',
+  location: 'Kiểu: Chữ. BẮT BUỘC. Mã vị trí trong kho đang chọn. Ví dụ: A-01-01',
+  item: 'Kiểu: Chữ. BẮT BUỘC. Mã hàng có trong danh mục Mã hàng. Ví dụ: PP-1102K',
+  lot: 'Kiểu: Chữ. Không bắt buộc. Số lô / batch. Ví dụ: L2611A',
+  mfgDate: 'Kiểu: Ngày (dd/mm/yyyy). Ngày sản xuất. Không bắt buộc. Ví dụ: 01/10/2026',
+  expDate: 'Kiểu: Ngày (dd/mm/yyyy). Hạn sử dụng. Không bắt buộc. Ví dụ: 01/10/2028',
+  goodsStatus: 'Kiểu: Chữ. Tình trạng hàng hóa: KTC | HTC | DGC. Để trống = KTC.',
+  pledgee: 'Kiểu: Chữ. Không bắt buộc. Ngân hàng nhận thế chấp (khi hàng HTC). Ví dụ: VCB',
+  bags: 'Kiểu: Số. Số bao. Ví dụ: 1,000',
+  pallets: 'Kiểu: Số. Không bắt buộc, để trống tự tính theo quy cách mã hàng. Ví dụ: 25',
+  kg: 'Kiểu: Số (kg). Không bắt buộc, để trống tự tính theo quy cách mã hàng. Ví dụ: 25,000',
+  inDate: 'Kiểu: Ngày (dd/mm/yyyy). Không bắt buộc. Ngày nhập kho để tính FIFO. Ví dụ: 01/11/2026',
+};
 const CHUNK = 150; // số dòng mỗi phiếu (giới hạn 1 giao dịch Firestore)
 
 export default function OpeningImport() {
@@ -124,7 +138,7 @@ export default function OpeningImport() {
       <div className="page-head">
         <h1>📋 Nhập tồn đầu kỳ</h1>
         <div className="actions">
-          <button className="btn ghost" onClick={() => exportTemplate('Mau_ton_dau_ky', COLS.map((c) => c[1]))}>File mẫu</button>
+          <button className="btn ghost" onClick={() => exportTemplate('Mau_ton_dau_ky', COLS.map((c) => c[1]), COLS.map((c) => COL_NOTES[c[0]]))}>File mẫu</button>
         </div>
       </div>
       <p className="hint">

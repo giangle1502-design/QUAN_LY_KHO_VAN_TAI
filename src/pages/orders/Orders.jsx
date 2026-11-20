@@ -555,6 +555,21 @@ const HEAD = {
   note: ['ghi chu'],
 };
 const TEMPLATE = ['Công ty', 'Số đơn Ecount', 'Ngày đơn', 'Mã KH/NCC', 'Tên KH/NCC', 'Mã giao hàng', 'Kho', 'Hạn giao/ETA', 'Mã hàng', 'Số lượng (kg)', 'Dung sai (%)', 'Ghi chú'];
+// Ghi chú hướng dẫn trên từng cột của file mẫu (song song với TEMPLATE)
+const TEMPLATE_NOTES = [
+  'Kiểu: Chữ (mã công ty). BẮT BUỘC. Mã trong danh mục Công ty, VD: VAP, PLA, DAM.',
+  'Kiểu: Chữ. BẮT BUỘC. Số đơn trên Ecount; các dòng cùng số đơn gộp thành 1 đơn (mỗi dòng 1 mặt hàng). Số đơn đã có trong hệ thống thì bỏ qua. Ví dụ: SO-2611-001',
+  'Kiểu: Ngày (dd/mm/yyyy hoặc ô Ngày của Excel). Không bắt buộc, để trống = hôm nay. Ví dụ: 15/11/2026',
+  'Kiểu: Chữ. Mã khách hàng (SO) / nhà cung cấp (PO) trong danh mục Khách hàng / NCC. Cần Mã hoặc Tên. Ví dụ: KH000123',
+  'Kiểu: Chữ. Không bắt buộc nếu đã có Mã (tự lấy tên theo mã). Ví dụ: Công ty TNHH Nhựa ABC',
+  'Kiểu: Chữ. Chỉ dùng cho SO: mã Điểm giao hàng của khách. Không bắt buộc. Ví dụ: KH000123-01',
+  'Kiểu: Chữ. Mã kho trong danh mục Kho. Không bắt buộc (chọn sau trên đơn). Ví dụ: KHO-HCM',
+  'Kiểu: Ngày (dd/mm/yyyy). SO: hạn giao; PO: ngày hàng về (ETA). Không bắt buộc. Ví dụ: 30/11/2026',
+  'Kiểu: Chữ. BẮT BUỘC. Mã hàng phải có trong danh mục Mã hàng (dòng mã chưa có bị bỏ qua). Ví dụ: PP-1102K',
+  'Kiểu: Số (kg). BẮT BUỘC, lớn hơn 0. Có thể thay cột này bằng cột "Số lượng (tấn)". Ví dụ: 25,000',
+  'Kiểu: Số, phần trăm (5 = 5%). Không bắt buộc, để trống = 0. Ví dụ: 5',
+  'Kiểu: Chữ. Không bắt buộc. Ghi chú của đơn.',
+];
 
 function ImportOrders({ type, existing, onDone }) {
   const { email, name, salesOnly } = useApp();
@@ -621,7 +636,7 @@ function ImportOrders({ type, existing, onDone }) {
   };
   return (
     <>
-      <button className="btn" onClick={() => exportTemplate(`Mau_${type}`, TEMPLATE)}>Tải file mẫu</button>
+      <button className="btn" onClick={() => exportTemplate(`Mau_${type}`, TEMPLATE, TEMPLATE_NOTES)}>Tải file mẫu</button>
       <button className="btn" disabled={busy} onClick={() => ref.current.click()}>{busy ? 'Đang nhập…' : '⬆ Nhập Excel'}</button>
       <input ref={ref} type="file" accept=".xlsx,.xls,.csv" hidden onChange={(e) => e.target.files[0] && run(e.target.files[0])} />
     </>
