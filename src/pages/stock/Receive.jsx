@@ -13,6 +13,8 @@ import { InLine, OverCapConfirm, newLine, splitLineAt } from './MovementForm';
 import { OVER_CAP_CONFIRM, OVER_CAP_MSG, capacityCheck } from '../../lib/capacity';
 import PalletChoice from '../../components/PalletChoice';
 import { ExtraView } from '../../components/ExtraFields';
+import { PRINTED_KEY, clearLabelState, labelSig, readLabelsPrinted, saveLabelDraft } from '../../lib/labelDraft';
+import { fmtTime } from '../../lib/trips';
 import { cleanPallets, packingMode, palletError, palletManaged } from '../../lib/pallets';
 
 // Nhận hàng: quản trị lập và in phiếu nhập trước; thủ kho nhận hàng ngoài hiện trường,
@@ -56,7 +58,7 @@ function ReceiveList() {
   return (
     <div>
       <div className="page-head"><h1>📥 Nhận hàng (phiếu nhập chờ nhận)</h1><Link className="btn" to="/kho/phieu">Danh sách phiếu</Link></div>
-      <p className="hint">Phiếu nhập do quản trị lập và in. Khi hàng về, bấm <b>Nhận hàng</b> để nhập số thực nhận, lot, vị trí rồi xác nhận: tồn kho cập nhật và in được nhãn pallet.</p>
+      <p className="hint">Phiếu nhập do quản trị lập và in. Khi hàng về, bấm <b>Nhận hàng</b> để nhập số thực nhận, lot, vị trí rồi xác nhận: bấm <b>🏷️ In nhãn pallet</b> (bắt buộc, in theo đúng số liệu vừa nhập) và dán lên pallet, sau đó mới <b>Xác nhận đã nhận hàng</b> để cập nhật tồn kho.</p>
       <ErrorBox error={error} />
       <div className="table-wrap">
         {!list.length ? <Empty text="Không có phiếu nhập nào đang chờ nhận hàng." /> : (
@@ -130,6 +132,16 @@ function ReceiveForm({ id }) {
       }).catch(() => {});
     }).catch((e) => { setErr(e.message); setMv(null); });
   }, [id]);
+  // Nhãn pallet in trước khi xác nhận: đọc trạng thái "đã in" do tab in nhãn ghi lại
+  const [printed, setPrinted] = useState(() => readLabelsPrinted(id));
+  useEffect(() => {
+    const refresh = () => setPrinted(readLabelsPrinted(id));
+    const onStorage = (e) => { if (!e.key || e.key === PRINTED_KEY(id)) refresh(); };
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { window.removeEventListener('storage', onStorage); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
+  }, [id]);
   if (mv === undefined) return <p>Đang tải…</p>;
   if (!mv) return <Empty text={`Không tìm thấy phiếu ${id}.`} />;
   const locations = allLocations.filter((l) => l.warehouse === mv.warehouse);
@@ -137,10 +149,11 @@ function ReceiveForm({ id }) {
   // Sức chứa vị trí: dòng vượt chỗ trống phải chia dòng hoặc tích xác nhận nhập vượt
   const caps = capacityCheck(lines, locations);
 
-  const submit = async (e) => {
-    e.preventDefault(); setErr('');
-    if (!inMyWarehouses(mv.warehouse)) return setErr(`Bạn không phụ trách kho ${mv.warehouse}.`);
+  // Kiểm tra dòng thực nhận; trả về { out } hoặc { error }
+  const collect = () => {
+    if (!inMyWarehouses(mv.warehouse)) return { error: `Bạn không phụ trách kho ${mv.warehouse}.` };
     const out = [];
+    const setErr = (error) => ({ error }); // eslint-disable-line no-shadow
     for (const [i, l] of lines.entries()) {
       const no = `Dòng ${i + 1}: `;
       if (!num(l.kg) && !num(l.bags) && !num(l.pallets)) continue; // không nhận dòng này
@@ -157,6 +170,27 @@ function ReceiveForm({ id }) {
     }
     if (caps.some((c) => c?.over) && !overOk) return setErr(`${OVER_CAP_MSG}. Chia thành nhiều dòng hoặc tích "${OVER_CAP_CONFIRM}".`);
     if (!out.length) return setErr('Nhập số thực nhận cho ít nhất 1 dòng (hàng không về thì báo quản trị hủy phiếu).');
+    return { out };
+  };
+  const cur = collect();
+  const curSig = cur.out ? labelSig(cur.out) : null;
+  const labelsOk = !!printed && !!curSig && printed.sig === curSig;
+
+  const openLabels = () => {
+    setErr('');
+    const r = collect();
+    if (r.error) return setErr(r.error);
+    if (!saveLabelDraft(id, { ...mv, orderId: pieces[0]?.orderId || mv.orderId, lines: r.out }))
+      return setErr('Trình duyệt không cho lưu tạm số liệu để in nhãn (chế độ ẩn danh?). Mở trình duyệt thường rồi thử lại.');
+    window.open(`/kho/phieu/${id}/nhan?nhap=1`, '_blank');
+  };
+
+  const submit = async (e) => {
+    e.preventDefault(); setErr('');
+    const r = collect();
+    if (r.error) return setErr(r.error);
+    const { out } = r;
+    if (!labelsOk) return setErr(printed ? 'Số liệu hàng thực nhận đã thay đổi sau khi in nhãn. Bấm "🏷️ In lại nhãn pallet" trước khi xác nhận.' : 'Chưa in nhãn pallet. Bấm "🏷️ In nhãn pallet", dán nhãn lên pallet rồi mới xác nhận nhận hàng.');
     const managed = palletManaged(warehouses.find((w) => w.code === mv.warehouse));
     const pe = palletError(pal, mv, 'in', { managed });
     if (pe) return setErr(pe);
@@ -171,10 +205,12 @@ function ReceiveForm({ id }) {
       for (const [k, p] of list.entries()) {
         const mine = out.filter((l) => l._mv === p.id).map(({ _mv, ...l }) => l); // eslint-disable-line no-unused-vars
         // Pallet nhập kèm ghi ở phiếu đầu của xe
-        const res = await confirmIn(p.id, mine, { email, name }, k === 0 ? pals : { palletMode: pals.palletMode, pallets: [] });
+        const lab = { labelsPrintedAt: printed.at, labelsPrintedBy: printed.by || email };
+        const res = await confirmIn(p.id, mine, { email, name }, { ...(k === 0 ? pals : { palletMode: pals.palletMode, pallets: [] }), ...lab });
         ok.push(typeof res === 'string' ? { id: res } : res);
       }
       setDone({ ...ok[0], ids: ok.map((x) => x.id), group: list.length > 1 });
+      clearLabelState([id]);
     } catch (e2) {
       const msg = e2.code === 'permission-denied' ? 'Bạn không có quyền nhận hàng cho kho này.' : e2.message;
       setErr(ok.length ? `Đã xác nhận phiếu ${ok.map((x) => x.id).join(', ')}; phiếu tiếp theo bị lỗi: ${msg}. Mở lại phiếu còn lại ở danh sách chờ nhận.` : msg);
@@ -186,7 +222,7 @@ function ReceiveForm({ id }) {
     <div>
       <div className="page-head"><h1>📥 Nhận hàng {id}</h1></div>
       <div className="ok-box">Đã xác nhận nhận hàng phiếu <b className="mono">{done.group ? done.ids.join(', ') : done.id}</b>{done.group ? ` (phiếu nhập gộp ${mv.groupId}, ${done.ids.length} đơn)` : ''}{done.orderId ? <> và lập đơn mua <b className="mono">{done.orderId}</b> theo số thực nhận</> : null}. Tồn kho đã cập nhật.{' '}
-        <Link to={`/kho/phieu/${done.id}/in`} target="_blank">🖨 In phiếu</Link> · {(done.ids || [done.id]).map((x) => <Link key={x} className="btn primary" to={`/kho/phieu/${x}/nhan`} target="_blank" style={{ marginRight: 4 }}>🏷️ In nhãn pallet{done.group ? ` ${x}` : ''}</Link>)} · <Link to="/kho/nhan-hang">← Phiếu chờ nhận khác</Link></div>
+        <Link to={`/kho/phieu/${done.id}/in`} target="_blank">🖨 In phiếu</Link> · {(done.ids || [done.id]).map((x) => <Link key={x} className="btn primary" to={`/kho/phieu/${x}/nhan`} target="_blank" style={{ marginRight: 4 }}>🏷️ In lại nhãn{done.group ? ` ${x}` : ''}</Link>)} · <Link to="/kho/nhan-hang">← Phiếu chờ nhận khác</Link></div>
     </div>
   );
   const pending = mv.status === 'pending';
@@ -228,8 +264,22 @@ function ReceiveForm({ id }) {
           suggestQty={Math.ceil(lines.reduce((a, l) => a + (num(l.pallets) || 0), 0)) || ''} />
       </div>
       <OverCapConfirm caps={caps} checked={overOk} onChange={setOverOk} />
+      {pending && (
+        <div className={'card label-step ' + (labelsOk ? 'ok' : printed ? 'warn' : '')} style={{ marginBottom: 12 }}>
+          <div className="section-head">🏷️ Bước 1: In nhãn pallet <span className="req">*</span></div>
+          <p className="small" style={{ margin: '0 0 8px' }}>
+            {labelsOk ? <>✅ Đã in nhãn lúc <b>{fmtTime(printed.at)}</b> theo đúng số liệu trên. Dán nhãn lên pallet rồi bấm <b>Xác nhận đã nhận hàng</b>.</>
+              : printed ? <>⚠ Số liệu (mã, lot, vị trí, số lượng…) đã thay đổi sau lần in lúc {fmtTime(printed.at)}. <b>In lại nhãn</b> để nhãn khớp với hàng thực nhận.</>
+              : <>Nhập xong số thực nhận, lot, vị trí ở trên thì in nhãn (mở tab in nhãn 10,2 × 15 cm). Chưa in nhãn thì chưa xác nhận nhận hàng được.</>}
+          </p>
+          <button type="button" className={'btn ' + (labelsOk ? '' : 'primary')} onClick={openLabels}>🏷️ {printed ? 'In lại nhãn pallet' : 'In nhãn pallet'}</button>
+        </div>
+      )}
       <ErrorBox error={err} />
-      {pending && <div className="form-actions"><button className="btn primary" disabled={busy}>{busy ? 'Đang ghi…' : '✅ Xác nhận đã nhận hàng'}</button></div>}
+      {pending && <div className="form-actions">
+        <button className="btn primary" disabled={busy || !labelsOk} title={labelsOk ? '' : 'In nhãn pallet trước (Bước 1)'}>{busy ? 'Đang ghi…' : '✅ Bước 2: Xác nhận đã nhận hàng'}</button>
+        {!labelsOk && <span className="small" style={{ marginLeft: 8 }}>In nhãn pallet trước rồi mới xác nhận.</span>}
+      </div>}
       <datalist id="dl-mv-item">{items.filter((x) => x.active !== false).map((x) => <option key={x.code} value={x.code}>{x.name}</option>)}</datalist>
     </form>
   );

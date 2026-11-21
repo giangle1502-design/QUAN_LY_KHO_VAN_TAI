@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
@@ -7,6 +7,7 @@ import { fmtDate, fmtNum } from '../../lib/utils';
 import { fmtTime } from '../../lib/trips';
 import { fullPalletKg, labelLines, loadMovementData, splitPallets } from '../../lib/printData';
 import { TemplatePage, useTemplateChoice } from '../../components/PrintTemplate';
+import { markLabelsPrinted, readLabelDraft } from '../../lib/labelDraft';
 
 const num = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? 0 : Number(v));
 export { fullPalletKg, splitPallets };
@@ -14,15 +15,24 @@ export { fullPalletKg, splitPallets };
 // In nhãn nhập kho theo mẫu "In nhãn pallet": nhãn nhiệt 10,2 × 15 cm, mỗi pallet 1 nhãn
 export default function PrintLabels() {
   const { id } = useParams();
-  const { settings } = useApp();
+  const { settings, email } = useApp();
+  const [sp] = useSearchParams();
   const [m, setM] = useState(undefined);
+  // ?nhap=1: in từ số liệu thủ kho đang nhập ở màn Nhận hàng (phiếu còn chờ nhận, chưa ghi tồn)
+  const [draft, setDraft] = useState(null);
+  const [printed, setPrinted] = useState('');
   const [items, setItems] = useState(null);
   const [company, setCompany] = useState(''); // sửa tay tên công ty trên nhãn (nếu cần)
   const [pick, setPick] = useState(null); // dòng phiếu được chọn in
   const [owner, setOwner] = useState(''); // tên công ty chủ hàng của phiếu
 
   useEffect(() => {
-    getDoc(doc(db, 'movements', id)).then((s) => setM(s.exists() ? s.data() : null)).catch(() => setM(null));
+    getDoc(doc(db, 'movements', id)).then((s) => {
+      const saved = s.exists() ? s.data() : null;
+      const d = sp.get('nhap') ? readLabelDraft(id) : null;
+      if (saved && saved.status === 'pending' && d?.movement) { setDraft(d); setM({ ...saved, ...d.movement }); }
+      else setM(saved);
+    }).catch(() => setM(null));
     getDoc(doc(db, 'movements', id)).then(async (s) => {
       const c = s.exists() && (s.data().company || s.data().lines?.find((l) => l.company)?.company);
       if (!c) return;
@@ -30,7 +40,7 @@ export default function PrintLabels() {
       setOwner(x.exists() ? x.data().name || c : c);
     }).catch(() => {});
     getDocs(collection(db, 'items')).then((s) => setItems(new Map(s.docs.map((d) => [d.data().code, d.data()])))).catch(() => setItems(new Map()));
-  }, [id]);
+  }, [id, sp]);
 
   const labels = useMemo(() => {
     if (!m || !items) return [];
@@ -40,7 +50,7 @@ export default function PrintLabels() {
       const parts = splitPallets(l, it);
       parts.forEach((p, pi) => out.push({
         ...p, line: li, no: pi + 1, of: parts.length, key: `${li}-${pi}`,
-        item: l.item, itemName: l.itemName || it?.name || '', lot: l.lot, location: l.location,
+        mv: l._mv || m.id, item: l.item, itemName: l.itemName || it?.name || '', lot: l.lot, location: l.location,
         goodsStatus: l.goodsStatus, pledgee: l.pledgee, layers: num(it?.layersPerPallet) || '',
       }));
     });
@@ -54,6 +64,12 @@ export default function PrintLabels() {
   if (!m) return <div className="center">Không tìm thấy phiếu {id}.</div>;
   if (m.type !== 'in') return <div className="center">Chỉ in nhãn pallet cho phiếu nhập kho.</div>;
   const printedAt = fmtTime(new Date().toISOString());
+  const doPrint = () => {
+    window.print();
+    // Ghi "đã in" cho màn Nhận hàng (chỉ khi in đủ mọi dòng của số liệu đang nhập)
+    const all = !pick || m.lines.every((_, i) => pick.includes(i));
+    if (draft && all) { markLabelsPrinted(id, draft.sig, email); setPrinted(new Date().toISOString()); }
+  };
   // Ưu tiên: tên gõ tay > công ty chủ hàng của phiếu > tên công ty trong Cài đặt
   const co = company || owner || settings.companyName;
 
@@ -62,7 +78,12 @@ export default function PrintLabels() {
         <Link className="btn" to="/kho/phieu">← Phiếu kho</Link>
         <b>Nhãn nhập kho phiếu {m.id}: {chosen.length} nhãn (10,2 × 15 cm)</b>
         <label className="small">Công ty trên nhãn <input value={company} placeholder={owner || settings.companyName} onChange={(e) => setCompany(e.target.value)} /></label>
-        <button className="btn primary" disabled={!chosen.length} onClick={() => window.print()}>🖨️ In nhãn</button>
+        <button className="btn primary" disabled={!chosen.length} onClick={doPrint}>🖨️ In nhãn</button>
+        {draft && <div className={printed ? 'ok-box' : 'hint'} style={{ width: '100%', margin: 0 }}>
+          {printed ? <>✅ Đã in nhãn lúc {fmtTime(printed)}. Quay lại tab <b>Nhận hàng</b> để thủ kho bấm <b>Xác nhận đã nhận hàng</b>.</>
+            : pick && !m.lines.every((_, i) => pick.includes(i)) ? <>⚠ Đang bỏ chọn một số dòng: in đủ nhãn cho <b>mọi dòng</b> thì mới xác nhận nhận hàng được.</>
+            : <>🏷️ Nhãn in theo số liệu thủ kho đang nhập (phiếu <b>chưa xác nhận</b>, tồn kho chưa cập nhật). In và dán nhãn lên pallet trước, sau đó mới xác nhận nhận hàng.</>}
+        </div>}
         <div className="small" style={{ width: '100%' }}>
           Số nhãn = Số lượng nhập ÷ SL 1 pallet chẵn (làm tròn lên). Chọn dòng cần in:{' '}
           {m.lines.map((l, i) => {
@@ -116,7 +137,7 @@ export default function PrintLabels() {
               <div className="tag-loc-label">Vị trí nhập</div>
               <div className="tag-loc-value">{String(x.location || '—').toUpperCase()}</div>
             </div>
-            <div className="tag-foot">{m.id} · Pallet {x.no}/{x.of}{!x.full ? ' (lẻ)' : ''} · In lúc {printedAt}</div>
+            <div className="tag-foot">{x.mv} · Pallet {x.no}/{x.of}{!x.full ? ' (lẻ)' : ''} · In lúc {printedAt}</div>
           </div>
         ))}
       </div>
