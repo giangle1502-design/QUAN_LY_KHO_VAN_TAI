@@ -33,6 +33,7 @@ export default function FieldInput({ field: f, value, onChange, disabled, onPick
         </Select>
       </ChoiceAdd>
     );
+  if (f.type === 'image') return <ImageInput value={value} onChange={onChange} disabled={disabled} />;
   if (f.type === 'checkbox') return <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} disabled={disabled} />;
   if (f.type === 'textarea' || (f.type === 'text' && Number(f.height) > 40 && !f.options?.length)) return <textarea rows={2} value={value ?? ''} onChange={(e) => onChange(e.target.value)} disabled={disabled} />;
   if (f.type === 'currency') return <MoneyInput value={value} onChange={onChange} disabled={disabled} unit={unit} />;
@@ -195,9 +196,56 @@ export function displayValue(f, v, forExcel, unit = 'đ') {
   if (f.type === 'percent') return forExcel ? Number(v) : `${fmtNum(v, 2)}%`;
   if (f.type === 'datetime') return forExcel ? String(v).replace('T', ' ') : `${fmtDate(String(v).slice(0, 10))} ${String(v).length > 11 ? fmtClock(String(v).slice(11, 13), String(v).slice(14, 16)) : ''}`;
   if (f.type === 'checkbox') return v ? (forExcel ? 'x' : '✓') : '';
+  if (f.type === 'image') return forExcel ? '' : '🖼 Có';
   if (f.type === 'multiref') return (v || []).join(', ');
   if (f.type === 'select') return f.labels?.[v] || v;
   if (f.type === 'number') return forExcel ? v : fmtNum(v, 2);
   if (f.type === 'date') return forExcel ? v : fmtDate(v);
   return v;
+}
+
+// Ô tải hình (VD logo công ty): thu nhỏ còn tối đa 600×240 px, lưu thẳng vào bản ghi (data URL, khoảng vài chục KB)
+function ImageInput({ value, onChange, disabled }) {
+  const ref = useRef();
+  const [err, setErr] = useState('');
+  const pick = (file) => {
+    setErr('');
+    if (!file) return;
+    if (!/^image\//.test(file.type)) return setErr('Chỉ nhận file hình (PNG, JPG).');
+    const r = new FileReader();
+    r.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const k = Math.min(1, 600 / img.width, 240 / img.height);
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        // PNG giữ nền trong suốt; quá nặng thì đổi sang JPG nền trắng
+        let url = c.toDataURL('image/png');
+        if (url.length > 150000) {
+          const ctx = c.getContext('2d');
+          ctx.globalCompositeOperation = 'destination-over'; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+          url = c.toDataURL('image/jpeg', 0.85);
+        }
+        onChange(url);
+      };
+      img.onerror = () => setErr('Không đọc được hình này.');
+      img.src = r.result;
+    };
+    r.readAsDataURL(file);
+    if (ref.current) ref.current.value = '';
+  };
+  return (
+    <div className="image-input">
+      {value ? <img src={value} alt="" style={{ maxHeight: 70, maxWidth: 220, display: 'block', border: '1px solid #ddd', background: '#fff', padding: 2 }} /> : <span className="small">Chưa có hình</span>}
+      {!disabled && (
+        <span style={{ display: 'inline-flex', gap: 6, marginTop: 4 }}>
+          <button type="button" className="btn sm" onClick={() => ref.current?.click()}>{value ? 'Đổi hình' : '⬆ Tải hình'}</button>
+          {value && <button type="button" className="btn sm ghost" onClick={() => onChange('')}>Xóa</button>}
+        </span>
+      )}
+      <input ref={ref} type="file" accept="image/*" hidden onChange={(e) => pick(e.target.files[0])} />
+      {err && <div className="small" style={{ color: '#c00' }}>{err}</div>}
+    </div>
+  );
 }

@@ -6,7 +6,7 @@ import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
 import { useCollection } from '../lib/hooks';
 import { deleteOrRequest } from '../lib/deletes';
-import { DOC_TYPES, FONTS, MOVE_TYPES_OF, PAPERS, fieldDefs, marginOf, paperSize, starterTemplate } from '../lib/printTemplates';
+import { DOC_TYPES, FONTS, LAYOUTS, MOVE_TYPES_OF, PAPERS, fieldDefs, marginOf, paperSize, starterTemplate } from '../lib/printTemplates';
 import { labelLines, loadMovementData, loadReleaseData } from '../lib/printData';
 import { TemplateSheets } from '../components/PrintTemplate';
 import RichEditor from '../components/RichEditor';
@@ -195,7 +195,7 @@ function TemplateEditor({ id }) {
   useEffect(() => {
     if (isNew) {
       const k = DOC_TYPES[sp.get('loai')] ? sp.get('loai') : 'px';
-      setT(starterTemplate(k));
+      setT(starterTemplate(k, LAYOUTS[k]?.[sp.get('bocuc')] ? sp.get('bocuc') : ''));
       return;
     }
     getDoc(doc(db, 'printTemplates', id)).then((s) => (s.exists() ? setT({ ...starterTemplate(s.data().docType), ...s.data() }) : setErr('Không tìm thấy mẫu.'))).catch((e) => setErr(e.message));
@@ -297,6 +297,14 @@ function TemplateEditor({ id }) {
                 </Select>
                 {isNew && <small className="small">Đổi loại phiếu sẽ nạp lại nội dung mẫu ban đầu của loại đó.</small>}
               </label>
+              {LAYOUTS[t.docType] && (
+                <label className="field"><span>Bố cục ban đầu</span>
+                  <Select value={t.layout || ''} onChange={(e) => { if (isNew || window.confirm('Đổi bố cục sẽ nạp lại nội dung, bảng hàng, chữ ký, CSS theo bố cục mới (giữ tên và phạm vi áp dụng). Tiếp tục?')) { const st = starterTemplate(t.docType, e.target.value); set({ layout: e.target.value, body: st.body, table: st.table, signs: st.signs, signSpace: st.signSpace, css: st.css, fontSize: st.fontSize, lineHeight: st.lineHeight }); } }}>
+                    <option value="">Giống bản in gốc của hệ thống</option>
+                    {Object.entries(LAYOUTS[t.docType]).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                  </Select>
+                </label>
+              )}
             </div>
             <div className="field"><span>Áp dụng tự động cho công ty chủ hàng</span>
               <CodePicker options={companies.map((c) => ({ code: c.code, name: c.name }))} value={t.companies || []} onChange={(v) => set({ companies: v })} placeholder="Gõ mã / tên công ty… (để trống = mọi công ty)" />
@@ -379,6 +387,7 @@ function TemplateEditor({ id }) {
                   <small className="small">Cộng các cột có tích "Cộng tổng".</small></label>
                 <label className="field"><span>Số dòng tối thiểu (thêm dòng trống)</span><input type="number" min="0" value={t.table?.minRows || ''} onChange={(e) => setTable({ minRows: Number(e.target.value) || 0 })} /></label>
                 <label className="field"><span>Màu nền dòng tiêu đề</span><input type="color" value={t.table?.headBg || '#f2f2f2'} onChange={(e) => setTable({ headBg: e.target.value })} /></label>
+                <label className="field"><span>Màu chữ dòng tiêu đề</span><input type="color" value={t.table?.headColor || '#000000'} onChange={(e) => setTable({ headColor: e.target.value })} /></label>
                 <label className="field"><span>Cỡ chữ trong bảng (px)</span><input type="number" min="7" max="30" value={t.table?.fontSize || ''} placeholder="theo cỡ chữ chung" onChange={(e) => setTable({ fontSize: Number(e.target.value) || '' })} /></label>
                 <label><input type="checkbox" checked={!!t.table?.noBorder} onChange={(e) => setTable({ noBorder: e.target.checked })} /> Không kẻ ô dọc (chỉ gạch dưới mỗi dòng)</label>
               </div>
@@ -434,7 +443,7 @@ function TemplateEditor({ id }) {
               <label className="field"><span>CSS tùy chỉnh (cho người rành web)</span>
                 <textarea className="rte-src" style={{ height: 200 }} value={t.css || ''} onChange={(e) => set({ css: e.target.value })} spellCheck={false} placeholder=".tpl-sheet h2 { letter-spacing: 1px; }" /></label>
               <p className="small">Kích thước mẫu: {(size / 1024).toFixed(0)} KB / tối đa ~900 KB (hình ảnh chiếm nhiều nhất).</p>
-              <button className="btn sm" onClick={() => { if (window.confirm('Nạp lại nội dung, bảng hàng, chữ ký theo mẫu gốc của hệ thống? (giữ tên và phạm vi áp dụng)')) { const s = starterTemplate(t.docType); set({ body: s.body, table: s.table, signs: s.signs, signSpace: s.signSpace }); } }}>↺ Nạp lại nội dung mẫu gốc</button>
+              <button className="btn sm" onClick={() => { if (window.confirm('Nạp lại nội dung, bảng hàng, chữ ký, CSS theo bố cục ban đầu? (giữ tên và phạm vi áp dụng)')) { const s = starterTemplate(t.docType, t.layout || ''); set({ body: s.body, table: s.table, signs: s.signs, signSpace: s.signSpace, css: s.css }); } }}>↺ Nạp lại nội dung mẫu gốc</button>
             </div>
           )}
         </div>

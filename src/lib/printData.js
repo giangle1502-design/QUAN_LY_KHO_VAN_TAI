@@ -90,8 +90,11 @@ export async function loadMovementData(m) {
       : null,
   ]);
   // Phiếu gộp nhiều SO: dòng hàng tra đúng dòng của đơn mình
+  // Lệnh chuyển kho: kho nhận (bên nhận hàng trên phiếu giao hàng)
+  const toCode = m.type === 'out' && (m.orderType === 'STO' || String(m.orderId || '').startsWith('STO')) ? order?.toWarehouse || order?.lines?.find((l) => l.toWarehouse)?.toWarehouse || '' : '';
+  const toWh = toCode ? (await one('warehouses', toCode)) || { code: toCode, name: toCode } : null;
   const orders = m.orderIds?.length > 1 ? new Map((await Promise.all(m.orderIds.map((id) => one('orders', id)))).map((o, i) => [m.orderIds[i], o]).filter(([, o]) => o)) : null;
-  return { m, co: co || (company ? { code: company, name: company } : null), wh, trip, party, supplier, order, orders, items, shipto, lines: m.lines || [],
+  return { m, toWh, co: co || (company ? { code: company, name: company } : null), wh, trip, party, supplier, order, orders, items, shipto, lines: m.lines || [],
     palletRows: m.palletMode === 'pallet' && ['in', 'out'].includes(m.type) && palletManaged(wh) && m.palletTracked !== false ? m.pallets || [] : [] };
 }
 

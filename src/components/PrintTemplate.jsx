@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { DOC_TYPES, pageCss, pickTemplate, renderBody } from '../lib/printTemplates';
+import { BUILTIN_TEMPLATES, DOC_TYPES, builtinTemplate, pageCss, pickTemplate, renderBody } from '../lib/printTemplates';
 import { usePrintTemplates } from '../lib/printData';
 import Select from './Select';
 
@@ -35,17 +35,22 @@ export function useTemplateChoice(docType, { company = '', party = '' } = {}) {
   const [sel, setSel] = useState(() => new URLSearchParams(window.location.search).get('mau') ?? undefined);
   const mine = (list || []).filter((t) => t.docType === docType && t.active !== false);
   const auto = docType && list ? pickTemplate(list, docType, { company, party }) : null;
-  const tpl = sel === undefined ? auto : sel ? (list || []).find((t) => t.id === sel) || null : null;
-  const select = docType && (mine.length > 0 || canDesign) ? (
+  // Mẫu dựng sẵn của hệ thống (VD phiếu giao hàng khung): chọn tay, hoặc tạo mẫu từ bố cục này ở Mẫu in để tự áp dụng
+  const builtins = BUILTIN_TEMPLATES[docType] || [];
+  const tpl = sel === undefined ? auto : sel ? builtinTemplate(docType, sel) || (list || []).find((t) => t.id === sel) || null : null;
+  const select = docType && (mine.length > 0 || builtins.length > 0 || canDesign) ? (
     <span className="tpl-choice">
       <label className="small">Mẫu in{' '}
         <Select value={sel === undefined ? '__auto' : sel} onChange={(e) => setSel(e.target.value === '__auto' ? undefined : e.target.value)}>
           <option value="__auto">Tự động: {auto ? auto.name : 'Mẫu gốc'}</option>
           <option value="">Mẫu gốc của hệ thống</option>
+          {builtins.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           {mine.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </Select>
       </label>
-      {canDesign && <Link className="btn ghost" to={tpl ? `/mau-in/${tpl.id}` : `/mau-in?loai=${docType}`}>✎ {tpl ? 'Sửa mẫu' : 'Thiết kế mẫu'}</Link>}
+      {canDesign && (tpl?.builtin
+        ? <Link className="btn ghost" to={`/mau-in/moi?loai=${docType}&bocuc=${tpl.layout}`} title="Tạo mẫu riêng từ bố cục này: sửa chữ, gắn cho công ty / khách hàng, đặt mặc định">✎ Tạo mẫu từ bố cục này</Link>
+        : <Link className="btn ghost" to={tpl ? `/mau-in/${tpl.id}` : `/mau-in?loai=${docType}`}>✎ {tpl ? 'Sửa mẫu' : 'Thiết kế mẫu'}</Link>)}
     </span>
   ) : null;
   return { list, tpl, select, loading: list === null };
