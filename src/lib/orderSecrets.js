@@ -6,7 +6,7 @@ import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
 import { isPrivate } from './fields';
 import { computeFormulas } from './formula';
-import { withFx } from './currency';
+import { mirrorHeadFx, withFx } from './currency';
 
 export const secretId = (orderId, key) => `${orderId}__${key}`;
 
@@ -138,7 +138,7 @@ export function viewOrder(order, secMap, headFields, lineFields) {
   const o = withSecrets(order, secMap);
   // Đơn VNĐ: [Tỷ giá] = 1 trong công thức (Thành tiền VNĐ = SL × đơn giá × tỷ giá dùng chung cho đơn VNĐ và USD)
   const ox = withFx(o);
-  const lines = (o.lines || []).map((l) => computeFormulas(lineFields, { ...l, qtyT: (Number(l.qtyKg) || 0) / 1000 }, { extraFields: headFields, rowExtra: ox }));
+  const lines = (o.lines || []).map((l) => computeFormulas(lineFields, { ...(o.type === 'STO' ? l : mirrorHeadFx(lineFields, l, o)), qtyT: (Number(l.qtyKg) || 0) / 1000 }, { extraFields: headFields, rowExtra: ox }));
   // _raw: đơn gốc, dùng khi ghi lại (không để lọt giá trị riêng tư / công thức vào đơn)
   return { ...computeFormulas(headFields, ox, { lines, lineFields }), fxRate: o.fxRate, lines, _raw: order };
 }

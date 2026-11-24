@@ -791,3 +791,17 @@ label.inline { display: inline-flex; gap: 4px; align-items: center; margin-right
 .mp-bar { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 6px 6px; }
 .mp-opt { display: flex; gap: 8px; align-items: flex-start; }
 .mp-opt input { margin-top: 3px; }
+
+/* Cột đã kéo hẹp: tiêu đề và nội dung tự xuống dòng để thấy hết chữ (không cắt "…") */
+table.resized th { white-space: normal; text-overflow: clip; overflow-wrap: anywhere; word-break: normal; vertical-align: bottom; }
+table.resized td, table.resized td.num, table.resized th.num, .report-table.resized td, table.so-lines.resized th, table.picker.resized td, table.picker.resized th { white-space: normal; overflow-wrap: anywhere; }
+table.resized td .nowrap, table.resized th .nowrap, table.resized .badge, table.resized .readonly-val, table.resized .link-btn, table.resized td.act { white-space: normal; }
+
+/* Ô chọn / ô gõ tìm không bị bóp nhỏ: luôn chiếm hết chỗ trống, tối thiểu đủ đọc */
+.cell-add > input, .cell-add > select, .cell-add > .ss-trigger { flex: 1 1 140px; min-width: 7em; }
+.field > select, .field > .ss-trigger, .field > input:not([type=checkbox]):not([type=radio]) { width: 100%; }
+.field .cell-add { width: 100%; }
+/* Ô gõ mã danh mục (gợi ý): dòng cảnh báo "không có trong danh mục" xuống dòng riêng, không đè ô nhập */
+.cell-add.ref-input { flex-wrap: wrap; }
+.cell-add.ref-input > small { flex: 1 0 100%; }
+table.resized .cell-add > input, table.resized .cell-add > select, table.resized .cell-add > .ss-trigger { min-width: 0; }
