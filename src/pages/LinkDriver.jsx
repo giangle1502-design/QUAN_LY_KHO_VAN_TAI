@@ -7,6 +7,7 @@ import { STEPS, compressImage, doStep, nextStep, plateKey, stepBlocked, tripKg }
 import { fmtDate, fmtNum } from '../lib/utils';
 import { navUrl } from '../lib/dispatch';
 import { histId } from '../lib/plates';
+import { dropKey } from '../lib/jobs';
 
 // ============================================================================
 // Link tài xế (gửi vào nhóm Zalo của đơn vị vận tải), không cần tài khoản:
@@ -74,7 +75,9 @@ export default function LinkDriver() {
   const pickName = (v) => { const d = pastDrivers.find((x) => x.name === v); setMe((x) => (d ? { driverName: d.name, idCard: d.idCard || '', driverPhone: d.phone || x.driverPhone } : { ...x, driverName: v })); };
 
   const pk = plateKey(plate);
-  const mine = pk ? trips.filter((t) => plateKey(t.plate) === pk && !['completed', 'cancelled'].includes(t.status)) : [];
+  // Job (1 xe nhiều Shipment): các Shipment của Job đứng liền nhau theo thứ tự tài xế đi
+  const mine = (pk ? trips.filter((t) => plateKey(t.plate) === pk && !['completed', 'cancelled'].includes(t.status)) : [])
+    .sort((a, b) => String(a.jobId || a.id).localeCompare(String(b.jobId || b.id)) || (Number(a.jobSeq) || 0) - (Number(b.jobSeq) || 0));
   const free = trips.filter((t) => !t.plate && t.status === 'planned');
   const done = pk ? trips.filter((t) => plateKey(t.plate) === pk && t.status === 'completed').slice(-3).reverse() : [];
   // Xe nội bộ / xe nhà GHA: điều phối chưa ghi tài xế thì tài xế tự đăng ký họ tên, CCCD trước khi chạy
@@ -89,7 +92,14 @@ export default function LinkDriver() {
       const p = t.plate || plate;
       if (!plateKey(p)) throw new Error('Nhập số xe ở ô trên cùng trước.');
       const info = me;
-      await doStep(t, st, { email: `link:${plateKey(p)}`, name: me.driverName || `Tài xế xe ${p}` }, { ...info, plate: p, photos }, db);
+      const who = { email: `link:${plateKey(p)}`, name: me.driverName || `Tài xế xe ${p}` };
+      await doStep(t, st, who, { ...info, plate: p, photos }, db);
+      // Job: đến / giao xong 1 điểm giao là xong luôn các Shipment khác của Job giao cùng điểm đó (1 phiếu giao gộp)
+      if (t.jobId && ['atDest', 'delivered'].includes(st)) {
+        for (const x of trips.filter((y) => y.id !== t.id && y.jobId === t.jobId && dropKey(y) === dropKey(t) && nextStep(y) === st && !stepBlocked(y, st))) {
+          await doStep(x, st, who, { ...info, plate: p, photos, note: `cùng điểm giao với ${t.id} (Job ${t.jobId})` }, db).catch(() => {});
+        }
+      }
       keep({ plate, ...me });
       setOpen(null); setPhotos([]);
     } catch (e) { setErr(e.code === 'permission-denied' ? 'Không lưu được: link đã đổi hoặc chuyến này không còn của xe bạn. Báo điều phối.' : e.message); }
@@ -107,7 +117,7 @@ export default function LinkDriver() {
     return (
       <div key={t.id} className="card" style={{ marginBottom: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-          <b className="mono">{t.id}</b><span className={'badge ' + (STATUS_META[t.status]?.tone || '')}>{t.selfPickup && t.status === 'completed' ? 'Đã lấy xong' : STATUS_META[t.status]?.label}</span></div>
+          <b className="mono">{t.id}{t.jobId ? <span className="badge purple" style={{ marginLeft: 6 }}>🔗 Job {t.jobId} · điểm {t.jobSeq}/{(t.jobTrips || []).length}</span> : null}</b><span className={'badge ' + (STATUS_META[t.status]?.tone || '')}>{t.selfPickup && t.status === 'completed' ? 'Đã lấy xong' : STATUS_META[t.status]?.label}</span></div>
         <div>Ngày đi: <b>{fmtDate(t.plannedDate)}</b>{t.plate ? <> · Xe <b>{t.plate}</b></> : null}</div>
         {/* Nơi nhận hàng: điểm nhận (cảng…) hoặc kho; vị trí lấy hàng (cảng SP-ITC, kho mua nội địa…) có địa chỉ riêng thì chỉ đường tới vị trí */}
         {t.pickup ? <div>Điểm nhận hàng: <b>{t.pickupName || t.pickup}</b>

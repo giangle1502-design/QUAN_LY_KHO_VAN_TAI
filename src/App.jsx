@@ -23,6 +23,7 @@ import PrintMovement from './pages/stock/PrintMovement';
 import Receive from './pages/stock/Receive';
 import PrintLabels from './pages/stock/PrintLabels';
 import Release, { PrintRelease } from './pages/stock/Release';
+import PrintJob from './pages/transport/PrintJob';
 import Dashboard from './pages/Dashboard';
 import Orders from './pages/orders/Orders';
 import DispatchBoard from './pages/dispatch/Board';
@@ -63,6 +64,7 @@ export default function App() {
       <Route path="kho/phieu/:id/nhan" element={<PrintLabels />} />
       <Route path="kho/kiem-ke/:id/in" element={<PrintCount />} />
       <Route path="kho/giai-chap/:id/in" element={<PrintRelease />} />
+      <Route path="van-tai/job/:id/giao" element={<PrintJob />} />
       <Route element={<Layout />}>
         <Route index element={role === 'van_tai' || role === 'tpl' ? <Navigate to="/van-tai" /> : role === 'tai_xe' ? <Navigate to="/tai-xe" /> : <Dashboard />} />
         <Route path="van-tai" element={<Hauling />} />
