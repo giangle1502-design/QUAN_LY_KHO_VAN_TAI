@@ -25,6 +25,8 @@ import PrintLabels from './pages/stock/PrintLabels';
 import Release, { PrintRelease } from './pages/stock/Release';
 import Dashboard from './pages/Dashboard';
 import Orders from './pages/orders/Orders';
+import DispatchBoard from './pages/dispatch/Board';
+import PendingList from './pages/dispatch/PendingList';
 import Allocation from './pages/orders/Allocation';
 import ShipPlans from './pages/orders/ShipPlans';
 import Reports from './pages/reports/Reports';
@@ -72,6 +74,9 @@ export default function App() {
         {hasRole('thu_kho') && <Route path="xe/thu-kho" element={<Dock />} />}
         {isAdmin && <Route path="xe/giao-hang" element={<Delivery />} />}
         <Route path="xe/tong-quan" element={<Overview />} />
+        <Route path="dieu-phoi" element={<DispatchBoard />} />
+        <Route path="dieu-phoi/cho-xuat" element={<PendingList key="out" kind="out" />} />
+        <Route path="dieu-phoi/cho-nhap" element={<PendingList key="in" kind="in" />} />
         <Route path="don-hang" element={<Orders />} />
         <Route path="phan-bo" element={<Allocation />} />
         <Route path="du-kien-xuat" element={<ShipPlans />} />
