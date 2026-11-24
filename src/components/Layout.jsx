@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { installColumnResize } from '../lib/colResize';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { CATALOGS, GROUPS, roleLabel } from '../catalogs';
 import { REPORTS } from '../pages/reports/Reports';
@@ -10,6 +10,7 @@ import { norm } from '../lib/utils';
 import { usePref } from '../lib/prefs';
 import NoticeBell from './NoticeBell';
 import ChatBell from './ChatBell';
+import { codeMatches, findTarget, parseCommand, tcodeOf } from '../lib/tcodes';
 import { BarEditor, FAV_KEY, MenuEditor, itemId, useNavLayout } from './NavCustom';
 
 // Nhóm thu gọn sẵn lần đầu: các nhóm danh mục, quản trị dữ liệu
@@ -31,14 +32,20 @@ export default function Layout() {
   useEffect(() => {
     const nav = navRef.current;
     if (!nav) return;
-    const words = norm(q).split(' ').filter(Boolean);
-    const hit = (el) => { const t = norm(el.textContent); return words.every((w) => t.includes(w)); };
+    // Gõ lệnh "/MÃ" hoặc "/O&MÃ": lọc theo mã chức năng; không mã nào khớp thì lọc gần đúng theo tên
+    const cmd = parseCommand(q);
+    const words = norm(cmd ? cmd.term : q).split(' ').filter(Boolean);
+    const byCode = cmd && words.length > 0 && [...nav.querySelectorAll('a')].some((a) => codeMatches(a.getAttribute('href'), cmd.term));
+    const hit = (el) => {
+      if (byCode) return el.tagName === 'A' && codeMatches(el.getAttribute('href'), cmd.term);
+      const t = norm(el.textContent); return words.every((w) => t.includes(w));
+    };
     let header = null, headerHas = false, groupHit = false, total = 0;
     const endGroup = () => { if (header) header.hidden = words.length > 0 && !headerHas; };
     nav.querySelectorAll('a, .nav-group:not(.nav-parent-head)').forEach((el) => {
       if (el.classList.contains('nav-group')) {
         endGroup();
-        header = el; headerHas = false; groupHit = words.length > 0 && hit(el);
+        header = el; headerHas = false; groupHit = !cmd && words.length > 0 && hit(el);
         return;
       }
       const show = !words.length || groupHit || hit(el);
@@ -56,6 +63,7 @@ export default function Layout() {
       const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '') || document.activeElement?.isContentEditable;
       if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') || (e.key === '/' && !typing)) {
         e.preventDefault(); setOpen(true); searchRef.current?.focus();
+        if (e.key === '/') setQ('/'); // phím "/" vào thẳng chế độ gõ mã lệnh
       }
     };
     window.addEventListener('keydown', onKey);
@@ -63,7 +71,21 @@ export default function Layout() {
   }, []);
   const onSearchKey = (e) => {
     if (e.key === 'Escape') { setQ(''); e.currentTarget.blur(); }
-    if (e.key === 'Enter') navRef.current?.querySelector('a:not([hidden])')?.click();
+    if (e.key !== 'Enter') return;
+    const cmd = parseCommand(q);
+    if (!cmd) {
+      // Gõ đúng mã (không có "/") cũng mở luôn chức năng đó, còn lại mở mục đầu tiên đang hiện
+      const exact = q.trim() && cmdItems().find((x) => tcodeOf(x.to) && tcodeOf(x.to) === norm(q).toUpperCase().replace(/\s+/g, ''));
+      if (exact) { navigate(exact.to); close(); e.currentTarget.blur(); return; }
+      navRef.current?.querySelector('a:not([hidden])')?.click();
+      return;
+    }
+    e.preventDefault();
+    const target = cmd.term ? findTarget(cmdItems(), cmd.term) : { to: loc.pathname + loc.search };
+    if (!target || (!cmd.term && !cmd.newTab)) return;
+    if (cmd.newTab) window.open(target.to, '_blank', 'noopener');
+    else navigate(target.to);
+    close(); e.currentTarget.blur();
   };
   const mainRef = useRef(null);
   useEffect(() => installColumnResize(mainRef.current), []);
@@ -93,6 +115,8 @@ export default function Layout() {
   // Mục "➕ Lập … mới": mở thẳng form tạo mới (?new=1), không tô sáng như trang đang xem
   const noActive = () => '';
   const saleTab = (k) => ({ isActive }) => (isActive && (new URLSearchParams(loc.search).get('tab') || 'tiep-can') === k ? 'active' : '');
+  const navigate = useNavigate();
+  const fullMenu = !['tai_xe', 'van_tai', 'tpl'].includes(role);
   const canSO = hasRole('kinh_doanh', 'ke_toan');
   const isSale = hasRole('kinh_doanh');
   const sections = [
@@ -188,6 +212,19 @@ export default function Layout() {
     { key: 'c:sto', title: '🔁 Chuyển kho', items: ['/don-hang?tab=STO&new=1', '/don-hang?tab=STO', '/don-hang?tab=cho-nhap&loai=STO'] },
     { key: 'c:kho', title: '🏭 Kho', items: ['/kho/out', '/kho/in', '/kho/ton', '/kho/phieu', '/don-hang?tab=can-doi'] },
   ];
+  // Các chức năng người dùng được mở (theo quyền) để chạy lệnh "/MÃ": mục menu + mục có trên màn hình (vai trò tài xế, 3PL…)
+  const cmdItems = () => {
+    const list = [{ to: '/', label: 'Tổng quan' }, { to: '/tro-chuyen', label: 'Trò chuyện' }, { to: '/cai-dat', label: 'Cài đặt hiển thị' }];
+    if (fullMenu) sections.forEach((sec) => sec.items.forEach((x) => { if (x.show !== false) list.push(x); }));
+    else list.length = 0;
+    navRef.current?.querySelectorAll('a').forEach((a) => {
+      const to = a.getAttribute('href');
+      if (to && !list.some((x) => x.to === to)) list.push({ to, label: a.textContent });
+    });
+    return list;
+  };
+  const cmdNow = parseCommand(q);
+  const cmdTarget = cmdNow?.term ? findTarget(cmdItems(), cmdNow.term) : null;
   const [nav, navApi] = useNavLayout(sections.map((sec) => ({ ...sec, items: sec.items.filter((x) => x.show !== false) })), [], defaultBar);
   const [editBar, setEditBar] = useState(false);
   // Danh mục đang mở trên thanh trên cùng: đóng khi đổi trang hoặc bấm ra ngoài
@@ -202,7 +239,6 @@ export default function Layout() {
   }, [barOpen]);
   const barCats = nav.bar.filter((c) => c.items.length);
   const openCat = barCats.find((c) => c.key === barOpen);
-  const fullMenu = !['tai_xe', 'van_tai', 'tpl'].includes(role);
   const [editMenu, setEditMenu] = useState(false);
   const shownSecs = [...(nav.fav.length ? [{ key: FAV_KEY, title: '⭐ Yêu thích', items: nav.fav }] : []), ...nav.secs];
   // Hạng mục lớn → hạng mục con: các nhóm danh mục / thiết lập / quản trị gom vào 1 mục lớn (đặt ở vị trí nhóm con đầu tiên)
@@ -246,6 +282,7 @@ export default function Layout() {
   const navItem = (x) => (
     <NavLink key={x.to + x.label} to={x.to} end={x.end} className={x.cls} onClick={close}>
       <span className="ico">{x.ico}</span>{x.label}{x.badge ? <span className="badge red" style={{ marginLeft: 6 }}>{x.badge}</span> : null}
+      {tcodeOf(x.to) && <span className="tcode" title={`Mã lệnh tắt: gõ /${tcodeOf(x.to)} (mở tại đây) hoặc /O&${tcodeOf(x.to)} (mở tab mới) vào ô Tìm chức năng`}>{tcodeOf(x.to)}</span>}
       <span className={'fav-star' + (x.fav ? ' on' : '')} role="button" title={x.fav ? 'Bỏ khỏi Yêu thích' : 'Ghim vào Yêu thích'}
         onClick={(e) => { e.preventDefault(); e.stopPropagation(); navApi.toggleFav(itemId(x)); }}>{x.fav ? '★' : '☆'}</span>
     </NavLink>
@@ -255,9 +292,20 @@ export default function Layout() {
       <aside className={'side' + (open ? ' open' : '')}>
         <div className="brand">{settings.companyName}<small>Kho & vận tải</small></div>
         <div className="nav-search">
-          <input ref={searchRef} type="search" placeholder="🔍 Tìm chức năng… (Ctrl+K)" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onSearchKey} />
+          <input ref={searchRef} type="search" placeholder="🔍 Tìm chức năng hoặc /mã… (Ctrl+K)" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onSearchKey}
+            title={'Gõ tên chức năng, hoặc mã lệnh tắt:\n/PO → mở Đơn mua ngay tại màn hình này\n/O&PO → mở Đơn mua ở tab mới\n/O → mở trang đang xem ở tab mới\nMã hiện bên phải từng mục menu.'} />
           {!['tai_xe', 'van_tai', 'tpl'].includes(role) && <button type="button" className="nav-cfg" title="Tùy chỉnh menu: yêu thích, thư mục, thứ tự, ẩn mục" onClick={() => setEditMenu(true)}>⚙</button>}
         </div>
+        {cmdNow && (
+          <div className="nav-cmd">
+            {!cmdNow.term ? (cmdNow.newTab
+              ? <span>↵ Mở trang đang xem ở <b>tab mới</b></span>
+              : <span>Gõ mã chức năng (hiện bên phải từng mục), vd <b>/PO</b>. <b>/O&amp;PO</b> mở ở tab mới.</span>)
+              : cmdTarget
+                ? <span>↵ {cmdTarget.ico} <b>{cmdTarget.label}</b> {cmdNow.newTab ? '· tab mới' : '· tại màn hình này'}</span>
+                : <span className="nav-cmd-miss">Không có chức năng nào khớp “{cmdNow.term}”.</span>}
+          </div>
+        )}
         <div className="nav-wrap" ref={navRef}>
         {role === 'tai_xe' ? (
         <nav>
@@ -283,8 +331,8 @@ export default function Layout() {
         </nav>
         ) : (
         <nav className={q ? 'searching' : ''}>
-          <NavLink to="/" end onClick={close}><span className="ico">📈</span>Tổng quan</NavLink>
-          <NavLink to="/tro-chuyen" onClick={close}><span className="ico">💬</span>Trò chuyện</NavLink>
+          <NavLink to="/" end onClick={close}><span className="ico">📈</span>Tổng quan<span className="tcode">TQ</span></NavLink>
+          <NavLink to="/tro-chuyen" onClick={close}><span className="ico">💬</span>Trò chuyện<span className="tcode">CHAT</span></NavLink>
           {blocks.map((sec) => {
             const op = isOpen(sec, false);
             if (sec.subs) return (
@@ -348,7 +396,7 @@ export default function Layout() {
             <div className="bar-panel-head"><b>{openCat.title}</b><button type="button" className="btn ghost sm" onClick={() => { setBarOpen(null); setEditBar(true); }}>⚙ Sửa danh mục</button></div>
             <div className="bar-tools">
               {openCat.items.map((x) => (
-                <NavLink key={x.to} to={x.to} end={x.end} className={x.cls} onClick={() => setBarOpen(null)}><span className="ico">{x.ico}</span>{x.label}</NavLink>
+                <NavLink key={x.to} to={x.to} end={x.end} className={x.cls} onClick={() => setBarOpen(null)}><span className="ico">{x.ico}</span>{x.label}{tcodeOf(x.to) && <span className="tcode">{tcodeOf(x.to)}</span>}</NavLink>
               ))}
             </div>
           </div>
