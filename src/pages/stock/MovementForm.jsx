@@ -1322,8 +1322,16 @@ function QtyFields({ l, onKg, onPallets, onBags }) {
   );
 }
 
+// Bên nhận thế chấp mặc định cho hàng HTC: Techcombank (mã / tên có "Tech" hoặc "TCB") — quy tắc của người dùng
+export const defaultPledgee = (pledgees) => (pledgees || []).find((p) => /tech|\btcb\b/i.test(`${p.code} ${p.name}`))?.code || '';
+
 export function InLine({ l, set, itemMap, locations, statuses, pledgees, locRequired = true, cap, onSplit }) {
   const it = itemMap.get(l.item);
+  // Hàng HTC chưa chọn bên nhận thế chấp (đơn ghi HTC, hoặc đơn chưa ghi rồi chọn HTC khi nhập): tự điền Tech
+  const techPl = defaultPledgee(pledgees);
+  useEffect(() => {
+    if (l.goodsStatus === 'HTC' && !l.pledgee && techPl) set({ pledgee: techPl });
+  }, [l.goodsStatus, l.pledgee, techPl]); // eslint-disable-line react-hooks/exhaustive-deps
   const setBags = (v) => set({ bags: v, pallets: suggestPallets(it, v), kg: kgOf(it, v), kgTxt: undefined });
   const setKg = (v) => {
     const kg = v === '' ? '' : r3(num(v));
@@ -1355,7 +1363,9 @@ export function InLine({ l, set, itemMap, locations, statuses, pledgees, locRequ
         <WithAdd cat="goodsStatus" onAdded={(id) => set({ goodsStatus: id })}>
           <Select value={l.goodsStatus} onChange={(e) => set({ goodsStatus: e.target.value })}>
             {statuses.map((s) => <option key={s.code} value={s.code}>{s.code} – {s.name}</option>)}
-            {!statuses.length && <option value="KTC">KTC</option>}
+            {/* Tình trạng lấy từ đơn (VD HTC) mà danh mục chưa có: vẫn hiện đúng, không tự nhảy về KTC */}
+            {l.goodsStatus && !statuses.some((s) => s.code === l.goodsStatus) && <option value={l.goodsStatus}>{l.goodsStatus}</option>}
+            {!statuses.length && l.goodsStatus !== 'KTC' && <option value="KTC">KTC</option>}
           </Select>
         </WithAdd>
       </Field>

@@ -53,7 +53,12 @@ export const kindOf = (o) => o?.orderKind || (o?.type === 'PO' ? 'PON' : o?.type
 // Block = hàng nằm ở vị trí "Khu hàng block" (danh mục Vị trí lưu trữ). Muốn block / mở block: chuyển vị trí.
 // TTHH BLK (bản 18/10/2026) chỉ còn để đọc dữ liệu cũ: vẫn khóa xuất bán nhưng không cho chọn mới.
 export const BLOCK_STATUS = { code: 'BLK', name: 'Block (dữ liệu cũ)', allowOutbound: false };
-export const withBlock = (rows) => rows.filter((r) => r.code !== 'BLK');
+// Danh mục Tình trạng hàng (bỏ BLK). Danh mục trống (chưa tạo / đã xóa dữ liệu thử) → dùng mặc định KTC, HTC, DGC
+// để phiếu nhập theo PO HTC vẫn chọn được HTC
+export const withBlock = (rows) => {
+  const list = rows.filter((r) => r.code !== 'BLK');
+  return list.length ? list : (CATALOGS.find((c) => c.key === 'goodsStatus')?.seed || []);
+};
 export const blockLocSet = (locations = []) => new Set(locations.filter((l) => l.blockStock).map((l) => `${l.warehouse}__${l.code}`));
 // Vị trí của kho pháp nhân thuộc kho chung nằm ở kho chung (locWh)
 export const inBlockLoc = (r, set) => !!r && (r.goodsStatus === 'BLK' || set.has(`${locWh(r.warehouse)}__${r.location}`));
