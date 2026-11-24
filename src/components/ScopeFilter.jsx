@@ -16,7 +16,11 @@ const INIT = () => (init0 ||= { whs: oldOne('op-warehouse'), cos: oldOne('op-com
 export function useOpScope() {
   const { whTick } = useApp();
   const [v, setV] = usePref('opScope', INIT());
-  const whs = v?.whs || [], cos = v?.cos || [], locs = v?.locs || [];
+  // Bỏ mã công ty không còn trong danh mục (VD đã đổi VAPC → VAP): mã cũ nhớ lại sẽ ẩn hết dữ liệu
+  const coRows = useCompanies();
+  const coKnown = coRows.map((c) => c.code).join('|');
+  const whs = v?.whs || [], locs = v?.locs || [];
+  const cos = (v?.cos || []).filter((c) => !coRows.length || coRows.some((r) => r.code === c));
   return useMemo(() => {
     const W = new Set(whs), C = new Set(cos), L = new Set(locs);
     return {
@@ -36,7 +40,7 @@ export function useOpScope() {
       locRow: (l) => (!W.size || whsOfLocWh(l.warehouse).some((m) => W.has(m))) && (!L.size || L.has(`${l.warehouse}__${l.code}`)),
       text: () => [`Kho: ${whs.join(', ') || 'Tất cả kho được giao'}`, `Công ty: ${cos.join(', ') || 'Tất cả'}`, locs.length ? `Vị trí: ${locs.map((l) => l.split('__')[1]).join(', ')}` : ''].filter(Boolean).join(' · '),
     };
-  }, [JSON.stringify(v), whTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(v), whTick, coKnown]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 // Ô chọn nhiều kho (có chọn nhanh theo kho chung)

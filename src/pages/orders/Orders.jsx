@@ -171,6 +171,7 @@ function OrderList({ type, initialQ = '', startNew = false, startScan = false, o
   const [q, setQ] = useState(initialQ);
   const [open, setOpen] = useState(null);
   const [edit, setEdit] = useState(null); // null | 'new' | order
+  const [made, setMade] = useState(''); // số đơn vừa lập (báo nếu bộ lọc đang ẩn)
   // Đơn nháp đọc từ ảnh phiếu Ecount (có thể khác loại đơn đang xem: dán Phiếu đề nghị nhập kho ở thẻ SO → PO)
   const [draft, setDraft] = useState(null);
   const navigate = useNavigate();
@@ -222,10 +223,11 @@ function OrderList({ type, initialQ = '', startNew = false, startScan = false, o
     return x;
   };
 
+  // Đơn người dùng được xem (theo kho được giao), trước khi áp bộ lọc trên trang
+  const mine = useMemo(() => rows.filter((o) => (o.lines || []).some((l) => [lineWh(o, l, 'out'), lineWh(o, l, 'in')].some((w) => !w || inMyWarehouses(w)))), [rows, inMyWarehouses]);
   const list = useMemo(() => {
     const f = norm(q);
-    const base = rows
-      .filter((o) => (o.lines || []).some((l) => [lineWh(o, l, 'out'), lineWh(o, l, 'in')].some((w) => !w || inMyWarehouses(w))))
+    const base = mine
       .filter((o) => scope.inCo(o.company))
       .filter((o) => !scope.whs.length || (o.lines || []).some((l) => [lineWh(o, l, 'out'), lineWh(o, l, 'in')].some((w) => w && scope.inWh(w))))
       .filter((o) => (status === 'opening' ? OPEN_STATUSES.includes(o.status) : !status || o.status === status))
@@ -234,10 +236,14 @@ function OrderList({ type, initialQ = '', startNew = false, startScan = false, o
     if (!advN) return base;
     const ok = new Set(applyFilter(base.map(withLines), advFields, adv).map((o) => o.id));
     return base.filter((o) => ok.has(o.id));
-  }, [rows, status, q, inMyWarehouses, sto, co, scope, adv, advN, advFields]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mine, status, q, sto, co, scope, adv, advN, advFields]); // eslint-disable-line react-hooks/exhaustive-deps
   const sum = list.reduce((s, o) => { const x = orderTotals(o); return { qty: s.qty + x.qty, done: s.done + x.done, transit: s.transit + x.transit, left: s.left + (OPEN_STATUSES.includes(o.status) ? x.left : 0) }; }, { qty: 0, done: 0, left: 0, transit: 0 });
   const late = list.filter((o) => OPEN_STATUSES.includes(o.status) && o.dueDate && o.dueDate < today);
   const current = open && rows.find((o) => o.id === open);
+  // Đơn bị bộ lọc ẩn (kho / công ty / trạng thái / tìm kiếm / lọc nâng cao): báo và cho hiện lại tất cả
+  const hiddenN = mine.length - list.length;
+  const justMade = made && mine.some((o) => o.id === made) && !list.some((o) => o.id === made);
+  const showAll = () => { scope.setWhs([]); scope.setCos([]); setStatus(''); setQ(''); setAdv(EMPTY_FILTER); tools.setColFilters({}); };
   // Cột danh sách đơn: mỗi người dùng tự chọn cột muốn xem (⚙ Cột hiển thị)
   // Cột thêm lưu riêng danh sách đã bật (người dùng đã lưu cột ẩn từ trước vẫn thấy cột mới ở trạng thái ẩn)
   const [shownExtra, setShownExtra] = usePref(`orderListExtra:${type}`, []);
@@ -353,6 +359,13 @@ function OrderList({ type, initialQ = '', startNew = false, startScan = false, o
       {tools.popup}
       {type === 'SO' && <ShortBanner co={co} />}
       <ErrorBox error={error} />
+      {hiddenN > 0 && (justMade || !list.length || scope.cos.length || scope.whs.length) && (
+        <div className={justMade ? 'warn-box' : 'small'} style={{ margin: '0 0 8px', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {justMade ? <span>Đơn <b>{made}</b> vừa lưu nhưng đang bị bộ lọc ẩn khỏi danh sách ({scope.text()}{status ? ` · ${status === 'opening' ? 'Đang mở' : ORDER_STATUS[status]?.label || status}` : ''}{q ? ` · tìm "${q}"` : ''}).</span>
+            : <span>{hiddenN} đơn đang bị bộ lọc ẩn ({scope.text()}).</span>}
+          <button type="button" className="btn sm" onClick={showAll}>Hiện tất cả đơn</button>
+        </div>
+      )}
       <div className="table-wrap">
         {!list.length ? <Empty /> : (
           <table>
@@ -373,7 +386,7 @@ function OrderList({ type, initialQ = '', startNew = false, startScan = false, o
         )}
       </div>
       {current && !edit && <OrderDetail o={current} onClose={() => setOpen(null)} onEdit={() => setEdit(current)} />}
-      {edit && <SOForm type={type} order={edit === 'new' ? null : edit} onClose={(id) => { setEdit(null); if (id) setOpen(id); if (startNew) onNewDone?.(); }} />}
+      {edit && <SOForm type={type} order={edit === 'new' ? null : edit} onClose={(id) => { if (id && edit === 'new') setMade(id); setEdit(null); if (id) setOpen(id); if (startNew) onNewDone?.(); }} />}
       {draft && <SOForm key={draft.scan.slipNo + draft.type} type={draft.type} draft={draft} onClose={(id) => {
         const t = draft.type;
         setDraft(null);
