@@ -2,6 +2,7 @@ import { notifyOrder } from '../../lib/chat';
 import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useCollections, useMyWarehouses, useOpCompany } from '../../lib/hooks';
+import { buysInto, buyWhText } from '../../lib/whGroups';
 import { blockLocSet, inBlockLoc, refValue } from '../../catalogs';
 import { CompanyPicker } from '../../components/TripBits';
 import FieldInput from '../../components/FieldInput';
@@ -255,6 +256,8 @@ export default function SOForm({ type = 'SO', order, onClose, draft }) {
     const out = [];
     for (const [i, l] of lines.map(fxLine).entries()) {
       const no = `Dòng ${i + 1}: `;
+      if (type === 'PO' && l.warehouse && !buysInto(l.warehouse))
+        return setErr(no + `kho ${l.warehouse} không nhận hàng mua. Hàng mua chỉ nhập vào: ${buyWhText()}; kho khác nhận bằng chuyển kho (STO).`);
       if (!l.item || !itemMap.has(l.item)) return setErr(no + 'chọn mã hàng có trong danh mục (hoặc bấm + để thêm mã hàng mới).');
       const kg = Math.round(n(l.qtyKg) * 1000) / 1000;
       if (!(kg > 0)) return setErr(no + 'nhập số lượng (kg).');
@@ -339,7 +342,7 @@ export default function SOForm({ type = 'SO', order, onClose, draft }) {
         <WithAdd cat="warehouses" onAdded={(id) => set(id)}>
           <Select value={l.warehouse} onChange={(e) => set(e.target.value)}>
             <option value="">-- Kho nào cũng được --</option>
-            {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
+            {warehouses.filter((w) => type !== 'PO' || buysInto(w.code) || w.code === l.warehouse).map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
           </Select>
         </WithAdd>
       );
