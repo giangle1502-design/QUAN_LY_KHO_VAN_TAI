@@ -30,6 +30,8 @@ import PalletChoice from '../../components/PalletChoice';
 import { cleanPallets, packingMode, palletError, palletManaged } from '../../lib/pallets';
 import { OVER_CAP_CONFIRM, OVER_CAP_MSG, capacityCheck, splitByCapacity } from '../../lib/capacity';
 import Select from '../../components/Select';
+import LotListImport from '../../components/LotListImport';
+import { LOT_REQ_HINT, lotPickOrder, lotRequired } from '../../lib/lots';
 import { CO_SHORT_MSG, groupCodes, notifyLegalTransfer } from '../../lib/legalTransfer';
 
 // Thông tin vận tải gắn trên phiếu xuất (SO và STO). Phiếu nhập không cần.
@@ -372,10 +374,13 @@ function Form({ type }) {
     return { next, palIn, mine, froms, ret };
   };
 
+  // Thứ tự lấy hàng: vị trí nhập trước lấy trước, trong 1 vị trí lot ít trước, lot nhiều sau
+  const pickCmp = useMemo(() => lotPickOrder(stock), [stock]);
   // Chọn tồn theo FIFO cho các dòng của 1 đơn (pl: { dòng đơn: kg } khi chọn từ bảng / dự kiến); used: số bao đã lấy của từng dòng tồn
   // tag: số đơn gộp thêm (1 xe nhiều SO) ghi vào dòng phiếu để khi lưu tách đúng đơn
   const fifoFor = (o, pl, used, tag) => {
-    const fifoSort = (a, b) => ownFirst(o.company || '')(a, b) || String(a.inDate).localeCompare(String(b.inDate)) || String(a.location).localeCompare(String(b.location));
+    // FIFO theo vị trí; trong cùng vị trí lot ít lấy trước (lot nhiều nằm trong cùng)
+    const fifoSort = (a, b) => ownFirst(o.company || '')(a, b) || pickCmp(a, b);
     const mine = [...stock].filter((r) => r.warehouse === whCode && coOk(r, o.company));
     // Trả NCC (RTV): lấy được cả hàng ở khu block (thường là hàng không đạt), ưu tiên khu block trước
     const rtv = o.type === 'RTV';
@@ -596,7 +601,7 @@ function Form({ type }) {
         const want = order.lines.find((l) => l.item === item)?.goodsStatus;
         const cands = stock.filter((r) => r.item === item && r.warehouse === whCode && !used.has(r._id) && num(r.bags) > 0 && !blocked(r)
           && coOk(r, order.company) && (!want || r.goodsStatus === want || r.goodsStatus === 'HTC'))
-          .sort((a, b) => ownFirst(order.company || '')(a, b) || htcLast(a) - htcLast(b) || String(a.inDate).localeCompare(String(b.inDate)) || String(a.location).localeCompare(String(b.location)));
+          .sort((a, b) => ownFirst(order.company || '')(a, b) || htcLast(a) - htcLast(b) || pickCmp(a, b));
         for (const r of cands) {
           if (need <= 0.001 || ls.length >= 30) break;
           const nl = takeFrom(r, need);
@@ -623,14 +628,14 @@ function Form({ type }) {
   const caps = type === 'in' ? capacityCheck(lines, locations) : [];
   const [overOk, setOverOk] = useState(false);
 
-  // Dòng tồn sắp xếp FIFO (nhập trước xuất trước)
+  // Dòng tồn sắp xếp FIFO (nhập trước xuất trước), trong 1 vị trí lot ít trước
   const stockRows = useMemo(() => {
     const f = filter.trim().toLowerCase();
     return stock
       .filter((r) => coOk(r))
       .filter((r) => !f || [r.item, r.itemName, r.lot, r.location, r.company].join(' ').toLowerCase().includes(f))
-      .sort((a, b) => String(a.item).localeCompare(String(b.item)) || ownFirst(head.company)(a, b) || String(a.inDate).localeCompare(String(b.inDate)) || String(a.location).localeCompare(String(b.location)));
-  }, [stock, filter, head.company, crossCo, canCross]); // eslint-disable-line react-hooks/exhaustive-deps
+      .sort((a, b) => String(a.item).localeCompare(String(b.item)) || ownFirst(head.company)(a, b) || pickCmp(a, b));
+  }, [stock, filter, head.company, crossCo, canCross, pickCmp]); // eslint-disable-line react-hooks/exhaustive-deps
   const stockById = useMemo(() => new Map(stock.map((r) => [r._id, r])), [stock]);
   // Xuất theo SO / xuất lẻ: chỉ KTC, DGC (tình trạng cho phép xuất). Xuất theo STO (chuyển kho): mọi tình trạng, kể cả HTC
   const isSTO = order?.type === 'STO';
@@ -770,6 +775,7 @@ function Form({ type }) {
         if (oneStep && !String(l.location || '').trim()) return setErr(no + `chọn vị trí (phiếu nhập ghi tồn ngay khi lưu).`);
         if (!num(l.kg) && !num(l.bags) && !num(l.pallets)) return setErr(no + 'nhập số kg, pallet hoặc số bao.');
         if (l.goodsStatus === 'HTC' && !l.pledgee) return setErr(no + 'hàng HTC cần chọn bên nhận thế chấp.');
+        if (lotRequired(itemMap.get(l.item)) && !String(l.lot || '').trim()) return setErr(no + `mã ${l.item} bắt buộc quản lý lot: nhập số lot.`);
         out.push({ ...(l.orderLine != null ? { orderLine: l.orderLine } : {}), ...(l.orderId ? { _oid: l.orderId } : {}), ...(l.toBlock ? { toBlock: true } : {}), item: l.item, itemName: itemMap.get(l.item).name, lot: l.lot.trim(), mfgDate: l.mfgDate, expDate: l.expDate,
           location: l.location, goodsStatus: l.goodsStatus, pledgee: l.goodsStatus === 'HTC' ? l.pledgee : '', company: l.company || head.company,
           bags: num(l.bags), pallets: num(l.pallets), kg: num(l.kg) });
@@ -1228,13 +1234,14 @@ function Form({ type }) {
               <InLine l={l} set={(p) => setLine(i, p)} itemMap={itemMap} items={items} locations={locations} statuses={statuses} pledgees={pledgees} locRequired={false}
                 cap={caps[i]} onSplit={() => setLines((ls) => splitLineAt(ls, i, caps[i]))} /></>
             ) : (
-              <>{extra.length > 0 && <span className="badge" title="Dòng này xuất cho đơn" style={{ alignSelf: 'center' }}>{l.orderId || order?.id}</span>}<StockLine type={type} slipCo={type === 'out' ? head.company : ''} l={l} set={(p) => setLine(i, p)} onPickOut={type === 'out' && order ? (x) => pickOutStock(i, x) : null} rows={stockRows} byId={stockById} blocked={blocked} releasable={releasable} onStock={setStockItem}
+              <>{extra.length > 0 && <span className="badge" title="Dòng này xuất cho đơn" style={{ alignSelf: 'center' }}>{l.orderId || order?.id}</span>}<StockLine type={type} slipCo={type === 'out' ? head.company : ''} l={l} set={(p) => setLine(i, p)} onPickOut={type === 'out' && order ? (x) => pickOutStock(i, x) : null} rows={stockRows} byId={stockById} blocked={blocked} releasable={releasable} onStock={setStockItem} itemMap={itemMap}
                 locations={locations} statuses={statuses} pledgees={pledgees} /></>
             )}
             <button type="button" className="btn ghost" disabled={lines.length === 1} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>✕</button>
           </div>
         ))}
         {lines.length < 30 && <button type="button" className="btn sm" onClick={() => setLines((ls) => [...ls, type === 'in' ? newLine() : stockLine()])}>+ Thêm dòng</button>}
+        {type === 'in' && <> <LotListImport lines={lines} setLines={setLines} itemMap={itemMap} maxLines={30} /></>}
       </div>
       {type === 'in' && <OverCapConfirm caps={caps} checked={overOk} onChange={setOverOk} />}
       <ErrorBox error={err} />
@@ -1355,7 +1362,7 @@ export function InLine({ l, set, itemMap, locations, statuses, pledgees, locRequ
         <WithAdd cat="items" onAdded={(id) => set({ item: id })}><input list="dl-mv-item" value={l.item} onChange={(e) => { const x = itemMap.get(e.target.value); set({ item: e.target.value, ...(x && l.bags ? { pallets: suggestPallets(x, l.bags), kg: kgOf(x, l.bags), kgTxt: undefined } : {}) }); }} /></WithAdd>
         {it && <small className="small">{it.name}</small>}
       </Field>
-      <Field label="Lot"><input value={l.lot} onChange={(e) => set({ lot: e.target.value })} /></Field>
+      <Field label="Lot" required={lotRequired(it)} help={lotRequired(it) ? 'Mã bắt buộc quản lý lot' : ''}><input value={l.lot} title={lotRequired(it) ? LOT_REQ_HINT : ''} onChange={(e) => set({ lot: e.target.value })} /></Field>
       {/* NSX, HSD chỉ hiện với mã hàng có tích "Quản lý NSX / HSD" (hạt nhựa không cần) */}
       {(it?.trackDates || l.mfgDate || l.expDate) && <>
         <Field label="NSX"><input type="date" value={l.mfgDate} onChange={(e) => set({ mfgDate: e.target.value })} /></Field>
@@ -1467,7 +1474,7 @@ function StockPicker({ rows, blocked, whName, filter, setFilter, chosen, onClose
   );
 }
 
-function StockLine({ type, slipCo, l, set, onPickOut, rows, byId, blocked, releasable, locations, statuses, pledgees, onStock }) {
+function StockLine({ type, slipCo, l, set, onPickOut, rows, byId, blocked, releasable, locations, statuses, pledgees, onStock, itemMap }) {
   const r = byId.get(l.stockId);
   // Số lượng xuất/chuyển → pallet, kg chia theo tỷ lệ tồn
   const setBags = (v) => {
@@ -1500,7 +1507,7 @@ function StockLine({ type, slipCo, l, set, onPickOut, rows, byId, blocked, relea
           <span>Hàng chọn từ tồn kho</span>
           <div className="stock-pick">
             <span><small>Công ty</small>{r.company || '-'}{slipCo && r.company && r.company !== slipCo ? <b style={{ color: 'var(--amber)' }}> 🏛️ chuyển pháp nhân → {slipCo}</b> : ''}</span><span><small>Kho</small>{r.warehouse}</span><span><small>Mã hàng</small><ItemCode code={r.item} onStock={onStock} /></span>
-            <span className="grow"><small>Tên hàng</small>{r.itemName}</span><span><small>Lot</small>{r.lot || '-'}</span><span><small>Vị trí</small>{r.location}</span>
+            <span className="grow"><small>Tên hàng</small>{r.itemName}</span><span><small>Lot</small>{r.lot || '-'}{lotRequired(itemMap?.get(r.item)) && <b style={{ color: 'var(--red)' }} title={LOT_REQ_HINT}> 🔖 lấy đúng lot</b>}</span><span><small>Vị trí</small>{r.location}</span>
             <span><small>Tình trạng</small>{r.goodsStatus}{r.pledgee ? ` (${r.pledgee})` : ''}{blocked(r) ? ' 🔒' : ''}{releasable?.(r) ? <b style={{ color: 'var(--amber)' }}> ⏳ phiếu chờ giải chấp</b> : ''}</span>
             <span><small>Còn</small>{fmtNum(num(r.kg), 2)} kg · {fmtNum(r.pallets, 2)} pl · {fmtNum(r.bags)} bao</span>
             <button type="button" className="btn sm ghost" onClick={() => set({ stockId: '', bags: '', pallets: '', kg: '', kgTxt: undefined })}>Đổi</button>

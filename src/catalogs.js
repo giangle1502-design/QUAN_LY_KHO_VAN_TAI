@@ -197,6 +197,8 @@ export const CATALOGS = [
         } },
       { key: 'trackDates', label: 'Quản lý NSX / HSD', type: 'checkbox', default: false,
         help: 'Chỉ tích với hàng có hạn dùng (vd. hóa chất). Không tích (vd. hạt nhựa): phiếu nhập, nhận hàng không hiện ô NSX, HSD' },
+      { key: 'lotRequired', label: 'Bắt buộc quản lý lot', type: 'checkbox', default: false,
+        help: 'Tích với mã cần chính xác lot 100%: nhận hàng bắt buộc ghi lot, phiếu soạn hàng đánh dấu phải lấy đúng lot. Không tích: lot chỉ để tham khảo' },
       { key: 'note', label: 'Ghi chú', type: 'textarea' },
       { key: 'active', label: 'Đang sử dụng', type: 'checkbox', default: true },
     ],
