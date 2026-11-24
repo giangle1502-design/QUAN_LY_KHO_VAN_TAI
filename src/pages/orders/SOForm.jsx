@@ -8,7 +8,7 @@ import { CompanyPicker } from '../../components/TripBits';
 import FieldInput from '../../components/FieldInput';
 import { AddFieldButton, ColumnPicker, QuickAdd, WithAdd } from '../../components/FormTools';
 import { dragHeadProps, orderCols } from '../../lib/colOrder';
-import { ErrorBox, Field, Modal } from '../../components/ui';
+import { ErrorBox, Field, Modal, useDirty } from '../../components/ui';
 import { ItemCode, ItemStockModal } from '../../components/ItemStock';
 import { createOrder, isFinished, ORDER_STATUS, saveOrder, summarizeLines } from '../../lib/orders';
 import { cleanValue, defaultsOf, fillEmptyLinks, isPrivate, linkPatch, visibleFields } from '../../lib/fields';
@@ -404,10 +404,11 @@ export default function SOForm({ type = 'SO', order, onClose, draft }) {
     }
   };
   const viaLabel = (vias, k) => vias.find((v) => v.key === k)?.label || k;
+  const chg = useDirty({ h, lines });
 
   return (
-    <Modal title={order ? `Sửa ${order.id}` : `Lập ${cfg.title}${draft ? ' từ ảnh phiếu Ecount' : ''}`} onClose={() => onClose()} wide>
-      <form onSubmit={submit}>
+    <Modal title={order ? `Sửa ${order.id}` : `Lập ${cfg.title}${draft ? ' từ ảnh phiếu Ecount' : ''}`} onClose={() => onClose()} wide dirty={() => !busy && chg.dirty}>
+      <form onSubmit={submit} {...chg.bind}>
         {finished && (
           <div style={{ marginBottom: 10, padding: 10, border: '1px solid var(--amber)', background: 'var(--amber-soft)', borderRadius: 8 }}>
             Đơn đang <b>{ORDER_STATUS[order.status].label.toLowerCase()}</b>: sửa được giá, khách hàng, thông tin dòng hàng… Số lượng không nhỏ hơn phần {cfg.done.toLowerCase()};

@@ -9,7 +9,7 @@ import { useCollection } from '../../lib/hooks';
 import { IN_SOURCES } from '../../lib/orders';
 import { confirmIn } from '../../lib/stock';
 import { fmtDate, fmtNum } from '../../lib/utils';
-import { Empty, ErrorBox } from '../../components/ui';
+import { CloseButton, Empty, ErrorBox, useDirty } from '../../components/ui';
 import { InLine, OverCapConfirm, newLine, splitLineAt } from './MovementForm';
 import { OVER_CAP_CONFIRM, OVER_CAP_MSG, capacityCheck } from '../../lib/capacity';
 import PalletChoice from '../../components/PalletChoice';
@@ -145,6 +145,7 @@ function ReceiveForm({ id }) {
     document.addEventListener('visibilitychange', refresh);
     return () => { window.removeEventListener('storage', onStorage); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
   }, [id]);
+  const chg = useDirty({ lines, pal });
   if (mv === undefined) return <p>Đang tải…</p>;
   if (!mv) return <Empty text={`Không tìm thấy phiếu ${id}.`} />;
   const locations = locsOfWh(allLocations, mv.warehouse);
@@ -226,15 +227,15 @@ function ReceiveForm({ id }) {
 
   if (done) return (
     <div>
-      <div className="page-head"><h1>📥 Nhận hàng {id}</h1></div>
+      <div className="page-head"><h1>📥 Nhận hàng {id}</h1><CloseButton to="/kho/nhan-hang" /></div>
       <div className="ok-box">Đã xác nhận nhận hàng phiếu <b className="mono">{done.group ? done.ids.join(', ') : done.id}</b>{done.group ? ` (phiếu nhập gộp ${mv.groupId}, ${done.ids.length} đơn)` : ''}{done.orderId ? <> và lập đơn mua <b className="mono">{done.orderId}</b> theo số thực nhận</> : null}. Tồn kho đã cập nhật.{' '}
         <Link to={`/kho/phieu/${done.id}/in`} target="_blank">🖨 In phiếu</Link> · {needLabels && (done.ids || [done.id]).map((x) => <Link key={x} className="btn primary" to={`/kho/phieu/${x}/nhan`} target="_blank" style={{ marginRight: 4 }}>🏷️ In lại nhãn{done.group ? ` ${x}` : ''}</Link>)} · <Link to="/kho/nhan-hang">← Phiếu chờ nhận khác</Link></div>
     </div>
   );
   const pending = mv.status === 'pending';
   return (
-    <form onSubmit={submit}>
-      <div className="page-head"><h1>📥 Nhận hàng {id}</h1><button type="button" className="btn" onClick={() => nav('/kho/nhan-hang')}>← Danh sách chờ nhận</button></div>
+    <form onSubmit={submit} {...chg.bind}>
+      <div className="page-head"><h1>📥 Nhận hàng {id}</h1><div className="actions"><button type="button" className="btn" onClick={() => nav('/kho/nhan-hang')}>← Danh sách chờ nhận</button><CloseButton to="/kho/nhan-hang" dirty={() => !busy && chg.dirty} /></div></div>
       <div className="card" style={{ marginBottom: 12 }}>
         <p style={{ margin: 0 }}>
           Kho <b>{mv.warehouse}</b> · Ngày {fmtDate(mv.date)} · {IN_SOURCES[mv.source]?.label || 'Phiếu nhập'}

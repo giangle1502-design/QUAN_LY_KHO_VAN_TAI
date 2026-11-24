@@ -62,7 +62,7 @@ export default function Layout() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
   const onSearchKey = (e) => {
-    if (e.key === 'Escape') { setQ(''); e.currentTarget.blur(); }
+    if (e.key === 'Escape') { e.preventDefault(); setQ(''); e.currentTarget.blur(); }
     if (e.key === 'Enter') navRef.current?.querySelector('a:not([hidden])')?.click();
   };
   const mainRef = useRef(null);
