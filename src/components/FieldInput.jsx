@@ -6,6 +6,7 @@ import { QuickAdd } from './FormTools';
 import { fmtClock, fmtDate, fmtNum } from '../lib/utils';
 import Select from './Select';
 import { addChoice, canChoose, editChoice } from '../lib/fields';
+import { locWh } from '../lib/whGroups';
 
 // Ô nhập cho 1 trường theo kiểu dữ liệu
 // unit: đơn vị tiền của trường kiểu Tiền ('đ' mặc định, 'USD' trên đơn USD)
@@ -113,7 +114,11 @@ function RefInput({ field: f, value, onChange, disabled, onPick }) {
   const main = useRefRows(f.ref, f.refRole);
   // refAlso: chọn thêm từ danh mục thứ 2 (VD vị trí thuộc Kho hoặc Kho chung)
   const also = useRefRows(f.refAlso || '');
-  const opts = useMemo(() => (f.refAlso ? [...main, ...also] : main), [main, also, f.refAlso]);
+  // Vị trí của kho thuộc Kho chung lưu ở Kho chung: chỉ hiện Kho chung (đầu danh sách) + kho riêng chưa thuộc Kho chung nào
+  const { whTick } = useApp();
+  const opts = useMemo(() => (f.refAlso
+    ? [...also.map((o) => ({ ...o, label: `${o.label} (kho chung)` })), ...main.filter((o) => o.value === value || locWh(o.value) === o.value)]
+    : main), [main, also, f.refAlso, value, whTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const listId = `dl-${f.key}`;
   const known = !value || opts.some((o) => o.value === value);
   // Gõ mã trước khi danh mục tải xong: tự điền khi dữ liệu về

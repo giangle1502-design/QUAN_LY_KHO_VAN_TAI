@@ -58,6 +58,7 @@ export default function WarehouseGroups() {
   const groupsRows = useCollection('warehouseGroups').rows;
   const warehouses = useCollection('warehouses').rows;
   const locations = useCollection('locations').rows;
+  const docks = useCollection('docks').rows;
   const [err, setErr] = useState('');
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState('');
@@ -96,6 +97,17 @@ export default function WarehouseGroups() {
     return rows.sort((a, b) => a.group.localeCompare(b.group) || a.code.localeCompare(b.code, 'vi', { numeric: true }));
   }, [groups, locations, capRule]);
 
+  // Cửa xuất/nhập còn khai báo theo kho pháp nhân của 1 kho chung → chuyển về kho chung (trùng mã thì gộp 1)
+  const dockPlan = useMemo(() => {
+    const rows = [];
+    for (const g of groups) {
+      const byCode = new Map();
+      for (const d of docks.filter((x) => g.members.includes(x.warehouse))) byCode.set(d.code, [...(byCode.get(d.code) || []), d]);
+      for (const [code, recs] of byCode) rows.push({ group: g.code, code, from: recs.map((r) => r.warehouse), recs, exist: docks.some((x) => x.warehouse === g.code && x.code === code) });
+    }
+    return rows.sort((a, b) => a.group.localeCompare(b.group) || a.code.localeCompare(b.code, 'vi', { numeric: true }));
+  }, [groups, docks]);
+
   const run = async (label, fn) => {
     setErr(''); setMsg(''); setBusy(label);
     try { setMsg(await fn()); } catch (e) { setErr(e.message || String(e)); } finally { setBusy(''); }
@@ -119,8 +131,8 @@ export default function WarehouseGroups() {
   };
 
   const doMerge = () => run('merge', async () => {
-    if (!plan.length) return 'Không có vị trí nào cần gộp.';
-    if (!window.confirm(`Gộp ${plan.length} vị trí vào kho chung? Bản ghi vị trí riêng của từng kho pháp nhân (${plan.reduce((s, p) => s + p.recs.length, 0)} bản ghi) sẽ được xóa sau khi gộp. Tồn kho, phiếu không đổi.`)) return '';
+    if (!plan.length && !dockPlan.length) return 'Không có vị trí / cửa nào cần gộp.';
+    if (!window.confirm(`Gộp ${plan.length} vị trí và ${dockPlan.length} cửa xuất/nhập vào kho chung? Bản ghi riêng của từng kho pháp nhân sẽ được xóa sau khi gộp. Tồn kho, phiếu không đổi.`)) return '';
     const pal = await palletsByLoc();
     const at = nowISO();
     const ops = [];
@@ -130,8 +142,14 @@ export default function WarehouseGroups() {
         data: { ...rec, ...locFields(rec, pal.get(`${p.group}__${p.code}`) || 0), mergedFrom: p.from, updatedAt: at, updatedBy: email } });
       for (const r of p.recs) ops.push({ ref: doc(db, 'locations', r._id), del: true });
     }
+    for (const p of dockPlan) {
+      const first = p.recs[0];
+      ops.push({ ref: doc(db, 'docks', locDocId(p.group, p.code)), merge: true,
+        data: { warehouse: p.group, code: p.code, name: first.name || '', usage: first.usage || 'Nhập và xuất', active: p.recs.some((r) => r.active !== false), mergedFrom: p.from, updatedAt: at, updatedBy: email } });
+      for (const r of p.recs) ops.push({ ref: doc(db, 'docks', r._id), del: true });
+    }
     await commitAll(ops);
-    return `Đã gộp ${plan.length} vị trí vào kho chung, tính lại số pallet đang chứa.`;
+    return `Đã gộp ${plan.length} vị trí${dockPlan.length ? ` và ${dockPlan.length} cửa xuất/nhập` : ''} vào kho chung, tính lại số pallet đang chứa.`;
   });
 
   const doRecount = () => run('recount', async () => {
@@ -193,7 +211,7 @@ export default function WarehouseGroups() {
               <option value="max">Lấy sức chứa lớn nhất</option><option value="sum">Cộng sức chứa các kho</option>
             </Select>
           </Field>
-          <button className="btn primary" disabled={!!busy || !plan.length || !isSuper} title={isSuper ? '' : 'Chỉ quản trị gốc (được xóa bản ghi vị trí cũ)'} onClick={doMerge}>{busy === 'merge' ? 'Đang gộp…' : `🔗 Gộp ${plan.length} vị trí`}</button>
+          <button className="btn primary" disabled={!!busy || (!plan.length && !dockPlan.length) || !isSuper} title={isSuper ? '' : 'Chỉ quản trị gốc (được xóa bản ghi vị trí cũ)'} onClick={doMerge}>{busy === 'merge' ? 'Đang gộp…' : `🔗 Gộp ${plan.length} vị trí${dockPlan.length ? ` + ${dockPlan.length} cửa` : ''}`}</button>
         </div>
         {plan.length > 0 ? (
           <div className="table-wrap" style={{ maxHeight: 360 }}><table>
@@ -207,6 +225,10 @@ export default function WarehouseGroups() {
             </tbody>
           </table></div>
         ) : <p className="small">Không còn vị trí nào khai báo riêng ở kho pháp nhân thuộc kho chung.</p>}
+        {dockPlan.length > 0 && (
+          <p className="small">🚪 Cửa xuất/nhập sẽ chuyển về kho chung: {dockPlan.map((p) => `${p.group} ${p.code} (từ ${p.from.join(', ')})`).join(' · ')}.
+            Cửa khác mã ở mỗi kho (VD PC1 và VC1) đều được giữ; cửa thừa thì xóa sau ở danh mục Cửa xuất/nhập.</p>
+        )}
       </div>
 
       <div className="card">

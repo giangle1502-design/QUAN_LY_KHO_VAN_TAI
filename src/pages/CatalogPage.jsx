@@ -318,7 +318,9 @@ export function EditForm({ cat, fields, row, existing = [], onClose, onSaved }) 
       await syncFromCatalog(cat.key, [{ id, data: final }], { email });
       onSaved(isNew ? 'Đã thêm.' : 'Đã lưu.', id, final);
     } catch (e2) {
-      setErr(e2.code === 'permission-denied' ? 'Không có quyền ghi (kiểm tra phân quyền).' : e2.message);
+      setErr(e2.code === 'permission-denied'
+        ? `Không có quyền ghi ${cat.short}. Nếu đây là danh mục mới (VD Kho chung): quản trị gốc dán lại quy tắc Firestore mới (Firebase → Firestore Database → Rules → Publish). Nếu không: kiểm tra phân quyền.`
+        : e2.message);
     }
     setBusy(false);
   };

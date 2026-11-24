@@ -317,7 +317,9 @@ export const CATALOGS = [
     idOf: (r) => `${r.warehouse}__${r.code}`, keyFields: ['warehouse', 'code'],
     warehouseField: 'warehouse', editRoles: ['thu_kho'],
     fields: [
-      { key: 'warehouse', label: 'Kho', type: 'ref', ref: 'warehouses', required: true },
+      // Kho thuộc Kho chung (VD Đức Hòa = VAPD + PLAD): khai báo cửa 1 lần ở Kho chung, mọi kho pháp nhân dùng chung
+      { key: 'warehouse', label: 'Kho / Kho chung', type: 'ref', ref: 'warehouses', refAlso: 'warehouseGroups', required: true,
+        help: 'Kho thuộc Kho chung: chọn Kho chung (VD DUCHOA) để VAPD, PLAD dùng chung 1 bộ cửa' },
       { key: 'code', label: 'Mã cửa', type: 'text', required: true },
       { key: 'name', label: 'Tên cửa', type: 'text' },
       { key: 'usage', label: 'Dùng cho', type: 'select', options: ['Nhập và xuất', 'Chỉ nhập', 'Chỉ xuất'], default: 'Nhập và xuất' },
