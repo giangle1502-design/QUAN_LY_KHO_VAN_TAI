@@ -1,4 +1,4 @@
-import { locWh } from '../../lib/whGroups';
+import { locsOfWh } from '../../lib/whGroups';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
@@ -114,7 +114,7 @@ function CreateCount({ onClose }) {
     locFrom: '', locTo: '', areas: '', items: '', moved: false, movedOn: vnDate(), blind: true, note: '' });
   const set = (p) => setF((x) => ({ ...x, ...p }));
   const { rows: stock, loading } = useStock(f.warehouse || '__none__');
-  const locs = useCollection('locations').rows.filter((l) => l.warehouse === locWh(f.warehouse)).map((l) => l.code);
+  const locs = locsOfWh(useCollection('locations').rows, f.warehouse).map((l) => l.code);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const ex = useExtraFields('stockCount');

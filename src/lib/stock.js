@@ -287,7 +287,9 @@ async function applyEffects(tx, mv, effects, user) {
     byStock.set(id, cur);
   }
   // Kho pháp nhân thuộc kho chung: vị trí (sức chứa, pallet đang có) nằm ở kho chung
-  const locIds = [...new Set(effects.map((e) => locationId(locWh(e.warehouse), e.location)))];
+  // Chưa bấm Gộp (vị trí còn khai báo riêng ở kho pháp nhân): dùng vị trí của chính kho đó
+  const locIdsOf = (e) => [...new Set([locationId(locWh(e.warehouse), e.location), locationId(e.warehouse, e.location)])];
+  const locIds = [...new Set(effects.flatMap(locIdsOf))];
   // Xuất bán (SO / xuất lẻ) chỉ được hàng tình trạng cho phép xuất (KTC, DGC); STO chuyển kho được mọi tình trạng (kể cả HTC)
   const statusCodes = mv.orderType === 'STO' ? [] : [...new Set(effects.filter((e) => e.ship).map((e) => e.goodsStatus))];
 
@@ -306,7 +308,7 @@ async function applyEffects(tx, mv, effects, user) {
   }
   const locDelta = new Map();
   for (const [id, e] of byStock) {
-    const lid = locationId(locWh(e.warehouse), e.location);
+    const lid = locIdsOf(e).find((x) => locSnaps.get(x).exists()) || locationId(locWh(e.warehouse), e.location);
     const ls = locSnaps.get(lid);
     if (!ls.exists()) throw new Error(`Vị trí ${e.location} không có trong kho ${locWh(e.warehouse) !== e.warehouse ? `chung ${locWh(e.warehouse)} (của kho ${e.warehouse})` : e.warehouse}.`);
     if (e.receive && e.dPallets > EPS && ls.data().locked) throw new Error(`Vị trí ${e.location} đang bị khóa.`);

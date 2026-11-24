@@ -1,4 +1,4 @@
-import { locWh } from './whGroups';
+import { locOfWh } from './whGroups';
 import { OPEN_STATUSES, leftKg, lineDue, lineShip, lineTo, lineWh } from './orders';
 import { OPEN_PLAN } from './shipPlans';
 
@@ -52,7 +52,7 @@ export function enrichLine(l, shipto = [], whs = [], locs = []) {
   const s = l.shipCode ? shipto.find((x) => x.shipCode === l.shipCode) : null;
   const w = !s && l.partyCode ? whs.find((x) => x.code === String(l.partyCode).split(',')[0].trim()) : null;
   // Kho nhận STO: vị trí nhận ở nơi riêng (cảng, kho mua nội địa) có địa chỉ / định vị riêng thì lấy của vị trí
-  const loc = w && l.toLocation ? locs.find((x) => x.warehouse === locWh(w.code) && x.code === l.toLocation) : null;
+  const loc = w && l.toLocation ? locs.find((x) => locOfWh(x, w.code) && x.code === l.toLocation) : null;
   const src = s ? { address: s.address, contact: s.contact, contactPhone: s.phone, mapLink: s.mapLink }
     : w ? { address: loc?.address || w.address, contact: w.manager, contactPhone: w.phone, mapLink: loc?.mapLink || w.mapLink } : {};
   const out = { ...l };

@@ -1,4 +1,4 @@
-import { locWh } from '../lib/whGroups';
+import { locOfWh } from '../lib/whGroups';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
@@ -22,7 +22,7 @@ export default function Dashboard() {
   const [wh, setWh] = useOpWarehouse();
   const { rows: trips } = useTrips(ACTIVE, wh);
   const { rows: stock } = useStock(wh);
-  const locations = useCollection('locations').rows.filter((l) => inMyWarehouses(l.warehouse) && (!wh || l.warehouse === locWh(wh)));
+  const locations = useCollection('locations').rows.filter((l) => inMyWarehouses(l.warehouse) && (!wh || locOfWh(l, wh)));
   const [moves, setMoves] = useState([]);
   const today = vnDate();
 
