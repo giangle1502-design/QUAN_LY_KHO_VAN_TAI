@@ -1,4 +1,4 @@
-import { buysInto, buyWhText, companyOfWh, locsOfWh, printsLabels } from '../../lib/whGroups';
+import { buysInto, buyWhText, companyOfWh, locWh, locsOfWh, printsLabels } from '../../lib/whGroups';
 import { MV_FORM, blockLocSet, inBlockLoc, kindOf, withBlock } from '../../catalogs';
 import { ExtraFields, useExtraFields } from '../../components/ExtraFields';
 import { RETURN_CONDITIONS } from '../../lib/orders';
@@ -180,6 +180,8 @@ function Form({ type }) {
 
   // Đơn đang mở phù hợp kho và khách / nhà cung cấp
   const order = orders.find((o) => o.id === head.orderId);
+  // PO lập từ ảnh Ecount (hoặc lập tay) chưa chỉ định kho: phiếu nhập chọn kho, lưu xong ghi kho vào dòng đơn
+  const noWhOrder = type === 'in' && order?.type === 'PO' && order.lines.some((l) => openK(order, l, 'in') > 0 && !lineWh(order, l, 'in'));
   // Xe đi lấy hàng ở khách: khách trả hàng (SO / DRT) hoặc mua lại hàng của khách (PO loại POK): Nơi nhận = điểm giao hàng của khách
   const pokIn = type === 'in' && source === 'PO' && !!order && kindOf(order) === 'POK';
   const pickAtCustomer = type === 'in' && (['SO', 'DRT'].includes(source) || pokIn);
@@ -1167,6 +1169,9 @@ function Form({ type }) {
       )}
       {shipPlan && shipPlan.orderId === head.orderId && <div className="ok-box" style={{ marginBottom: 10 }}>📅 Lập theo <Link to="/du-kien-xuat">dự kiến xuất {groupPlans.length > 1 ? groupPlans.map((p) => p.id).join(', ') : shipPlan.id}</Link> · ngày {shipPlan.date}{shipPlan.ship ? ` · mã giao ${shipPlan.ship}` : ''}: {(shipPlan.lines || []).filter((l) => planLeft(l) > 0.001 && (!shipPlan.ship || (l.shipCode || '') === shipPlan.ship)).map((l) => `${l.item} ${fmtNum(planLeft(l), 2)} kg${l.packing ? ` (${l.packing})` : ''}`).join(', ')}</div>}
       {fillNote && <div className="hint" style={{ marginBottom: 10 }}>{fillNote}</div>}
+      {noWhOrder && (whCode
+        ? <div className="hint" style={{ marginBottom: 10 }}>🏬 Đơn <b>{order.id}</b> chưa chỉ định kho nhập: hàng nhập vào kho <b>{whCode}</b> (đổi ở ô Kho nếu khác). Lưu phiếu xong, đơn tự ghi kho {whCode} cho các dòng chưa có kho.</div>
+        : <div className="warn-box" style={{ marginBottom: 10 }}>🏬 Đơn <b>{order.id}</b> chưa chỉ định kho nhập: <b>chọn kho ở ô Kho</b> phía trên, rồi chọn vị trí cho từng dòng.</div>)}
       {invEntity && (
         <div className={invOk ? 'ok-box' : 'error-box'} style={{ marginBottom: 10 }}>
           🧾 Khách <b>{head.partyCode}</b>: <b>{invText}</b>.
@@ -1232,7 +1237,7 @@ function Form({ type }) {
         {lines.map((l, i) => (
           <div key={i} className="mv-line">
             {type === 'in' ? (<>{extra.length > 0 && <span className="badge" title="Dòng này nhập cho đơn" style={{ alignSelf: 'center' }}>{l.orderId || order?.id}</span>}
-              <InLine l={l} set={(p) => setLine(i, p)} itemMap={itemMap} items={items} locations={locations} statuses={statuses} pledgees={pledgees} locRequired={false}
+              <InLine l={l} set={(p) => setLine(i, p)} itemMap={itemMap} items={items} locations={locations} statuses={statuses} pledgees={pledgees} wh={whCode}
                 cap={caps[i]} onSplit={() => setLines((ls) => splitLineAt(ls, i, caps[i]))} /></>
             ) : (
               <>{extra.length > 0 && <span className="badge" title="Dòng này xuất cho đơn" style={{ alignSelf: 'center' }}>{l.orderId || order?.id}</span>}<StockLine type={type} slipCo={type === 'out' ? head.company : ''} l={l} set={(p) => setLine(i, p)} onPickOut={type === 'out' && order ? (x) => pickOutStock(i, x) : null} rows={stockRows} byId={stockById} blocked={blocked} releasable={releasable} onStock={setStockItem} itemMap={itemMap}
@@ -1308,7 +1313,8 @@ function OrderBox({ order, lines, type, stockById, onRefill, wh, pend, onStock }
 }
 
 function LocationSelect({ value, onChange, locations, exclude, wh }) {
-  const whCode = wh || locations[0]?.warehouse || '';
+  // Thêm nhanh vị trí: ghi vào Kho chung của kho (vị trí dùng chung cho các pháp nhân), kho riêng thì ghi vào chính kho
+  const whCode = (wh && locWh(wh)) || locations[0]?.warehouse || '';
   return (
     <WithAdd cat="locations" preset={whCode ? { warehouse: whCode } : undefined} onAdded={(id, r) => onChange(r?.code || String(id).split('__').pop())}>
     <Select value={value} onChange={(e) => onChange(e.target.value)}>
@@ -1339,7 +1345,7 @@ function QtyFields({ l, onKg, onPallets, onBags }) {
 // Bên nhận thế chấp mặc định cho hàng HTC: Techcombank (mã / tên có "Tech" hoặc "TCB") — quy tắc của người dùng
 export const defaultPledgee = (pledgees) => (pledgees || []).find((p) => /tech|\btcb\b/i.test(`${p.code} ${p.name}`))?.code || '';
 
-export function InLine({ l, set, itemMap, locations, statuses, pledgees, locRequired = true, cap, onSplit }) {
+export function InLine({ l, set, itemMap, locations, statuses, pledgees, wh, cap, onSplit }) {
   const it = itemMap.get(l.item);
   // Hàng HTC chưa chọn bên nhận thế chấp (đơn ghi HTC, hoặc đơn chưa ghi rồi chọn HTC khi nhập): tự điền Tech
   const techPl = defaultPledgee(pledgees);
@@ -1369,7 +1375,10 @@ export function InLine({ l, set, itemMap, locations, statuses, pledgees, locRequ
         <Field label="NSX"><input type="date" value={l.mfgDate} onChange={(e) => set({ mfgDate: e.target.value })} /></Field>
         <Field label="HSD"><input type="date" value={l.expDate} onChange={(e) => set({ expDate: e.target.value })} /></Field>
       </>}
-      <Field label="Vị trí" required={locRequired} help={locRequired ? '' : 'Thủ kho chọn khi nhận hàng'}><LocationSelect value={l.location} onChange={(v) => set({ location: v })} locations={locations} />
+      <Field label="Vị trí" required><LocationSelect value={l.location} onChange={(v) => set({ location: v })} locations={locations} wh={wh} />
+        {/* Phiếu nhập ghi tồn ngay khi lưu: kho chưa chọn / kho chưa khai báo vị trí thì nói rõ cách làm */}
+        {wh === '' && <small className="small" style={{ color: 'var(--amber)' }}>Chọn kho nhập ở ô Kho phía trên trước</small>}
+        {wh && !locations.length && <small className="small" style={{ color: 'var(--amber)' }}>Kho {wh}{locWh(wh) !== wh ? ` (kho chung ${locWh(wh)})` : ''} chưa có vị trí nào: bấm + để thêm</small>}
         {l.toBlock && !locations.find((x) => x.code === l.location)?.blockStock && <small className="small" style={{ color: 'var(--amber)' }}>Hàng khách trả hư hỏng / cần kiểm tra: nên để ở vị trí 🚫 khu hàng block{locations.some((x) => x.blockStock) ? '' : ' (kho chưa có, tích "Khu hàng block" ở Vị trí lưu trữ)'}</small>}
         {locations.find((x) => x.code === l.location)?.blockStock && <small className="small" style={{ color: 'var(--red)' }}>🚫 Khu hàng block: không xuất bán được</small>}
       </Field>
