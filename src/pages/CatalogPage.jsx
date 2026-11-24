@@ -207,15 +207,20 @@ function Catalog({ cat }) {
             <thead>
               <tr>
                 <th className="stt">STT</th>
+                <th className="no-print" style={{ width: 70 }}>Sửa</th>
                 {viewCols.map((c) => <th key={c.key} className={(c.num ? 'num ' : '') + 'col-drag'} {...dragHeadProps(c.key, colKeys, setColOrder)} {...tools.headProps(c)}>{c.label}{tools.headMark(c)}</th>)}
               </tr>
             </thead>
             <tbody>
-              {!list.length && <tr><td colSpan={viewCols.length + 1}><Empty text="Không có dòng nào khớp điều kiện lọc." /></td></tr>}
+              {!list.length && <tr><td colSpan={viewCols.length + 2}><Empty text="Không có dòng nào khớp điều kiện lọc." /></td></tr>}
               {list.map((r, i) => (
                 <tr key={r._id} onClick={() => setEditing(r)} style={{ cursor: 'pointer' }}>
                   <td className="stt" title={missingOf(r).length ? 'Còn thiếu: ' + missingOf(r).map((f) => f.label).join(', ') : undefined}>
                     {i + 1}{missingOf(r).length ? <span style={{ color: 'var(--amber)' }}> ⚠</span> : null}
+                  </td>
+                  <td className="no-print nowrap">
+                    <button type="button" className="btn sm" title={app.canEdit(cat, r) ? 'Sửa dòng này' : 'Xem dòng này'}
+                      onClick={(e) => { e.stopPropagation(); setEditing(r); }}>{app.canEdit(cat, r) ? '✏ Sửa' : '👁 Xem'}</button>
                   </td>
                   {viewCols.map(({ f }) => <td key={f.key} className={NUMERIC_TYPES.includes(f.type) ? 'num' : f.type === 'textarea' ? '' : 'nowrap'}><Cell f={f} r={r} /></td>)}
                 </tr>
