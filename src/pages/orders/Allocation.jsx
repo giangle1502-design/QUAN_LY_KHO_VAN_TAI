@@ -1,4 +1,4 @@
-import { locWh } from '../../lib/whGroups';
+import { locsOfWh } from '../../lib/whGroups';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -607,7 +607,7 @@ function SharedCells({ v, edit, editCarrier = edit, save, cats, whs }) {
 // Vị trí trong kho (kho cảng, kho mua nội địa…); kho chỉ cần kho (Đức Hòa) thì không hiện
 function LocCell({ wh, value, edit, locs, onChange, mixed }) {
   if (!planNeedsLocation(wh)) return null;
-  const list = locs.filter((l) => l.warehouse === locWh(wh.code) && !l.locked).sort((a, b) => String(a.code).localeCompare(String(b.code)));
+  const list = locsOfWh(locs, wh.code).filter((l) => !l.locked).sort((a, b) => String(a.code).localeCompare(String(b.code)));
   if (!edit) return value ? <div className="small">Vị trí {value}</div> : null;
   return (
     <WithAdd style={{ marginTop: 4 }} cat="locations" preset={{ warehouse: wh.code }} onAdded={(id, r) => onChange(r?.code || String(id).split('__').pop())}>

@@ -1,4 +1,4 @@
-import { locWh } from '../../lib/whGroups';
+import { locsOfWh } from '../../lib/whGroups';
 import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
@@ -64,7 +64,7 @@ export default function AdjustImport() {
   const fileRef = useRef();
 
   const itemMap = useMemo(() => new Map(items.map((i) => [i.code, i])), [items]);
-  const locMap = useMemo(() => new Map(locations.filter((l) => l.warehouse === locWh(wh?.code)).map((l) => [l.code, l])), [locations, wh]);
+  const locMap = useMemo(() => new Map(locsOfWh(locations, wh?.code).map((l) => [l.code, l])), [locations, wh]);
   const stockMap = useMemo(() => new Map(stock.map((r) => [r._id, r])), [stock]);
   const stSet = useMemo(() => new Set(statuses.map((s) => s.code)), [statuses]);
 

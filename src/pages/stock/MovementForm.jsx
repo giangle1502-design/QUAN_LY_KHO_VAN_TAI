@@ -1,4 +1,4 @@
-import { buysInto, buyWhText, companyOfWh, locWh } from '../../lib/whGroups';
+import { buysInto, buyWhText, companyOfWh, locsOfWh } from '../../lib/whGroups';
 import { MV_FORM, blockLocSet, inBlockLoc, kindOf, withBlock } from '../../catalogs';
 import { ExtraFields, useExtraFields } from '../../components/ExtraFields';
 import { RETURN_CONDITIONS } from '../../lib/orders';
@@ -83,7 +83,7 @@ function Form({ type }) {
   // Tình trạng hàng HTC sau khi giải chấp ở kho này (DGC; cảng: KTC)
   const relTo = releaseStatusOfWh(wh);
   const items = useCollection('items').rows;
-  const locations = useCollection('locations').rows.filter((l) => l.warehouse === locWh(whCode));
+  const locations = locsOfWh(useCollection('locations').rows, whCode);
   const statusRows = useCollection('goodsStatus').rows;
   const statuses = useMemo(() => withBlock(statusRows), [statusRows]);
   const pledgees = useCollection('pledgees').rows;
