@@ -12,7 +12,7 @@ import { useApp } from '../../context/AppContext';
 import { useCollection, useCompanies, useMyWarehouses, useOpCompany, useOpWarehouse, useOrders, usePendingIn, useStock, useTrips, useWaitingOut } from '../../lib/hooks';
 import { CompanyPicker } from '../../components/TripBits';
 import { IN_SOURCES, OPEN_STATUSES, ORDER_FOR_MOVE, ORDER_TYPES, isReturn, lineFrom, lineShip, lineTo, lineWh, matchOrderLine, openKg, orderInWarehouse, orderWarehouse, stoRoute } from '../../lib/orders';
-import { MOVE_TYPES, ageDays, createPendingIn, createWaitingOut, kgOf, postMovement, suggestPallets } from '../../lib/stock';
+import { MOVE_TYPES, ageDays, createWaitingOut, kgOf, postMovement, suggestPallets } from '../../lib/stock';
 import { releaseStatusOfWh } from '../../lib/release';
 import { ST, vnDate } from '../../lib/trips';
 import { createPlannedTrips } from '../../lib/transport';
@@ -57,7 +57,7 @@ export function mergeKey(o, type, wh) {
 export const mergeRule = (type, t) => ({ SO: 'cùng khách hàng, cùng công ty xuất, cùng kho', PO: 'cùng nhà cung cấp, cùng công ty, cùng kho nhập', STO: type === 'out' ? 'cùng kho xuất, cùng kho nhận' : 'cùng kho đi, cùng kho nhận' }[t] || '');
 
 // Ai được lập loại phiếu nào
-// Phiếu nhập: quản trị lập và in phiếu, thủ kho nhận hàng ngoài hiện trường rồi xác nhận (trang Nhận hàng)
+// Phiếu nhập: quản trị lập là ghi tồn ngay (không chờ thủ kho xác nhận). Thủ kho chỉ định xe vào cửa, xác nhận nhập / xuất xong (Vận tải → Thủ kho điều phối)
 export function canMove(hasRole, type, isAdmin) {
   if (type === 'in') return !!isAdmin;
   return type === 'status' ? hasRole('ke_toan') : hasRole('thu_kho');
@@ -156,6 +156,7 @@ function Form({ type }) {
   const [doneCross, setDoneCross] = useState('');
   const [doneTrip, setDoneTrip] = useState('');
   const [doneGroup, setDoneGroup] = useState(null);
+  const [donePosted, setDonePosted] = useState(false); // phiếu nhập đã ghi tồn ngay (kho không có thủ kho)
   const [filter, setFilter] = useState('');
   const [picking, setPicking] = useState(false);
   // Chưa biết hàng nằm kho nào: bấm mã hàng → Xem tồn kho → chọn kho (và dòng tồn) từ bảng
@@ -756,7 +757,9 @@ function Form({ type }) {
     if (type === 'out' && head.shipCode && shipOpts.length && !shipOpts.some((s) => s.shipCode === head.shipCode)) return setErr(`Mã giao ${head.shipCode} không thuộc khách hàng ${head.partyCode}.`);
     if (type === 'out') { const pe = palletError(pal, head, 'out', { managed: palletManaged(wh) }); if (pe) return setErr(pe); }
     // Phiếu nhập: quản trị lập có thể chưa biết loại pallet; thủ kho kiểm tra, chọn khi nhận hàng
-    if (type === 'in' && pal.palletMode === 'pallet') { const pe = palletError(pal, head, 'in', { managed: palletManaged(wh) }); if (pe) return setErr(pe + ' (hoặc để thủ kho chọn khi nhận hàng: bỏ chọn Kiện)'); }
+    // Phiếu nhập ghi tồn ngay khi lưu (mọi kho, kể cả Đức Hòa), nên phải đủ vị trí, loại pallet
+    const oneStep = type === 'in';
+    if (type === 'in' && pal.palletMode === 'pallet') { const pe = palletError(pal, head, 'in', { managed: palletManaged(wh) }); if (pe) return setErr(pe + (oneStep ? '' : ' (hoặc để thủ kho chọn khi nhận hàng: bỏ chọn Kiện)')); }
     // Thông tin vận tải không bắt buộc: bổ sung sau ở Phiếu kho → mở phiếu → Sửa thông tin vận tải
     const out = [];
     for (const [i, l] of lines.entries()) {
@@ -764,6 +767,7 @@ function Form({ type }) {
       if (type === 'in') {
         if (!l.item || !itemMap.has(l.item)) return setErr(no + 'chọn mã hàng có trong danh mục.');
         // Vị trí: thủ kho chọn khi nhận hàng (quản trị lập phiếu có thể để trống)
+        if (oneStep && !String(l.location || '').trim()) return setErr(no + `chọn vị trí (phiếu nhập ghi tồn ngay khi lưu).`);
         if (!num(l.kg) && !num(l.bags) && !num(l.pallets)) return setErr(no + 'nhập số kg, pallet hoặc số bao.');
         if (l.goodsStatus === 'HTC' && !l.pledgee) return setErr(no + 'hàng HTC cần chọn bên nhận thế chấp.');
         out.push({ ...(l.orderLine != null ? { orderLine: l.orderLine } : {}), ...(l.orderId ? { _oid: l.orderId } : {}), ...(l.toBlock ? { toBlock: true } : {}), item: l.item, itemName: itemMap.get(l.item).name, lot: l.lot.trim(), mfgDate: l.mfgDate, expDate: l.expDate,
@@ -853,9 +857,10 @@ function Form({ type }) {
     const ids = [];
     try {
       const direct = type === 'in' && source === 'direct';
-      const mk = type === 'in' ? (m) => createPendingIn({ ...m, ...(direct ? { directPO: {
-        company: head.company, date: head.date, partyCode: head.partyCode.trim(), partyName: head.partyName.trim(), refNo: head.refNo.trim(),
-        tolerancePct: 0, note: head.note.trim() } } : {}) }, { email, name }) : (m) => (m.lines.some((l) => l._rel) ? createWaitingOut : postMovement)(
+      const directPO = direct ? { company: head.company, date: head.date, partyCode: head.partyCode.trim(), partyName: head.partyName.trim(), refNo: head.refNo.trim(),
+        tolerancePct: 0, note: head.note.trim() } : null;
+      // Phiếu nhập ghi tồn ngay (nhập trực tiếp: lập PO luôn theo số nhập)
+      const mk = type === 'in' ? (m) => postMovement(m, { email, name }, { newOrder: directPO }) : (m) => (m.lines.some((l) => l._rel) ? createWaitingOut : postMovement)(
         { ...m, lines: m.lines.map(({ _rel, ...l }) => l) }, { email, name });
       const base = {
         type, warehouse: wh.code, company: head.company || '', date: head.date, tripId: head.tripId || '',
@@ -920,6 +925,7 @@ function Form({ type }) {
       setDoneCross(cross.length ? [...new Set(cross.map((l) => l.company))].join(', ') : '');
       setShipPlan(null); setExtra([]); setGroupPlans([]);
       setDoneGroup(groupId ? { id: groupId, ids, orders: pieces.map((x) => x.order.id) } : null);
+      setDonePosted(oneStep);
       setDone(mvId);
       if (!(type === 'in' && ['SO', 'DRT'].includes(source) && ret.carrier)) setDoneTrip('');
       setRet({ carrier: '', ship: '', date: '', plate: '' });
@@ -944,12 +950,12 @@ function Form({ type }) {
           <Link className="btn" to="/kho/phieu">Danh sách phiếu</Link>
         </div>
       </div>
-      {done && doneGroup && type === 'in' && <div className="ok-box" style={{ marginBottom: 10 }}>📦 Phiếu nhập gộp <b className="mono">{doneGroup.id}</b>: 1 xe về {doneGroup.orders.length} đơn ({doneGroup.orders.join(', ')}), đã lập phiếu <b className="mono">{doneGroup.ids.join(', ')}</b> (mỗi đơn 1 phiếu con). <b>Chờ thủ kho nhận hàng</b>: thủ kho xác nhận 1 lần cho cả xe.
-        {' '}<Link className="btn primary" to={`/kho/phieu/${done}/in`} target="_blank">🖨 In phiếu nhập gộp</Link> <Link className="btn" to={`/kho/nhan-hang/${done}`}>📥 Nhận hàng cả xe</Link></div>}
+      {done && doneGroup && type === 'in' && <div className="ok-box" style={{ marginBottom: 10 }}>📦 Phiếu nhập gộp <b className="mono">{doneGroup.id}</b>: 1 xe về {doneGroup.orders.length} đơn ({doneGroup.orders.join(', ')}), đã lập phiếu <b className="mono">{doneGroup.ids.join(', ')}</b> (mỗi đơn 1 phiếu con). {donePosted ? <b>Tồn kho đã cập nhật.</b> : <><b>Chờ thủ kho nhận hàng</b>: thủ kho xác nhận 1 lần cho cả xe.</>}
+        {' '}<Link className="btn primary" to={`/kho/phieu/${done}/in`} target="_blank">🖨 In phiếu nhập gộp</Link>{!donePosted && <> <Link className="btn" to={`/kho/nhan-hang/${done}`}>📥 Nhận hàng cả xe</Link></>}</div>}
       {done && doneGroup && type !== 'in' && <div className="ok-box" style={{ marginBottom: 10 }}>🚚 Phiếu xuất gộp <b className="mono">{doneGroup.id}</b>: 1 xe {doneGroup.orders.length} đơn ({doneGroup.orders.join(', ')}), đã lập phiếu <b className="mono">{doneGroup.ids.join(', ')}</b> (mỗi đơn 1 phiếu con){doneRel ? '' : ', tồn kho đã cập nhật'}.
         In chung 1 bộ: <Link className="btn primary" to={`/kho/phieu/${done}/soan`} target="_blank">📋 Phiếu soạn hàng gộp</Link> <Link className="btn" to={`/kho/phieu/${done}/in`} target="_blank">🖨 Phiếu {order?.type === 'STO' || String(doneGroup.orders[0]).startsWith('STO') ? 'xuất' : 'giao hàng'} gộp</Link>
         {doneRel && <div style={{ marginTop: 6 }}>⏳ Có hàng HTC nên phiếu có hàng HTC đang <b>chờ giải chấp</b>; vào <Link to="/kho/giai-chap">Đề nghị giải chấp → Chờ giải chấp</Link>.</div>}</div>}
-      {done && !doneGroup && <div className="ok-box" style={{ marginBottom: 10 }}>Đã lập phiếu <b className="mono">{done}</b>{donePO && <> và đơn mua <Link className="mono" to="/don-hang?tab=PO">{donePO}</Link> (nhập trực tiếp)</>}.{type === 'in' ? <> <b>Chờ thủ kho nhận hàng</b> và xác nhận số thực nhận, vị trí (tồn kho cập nhật khi thủ kho xác nhận{source === 'direct' ? ', đơn mua PO lập theo số thực nhận' : ''}).</> : doneRel ? '' : ' Tồn kho đã cập nhật.'} <Link to={`/kho/phieu/${done}/in`} target="_blank">🖨 In phiếu</Link>
+      {done && !doneGroup && <div className="ok-box" style={{ marginBottom: 10 }}>Đã lập phiếu <b className="mono">{done}</b>{donePO && <> và đơn mua <Link className="mono" to="/don-hang?tab=PO">{donePO}</Link> (nhập trực tiếp)</>}.{type === 'in' && donePosted ? ' Tồn kho đã cập nhật.' : type === 'in' ? <> <b>Chờ thủ kho nhận hàng</b> và xác nhận số thực nhận, vị trí (tồn kho cập nhật khi thủ kho xác nhận{source === 'direct' ? ', đơn mua PO lập theo số thực nhận' : ''}).</> : doneRel ? '' : ' Tồn kho đã cập nhật.'} <Link to={`/kho/phieu/${done}/in`} target="_blank">🖨 In phiếu</Link>
 
         {type === 'out' && <> · <Link className="btn primary" to={`/kho/phieu/${done}/soan`} target="_blank">📋 In phiếu soạn hàng</Link></>}
         {doneTrip && <div style={{ marginTop: 6 }}>🚚 Đã tạo chuyến đi lấy hàng ở khách <b className="mono">{doneTrip}</b>: đơn vị vận tải thấy chuyến trên link tài xế, điểm nhận hàng là địa chỉ khách. Xem ở <Link to="/van-tai">Vận tải</Link>.</div>}

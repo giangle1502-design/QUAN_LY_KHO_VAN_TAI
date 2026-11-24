@@ -48,6 +48,17 @@ export const poRuleOn = () => [...groups.values()].some((g) => g.poReceive) || [
 export const buysInto = (wh) => !poRuleOn() || !wh || !!(whRows.get(wh)?.poReceive || byWh.get(wh)?.poReceive);
 export const buyWhText = () => [...[...groups.values()].filter((g) => g.poReceive).map((g) => g.name || g.code), ...[...whRows.values()].filter((w) => w.poReceive && !byWh.get(w.code || w._id)?.poReceive).map((w) => w.code || w._id)].join(', ');
 
+// Kho có bảo vệ & thủ kho (hiện chỉ Kho Đức Hòa): chuyến xe qua bảo vệ cổng; thủ kho chỉ định xe vào cửa nào, xác nhận nhập / xuất xong.
+// Kho không có: chuyến xe bỏ các bước đó. (Phiếu nhập ở mọi kho đều ghi tồn ngay khi lưu, không chờ thủ kho.)
+// Kho thuộc Kho chung: theo ô của Kho chung (chưa đặt: Kho chung tên / mã có "Đức Hòa" = có). Kho lẻ: ô "Có bảo vệ" của kho (mặc định có)
+const isDucHoa = (g) => { const t = `${g.code || ''} ${g.name || ''}`.normalize('NFC').toUpperCase(); return t.includes('DUCHOA') || t.includes('DUC HOA') || t.includes('ĐỨC HÒA') || t.includes('ĐỨC HOÀ'); };
+export const hasKeeper = (wh) => {
+  if (!wh) return true;
+  const g = groups.get(wh) || byWh.get(wh);
+  if (g) return typeof g.hasGuard === 'boolean' ? g.hasGuard : isDucHoa(g);
+  return whRows.get(wh)?.hasGuard !== false;
+};
+
 // Pháp nhân mặc định của kho (VD VAP-Cảng → VAP)
 export const companyOfWh = (wh) => whRows.get(wh)?.company || '';
 export const whLabel = (code) => {
