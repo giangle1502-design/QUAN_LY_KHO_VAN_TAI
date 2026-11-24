@@ -76,6 +76,7 @@ export const CATALOGS = [
       { key: 'kind', label: 'Loại', type: 'select', options: ['Công ty trong nhóm', 'Công ty khách'], default: 'Công ty trong nhóm',
         help: 'Công ty khách: khách gửi hàng / thuê kho' },
       { key: 'taxCode', label: 'Mã số thuế / Số ĐKKD', type: 'text' },
+      { key: 'logo', label: 'Logo', type: 'image', help: 'In ở góc trái tiêu đề phiếu giao hàng (mẫu khung) và mẫu in có trường {{Công ty: Logo}}. Ảnh PNG/JPG, tự thu nhỏ khi tải lên' },
       { key: 'bizRegInfo', label: 'Nơi cấp, ngày cấp ĐKKD', type: 'textarea',
         help: 'In sau số ĐKKD trên đề nghị giải chấp. VD: do Sở KH&ĐT ... cấp, đăng ký lần đầu ngày ...' },
       { key: 'address', label: 'Địa chỉ', type: 'textarea' },

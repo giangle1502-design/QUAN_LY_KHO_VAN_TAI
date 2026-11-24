@@ -39,6 +39,7 @@ export function fmtValue(type, v, dec, fixed = false) {
   if (type === 'date') return fmtDate(v);
   if (type === 'datetime') { const d = new Date(v); return Number.isNaN(d.getTime()) ? String(v) : `${two(d.getDate())}/${two(d.getMonth() + 1)}/${d.getFullYear()} ${two(d.getHours())}:${two(d.getMinutes())}`; }
   if (type === 'checkbox') return v ? '✓' : '';
+  if (type === 'image') return v ? '🖼' : '';
   if (type === 'percent') return `${fmtNum(v, 2)}%`;
   if (['number', 'currency', 'num', 'formula'].includes(type)) return Number.isNaN(Number(v)) ? String(v) : fmtNum(v, dec ?? (type === 'currency' ? 0 : 3), fixed ? dec ?? 3 : 0);
   return String(v);
@@ -92,6 +93,7 @@ function moveTitle(m, docType) {
   if (docType === 'nhan') return 'NHÃN NHẬP KHO';
   return `PHIẾU ${(MOVE_TYPES[m?.type]?.label || 'KHO').toUpperCase()}`;
 }
+const isSto = (d) => d.m?.orderType === 'STO' || String(d.m?.orderId || '').startsWith('STO');
 const lineSum = (d, k) => (d.m?.lines || []).reduce((s, l) => s + num(l[k]), 0);
 
 // Danh sách trường của 1 loại phiếu: { head: trường chung, line: trường dòng hàng (cột bảng) }
@@ -161,6 +163,14 @@ export function fieldDefs(docType, fieldsOf) {
     { g: 'Phiếu', label: 'Hình thức xuất', key: 'palletMode', get: (d) => (m(d).palletMode === 'pallet' ? 'Kiện (có pallet)' : m(d).palletMode === 'xa' ? 'Xá (không pallet)' : '') },
     { g: 'Phiếu', label: 'Kiện / Xá', key: 'packing', get: (d) => (m(d).palletMode === 'pallet' ? 'Kiện' : m(d).palletMode === 'xa' ? 'Xá' : '') },
     { g: 'Phiếu', label: 'Pallet xuất kèm', key: 'palletText', get: (d) => d.palletText ?? '' },
+    // Phiếu giao hàng: bên nhận hàng = khách hàng (tên, MST theo khách; địa chỉ theo mã giao) hoặc kho nhận của lệnh chuyển kho
+    { g: 'Bên nhận', label: 'Tiêu đề phiếu giao hàng', key: 'deliveryTitle', get: (d) => (isSto(d) ? 'PHIẾU XUẤT KHO KIÊM VẬN CHUYỂN NỘI BỘ' : d.party?.deliveryTitle || 'PHIẾU GIAO HÀNG') },
+    { g: 'Bên nhận', label: 'Bên nhận: Nhãn', key: 'rcvLabel', get: (d) => (isSto(d) ? 'Kho nhận' : 'Khách hàng') },
+    { g: 'Bên nhận', label: 'Bên nhận: Tên', key: 'rcvName', get: (d) => (isSto(d) ? d.toWh?.name || m(d).partyName || m(d).partyCode : d.party?.name || m(d).partyName || m(d).partyCode) },
+    { g: 'Bên nhận', label: 'Bên nhận: Địa chỉ', key: 'rcvAddress', get: (d) => (isSto(d) ? d.toWh?.address : d.shipto?.address || d.party?.taxAddress) },
+    { g: 'Bên nhận', label: 'Bên nhận: Mã số thuế', key: 'rcvTax', get: (d) => (isSto(d) ? d.co?.taxCode : d.party?.taxCode || d.shipto?.taxCode) },
+    { g: 'Bên nhận', label: 'Bên nhận: Người nhận', key: 'rcvContact', get: (d) => (isSto(d) ? '' : d.shipto?.contact) },
+    { g: 'Bên nhận', label: 'Bên nhận: Điện thoại', key: 'rcvPhone', get: (d) => (isSto(d) ? '' : d.shipto?.phone) },
     ...catFields(fieldsOf, 'companies', 'Công ty chủ hàng', 'Công ty', (d) => d.co),
     ...catFields(fieldsOf, 'warehouses', 'Kho', 'Kho', (d) => d.wh),
     ...catFields(fieldsOf, 'soldto', 'Khách hàng', 'Khách hàng', (d) => d.party),
@@ -185,6 +195,7 @@ export function fieldDefs(docType, fieldsOf) {
     { label: 'Số tấn', key: 'tons', type: 'num', dec: 3, fixed: true, get: (d, l) => num(l.kg) / 1000 },
     { label: 'Pallet', key: 'pallets', type: 'num', dec: 2, get: (d, l) => num(l.pallets) },
     { label: 'Số bao', key: 'bags', type: 'num', dec: 0, get: (d, l) => num(l.bags) },
+    { label: 'ĐVT', key: 'unit', get: () => 'KG' },
     { label: 'Ghi chú dòng', key: 'lineNote', get: (d, l) => l.note },
     { label: 'Công ty dòng', key: 'lineCompany', get: (d, l) => l.company },
     { label: 'Số đơn (SO) của dòng', key: 'lineOrderId', get: (d, l) => l.orderId || m(d).orderId },
@@ -226,6 +237,8 @@ function valueMap(defs, d, l) {
     let raw;
     try { raw = f.get(d, l); } catch { raw = ''; }
     const v = { raw, text: fmtValue(f.type, raw, f.dec, f.fixed) };
+    // Trường hình (VD logo công ty): in thành ảnh
+    if (f.type === 'image' && typeof raw === 'string' && /^(data:image\/|https:\/\/)/.test(raw)) v.html = `<img class="tpl-img" src="${esc(raw)}" alt="">`;
     map.set(norm(f.label), v);
     map.set(norm(f.key), v);
   }
@@ -246,7 +259,7 @@ function fill(html, lookup, preview) {
   return out.replace(/\{\{\s*([^}#/][^}]*?)\s*\}\}/g, (all, name) => {
     const v = val(name.replace(/<[^>]*>/g, ''));
     if (v === undefined) return preview ? `<span class="tpl-unknown" title="Không có trường này">${esc(all)}</span>` : '';
-    return esc(v.text).replace(/\n/g, '<br>');
+    return v.html ?? esc(v.text).replace(/\n/g, '<br>');
   });
 }
 
@@ -384,8 +397,8 @@ export function pageCss(tpl) {
 .tpl-sheet table { border-collapse: collapse; width: auto; }
 .tpl-sheet td, .tpl-sheet th { vertical-align: top; color: inherit; background: none; position: static; font-size: inherit; border: none; padding: 1px 4px; text-align: inherit; white-space: normal; }
 .tpl-sheet table.tpl-lines { width: 100%; margin: 6px 0; }
-.tpl-sheet table.tpl-lines th, .tpl-sheet table.tpl-lines td { border: 1px solid #000; padding: 4px 5px; }
-.tpl-sheet table.tpl-lines th { background: ${tpl.table?.headBg || '#f2f2f2'}; text-align: center; font-weight: 700; }
+.tpl-sheet table.tpl-lines th, .tpl-sheet table.tpl-lines td { border: 1px solid #000; padding: 4px 5px; vertical-align: middle; }
+.tpl-sheet table.tpl-lines th { background: ${tpl.table?.headBg || '#f2f2f2'}; color: ${tpl.table?.headColor || '#000'}; text-align: center; font-weight: 700; }
 .tpl-sheet table.tpl-lines.tpl-noborder th, .tpl-sheet table.tpl-lines.tpl-noborder td { border: none; border-bottom: 1px solid #bbb; }
 .tpl-sheet table.tpl-grid td, .tpl-sheet table.tpl-grid th { border: 1px solid #000; padding: 3px 5px; }
 .tpl-sheet table.tpl-signs { width: 100%; margin-top: 14px; text-align: center; }
@@ -420,10 +433,86 @@ const VEHICLE = `{{#nếu Số xe}}<p>Số xe: <b>{{Số xe}}</b>{{#nếu Tài x
 {{#nếu Đơn vị vận tải}}<p>Đơn vị vận tải: {{Đơn vị vận tải}}</p>{{/nếu}}`;
 const col = (field, extra = {}) => ({ field, header: field, ...extra });
 
-export function starterTemplate(docType) {
+// Bố cục ban đầu có sẵn để chọn khi tạo mẫu (ngoài bố cục giống bản in gốc)
+export const LAYOUTS = {
+  px: { khung: 'Phiếu giao hàng khung: logo, Bên giao / Bên nhận, Thông tin vận chuyển' },
+};
+// Mẫu dựng sẵn của hệ thống: chọn được ở ô "Mẫu in" trên trang in mà không cần lưu mẫu
+export const BUILTIN_TEMPLATES = {
+  px: [{ id: '__khung', layout: 'khung', name: 'Phiếu giao hàng khung (Bên giao / Bên nhận)' }],
+};
+export function builtinTemplate(docType, id) {
+  const b = (BUILTIN_TEMPLATES[docType] || []).find((x) => x.id === id);
+  return b ? { ...starterTemplate(docType, b.layout), id: b.id, name: b.name, builtin: true } : null;
+}
+
+// Phiếu giao hàng khung: tiêu đề công ty có logo, số phiếu góc phải, 2 khung Bên giao / Bên nhận cạnh nhau,
+// khung Thông tin vận chuyển, bảng hàng (tiêu đề nền đen chữ trắng), 2 ô ký
+const KHUNG_CSS = `.tpl-sheet table.gx-head { width: 100%; border-bottom: 1.5px solid #000; margin-bottom: 6px; }
+.tpl-sheet table.gx-head td { vertical-align: middle; padding: 2px 4px 6px; }
+.tpl-sheet td.gx-logo { width: 26%; }
+.tpl-sheet td.gx-logo img { max-height: 24mm; max-width: 100%; }
+.tpl-sheet td.gx-co { font-size: .92em; }
+.gx-coname { font-weight: 700; font-size: 1.12em; text-transform: uppercase; }
+.tpl-sheet td.gx-no { text-align: right; white-space: nowrap; width: 24%; }
+.tpl-sheet td.gx-no b { font-size: 1.15em; }
+.tpl-sheet h1.gx-title { text-align: center; font-size: 1.85em; letter-spacing: .5px; margin: 8px 0 0; }
+.tpl-sheet p.gx-date { text-align: center; font-style: italic; margin-bottom: 8px; }
+.tpl-sheet p.gx-copy { text-align: center; font-size: .85em; }
+.tpl-sheet table.gx-two { width: 100%; margin-bottom: 8px; }
+.tpl-sheet table.gx-two > tbody > tr > td { padding: 0; vertical-align: top; }
+.tpl-sheet table.gx-two > tbody > tr > td.gx-cell { width: 48.5%; border: 1px solid #000; }
+.gx-box { border: 1px solid #000; margin-bottom: 8px; }
+.gx-box-h { background: #000; color: #fff; font-weight: 700; padding: 4px 8px; text-transform: uppercase; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.tpl-sheet table.gx-kv { width: 100%; margin: 4px 0; }
+.tpl-sheet table.gx-kv td { padding: 2px 8px; vertical-align: top; }
+.tpl-sheet table.gx-kv td.k { width: 30%; white-space: nowrap; }
+.gx-name { font-weight: 700; text-transform: uppercase; }
+.tpl-sheet table.tpl-lines tfoot td:first-child { text-align: right; }
+.gx-signs b { text-transform: uppercase; }`;
+
+export function starterTemplate(docType, layout = '') {
   const base = { docType, name: `Mẫu ${DOC_TYPES[docType].label.toLowerCase()} mới`, paper: 'A4', orientation: 'portrait', margin: 12,
     fontFamily: FONTS[0][0], fontSize: 13, lineHeight: 1.35, companies: [], parties: [], isDefault: false, active: true, css: '', signSpace: 22 };
   const signNote = '(Ký, ghi rõ họ tên)';
+  if (docType === 'px' && layout === 'khung') return { ...base, layout, name: 'Phiếu giao hàng khung', fontSize: 14, lineHeight: 1.4, margin: 12,
+    body: `<table class="gx-head"><tbody><tr>
+<td class="gx-logo">{{#nếu Công ty: Logo}}{{Công ty: Logo}}{{/nếu}}</td>
+<td class="gx-co"><div class="gx-coname">{{Công ty: Tên công ty}}</div>{{#nếu Công ty: Địa chỉ}}<div>Địa chỉ: {{Công ty: Địa chỉ}}</div>{{/nếu}}{{#nếu Công ty: Mã số thuế / Số ĐKKD}}<div>MST: {{Công ty: Mã số thuế / Số ĐKKD}}</div>{{/nếu}}{{#nếu Công ty: Điện thoại}}<div>Điện thoại: {{Công ty: Điện thoại}}</div>{{/nếu}}</td>
+<td class="gx-no">{{#nếu Số đơn hàng}}Số: <b>{{Số đơn hàng}}</b><br>{{/nếu}}{{#nếu Số chuyến xe}}Shipment: {{Số chuyến xe}}<br>{{/nếu}}Số PXK: {{Số phiếu}}{{#nếu Số đơn Ecount / chứng từ}}<br>Số Ecount: {{Số đơn Ecount / chứng từ}}{{/nếu}}</td>
+</tr></tbody></table>
+<h1 class="gx-title">{{Tiêu đề phiếu giao hàng}}</h1>
+<p class="gx-date">Ngày {{Ngày (dd)}} tháng {{Tháng (mm)}} năm {{Năm (yyyy)}}</p>
+{{#nếu Liên}}<p class="gx-copy">{{Liên}}</p>{{/nếu}}
+{{#nếu Lý do hủy}}<p style="text-align:center;color:#c00"><b>PHIẾU ĐÃ HỦY: {{Lý do hủy}}</b></p>{{/nếu}}
+<table class="gx-two"><tbody><tr>
+<td class="gx-cell"><div class="gx-box-h">Bên giao hàng</div><table class="gx-kv"><tbody>
+<tr><td class="k">Công ty:</td><td class="gx-name">{{Công ty: Tên công ty}}</td></tr>
+<tr><td class="k">Địa chỉ:</td><td>{{Công ty: Địa chỉ}}</td></tr>
+<tr><td class="k">Mã số thuế:</td><td><b>{{Công ty: Mã số thuế / Số ĐKKD}}</b></td></tr>
+<tr><td class="k">Kho xuất:</td><td>{{Kho: Tên kho}}</td></tr>
+</tbody></table></td>
+<td></td>
+<td class="gx-cell"><div class="gx-box-h">Bên nhận hàng</div><table class="gx-kv"><tbody>
+<tr><td class="k">{{Bên nhận: Nhãn}}:</td><td class="gx-name">{{Bên nhận: Tên}}</td></tr>
+<tr><td class="k">Địa chỉ:</td><td>{{Bên nhận: Địa chỉ}}{{#nếu Bên nhận: Người nhận}}<br>Người nhận: {{Bên nhận: Người nhận}}{{/nếu}}{{#nếu Bên nhận: Điện thoại}} · ĐT {{Bên nhận: Điện thoại}}{{/nếu}}</td></tr>
+<tr><td class="k">Mã số thuế:</td><td><b>{{Bên nhận: Mã số thuế}}</b></td></tr>
+</tbody></table></td>
+</tr></tbody></table>
+<div class="gx-box"><div class="gx-box-h">Thông tin vận chuyển</div><table class="gx-kv"><tbody>
+<tr><td style="width:50%">Số xe: <b>{{Số xe}}</b></td><td>Đơn vị vận tải: {{Đơn vị vận tải}}</td></tr>
+<tr><td>Tài xế: {{Tài xế}}{{#nếu CCCD tài xế}} · CCCD {{CCCD tài xế}}{{/nếu}}</td><td>SĐT: {{Điện thoại tài xế}}</td></tr>
+</tbody></table></div>
+{{BẢNG HÀNG}}
+{{#nếu Ghi chú}}<p>Ghi chú: {{Ghi chú}}</p>{{/nếu}}
+<div class="gx-signs">{{CHỮ KÝ}}</div>`,
+    css: KHUNG_CSS,
+    table: { columns: [col('STT', { width: '7%', align: 'center' }), col('Mã hàng', { width: '15%' }), col('Tên hàng'), col('ĐVT', { width: '8%', align: 'center' }),
+      col('Số kg', { header: 'Số lượng', sum: true, width: '13%' }), col('Số bao', { sum: true, width: '11%' }), col('Ghi chú dòng', { header: 'Ghi chú', width: '15%' })],
+      groupBy: 'item', showTotal: true, totalLabel: 'TỔNG CỘNG', minRows: 0, headBg: '#000000', headColor: '#ffffff' },
+    signs: [{ title: 'BÊN GIAO HÀNG', note: signNote }, { title: 'BÊN NHẬN HÀNG', note: '(Ký, ghi rõ họ tên, đóng dấu)' }],
+    signSpace: 26,
+  };
   if (docType === 'px') return { ...base,
     body: `${HEAD_BLOCK}
 <h2 style="text-align:center">{{Tiêu đề phiếu}}</h2>

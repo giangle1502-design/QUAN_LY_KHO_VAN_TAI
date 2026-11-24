@@ -155,7 +155,7 @@ function Catalog({ cat }) {
           {editable && (
             <>
               <button className="btn" onClick={() => fileRef.current.click()}>⬆ Nhập Excel</button>
-              <button className="btn ghost" onClick={() => { const tf = shown.filter((f) => !f.computed && !f.system && f.type !== 'formula'); exportTemplate(`Mau_${cat.short}`, tf.map((f) => f.label), tf.map((f) => fieldNote(cat, f))); }}>File mẫu</button>
+              <button className="btn ghost" onClick={() => { const tf = shown.filter((f) => !f.computed && !f.system && f.type !== 'formula' && f.type !== 'image'); exportTemplate(`Mau_${cat.short}`, tf.map((f) => f.label), tf.map((f) => fieldNote(cat, f))); }}>File mẫu</button>
               <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" hidden onChange={(e) => e.target.files[0] && importExcel(e.target.files[0])} />
             </>
           )}
@@ -244,6 +244,7 @@ function Cell({ f, r }) {
       <span className="meter"><span className="bar"><div className={cls} style={{ width: `${Math.min(100, v)}%` }} /></span>{displayValue(f, v)}%</span>
     );
   }
+  if (f.type === 'image') return v ? <img src={v} alt="" style={{ maxHeight: 22, maxWidth: 80, verticalAlign: 'middle' }} /> : '';
   const text = displayValue(f, v);
   if (f.type === 'url' && text) return <a href={/^https?:\/\//i.test(text) ? text : `https://${text}`} target="_blank" rel="noreferrer">{String(text).replace(/^https?:\/\//i, '').slice(0, 40)}</a>;
   if (f.type === 'textarea') return <span className="small" title={text}>{String(text).slice(0, 60)}{String(text).length > 60 ? '…' : ''}</span>;
@@ -419,7 +420,8 @@ async function importRows(cat, fields, file, app) {
   const sheet = await readFirstSheet(file);
   if (sheet.length < 2) throw new Error('File không có dữ liệu (dòng 1 là tiêu đề, dữ liệu từ dòng 2).');
   const header = sheet[0].map(norm);
-  const inputFields = fields.filter((f) => !f.computed && !f.system);
+  // Trường hình (logo) không nhập bằng Excel: giữ nguyên hình đã tải lên
+  const inputFields = fields.filter((f) => !f.computed && !f.system && f.type !== 'image');
   const colOf = {};
   inputFields.forEach((f) => {
     const i = header.findIndex((h) => h && (h === norm(f.label) || h === norm(f.key)));
