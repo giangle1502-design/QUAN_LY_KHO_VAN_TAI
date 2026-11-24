@@ -1,6 +1,7 @@
 import { STATUS_META, fmtTime, purposeLabel, stagesOf } from '../lib/trips';
 import { useCompanies, useMyWarehouses } from '../lib/hooks';
 import { fmtNum } from '../lib/utils';
+import { hasKeeper } from '../lib/whGroups';
 import { WithAdd } from './FormTools';
 import Select from './Select';
 
@@ -25,7 +26,7 @@ export function WarehousePicker({ value, onChange, allowAll = true }) {
   return (
     <Select value={value} onChange={(e) => onChange(e.target.value)}>
       {allowAll && <option value="">Tất cả kho</option>}
-      {list.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}{w.hasGuard === false ? ' (không bảo vệ)' : ''}</option>)}
+      {list.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}{!hasKeeper(w.code) ? ' (không bảo vệ)' : ''}</option>)}
     </Select>
   );
 }

@@ -260,6 +260,9 @@ export const CATALOGS = [
         help: 'Tích với cảng, kho mua nội địa…: vị trí không bắt nhập sức chứa, không cảnh báo vượt sức chứa (vẫn hiện Empty bin khi hết hàng)' },
       { key: 'poReceive', label: 'Nhận hàng mua (PO)', type: 'checkbox',
         help: 'Tích với Kho Cảng, Kho Mua nội địa, Kho Ngoại quan: hàng mua (PO, nhập trực tiếp từ NCC) chỉ nhập vào kho có tích. Kho khác chỉ nhập bằng chuyển kho (STO) hoặc khách trả hàng' },
+      { key: 'hasGuard', label: 'Có bảo vệ & thủ kho xác nhận', type: 'checkbox',
+        help: 'Tích với kho có bảo vệ, thủ kho (VD Kho Đức Hòa): phiếu nhập 2 bước (lập phiếu → thủ kho nhận hàng, xác nhận mới vào tồn), chuyến xe qua bảo vệ cổng. '
+          + 'Không tích (Cảng, Mua nội địa, Ngoại quan, 3PL…): phiếu nhập ghi tồn ngay khi lưu, chuyến xe bỏ bước bảo vệ. Áp cho mọi kho pháp nhân trong nhóm' },
       { key: 'address', label: 'Địa chỉ', type: 'textarea' },
       { key: 'note', label: 'Ghi chú', type: 'textarea' },
       { key: 'active', label: 'Đang hoạt động', type: 'checkbox', default: true },
@@ -277,7 +280,7 @@ export const CATALOGS = [
       { key: 'poReceive', label: 'Nhận hàng mua (PO)', type: 'checkbox',
         help: 'Kho được nhập hàng mua (PO, nhập trực tiếp từ NCC). Kho thuộc Kho chung có tích thì không cần tích riêng. Chưa kho nào tích = kho nào cũng nhập được' },
       { key: 'hasGuard', label: 'Có bảo vệ', type: 'checkbox', default: true,
-        help: 'Kho không có bảo vệ = không có thủ kho: chuyến xe bỏ qua bảo vệ, thủ kho chỉ định cửa, ra cổng; tài xế lấy hàng xong là đi giao' },
+        help: 'Kho không có bảo vệ = không có thủ kho: phiếu nhập ghi tồn ngay khi lưu (không chờ thủ kho xác nhận); chuyến xe bỏ qua bảo vệ, thủ kho chỉ định cửa, ra cổng. Kho thuộc Kho chung: theo ô của Kho chung' },
       { key: 'releaseStatus', label: 'TTHH khi giải chấp', type: 'select', options: ['DGC', 'KTC'],
         help: 'Hàng HTC ở kho này khi giải chấp chuyển sang tình trạng nào. Bỏ trống: kho có chữ "Cảng" → KTC, kho khác → DGC' },
       { key: 'planNoLocation', label: 'Kế hoạch phân bổ chỉ cần kho', type: 'checkbox',

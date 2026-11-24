@@ -1,4 +1,4 @@
-import { locWh, locOfWh } from './whGroups';
+import { hasKeeper, locWh, locOfWh } from './whGroups';
 import { collection, doc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore';
 import { enrichLine } from './dispatch';
 import { db } from '../firebase';
@@ -126,7 +126,7 @@ export async function createPlannedTrips({ wh, carrier, trips }, user, action = 
     const locRec = locCodes.map((c) => locs.find((x) => locOfWh(x, wh.code) && x.code === c)).find((x) => x?.address || x?.mapLink);
     const trip = {
       source: 'plan', purpose: 'export', warehouse: wh.code, warehouseName: wh.name || '', warehouseAddress: wh.address || '', warehouseMap: wh.mapLink || '',
-      ...(t.pickup ? { pickup: t.pickup.code, pickupName: t.pickup.name || '', pickupAddress: t.pickup.address || '', pickupMap: t.pickup.mapLink || '' } : {}), hasGuard: wh.hasGuard !== false,
+      ...(t.pickup ? { pickup: t.pickup.code, pickupName: t.pickup.name || '', pickupAddress: t.pickup.address || '', pickupMap: t.pickup.mapLink || '' } : {}), hasGuard: hasKeeper(wh.code),
       ...(locCodes.length ? { pickupLocation: locCodes.join(', '), pickupLocAddress: locRec?.address || '', pickupLocMap: locRec?.mapLink || '' } : {}),
       carrier: carrier.code, carrierName: carrier.name || '', plate: (t.plate || '').trim().toUpperCase(), vehicleType: t.vehicleType || '',
       idCard: (t.idCard || '').trim(), driverName: (t.driverName || '').trim(), driverPhone: (t.driverPhone || '').trim(),

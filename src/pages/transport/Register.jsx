@@ -5,6 +5,7 @@ import { useApp } from '../../context/AppContext';
 import { useCollection, useMyWarehouses, useOpWarehouse, useOrders } from '../../lib/hooks';
 import { OPEN_STATUSES, ORDER_FOR_MOVE, lineFrom, lineTo, lineWh, openKg, orderInWarehouse, stoRoute } from '../../lib/orders';
 import { fmtNum } from '../../lib/utils';
+import { hasKeeper } from '../../lib/whGroups';
 import { PURPOSES, firstStatus, nowISO, reserveCodes, vnDate, STATUS_META } from '../../lib/trips';
 import { ErrorBox, Field } from '../../components/ui';
 import { WithAdd } from '../../components/FormTools';
@@ -104,9 +105,9 @@ export default function Register() {
       const [gid] = await reserveCodes('GRP', 1);
       const sids = await reserveCodes('SP', lines.length);
       const at = nowISO();
-      const status = firstStatus(wh.hasGuard !== false);
+      const status = firstStatus(hasKeeper(wh.code));
       const trip = {
-        warehouse: wh.code, warehouseName: wh.name, hasGuard: wh.hasGuard !== false,
+        warehouse: wh.code, warehouseName: wh.name, hasGuard: hasKeeper(wh.code),
         purpose: form.purpose,
         plate: form.plate.trim().toUpperCase(), vehicleType: form.vehicleType,
         carrier: form.carrier.trim(), carrierName: form.carrierName.trim(),
@@ -158,7 +159,7 @@ export default function Register() {
             <WithAdd cat="warehouses" onAdded={(id) => setOpWh(id)}>
               <Select value={wh?.code || ''} onChange={(e) => setOpWh(e.target.value)}>
                 <option value="">-- Chọn kho --</option>
-                {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}{w.hasGuard === false ? ' (không bảo vệ)' : ''}</option>)}
+                {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}{!hasKeeper(w.code) ? ' (không bảo vệ)' : ''}</option>)}
               </Select>
             </WithAdd>
           </Field>
@@ -230,7 +231,7 @@ export default function Register() {
         <Field label="Ghi chú" full><textarea rows={2} value={form.note} onChange={(e) => set('note', e.target.value)} /></Field>
         <ExtraFields ex={ex} />
       </div>
-      {wh && wh.hasGuard === false && <p className="hint">Kho {wh.code} không có bảo vệ: xe vào thẳng bước Chờ vào cửa, không qua bước ra cổng.</p>}
+      {wh && !hasKeeper(wh.code) && <p className="hint">Kho {wh.code} không có bảo vệ: xe vào thẳng bước Chờ vào cửa, không qua bước ra cổng.</p>}
       <div className="form-actions"><button className="btn primary" disabled={busy}>{busy ? 'Đang lưu…' : 'Đăng ký'}</button></div>
       <datalist id="dl-plate">{vehicles.map((v) => <option key={v.plate} value={v.plate}>{v.carrier}</option>)}</datalist>
       <datalist id="dl-carrier">{carriers.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</datalist>
