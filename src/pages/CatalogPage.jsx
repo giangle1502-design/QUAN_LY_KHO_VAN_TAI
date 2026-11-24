@@ -24,6 +24,7 @@ import { ViewPresets, useTableTools } from '../components/TableTools';
 import { dragHeadProps, orderCols } from '../lib/colOrder';
 import { RenameUserButton } from './admin/RenameUser';
 import { RenameCodeButton } from './admin/RenameCode';
+import { mergeIntoGroup } from '../lib/mergeGroup';
 import { AddRoleButton, PartnerFixedFilters, PartnerForm, PartnerNotices, usePartnerRows } from './Partners';
 
 // Bố cục thẻ tìm kiếm gợi ý cho Đối tác (giống MISA); người dùng tự chỉnh lại được
@@ -316,7 +317,15 @@ export function EditForm({ cat, fields, row, existing = [], onClose, onSaved }) 
       }
       // Khách hàng / NCC: cập nhật hồ sơ đối tác cùng mã (không chặn nếu lỗi)
       await syncFromCatalog(cat.key, [{ id, data: final }], { email });
-      onSaved(isNew ? 'Đã thêm.' : 'Đã lưu.', id, final);
+      // Kho chung: tự gộp vị trí / cửa của các kho thành viên về Kho chung
+      let extra = '';
+      if (cat.key === 'warehouseGroups' && final.active !== false) {
+        try {
+          const r = await mergeIntoGroup({ ...final, code: id }, { email, canDelete: isSuper });
+          if (r.locs || r.docks) extra = ` Đã gộp ${r.locs} vị trí${r.docks ? ` và ${r.docks} cửa xuất/nhập` : ''} của ${(final.members || []).join(', ')} vào ${id}: các kho thành viên dùng chung.`;
+        } catch (e3) { extra = ` Chưa gộp được vị trí (${e3.code || e3.message}): vào Tồn kho & vận hành → Kho chung & vị trí dùng chung → Gộp.`; }
+      }
+      onSaved((isNew ? 'Đã thêm.' : 'Đã lưu.') + extra, id, final);
     } catch (e2) {
       setErr(e2.code === 'permission-denied'
         ? `Không có quyền ghi ${cat.short}. Nếu đây là danh mục mới (VD Kho chung): quản trị gốc dán lại quy tắc Firestore mới (Firebase → Firestore Database → Rules → Publish). Nếu không: kiểm tra phân quyền.`
