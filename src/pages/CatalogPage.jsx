@@ -267,13 +267,15 @@ export async function removeRecord(cat, row, { isSuper, email, name }) {
 // Form thêm / sửa 1 bản ghi
 // ---------------------------------------------------------------------------
 export function EditForm({ cat, fields, row, existing = [], onClose, onSaved }) {
-  const { canEdit, isAdmin, isSuper, email, name } = useApp();
+  const { canEdit, isAdmin, isSuper, email, name, myCarrier } = useApp();
   const isNew = !row._id;
+  // Đơn vị vận tải tự khai xe / tài xế: ô Đơn vị vận tải khóa theo đơn vị của mình
+  const lockCarrier = cat.carrierField && myCarrier ? cat.carrierField : '';
   const editable = canEdit(cat, isNew ? null : row);
   const keys = keyFieldsOf(cat);
   // Vị trí / cửa xuất-nhập: quản trị đổi được Kho (VD DAMC → Kho chung CANG), bản ghi chuyển sang mã mới
   const movable = !isNew && isAdmin && ['locations', 'docks'].includes(cat.key);
-  const [form, setForm] = useState(() => (isNew ? { ...defaultsOf(fields), ...row } : { ...row }));
+  const [form, setForm] = useState(() => (isNew ? { ...defaultsOf(fields), ...row, ...(lockCarrier ? { [lockCarrier]: myCarrier } : {}) } : { ...row }));
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const shownFields = fields.filter((f) => !f.hidden);
@@ -368,13 +370,13 @@ export function EditForm({ cat, fields, row, existing = [], onClose, onSaved }) 
         )}
         <div className="form-grid">
           {shownFields.map((f) => {
-            const ro = !editable || f.computed || f.system || (!isNew && keys.includes(f.key) && !(movable && f.key === 'warehouse'));
+            const ro = !editable || f.computed || f.system || f.key === lockCarrier || (!isNew && keys.includes(f.key) && !(movable && f.key === 'warehouse'));
             return (
               <Field key={f.key} label={f.label} required={f.required && !ro} help={f.help} full={f.type === 'multiref' || (f.type === 'textarea' && !f.width)} size={f}>
                 {ro && (f.computed || f.system) ? (
                   <div className="readonly-val">{String(displayValue(f, data[f.key]) || '—')}{f.key === 'usedPct' && data[f.key] != null ? '%' : ''}</div>
                 ) : (
-                  <FieldInput field={f} value={form[f.key]} onChange={(v) => set(f.key, v)} disabled={ro} onPickRef={onPickRef} />
+                  <FieldInput field={f} value={form[f.key]} onChange={(v) => set(f.key, v)} disabled={ro} onPickRef={onPickRef} form={form} />
                 )}
                 {f.key === cat.idField && !isNew && (
                   <div style={{ marginTop: 4 }}><RenameCodeButton cat={cat} row={row} onDone={(t, id) => onSaved(t, id)} /></div>

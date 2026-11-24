@@ -7,6 +7,8 @@ import { norm } from '../lib/utils';
 // Viết y như <select>: <Select value onChange={(e) => …e.target.value}><option value="…">…</option></Select>
 // Thêm chữ để tìm mà không hiện ra: <option data-search="mã hàng, tên khách…">
 const SHORT = 7;
+// Danh sách rất dài (hàng nghìn khách / mã hàng): chỉ vẽ MAX dòng đầu, gõ thêm để lọc
+const MAX = 300;
 
 function textOf(node) {
   if (node == null || typeof node === 'boolean') return '';
@@ -50,7 +52,8 @@ function SearchSelect({ opts, value, onChange, disabled, className, style, title
   const list = useRef();
 
   const words = norm(q).split(' ').filter(Boolean);
-  const shown = useMemo(() => (words.length ? opts.filter((o) => words.every((w) => o.hay.includes(w))) : opts), [opts, q]); // eslint-disable-line react-hooks/exhaustive-deps
+  const matched = useMemo(() => (words.length ? opts.filter((o) => words.every((w) => o.hay.includes(w))) : opts), [opts, q]); // eslint-disable-line react-hooks/exhaustive-deps
+  const shown = matched.length > MAX ? matched.slice(0, MAX) : matched;
 
   const place = () => {
     const r = box.current?.getBoundingClientRect();
@@ -64,7 +67,7 @@ function SearchSelect({ opts, value, onChange, disabled, className, style, title
   };
   const show = () => {
     if (disabled) return;
-    setQ(''); setHi(Math.max(0, opts.findIndex((o) => o.value === cur))); place(); setOpen(true);
+    setQ(''); setHi(Math.max(0, Math.min(MAX - 1, opts.findIndex((o) => o.value === cur)))); place(); setOpen(true);
   };
   const close = () => { setOpen(false); box.current?.focus(); };
   const pick = (o) => {
@@ -122,7 +125,7 @@ function SearchSelect({ opts, value, onChange, disabled, className, style, title
             ))}
             {!shown.length && <div className="ss-empty">Không tìm thấy “{q}”</div>}
           </div>
-          <div className="ss-foot">{words.length ? `${shown.length}/${opts.length} kết quả` : `${opts.length} lựa chọn`} · ↑↓ Enter để chọn, Esc để đóng</div>
+          <div className="ss-foot">{matched.length > MAX ? `Hiện ${MAX}/${matched.length}: gõ thêm để lọc` : words.length ? `${matched.length}/${opts.length} kết quả` : `${opts.length} lựa chọn`} · ↑↓ Enter để chọn, Esc để đóng</div>
         </div>,
         document.body,
       )}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useCollection } from '../lib/hooks';
 import { catalogByKey, refLabel, refValue } from '../catalogs';
@@ -10,9 +10,9 @@ import { locWh } from '../lib/whGroups';
 
 // Ô nhập cho 1 trường theo kiểu dữ liệu
 // unit: đơn vị tiền của trường kiểu Tiền ('đ' mặc định, 'USD' trên đơn USD)
-export default function FieldInput({ field: f, value, onChange, disabled, onPickRef, unit }) {
+export default function FieldInput({ field: f, value, onChange, disabled, onPickRef, unit, form }) {
   if (f.type === 'formula') return <div className="readonly-val" title="Tự tính theo công thức">{displayValue(f, value, false, unit) || '–'}</div>;
-  if (f.type === 'ref') return <RefInput field={f} value={value} onChange={onChange} disabled={disabled} onPick={onPickRef} />;
+  if (f.type === 'ref') return <RefInput field={f} value={value} onChange={onChange} disabled={disabled} onPick={onPickRef} form={form} />;
   if (f.type === 'multiref') return <MultiRefInput field={f} value={value} onChange={onChange} disabled={disabled} />;
   if (f.type === 'select')
     return (
@@ -59,7 +59,7 @@ export default function FieldInput({ field: f, value, onChange, disabled, onPick
 function ChoiceAdd({ field: f, disabled, onAdded, children, value }) {
   const { role, canDesign } = useApp();
   const [busy, setBusy] = useState(false);
-  const can = !disabled && f.form && !f.fixedChoices && canChoose(f) && (canDesign || ['admin', 'kinh_doanh', 'ke_toan', 'thu_kho'].includes(role));
+  const can = !disabled && f.form && !f.fixedChoices && canChoose(f) && (canDesign || ['admin', 'kinh_doanh', 'ke_toan', 'thu_kho', 'van_tai'].includes(role));
   if (!can) return children;
   const add = async () => {
     const txt = window.prompt(`Thêm lựa chọn mới cho "${f.label}":`, '');
@@ -111,44 +111,45 @@ function useRefRows(refKey, role) {
   }, [rows, refKey, inMyWarehouses, role]);
 }
 
-function RefInput({ field: f, value, onChange, disabled, onPick }) {
+// Ô chọn danh mục: ô chọn có tìm kiếm (Select.jsx, gõ mã / tên không dấu) + nút (+) thêm nhanh, ✏ sửa nhanh
+// f.refBy { trườngDanhMục: trườngForm }: chỉ hiện bản ghi khớp giá trị đang nhập trên form (VD tài xế của đơn vị vận tải đang chọn)
+// f.presetFrom { trườngDanhMục: trườngForm }: khi bấm + thì điền sẵn từ form (VD thêm tài xế mới mang theo tên, điện thoại đã gõ)
+function RefInput({ field: f, value, onChange, disabled, onPick, form }) {
   const main = useRefRows(f.ref, f.refRole);
   // refAlso: chọn thêm từ danh mục thứ 2 (VD vị trí thuộc Kho hoặc Kho chung)
   const also = useRefRows(f.refAlso || '');
   // Vị trí của kho thuộc Kho chung lưu ở Kho chung: chỉ hiện Kho chung (đầu danh sách) + kho riêng chưa thuộc Kho chung nào
-  const { whTick } = useApp();
-  const opts = useMemo(() => (f.refAlso
-    ? [...also.map((o) => ({ ...o, label: `${o.label} (kho chung)` })), ...main.filter((o) => o.value === value || locWh(o.value) === o.value)]
-    : main), [main, also, f.refAlso, value, whTick]); // eslint-disable-line react-hooks/exhaustive-deps
-  const listId = `dl-${f.key}`;
+  const { whTick, myCarrier } = useApp();
+  const by = f.refBy ? Object.entries(f.refBy).filter(([, fk]) => form?.[fk]) : [];
+  const byKey = by.map(([k, fk]) => `${k}=${form[fk]}`).join('|');
+  const opts = useMemo(() => {
+    let list = f.refAlso
+      ? [...also.map((o) => ({ ...o, label: `${o.label} (kho chung)` })), ...main.filter((o) => o.value === value || locWh(o.value) === o.value)]
+      : main;
+    // Đơn vị vận tải chỉ thấy xe / tài xế của mình
+    const rc = catalogByKey(f.ref)?.carrierField;
+    if (rc && myCarrier) list = list.filter((o) => o.value === value || !o.row[rc] || o.row[rc] === myCarrier);
+    if (by.length) list = list.filter((o) => o.value === value || by.every(([k, fk]) => !o.row[k] || o.row[k] === form[fk]));
+    return list;
+  }, [main, also, f.refAlso, f.ref, value, whTick, myCarrier, byKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const known = !value || opts.some((o) => o.value === value);
-  // Gõ mã trước khi danh mục tải xong: tự điền khi dữ liệu về
-  const pending = useRef('');
-  useEffect(() => {
-    if (!pending.current) return;
-    const hit = opts.find((o) => o.value === pending.current);
-    if (hit) { pending.current = ''; onPick?.(f, hit.row); }
-  }, [opts, f, onPick]);
+  const short = catalogByKey(f.ref)?.short || '';
+  const preset = { ...(f.addPreset || {}), ...Object.fromEntries(Object.entries(f.presetFrom || {}).map(([k, fk]) => [k, form?.[fk] ?? '']).filter(([, v]) => v !== '')) };
   return (
     <div className="cell-add ref-input">
-      <input
-        list={listId}
-        value={value ?? ''}
-        disabled={disabled}
-        placeholder={`Gõ hoặc chọn ${catalogByKey(f.ref)?.short || ''}`}
+      <Select searchable value={value ?? ''} disabled={disabled} placeholder={`-- Chọn ${short} --`}
         onChange={(e) => {
           const v = e.target.value;
           onChange(v);
           const hit = opts.find((o) => o.value === v);
           if (hit && onPick) onPick(f, hit.row);
-          pending.current = hit ? '' : v;
-        }}
-      />
-      <datalist id={listId}>
-        {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </datalist>
-      {!disabled && !f.noQuickAdd && <QuickAdd catKey={f.ref} preset={f.addPreset} value={main.some((o) => o.value === value) ? value : ''} onAdded={(id, rec) => { const v = rec ? refValue(f.ref, rec) || id : id; onChange(v); if (rec) onPick?.(f, rec); }} />}
-      {!known && <small className="req" style={{ flexBasis: '100%' }}>Không có trong danh mục {catalogByKey(f.ref)?.short}</small>}
+        }}>
+        <option value="">{`-- Chọn ${short} --`}</option>
+        {!known && <option value={value}>{`${value} (chưa có trong danh mục)`}</option>}
+        {opts.map((o) => <option key={o.value} value={o.value}>{o.label || o.value}</option>)}
+      </Select>
+      {!disabled && !f.noQuickAdd && <QuickAdd catKey={f.ref} preset={Object.keys(preset).length ? preset : undefined} value={main.some((o) => o.value === value) ? value : ''} onAdded={(id, rec) => { const v = rec ? refValue(f.ref, rec) || id : id; onChange(v); if (rec) onPick?.(f, rec); }} />}
+      {!known && <small className="req" style={{ flexBasis: '100%' }}>Không có trong danh mục {short}: bấm + để thêm</small>}
     </div>
   );
 }
