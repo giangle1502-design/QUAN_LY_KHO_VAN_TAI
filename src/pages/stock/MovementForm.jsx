@@ -1,3 +1,4 @@
+import { companyOfWh, locWh } from '../../lib/whGroups';
 import { MV_FORM, blockLocSet, inBlockLoc, kindOf, withBlock } from '../../catalogs';
 import { ExtraFields, useExtraFields } from '../../components/ExtraFields';
 import { RETURN_CONDITIONS } from '../../lib/orders';
@@ -82,7 +83,7 @@ function Form({ type }) {
   // Tình trạng hàng HTC sau khi giải chấp ở kho này (DGC; cảng: KTC)
   const relTo = releaseStatusOfWh(wh);
   const items = useCollection('items').rows;
-  const locations = useCollection('locations').rows.filter((l) => l.warehouse === whCode);
+  const locations = useCollection('locations').rows.filter((l) => l.warehouse === locWh(whCode));
   const statusRows = useCollection('goodsStatus').rows;
   const statuses = useMemo(() => withBlock(statusRows), [statusRows]);
   const pledgees = useCollection('pledgees').rows;
@@ -122,6 +123,12 @@ function Form({ type }) {
   // Hàng thu hồi (nhập trả về theo SO, MVT 651): giao vận tải đi lấy hàng ở khách (điểm nhận = mã giao của khách)
   const [ret, setRet] = useState({ carrier: '', ship: '', date: '', plate: '' });
   const [head, setHead] = useState({ refNo: '', company: opCo, date: vnDate(), tripId: params.get('trip') || '', orderId: params.get('order') || '', partyCode: '', partyName: '', shipCode: '', reason: '', note: '', ...EMPTY_TRANSPORT });
+  // Kho pháp nhân (VD VAP-Cảng → VAP): chọn kho tự điền công ty chủ hàng khi phiếu chưa theo đơn
+  useEffect(() => {
+    const c = companyOfWh(whCode);
+    if (!c || head.orderId || head.company === c) return;
+    setHead((h) => ({ ...h, company: c })); setOpCo(c); setCrossCo(false);
+  }, [whCode]); // eslint-disable-line react-hooks/exhaustive-deps
   const vehicles = useCollection('vehicles').rows;
   // Trường bổ sung do người thiết kế biểu mẫu thêm (+ Thêm trường), riêng cho từng loại phiếu
   const ex = useExtraFields(MV_FORM[type] || 'mvIn');

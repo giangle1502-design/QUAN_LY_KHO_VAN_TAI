@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useScope } from '../../components/ScopeFilter';
 import { Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useOrders } from '../../lib/hooks';
@@ -50,6 +51,7 @@ function Stat({ label, value, sub, tone }) {
 }
 
 export default function Overview({ wh, co, q }) {
+  const S = useScope(wh, co);
   const { inMyWarehouses } = useApp();
   const [range, setRange] = useState(() => [monthStart(), vnDate()]);
   const [from, to] = range;
@@ -68,14 +70,14 @@ export default function Overview({ wh, co, q }) {
   const saleName = useMemo(() => new Map(users.map((u) => [u.email, u.name || u.email])), [users]);
 
   const inRange = (d) => !!d && d >= from && d <= to;
-  const whOk = (w) => (!w || inMyWarehouses(w)) && (!wh || w === wh);
+  const whOk = (w) => (!w || inMyWarehouses(w)) && S.inWh(w);
   const qOk = (...xs) => !q || norm(xs.join(' ')).includes(q);
 
   // Dòng đơn trong kỳ
   const lines = useMemo(() => {
     const out = { SO: [], PO: [], STO: [] };
     for (const o0 of raw) {
-      if (o0.status === 'cancelled' || !inRange(o0.date) || (co && (o0.company || '') !== co)) continue;
+      if (o0.status === 'cancelled' || !inRange(o0.date) || !S.inCo(o0.company)) continue;
       const t = o0.type;
       const m = t === 'SO' ? mSO : t === 'PO' ? mPO : null;
       const o = m ? viewOrder(o0, t === 'SO' ? secSO : secPO, m.headSeen, m.lineSeen) : o0;
@@ -94,7 +96,7 @@ export default function Overview({ wh, co, q }) {
       }
     }
     return out;
-  }, [raw, from, to, co, wh, q, secSO, secPO, mSO, mPO, inMyWarehouses]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [raw, from, to, co, wh, q, S, secSO, secPO, mSO, mPO, inMyWarehouses]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Chuyến xe trong kỳ, phần thuộc phạm vi (STO / SO), cước chia theo kg
   const typeOf = useMemo(() => new Map(raw.map((o) => [o.id, o.type])), [raw]);
@@ -113,7 +115,7 @@ export default function Overview({ wh, co, q }) {
       cost: costTotal(c) * share, hasCost: !!t.costs, approved: t.costStatus === 'approved', status: t.status,
       _q: [t.id, t.plate, t.carrier, t.carrierName, ...mine.flatMap((l) => [l.orderId, l.item, l.partyName])].join(' '),
     };
-  }).filter((r) => r.kg > 0 && qOk(r._q)), [trips.rows, from, to, wh, q, scope, typeOf, carrierName, inMyWarehouses]); // eslint-disable-line react-hooks/exhaustive-deps
+  }).filter((r) => r.kg > 0 && qOk(r._q)), [trips.rows, from, to, wh, q, S, scope, typeOf, carrierName, inMyWarehouses]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) return <Empty text="Đang tải…" />;
   const PO = lines.PO; const SO = lines.SO; const STO = lines.STO;

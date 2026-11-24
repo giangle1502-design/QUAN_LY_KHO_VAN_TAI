@@ -1,3 +1,4 @@
+import { locWh } from './whGroups';
 import { collection, doc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore';
 import { enrichLine } from './dispatch';
 import { db } from '../firebase';
@@ -110,7 +111,7 @@ export async function createPlannedTrips({ wh, carrier, trips }, user, action = 
   // Địa chỉ, người nhận, định vị điểm giao chép vào chuyến (tài xế mở link không đọc được danh mục)
   const [shipto, whs] = await Promise.all(['shipto', 'warehouses'].map((c) => getDocs(collection(db, c)).then((q) => q.docs.map((d) => d.data())).catch(() => [])));
   // Vị trí: chỉ đọc vị trí của kho xuất và kho nhận STO (không đọc cả danh mục)
-  const locWhs = [...new Set([wh.code, ...trips.flatMap((t) => t.lines.filter((l) => l.toLocation).map((l) => String(l.partyCode || '').split(',')[0].trim()))].filter(Boolean))].slice(0, 10);
+  const locWhs = [...new Set([wh.code, ...trips.flatMap((t) => t.lines.filter((l) => l.toLocation).map((l) => String(l.partyCode || '').split(',')[0].trim()))].filter(Boolean).flatMap((c) => [c, locWh(c)]))].slice(0, 10);
   const locs = trips.some((t) => t.lines.some((l) => l.location || l.toLocation)) && locWhs.length
     ? await getDocs(query(collection(db, 'locations'), where('warehouse', 'in', locWhs))).then((q) => q.docs.map((d) => d.data())).catch(() => []) : [];
   trips = trips.map((t) => ({ ...t, lines: t.lines.map((l) => enrichLine(l, shipto, whs, locs)) }));
@@ -122,7 +123,7 @@ export async function createPlannedTrips({ wh, carrier, trips }, user, action = 
     const id = gids[i];
     // Vị trí lấy hàng (cảng SP-ITC, kho mua nội địa…): tài xế thấy vị trí + địa chỉ riêng của vị trí nếu có
     const locCodes = [...new Set(t.lines.flatMap((l) => String(l.location || '').split(',')).map((x) => x.trim()).filter(Boolean))];
-    const locRec = locCodes.map((c) => locs.find((x) => x.warehouse === wh.code && x.code === c)).find((x) => x?.address || x?.mapLink);
+    const locRec = locCodes.map((c) => locs.find((x) => x.warehouse === locWh(wh.code) && x.code === c)).find((x) => x?.address || x?.mapLink);
     const trip = {
       source: 'plan', purpose: 'export', warehouse: wh.code, warehouseName: wh.name || '', warehouseAddress: wh.address || '', warehouseMap: wh.mapLink || '',
       ...(t.pickup ? { pickup: t.pickup.code, pickupName: t.pickup.name || '', pickupAddress: t.pickup.address || '', pickupMap: t.pickup.mapLink || '' } : {}), hasGuard: wh.hasGuard !== false,

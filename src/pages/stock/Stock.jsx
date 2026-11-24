@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
+import { ScopeFilters, useOpScope } from '../../components/ScopeFilter';
 import { Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
-import { useCollection, useOpCompany, useOpWarehouse, useStock } from '../../lib/hooks';
+import { useCollection, useStock } from '../../lib/hooks';
 import { MOVE_TYPES, ageDays } from '../../lib/stock';
 import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum, today } from '../../lib/utils';
-import { CompanyPicker, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox } from '../../components/ui';
 import { canMove } from './MovementForm';
 import { ReportTable, toSheet } from '../reports/Reports';
@@ -16,10 +16,11 @@ const AGE = [['0–30 ngày', 0, 30], ['31–60 ngày', 31, 60], ['61–90 ngày
 
 export default function Stock() {
   const { hasRole, isAdmin } = useApp();
-  const [wh, setWh] = useOpWarehouse();
-  const [co, setCo] = useOpCompany();
+  // Chọn nhiều kho / vị trí / công ty
+  const scope = useOpScope();
+  const { wh, co } = scope;
   const { rows: all, loading, error } = useStock(wh);
-  const rows = useMemo(() => (co ? all.filter((r) => (r.company || '') === co) : all), [all, co]);
+  const rows = useMemo(() => all.filter(scope.row), [all, scope]);
   const ORDER = ['KTC', 'HTC', 'DGC'];
   const rank = (c) => (ORDER.includes(c) ? ORDER.indexOf(c) : 99);
   const statuses = [...useCollection('goodsStatus').rows].sort((a, b) => rank(a.code) - rank(b.code) || a.code.localeCompare(b.code));
@@ -99,8 +100,7 @@ export default function Stock() {
         ))}
       </div>
       <div className="toolbar">
-        <WarehousePicker value={wh} onChange={setWh} />
-        <CompanyPicker value={co} onChange={setCo} />
+        <ScopeFilters scope={scope} />
         <input type="search" placeholder="Tìm mã hàng, tên, lot, vị trí…" value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="seg">
           <button type="button" className={view === 'detail' ? 'on' : ''} onClick={() => setView('detail')}>Theo vị trí, lô</button>

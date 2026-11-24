@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import WarehouseGroups from './pages/stock/WarehouseGroups';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { sendEmailVerification } from 'firebase/auth';
 import { useApp } from './context/AppContext';
@@ -82,6 +83,7 @@ export default function App() {
         {hasRole('thu_kho') && <Route path="kho/ton-dau-ky" element={<OpeningImport />} />}
         {hasRole('thu_kho') && <Route path="kho/dieu-chinh-excel" element={<AdjustImport />} />}
         <Route path="kho/kiem-ke" element={<Counts />} />
+        {isAdmin && <Route path="kho/kho-chung" element={<WarehouseGroups />} />}
         <Route path="kho/pallet" element={<Pallets />} />
         <Route path="kho/kiem-ke/:id" element={<CountDetail />} />
         <Route path="kho/kiem-ke/:id/dem" element={<CountMobile />} />

@@ -144,6 +144,7 @@ export default function Layout() {
       { to: '/kho/adjust', ico: '⚖️', label: 'Điều chỉnh tồn', show: hasRole('thu_kho') },
       { to: '/kho/kiem-ke', ico: '🧮', label: 'Kiểm kê & cycle count' },
       { to: '/kho/pallet', ico: '🪵', label: 'Quản lý pallet' },
+      { to: '/kho/kho-chung', ico: '🏘️', label: 'Kho chung & vị trí dùng chung', show: isAdmin },
       { to: '/kho/ton-dau-ky', ico: '📋', label: 'Nhập tồn đầu kỳ', show: hasRole('thu_kho') },
     ] },
     { key: 'the-chap', title: '🔒 Thế chấp ngân hàng', items: [

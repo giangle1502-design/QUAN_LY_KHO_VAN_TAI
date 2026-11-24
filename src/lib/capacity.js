@@ -1,3 +1,4 @@
+import { noCapacity } from './whGroups';
 // Sức chứa vị trí khi nhập hàng: cảnh báo dòng nhập vượt số pallet còn trống của vị trí
 // và chia 1 dòng thành nhiều dòng, mỗi dòng không quá sức chứa vị trí để nhân viên chọn vị trí
 const n = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? 0 : Number(v));
@@ -8,7 +9,9 @@ export const OVER_CAP_MSG = 'Số lượng nhập vượt quá giới hạn vị
 export const OVER_CAP_CONFIRM = 'Xác nhận nhập vượt giới hạn';
 
 // Mỗi dòng → { location, capacity, free (còn trống cho dòng này, đã trừ các dòng phía trên cùng vị trí), need, over }
+// Kho / kho chung tích "Không cần sức chứa" (cảng, mua nội địa, 3PL): không kiểm tra
 export function capacityCheck(lines, locations) {
+  if (locations.length && noCapacity(locations[0].warehouse)) return lines.map(() => null);
   const byCode = new Map(locations.map((x) => [x.code, x]));
   const used = new Map();
   return lines.map((l) => {

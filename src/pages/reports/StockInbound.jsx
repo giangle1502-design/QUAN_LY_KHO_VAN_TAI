@@ -1,4 +1,5 @@
 import { Fragment, useMemo, useState } from 'react';
+import { useScope } from '../../components/ScopeFilter';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useCompanies, useOrders, useStock } from '../../lib/hooks';
 import { useOrderSecrets, viewOrder } from '../../lib/orderSecrets';
@@ -44,7 +45,9 @@ const SCOPES = [['active', 'Mã có tồn / đơn / hàng về'], ['sell', 'Còn
 export function useSaleStock(wh, co) {
   const { inMyWarehouses, isAdmin, role, salesOnly } = useApp();
   const saleAdmin = isAdmin || (role === 'kinh_doanh' && !salesOnly);
-  const { rows: stockAll, error: e1 } = useStock(wh);
+  // Báo cáo chọn nhiều kho / công ty / vị trí (S); ô chi tiết mặt hàng dùng 1 kho như cũ
+  const S = useScope(wh, co);
+  const { rows: stockAll, error: e1 } = useStock(S.wh);
   const { rows: ordersAll, error: e2 } = useOrders('');
   const items = useCollection('items').rows;
   const warehouses = useCollection('warehouses').rows;
@@ -60,7 +63,8 @@ export function useSaleStock(wh, co) {
   const itemMap = useMemo(() => new Map(items.map((i) => [i.code, i])), [items]);
   const whName = useMemo(() => new Map(warehouses.map((w) => [w.code, w.name || w.code])), [warehouses]);
   const coShort = useMemo(() => new Map(companies.map((c) => [c.code, c.code])), [companies]);
-  const inScope = (code) => (code ? inMyWarehouses(code) && (!wh || code === wh) : true);
+  const inScope = (code) => (code ? inMyWarehouses(code) && S.inWh(code) : true);
+  const anyWh = S.whs.length > 0;
   const today = vnDate();
 
   const all = useMemo(() => {
@@ -75,7 +79,7 @@ export function useSaleStock(wh, co) {
       return m.get(code);
     };
     for (const r of stockAll) {
-      if (co && (r.company || '') !== co) continue;
+      if (!S.row(r)) continue;
       const x = get(r.item, r.itemName); if (!x) continue;
       x.onHand += n(r.kg);
       const k = `${r.company ? `${coShort.get(r.company) || r.company} - ` : ''}${whName.get(r.warehouse) || r.warehouse}`;
@@ -84,7 +88,7 @@ export function useSaleStock(wh, co) {
       x.wh.set(k, w);
     }
     for (const o0 of ordersAll) {
-      if (co && (o0.company || '') !== co) continue;
+      if (!S.inCo(o0.company)) continue;
       if (o0.status === 'cancelled') continue;
       const isOpen = OPEN_STATUSES.includes(o0.status);
       // Giá bán gần nhất: dòng SO mới nhất có giá mà người dùng được xem
@@ -114,12 +118,12 @@ export function useSaleStock(wh, co) {
         if (o.type === 'STO') {
           const fw = lineFrom(o, l); const tw = lineTo(o, l);
           // Cả công ty: chỉ hàng đang đi đường; theo 1 kho: STO về kho này = còn phải xuất + đang đi đường, STO đi khỏi kho = như đơn chưa giao
-          const inc = !wh ? transitKg(l) : tw === wh && fw !== wh ? leftKg(l) + transitKg(l) : 0;
+          const inc = !anyWh ? transitKg(l) : S.inWh(tw) && !S.inWh(fw) ? leftKg(l) + transitKg(l) : 0;
           if (inc > 0 && (!tw || inMyWarehouses(tw))) {
             const x = get(l.item, l.itemName); x.incoming += inc;
             x.lots.push({ eta, kg: inc, place: whName.get(tw) || tw, bct: '', sup: `Chuyển kho từ ${whName.get(fw) || fw}`, po: o.id, buy: 0 });
           }
-          if (wh && fw === wh && tw !== wh && leftKg(l) > 0) {
+          if (anyWh && S.inWh(fw) && !S.inWh(tw) && leftKg(l) > 0) {
             const x = get(l.item, l.itemName); x.unshipped += leftKg(l);
             x.sos.push({ id: o.id, due: eta, date: o.date || '', party: `Chuyển đến ${whName.get(tw) || tw}`, left: leftKg(l), qty: n(l.qtyKg), done: n(l.doneKg), wh: fw, sales: '', by: o.createdByName || o.createdBy || '', sto: true });
           }
@@ -132,13 +136,13 @@ export function useSaleStock(wh, co) {
       const next = x.lots.find((l) => l.eta && l.eta >= today) || x.lots.find((l) => l.eta);
       return { ...x, avail: x.onHand - x.unshipped + x.incoming, next };
     });
-  }, [stockAll, ordersAll, itemMap, whName, coShort, co, wh, soSec, poSec, soMoney, poMoney, saleAdmin, today]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [stockAll, ordersAll, itemMap, whName, coShort, co, wh, soSec, poSec, soMoney, poMoney, saleAdmin, today, S]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { all, saleName, saleAdmin, salesOnly, soMoney, poMoney, stockAll, error: e1 || e2, today };
+  return { all, saleName, saleAdmin, salesOnly, soMoney, poMoney, stockAll, error: e1 || e2, today, S };
 }
 
 export default function StockInbound({ wh, co, q }) {
-  const { all, saleName, saleAdmin, salesOnly, soMoney, poMoney, stockAll, error, today } = useSaleStock(wh, co);
+  const { all, saleName, saleAdmin, salesOnly, soMoney, poMoney, stockAll, error, today, S } = useSaleStock(wh, co);
   const [prop, setProp] = usePref('stockInbound:prop', '');
   const [ptype, setPtype] = usePref('stockInbound:ptype', '');
   const [only, setOnly] = usePref('stockInbound:only', 'active');
@@ -255,7 +259,7 @@ export default function StockInbound({ wh, co, q }) {
           </table>
         )}
       </div>
-      {detail && <StockDetailModal stock={stockAll.filter((r) => !co || (r.company || '') === co)} filter={detail} onClose={() => setDetail(null)} />}
+      {detail && <StockDetailModal stock={stockAll.filter(S.row)} filter={detail} onClose={() => setDetail(null)} />}
     </>
   );
 }
@@ -341,13 +345,13 @@ export function SaleItemPanel({ x, ctx, onStockDetail }) {
 
 // Hộp chi tiết 1 mã hàng (dùng ở báo cáo Tồn kho cho Sale)
 export function SaleItemModal({ item, wh, co, onClose }) {
-  const { all, saleName, saleAdmin, salesOnly, poMoney, stockAll, today } = useSaleStock(wh, co);
+  const { all, saleName, saleAdmin, salesOnly, poMoney, stockAll, today, S } = useSaleStock(wh, co);
   const [detail, setDetail] = useState(null);
   const x = all.find((r) => r.item === item);
   return (
     <Modal title={`💼 ${item}${x?.itemName ? ` · ${x.itemName}` : ''}`} onClose={onClose} wide>
       {!x ? <Empty text="Đang tải…" /> : <SaleItemPanel x={x} ctx={{ saleName, saleAdmin, salesOnly, poMoney, today }} onStockDetail={setDetail} />}
-      {detail && <StockDetailModal stock={stockAll.filter((r) => !co || (r.company || '') === co)} filter={detail} onClose={() => setDetail(null)} />}
+      {detail && <StockDetailModal stock={stockAll.filter(S.row)} filter={detail} onClose={() => setDetail(null)} />}
     </Modal>
   );
 }

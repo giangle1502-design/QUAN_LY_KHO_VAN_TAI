@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import { useScope } from '../../components/ScopeFilter';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
@@ -19,6 +20,7 @@ const PACK = { xa: 'Xá', kien: 'Kiện', none: 'Chưa ghi' };
 
 // Kế hoạch xuất nhập: tổng xuất Xá / xuất Kiện / nhập theo ngày và kho để sắp xếp nhân sự bốc xếp
 export default function IOPlan({ wh, co, q }) {
+  const S = useScope(wh, co);
   const { inMyWarehouses } = useApp();
   const [mode, setMode] = useState('plan');
   const today = vnDate();
@@ -46,8 +48,8 @@ export default function IOPlan({ wh, co, q }) {
     const out = [];
     const push = (t) => {
       if (t.kg <= 0.001) return;
-      if (co && (t.company || '') !== co) return;
-      if (wh ? t.wh !== wh : t.wh && !inMyWarehouses(t.wh)) return;
+      if (!S.inCo(t.company)) return;
+      if (S.whs.length ? !S.inWh(t.wh) : t.wh && !inMyWarehouses(t.wh)) return;
       const pk = palKg.get(t.item);
       out.push({ ...t, pallets: t.pallets ?? (t.pack === 'kien' && pk ? Math.ceil(t.kg / pk) : 0) });
     };
@@ -87,7 +89,7 @@ export default function IOPlan({ wh, co, q }) {
       }
     }
     return out;
-  }, [mode, moves, plans, orders, wh, co, inMyWarehouses, palKg]);
+  }, [mode, moves, plans, orders, wh, co, inMyWarehouses, palKg, S]);
 
   // Ngày ngoài khoảng: quá hạn (trước "từ ngày") gộp 1 nhóm nếu tích; chưa có ngày gộp 1 nhóm
   const LATE = '0000-late';

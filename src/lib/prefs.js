@@ -8,7 +8,7 @@ import { useApp } from '../context/AppContext';
 // Lưu ngay trên trình duyệt; các cấu hình quan trọng (định dạng ngày/số, cột hiển thị, thứ tự cột, sắp xếp, lọc, mẫu đã lưu…)
 // còn lưu lên tài khoản (userPrefs/{email}) để đăng nhập máy khác / điện thoại vẫn giữ nguyên.
 // ============================================================================
-export const SYNC_RE = /^(fmt$|tv:|rp(Hidden|Extra|Order):|orderList(Hidden|Order|Extra):|slips:[^:]+:(cols|hidden)$|costs:|filter-presets:|filter-layout:|nav-layout$|order-tabs$|\w+Line(HiddenCols|Order)$|catCols:|formOrder:|\w+:hidden$)/;
+export const SYNC_RE = /^(fmt$|opScope$|tv:|rp(Hidden|Extra|Order):|orderList(Hidden|Order|Extra):|slips:[^:]+:(cols|hidden)$|costs:|filter-presets:|filter-layout:|nav-layout$|order-tabs$|\w+Line(HiddenCols|Order)$|catCols:|formOrder:|\w+:hidden$)/;
 // Tên trường Firestore không dùng dấu chấm
 export const remoteKey = (k) => k.replace(/%/g, '%25').replace(/\./g, '%2E');
 

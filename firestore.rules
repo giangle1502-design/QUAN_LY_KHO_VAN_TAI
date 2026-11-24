@@ -25,7 +25,14 @@ service cloud.firestore {
     // Kho được giao: danh sách rỗng hoặc không khai báo = tất cả kho
     // Quản trị (kể cả quản trị gốc chưa có hồ sơ users) được thao tác mọi kho
     function inMyWarehouse(wh) {
-      return isAdmin() || !('warehouses' in profile()) || profile().warehouses.size() == 0 || wh in profile().warehouses;
+      return isAdmin() || !('warehouses' in profile()) || profile().warehouses.size() == 0 || wh in profile().warehouses
+        // Kho chung: được giao ít nhất 1 kho pháp nhân trong nhóm (vị trí dùng chung)
+        || (exists(grpPath(wh)) && get(grpPath(wh)).data.get('members', []).hasAny(profile().warehouses));
+    }
+    function grpPath(code) { return /databases/$(database)/documents/warehouseGroups/$(code); }
+    // Vị trí của kho chung lw được phiếu ở kho pháp nhân mw (thành viên) cập nhật pallet
+    function locOfWh(lw, mw) {
+      return mw == lw || (exists(grpPath(lw)) && mw in get(grpPath(lw)).data.get('members', []));
     }
 
     // Phân quyền: ai cũng đọc được hồ sơ của mình; quản trị đọc/sửa tất cả
@@ -387,7 +394,8 @@ service cloud.firestore {
       allow update: if (hasRole('thu_kho') || hasRole('ke_toan')) && inMyWarehouse(resource.data.warehouse)
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['currentPallets', 'usedPct', 'emptyBin', 'lastMovement', 'updatedAt', 'updatedBy'])
-        && freshMovement(request.resource.data.lastMovement, resource.data.warehouse);
+        && freshMovement(request.resource.data.lastMovement, getAfter(mvPath(request.resource.data.lastMovement)).data.warehouse)
+        && locOfWh(resource.data.warehouse, getAfter(mvPath(request.resource.data.lastMovement)).data.warehouse);
     }
 
     // ==== Đơn bán (SO) / đơn mua (PO) ====
@@ -505,10 +513,10 @@ service cloud.firestore {
       allow get: if coll == 'carriers' && txOk() && id == txCarrier();
       allow read: if coll == 'vehicles' && txOk() && resource.data.get('carrier', '') == txCarrier();
       allow read: if isStaff() && coll in [
-        'companies', 'partners', 'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses',
+        'companies', 'partners', 'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses', 'warehouseGroups',
         'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'codeRules', 'freightRates', 'pallets', 'pickupPoints'];
       allow create, update: if isAdmin() && coll in [
-        'companies', 'partners', 'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses',
+        'companies', 'partners', 'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses', 'warehouseGroups',
         'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'codeRules', 'freightRates', 'pallets', 'pickupPoints'];
       // Kinh doanh, kế toán thêm/sửa nhanh khách hàng, địa chỉ giao, mã hàng ngay khi lập đơn (không xóa)
       allow create, update: if coll in ['partners', 'soldto', 'shipto', 'items', 'suppliers'] && (hasRole('kinh_doanh') || hasRole('ke_toan'));

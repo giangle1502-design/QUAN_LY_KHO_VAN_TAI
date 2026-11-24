@@ -782,3 +782,12 @@ label.inline { display: inline-flex; gap: 4px; align-items: center; margin-right
 /* Sale control: thanh % đủ thông tin của khách đang tiếp cận */
 .pct-bar { display: inline-block; width: 46px; height: 6px; border-radius: 3px; background: #eef1f5; vertical-align: middle; overflow: hidden; }
 .pct-bar i { display: block; height: 100%; }
+
+/* Ô chọn nhiều (kho / vị trí / công ty) */
+.mp-trigger { display: inline-flex; align-items: center; gap: 6px; min-width: 150px; max-width: 280px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font: inherit; font-size: 14px; cursor: pointer; text-align: left; }
+.mp-trigger .mp-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-trigger .mp-count { background: var(--primary, #1a73e8); color: #fff; border-radius: 10px; padding: 0 7px; font-size: 12px; }
+.mp-trigger .mp-caret { color: var(--muted, #888); }
+.mp-bar { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 6px 6px; }
+.mp-opt { display: flex; gap: 8px; align-items: flex-start; }
+.mp-opt input { margin-top: 3px; }
