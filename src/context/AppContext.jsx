@@ -4,6 +4,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db, SUPER_ADMINS } from '../firebase';
 import { canSeeField, mergeFields, visibleFields } from '../lib/fields';
 import { setFormat } from '../lib/utils';
+import { migrateMyOldEmails } from '../lib/userRename';
 
 const Ctx = createContext(null);
 export const useApp = () => useContext(Ctx);
@@ -24,6 +25,12 @@ export function AppProvider({ children }) {
     if (!email) { setUserDoc(undefined); return; }
     return onSnapshot(doc(db, 'users', email), (s) => setUserDoc(s.exists() ? s.data() : null), () => setUserDoc(null));
   }, [email]);
+
+  // Vừa được quản trị đổi email: tự chuyển trò chuyện riêng, hộp thông báo, cài đặt hiển thị từ email cũ (1 lần mỗi phiên)
+  const oldKey = (userDoc?.oldEmails || []).join(',');
+  useEffect(() => {
+    if (email && oldKey) migrateMyOldEmails(email, oldKey.split(',')).catch(() => {});
+  }, [email, oldKey]);
 
   // Cấu hình hiển thị riêng của người dùng (định dạng, cột, sắp xếp…) lưu trên tài khoản
   const [remotePrefs, setRemotePrefs] = useState(null);

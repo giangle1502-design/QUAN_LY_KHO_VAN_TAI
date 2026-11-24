@@ -22,6 +22,7 @@ import { matchType, syncFromCatalog, syncPartnersToRoles } from '../lib/partners
 import { ColumnPicker } from '../components/FormTools';
 import { ViewPresets, useTableTools } from '../components/TableTools';
 import { dragHeadProps, orderCols } from '../lib/colOrder';
+import { RenameUserButton } from './admin/RenameUser';
 import { AddRoleButton, PartnerFixedFilters, PartnerForm, PartnerNotices, usePartnerRows } from './Partners';
 
 // Bố cục thẻ tìm kiếm gợi ý cho Đối tác (giống MISA); người dùng tự chỉnh lại được
@@ -70,7 +71,8 @@ function Catalog({ cat }) {
       // Đơn vị vận tải chỉ thấy xe, tài xế của đơn vị mình
       : cat.carrierField && app.myCarrier ? rows.filter((r) => r[cat.carrierField] === app.myCarrier)
       // Tài khoản 3PL chỉ GHA và quản trị gốc thấy
-      : cat.key === 'users' && !app.can3PL ? rows.filter((r) => r.role !== 'tpl')
+      // Hồ sơ email cũ đã đổi sang email mới: ẩn
+      : cat.key === 'users' ? rows.filter((r) => !r.renamedTo && (app.can3PL || r.role !== 'tpl'))
       : custScope ? (cat.key === 'soldto' ? rows.filter((r) => saleSeesCustomer(r, email))
         : rows.filter((r) => { const c = custRows.find((x) => x.code === r.customerCode); return !c || saleSeesCustomer(c, email); }))
       : rows),
@@ -341,6 +343,9 @@ export function EditForm({ cat, fields, row, existing = [], onClose, onSaved }) 
                   <div className="readonly-val">{String(displayValue(f, data[f.key]) || '—')}{f.key === 'usedPct' && data[f.key] != null ? '%' : ''}</div>
                 ) : (
                   <FieldInput field={f} value={form[f.key]} onChange={(v) => set(f.key, v)} disabled={ro} onPickRef={onPickRef} />
+                )}
+                {cat.key === 'users' && f.key === 'email' && !isNew && isAdmin && (
+                  <div style={{ marginTop: 4 }}><RenameUserButton row={row} existing={existing} onDone={(t) => onSaved(t, row._id)} /></div>
                 )}
               </Field>
             );

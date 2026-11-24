@@ -442,6 +442,7 @@ export const CATALOGS = [
   },
   {
     key: 'users', group: 'Hệ thống', icon: '🔑', title: 'Phân quyền', short: 'Phân quyền', idField: 'email', lowerId: true, adminOnly: true,
+    help: 'Bấm vào một dòng để sửa họ tên, vai trò, kho, quyền… Email nhập sai / đổi email: mở dòng đó → ✏ Đổi email (giữ nguyên quyền và dữ liệu đang phụ trách).',
     fields: [
       { key: 'email', label: 'Email đăng nhập', type: 'email', required: true },
       { key: 'name', label: 'Họ tên', type: 'text', required: true },

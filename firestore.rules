@@ -43,6 +43,8 @@ service cloud.firestore {
     // Cài đặt hiển thị riêng của từng người (định dạng ngày / số, cột, sắp xếp, lọc, mẫu hiển thị): chỉ chính mình đọc / ghi
     match /userPrefs/{email} {
       allow read, create, update: if signedIn() && email == me();
+      // Người vừa được đổi email: đọc cài đặt của email cũ để chuyển sang
+      allow read: if isStaff() && email in profile().get('oldEmails', []);
     }
 
     // Cấu hình hạng mục và cài đặt chung
@@ -262,6 +264,11 @@ service cloud.firestore {
     match /chats/{cid} {
       allow read: if isStaff() && (me() in resource.data.members || '*' in resource.data.members);
       allow read: if isAdmin() && resource.data.type == 'group';
+      // Người vừa được đổi email: thấy hội thoại của email cũ và tự chuyển thành viên sang email mới
+      allow read: if isStaff() && resource.data.members.hasAny(profile().get('oldEmails', []));
+      allow update: if isStaff() && resource.data.members.hasAny(profile().get('oldEmails', []))
+        && me() in request.resource.data.members
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'names']);
       // Trò chuyện riêng: 2 người, mình là 1 trong 2
       allow create: if isStaff() && request.resource.data.type == 'dm' && request.resource.data.members.size() == 2
         && me() in request.resource.data.members && request.resource.data.createdBy == me();
@@ -285,6 +292,7 @@ service cloud.firestore {
     // Đã đọc tới đâu: mỗi người 1 tài liệu riêng
     match /chatReads/{email} {
       allow read, write: if isStaff() && email == me();
+      allow read: if isStaff() && email in profile().get('oldEmails', []);
     }
 
     // ==== Pallet gỗ / nhựa: tồn theo kho, đang cho vận tải mượn, sổ nhập / trả / điều chỉnh ====

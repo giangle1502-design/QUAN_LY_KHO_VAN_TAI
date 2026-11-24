@@ -48,13 +48,14 @@ export function MultiPick({ options, value, onChange, placeholder = 'Tìm…', h
 }
 
 export default function Chat() {
-  const { email, name, isAdmin } = useApp();
-  const me = { email, name };
+  const { email, name, isAdmin, userDoc } = useApp();
+  const me = { email, name, old: userDoc?.oldEmails || [] };
   const [sp, setSp] = useSearchParams();
   const { rows: chats, loading, error } = useMyChats(email);
   const reads = useChatReads(email);
   const { rows: users } = useCollection('users');
-  const userMap = useMemo(() => new Map(users.map((u) => [u._id, u])), [users]);
+  // Email cũ (người dùng đã đổi email) vẫn hiện đúng tên
+  const userMap = useMemo(() => new Map([...users.flatMap((u) => (u.oldEmails || []).map((o) => [o, u])), ...users.filter((u) => !u.renamedTo).map((u) => [u._id, u])]), [users]);
   const nameOf = (e) => userMap.get(e)?.name || e;
   const [q, setQ] = useState('');
   const [pick, setPick] = useState(false);
@@ -72,6 +73,9 @@ export default function Chat() {
   // Trò chuyện riêng: mở hội thoại sẵn có hoặc hội thoại mới (chỉ tạo khi gửi tin đầu tiên)
   const startDm = (other) => {
     setPick(false);
+    // Hội thoại sẵn có với người này (kể cả hội thoại lập trước khi một trong hai đổi email)
+    const had = chats.find((c) => c.type === 'dm' && c.members.length === 2 && c.members.includes(email) && c.members.includes(other));
+    if (had) { go(had.id); return; }
     const id = dmId(email, other);
     if (!chats.some((c) => c.id === id)) setDraftDm({ id, type: 'dm', _new: true, members: [email, other].sort(), names: { [email]: name, [other]: nameOf(other) } });
     go(id);
@@ -255,7 +259,7 @@ function Conversation({ chat, me, title, nameOf, reads, onBack, onEditGroup }) {
           const day = ms ? fmtDate(vnParts(new Date(ms))?.ymd) : '';
           const sep = day && day !== lastDay ? day : '';
           if (sep) lastDay = day;
-          const mine = m.by === me.email && !m.sys;
+          const mine = (m.by === me.email || me.old?.includes(m.by)) && !m.sys;
           return (
             <div key={m.id}>
               {sep && <div className="chat-day"><span>{sep}</span></div>}
