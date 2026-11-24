@@ -1,4 +1,4 @@
-import { buysInto, buyWhText, companyOfWh, hasKeeper, locsOfWh } from '../../lib/whGroups';
+import { buysInto, buyWhText, companyOfWh, locsOfWh } from '../../lib/whGroups';
 import { MV_FORM, blockLocSet, inBlockLoc, kindOf, withBlock } from '../../catalogs';
 import { ExtraFields, useExtraFields } from '../../components/ExtraFields';
 import { RETURN_CONDITIONS } from '../../lib/orders';
@@ -12,7 +12,7 @@ import { useApp } from '../../context/AppContext';
 import { useCollection, useCompanies, useMyWarehouses, useOpCompany, useOpWarehouse, useOrders, usePendingIn, useStock, useTrips, useWaitingOut } from '../../lib/hooks';
 import { CompanyPicker } from '../../components/TripBits';
 import { IN_SOURCES, OPEN_STATUSES, ORDER_FOR_MOVE, ORDER_TYPES, isReturn, lineFrom, lineShip, lineTo, lineWh, matchOrderLine, openKg, orderInWarehouse, orderWarehouse, stoRoute } from '../../lib/orders';
-import { MOVE_TYPES, ageDays, createPendingIn, createWaitingOut, kgOf, postMovement, suggestPallets } from '../../lib/stock';
+import { MOVE_TYPES, ageDays, createWaitingOut, kgOf, postMovement, suggestPallets } from '../../lib/stock';
 import { releaseStatusOfWh } from '../../lib/release';
 import { ST, vnDate } from '../../lib/trips';
 import { createPlannedTrips } from '../../lib/transport';
@@ -57,7 +57,7 @@ export function mergeKey(o, type, wh) {
 export const mergeRule = (type, t) => ({ SO: 'cùng khách hàng, cùng công ty xuất, cùng kho', PO: 'cùng nhà cung cấp, cùng công ty, cùng kho nhập', STO: type === 'out' ? 'cùng kho xuất, cùng kho nhận' : 'cùng kho đi, cùng kho nhận' }[t] || '');
 
 // Ai được lập loại phiếu nào
-// Phiếu nhập: quản trị lập và in phiếu, thủ kho nhận hàng ngoài hiện trường rồi xác nhận (trang Nhận hàng)
+// Phiếu nhập: quản trị lập là ghi tồn ngay (không chờ thủ kho xác nhận). Thủ kho chỉ định xe vào cửa, xác nhận nhập / xuất xong (Vận tải → Thủ kho điều phối)
 export function canMove(hasRole, type, isAdmin) {
   if (type === 'in') return !!isAdmin;
   return type === 'status' ? hasRole('ke_toan') : hasRole('thu_kho');
@@ -757,8 +757,8 @@ function Form({ type }) {
     if (type === 'out' && head.shipCode && shipOpts.length && !shipOpts.some((s) => s.shipCode === head.shipCode)) return setErr(`Mã giao ${head.shipCode} không thuộc khách hàng ${head.partyCode}.`);
     if (type === 'out') { const pe = palletError(pal, head, 'out', { managed: palletManaged(wh) }); if (pe) return setErr(pe); }
     // Phiếu nhập: quản trị lập có thể chưa biết loại pallet; thủ kho kiểm tra, chọn khi nhận hàng
-    // Kho không có thủ kho (Cảng, Mua nội địa, 3PL…): phiếu nhập ghi tồn ngay khi lưu, nên phải đủ vị trí, loại pallet
-    const oneStep = type === 'in' && !hasKeeper(wh.code);
+    // Phiếu nhập ghi tồn ngay khi lưu (mọi kho, kể cả Đức Hòa), nên phải đủ vị trí, loại pallet
+    const oneStep = type === 'in';
     if (type === 'in' && pal.palletMode === 'pallet') { const pe = palletError(pal, head, 'in', { managed: palletManaged(wh) }); if (pe) return setErr(pe + (oneStep ? '' : ' (hoặc để thủ kho chọn khi nhận hàng: bỏ chọn Kiện)')); }
     // Thông tin vận tải không bắt buộc: bổ sung sau ở Phiếu kho → mở phiếu → Sửa thông tin vận tải
     const out = [];
@@ -767,7 +767,7 @@ function Form({ type }) {
       if (type === 'in') {
         if (!l.item || !itemMap.has(l.item)) return setErr(no + 'chọn mã hàng có trong danh mục.');
         // Vị trí: thủ kho chọn khi nhận hàng (quản trị lập phiếu có thể để trống)
-        if (oneStep && !String(l.location || '').trim()) return setErr(no + `chọn vị trí (kho ${wh.code} không có bước thủ kho xác nhận: phiếu ghi tồn ngay khi lưu).`);
+        if (oneStep && !String(l.location || '').trim()) return setErr(no + `chọn vị trí (phiếu nhập ghi tồn ngay khi lưu).`);
         if (!num(l.kg) && !num(l.bags) && !num(l.pallets)) return setErr(no + 'nhập số kg, pallet hoặc số bao.');
         if (l.goodsStatus === 'HTC' && !l.pledgee) return setErr(no + 'hàng HTC cần chọn bên nhận thế chấp.');
         out.push({ ...(l.orderLine != null ? { orderLine: l.orderLine } : {}), ...(l.orderId ? { _oid: l.orderId } : {}), ...(l.toBlock ? { toBlock: true } : {}), item: l.item, itemName: itemMap.get(l.item).name, lot: l.lot.trim(), mfgDate: l.mfgDate, expDate: l.expDate,
@@ -859,9 +859,8 @@ function Form({ type }) {
       const direct = type === 'in' && source === 'direct';
       const directPO = direct ? { company: head.company, date: head.date, partyCode: head.partyCode.trim(), partyName: head.partyName.trim(), refNo: head.refNo.trim(),
         tolerancePct: 0, note: head.note.trim() } : null;
-      // Kho có thủ kho (Đức Hòa): lập phiếu chờ thủ kho nhận. Kho khác: ghi tồn ngay (nhập trực tiếp: lập PO luôn)
-      const mk = type === 'in' ? (oneStep ? (m) => postMovement(m, { email, name }, { newOrder: directPO })
-        : (m) => createPendingIn({ ...m, ...(directPO ? { directPO } : {}) }, { email, name })) : (m) => (m.lines.some((l) => l._rel) ? createWaitingOut : postMovement)(
+      // Phiếu nhập ghi tồn ngay (nhập trực tiếp: lập PO luôn theo số nhập)
+      const mk = type === 'in' ? (m) => postMovement(m, { email, name }, { newOrder: directPO }) : (m) => (m.lines.some((l) => l._rel) ? createWaitingOut : postMovement)(
         { ...m, lines: m.lines.map(({ _rel, ...l }) => l) }, { email, name });
       const base = {
         type, warehouse: wh.code, company: head.company || '', date: head.date, tripId: head.tripId || '',
