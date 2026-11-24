@@ -5,6 +5,7 @@ import { db } from '../firebase';
 import { ST, firstStatus, noYard, nowISO, reserveCodes, vnDate } from './trips';
 import { calcFreight, matchRate } from './freight';
 import { fmtNum } from './utils';
+import { savePlateHistory } from './plates';
 
 // ============================================================================
 // Vận tải theo chuyến: admin giao đơn vị vận tải trên đơn → điều phối chia xe thành chuyến (status 'planned')
@@ -81,6 +82,8 @@ export async function doStep(t, step, user, data = {}, database = db) {
   const shown = user.as ? { email: user.as, name: user.as } : user;
   await updateDoc(doc(database, 'trips', t.id), { ...upd, updatedAt: at, updatedBy: shown.email,
     history: hist(t, shown, STEPS[step] + (data.note ? `: ${data.note}` : ''), upd.status) });
+  // Lịch sử số xe → tài xế: lần sau gõ số xe là tự hiện tài xế, CCCD
+  if (step === 'reg') await savePlateHistory({ carrier: t.carrier, plate: upd.plate, vehicleType: upd.vehicleType, driverName: upd.driverName, idCard: upd.idCard, driverPhone: upd.driverPhone }, database);
 }
 
 // Cước gợi ý theo bảng giá cho 1 chuyến (lấy điểm giao của dòng đầu)
@@ -144,6 +147,7 @@ export async function createPlannedTrips({ wh, carrier, trips }, user, action = 
       history: [{ at, by: user.email, byName: user.name || user.email, action: `${action}: ${fmtT(t.lines.reduce((s, l) => s + l.kg, 0))} tấn`, status: ST.PLANNED }],
     };
     await setDoc(doc(db, 'trips', id), trip);
+    if (trip.plate) await savePlateHistory({ carrier: carrier.code, plate: trip.plate, vehicleType: trip.vehicleType, payload: t.cap || '', driverName: trip.driverName, idCard: trip.idCard, driverPhone: trip.driverPhone });
     // 3PL chỉ GHA thấy: lưu riêng
     if (t.threepl) await setDoc(doc(db, 'tripPrivate', id), { tripId: id, carrier: carrier.code, threepl: t.threepl, threeplName: t.threeplName || '', by: user.email, at });
   }

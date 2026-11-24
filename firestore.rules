@@ -145,6 +145,12 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/carrierLinks/$(request.resource.data.carrier)).data.get('token', '') == request.resource.data.token;
     }
     // Mã link tài xế của từng đơn vị: quản trị tạo / đổi; điều phối, 3PL của đơn vị đọc để gửi link
+    // Lịch sử số xe → tài xế (gợi ý khi gõ số xe): id = <đơn vị vận tải>__<số xe>
+    match /plateHistory/{id} {
+      allow read: if isStaff() || (txOk() && resource.data.get('carrier', '') == txCarrier());
+      allow create, update: if (isStaff() || (txOk() && request.resource.data.carrier == txCarrier()))
+        && id.matches('^' + request.resource.data.carrier + '__.*');
+    }
     match /carrierLinks/{code} {
       allow read: if isAdmin() || ((hasRole('van_tai') || hasRole('tpl')) && myCarrier() == code);
       allow write: if isAdmin() || (hasRole('van_tai') && myCarrier() == code);

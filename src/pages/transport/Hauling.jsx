@@ -35,7 +35,7 @@ export default function Hauling() {
   const { role, isAdmin, hasRole, myCarrier, myThreepl, can3PL, isSuper } = useApp();
   const isCarrier = role === 'van_tai';
   const isTpl = role === 'tpl';
-  const tabs = [...(isAdmin ? [['cho-giao', 'Chờ giao vận tải']] : []), ['chuyen', isTpl ? 'Chuyến 3PL của tôi' : 'Chuyến xe'], ...(isTpl ? [] : [['chi-phi', 'Chi phí & cước']]),
+  const tabs = [...(isAdmin ? [['cho-giao', '📦 DO chờ vận tải']] : []), ['chuyen', isTpl ? 'Shipment 3PL của tôi' : '🚛 Shipment (chuyến xe)'], ...(isTpl ? [] : [['chi-phi', 'Chi phí & cước']]),
     ['tinh-trang', 'Tình trạng xe'], ['bang-ke', 'Bảng kê'], ...(isAdmin || isCarrier ? [['tai-xe', isAdmin || can3PL ? 'Link tài xế & tài khoản' : 'Link tài xế']] : [])];
   const [sp, setSp] = useSearchParams();
   const tab = tabs.some(([k]) => k === sp.get('tab')) ? sp.get('tab') : tabs[0][0];
@@ -90,7 +90,7 @@ function SplitModal({ rows, carrier, onClose, action = 'Chia xe' }) {
   const drivers = useCollection(drvCols ? 'drivers' : '').rows.filter((d) => d.carrier === carrier.code);
   const warehouses = useCollection('warehouses').rows;
   // Admin giao vận tải không chọn 3PL: GHA chọn ở màn hình đăng ký xe
-  const threepl = useCollection(can3PL && isGHA(carrier) && action !== 'Giao vận tải' ? 'threepl' : '').rows;
+  const threepl = useCollection(can3PL && isGHA(carrier) && !['Giao vận tải', 'Gửi vận tải'].includes(action) ? 'threepl' : '').rows;
   const [need, setNeed] = useState(() => Object.fromEntries(rows.map((r) => [r.key, r.rest])));
   const total = rows.reduce((s, r) => s + n(need[r.key]), 0);
   const [cap, setCap] = useState(30);
@@ -311,7 +311,7 @@ function TripList({ trips, priv }) {
       {!list.length ? <Empty text="Không có chuyến nào." /> : view === 'card' ? <div className="trip-cards">{list.map(card)}</div> : (
       <div className="table-wrap">
           <table>
-            <thead><tr><th>Chuyến</th><th>Ngày đi</th><th>Kho</th><th>Xe · tài xế</th>{!isCarrier && !isTpl && <th>Vận tải</th>}{can3PL && <th>3PL</th>}<th>Giao đến · hàng</th><th className="num">Tấn</th><th>Tiến độ</th>{!isTpl && <th>Chi phí</th>}{(can3PL || isTpl) && <th>Cước 3PL</th>}<th></th></tr></thead>
+            <thead><tr><th>Shipment</th><th>Ngày đi</th><th>Kho</th><th>Xe · tài xế</th>{!isCarrier && !isTpl && <th>Vận tải</th>}{can3PL && <th>3PL</th>}<th>Giao đến · hàng</th><th className="num">Tấn</th><th>Tiến độ</th>{!isTpl && <th>Chi phí</th>}{(can3PL || isTpl) && <th>Cước 3PL</th>}<th></th></tr></thead>
             <tbody>{list.map((t) => {
               const { st, blocked, c, p3, open } = info(t);
               return (
@@ -606,7 +606,7 @@ function Costs({ trips, priv }) {
   const cols = [
     { key: 'company', label: 'Công ty', get: (t) => t.company || '' },
     { key: 'date', label: 'Ngày vận chuyển', get: (t) => t.plannedDate || '' },
-    { key: 'trip', label: 'Chuyến', get: (t) => t.id },
+    { key: 'trip', label: 'Shipment', get: (t) => t.id },
     { key: 'pickup', label: 'Điểm nhận', get: (t) => pickupOf(t) },
     { key: 'dest', label: 'Điểm giao', cls: 'small', get: (t) => destOf(t, warehouses) },
     { key: 'carrier', label: 'Đơn vị vận tải', get: (t) => t.carrierName || t.carrier },
