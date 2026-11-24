@@ -304,7 +304,7 @@ export default function SOForm({ type = 'SO', order, onClose, draft }) {
       <>
         <div className="cell-add">
           <input list="dl-so-party" value={h.partyCode} placeholder={`Gõ hoặc chọn mã ${cfg.partyLabel}`} onChange={(e) => setHead('partyCode', e.target.value)} />
-          <QuickAdd catKey={cfg.party} onAdded={(id, r) => setHead('partyCode', id, r)} />
+          <QuickAdd catKey={cfg.party} value={h.partyCode} onAdded={(id, r) => setHead('partyCode', id, r)} />
         </div>
         {h.partyCode && <small className={recOf.partyCode(h.partyCode) || h.partyName ? 'small' : 'req'}>{recOf.partyCode(h.partyCode)?.name || h.partyName || `Chưa có trong danh mục ${cfg.partyLabel}: bấm + để thêm`}</small>}
       </>
@@ -354,7 +354,7 @@ export default function SOForm({ type = 'SO', order, onClose, draft }) {
       case 'item': return (
         <div className="cell-add">
           <input list="dl-so-item" value={l.item} disabled={done} title={done ? 'Dòng đã giao, không đổi mã hàng được' : ''} onChange={(e) => set(e.target.value)} />
-          {!done && <QuickAdd catKey="items" onAdded={(id, rec) => set(id, rec)} />}
+          {!done && <QuickAdd catKey="items" value={l.item} onAdded={(id, rec) => set(id, rec)} />}
           {canStock && itemMap.has(l.item) && !done && <ItemCode code={l.item} label="📦 Tồn" onStock={() => setStockAt(i)} />}
         </div>
       );
@@ -375,7 +375,7 @@ export default function SOForm({ type = 'SO', order, onClose, draft }) {
             <option value="">{h.partyCode ? '-- Chọn --' : 'Chọn khách hàng trước'}</option>
             {myShips.map((s) => <option key={s.shipCode} value={s.shipCode}>{s.shipCode} – {s.address}</option>)}
           </Select>
-          {h.partyCode && <QuickAdd catKey="shipto" preset={{ customerCode: h.partyCode, customerName: h.partyName }} onAdded={(id, rec) => set(id, rec)} />}
+          {h.partyCode && <QuickAdd catKey="shipto" value={l.shipCode} preset={{ customerCode: h.partyCode, customerName: h.partyName }} onAdded={(id, rec) => set(id, rec)} />}
         </div>
       );
       case 'goodsStatus': return (

@@ -180,7 +180,7 @@ export default function AdjustImport() {
             <option value="">-- Lý do điều chỉnh --</option>
             {reasons.map((r) => <option key={r.code} value={`${r.code} – ${r.name}`}>{r.name}</option>)}
           </Select>
-          <QuickAdd catKey="reasons" preset={{ appliesTo: 'Điều chỉnh tồn' }} onAdded={(id, r) => setReason(`${id} – ${r?.name || ''}`)} />
+          <QuickAdd catKey="reasons" value={String(reason || '').split(' – ')[0]} preset={{ appliesTo: 'Điều chỉnh tồn' }} onAdded={(id, r) => setReason(`${id} – ${r?.name || ''}`)} />
         </span>
         <button className="btn" disabled={!wh} onClick={() => fileRef.current.click()}>⬆ Chọn file Excel</button>
         <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" hidden onChange={(e) => e.target.files[0] && read(e.target.files[0])} />

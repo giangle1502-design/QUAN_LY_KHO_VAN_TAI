@@ -583,7 +583,7 @@ function SharedCells({ v, edit, editCarrier = edit, save, cats, whs }) {
           {Object.entries(DEST_TYPES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
         </Select>) : DEST_TYPES[v.destType]}</td>
       <td>{edit && v.destType === 'customer' ? (
-        <><WithAdd cat="soldto" onAdded={(id, r) => save({ partyCode: r?.code || id, partyName: r?.name || '', shipCode: '' })}><input list="dl-alloc-soldto" style={{ width: 130 }} placeholder="Mã khách" defaultValue={v.partyCode} key={'p' + v.partyCode} onBlur={pickCustomer} /></WithAdd>
+        <><WithAdd cat="soldto" value={v.partyCode} onAdded={(id, r) => save({ partyCode: r?.code || id, partyName: r?.name || '', shipCode: '' })}><input list="dl-alloc-soldto" style={{ width: 130 }} placeholder="Mã khách" defaultValue={v.partyCode} key={'p' + v.partyCode} onBlur={pickCustomer} /></WithAdd>
           {v.partyName && <div className="small">{v.partyName}</div>}</>
       ) : edit && v.destType === 'warehouse' ? (
         <WithAdd cat="warehouses" onAdded={(id) => save({ toWarehouse: id, toLocation: '' })}><Select value={v.toWarehouse || ''} onChange={(e) => save({ toWarehouse: e.target.value, toLocation: '' })}>
