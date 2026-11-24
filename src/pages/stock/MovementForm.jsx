@@ -1322,8 +1322,16 @@ function QtyFields({ l, onKg, onPallets, onBags }) {
   );
 }
 
+// Bên nhận thế chấp mặc định cho hàng HTC: Techcombank (mã / tên có "Tech" hoặc "TCB") — quy tắc của người dùng
+export const defaultPledgee = (pledgees) => (pledgees || []).find((p) => /tech|\btcb\b/i.test(`${p.code} ${p.name}`))?.code || '';
+
 export function InLine({ l, set, itemMap, locations, statuses, pledgees, locRequired = true, cap, onSplit }) {
   const it = itemMap.get(l.item);
+  // Hàng HTC chưa chọn bên nhận thế chấp (đơn ghi HTC, hoặc đơn chưa ghi rồi chọn HTC khi nhập): tự điền Tech
+  const techPl = defaultPledgee(pledgees);
+  useEffect(() => {
+    if (l.goodsStatus === 'HTC' && !l.pledgee && techPl) set({ pledgee: techPl });
+  }, [l.goodsStatus, l.pledgee, techPl]); // eslint-disable-line react-hooks/exhaustive-deps
   const setBags = (v) => set({ bags: v, pallets: suggestPallets(it, v), kg: kgOf(it, v), kgTxt: undefined });
   const setKg = (v) => {
     const kg = v === '' ? '' : r3(num(v));
