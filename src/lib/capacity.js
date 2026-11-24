@@ -1,4 +1,5 @@
 import { noCapacity } from './whGroups';
+import { estPallets } from './stock';
 // Sức chứa vị trí khi nhập hàng: cảnh báo dòng nhập vượt số pallet còn trống của vị trí
 // và chia 1 dòng thành nhiều dòng, mỗi dòng không quá sức chứa vị trí để nhân viên chọn vị trí
 const n = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? 0 : Number(v));
@@ -52,3 +53,26 @@ export function splitByCapacity(line, info) {
       pallets: p.pallets, kg: line.kg === '' ? '' : pk, bags: line.bags === '' ? '' : pb };
   });
 }
+
+// Vị trí đang có hàng nhưng số pallet ghi trên vị trí thấp hơn tồn thực tế (VD phiếu nhập cũ chỉ ghi kg, không ghi pallet):
+// lấy số pallet theo tồn (quy đổi kg / bao theo quy cách mã hàng) để danh sách chọn vị trí, cảnh báo sức chứa không báo "trống" sai.
+// stockRows: tồn của kho đang thao tác; itemMap: mã hàng → bản ghi
+export function withStockOccupancy(locations, stockRows, itemMap) {
+  const occ = new Map();
+  for (const r of stockRows || []) {
+    if (!r.location || (n(r.kg) <= EPS && n(r.bags) <= EPS && n(r.pallets) <= EPS)) continue;
+    const o = occ.get(r.location) || { pallets: 0, kg: 0 };
+    o.pallets = r3(o.pallets + estPallets(itemMap?.get(r.item), r));
+    o.kg = r3(o.kg + Math.max(0, n(r.kg)));
+    occ.set(r.location, o);
+  }
+  if (!occ.size) return locations;
+  return locations.map((l) => {
+    const o = occ.get(l.code);
+    if (!o) return l;
+    return { ...l, currentPallets: Math.max(n(l.currentPallets), o.pallets), stockKg: o.kg };
+  });
+}
+
+// Vị trí có tính sức chứa (khai báo sức chứa, kho không tích "Không cần sức chứa")
+export const hasCapacity = (loc) => !!loc && n(loc.capacity) > 0 && !noCapacity(loc.warehouse);

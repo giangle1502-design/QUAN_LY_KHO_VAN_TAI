@@ -356,6 +356,16 @@ export function suggestPallets(item, bags) {
   const per = n(item?.bagsPerLayer) * n(item?.layersPerPallet);
   return per && n(bags) ? Math.ceil((n(bags) / per) * 100) / 100 : '';
 }
+// Số pallet chiếm vị trí của 1 dòng nhập / dòng tồn: số pallet đã ghi; chưa ghi thì quy đổi từ số bao
+// (bao/pallet) hoặc số kg (kg/pallet theo quy cách mã hàng). Không đủ quy cách: 0
+export function estPallets(item, { kg, bags, pallets } = {}) {
+  if (n(pallets) > 0) return n(pallets);
+  const per = n(item?.bagsPerLayer) * n(item?.layersPerPallet);
+  if (per && n(bags) > 0) return Math.ceil((n(bags) / per) * 100) / 100;
+  const pw = n(item?.palletWeight) || per * n(item?.bagWeight);
+  if (pw && n(kg) > 0) return Math.ceil((n(kg) / pw) * 100) / 100;
+  return 0;
+}
 export function kgOf(item, bags) {
   return n(item?.bagWeight) && n(bags) ? n(item.bagWeight) * n(bags) : '';
 }

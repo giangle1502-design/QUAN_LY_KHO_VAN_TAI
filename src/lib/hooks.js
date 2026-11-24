@@ -77,7 +77,7 @@ export function useStock(wh) {
   const state = useMemo(() => ({ rows: st.snap ? st.snap.docs.map((d) => ({ _id: d.id, ...d.data() })) : [], loading: st.loading, error: st.error }), [st]);
   const stale = false;
   const rows = useMemo(
-    () => (stale ? [] : state.rows.filter((r) => inMyWarehouses(r.warehouse) && (Number(r.bags) > 0 || Number(r.pallets) > 0))),
+    () => (stale ? [] : state.rows.filter((r) => inMyWarehouses(r.warehouse) && (Number(r.bags) > 0 || Number(r.pallets) > 0 || Number(r.kg) > 0.001))),
     [state.rows, inMyWarehouses, stale]
   );
   return { error: state.error, loading: state.loading || stale, rows };
