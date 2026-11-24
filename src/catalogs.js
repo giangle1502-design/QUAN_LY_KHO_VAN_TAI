@@ -565,6 +565,41 @@ FORM_DEFS.push(
   { key: 'rtvForm', group: OPS, icon: '↩', title: 'Trả hàng nhà cung cấp (RTV)', short: 'Trả hàng NCC', form: true, ops: true, fields: [] },
   { key: 'palletMove', group: OPS, icon: '🪵', title: 'Nhập / điều chỉnh / trả pallet', short: 'Phiếu pallet', form: true, ops: true, fields: [] },
 );
+// Biểu mẫu thư mục Sale control: khách đang tiếp cận (chưa có mã) và hoạt động chăm sóc khách.
+// Trường có sẵn đổi tên / ẩn / bắt buộc ở Quản lý trường; danh sách chọn có `addable` thì sale bấm (+) thêm lựa chọn ngay trên form
+const SALE = 'Biểu mẫu Sale';
+export const PROSPECT_STAGES = ['Mới tiếp cận', 'Đang chăm sóc', 'Đã báo giá', 'Đang thử hàng', 'Ngừng theo dõi'];
+export const ACTIVITY_TYPES = ['Gọi điện', 'Gặp khách', 'Gửi mẫu', 'Báo giá', 'Zalo / Email', 'Khác'];
+FORM_DEFS.push(
+  {
+    key: 'prospect', group: SALE, icon: '🎯', title: 'Khách hàng đang tiếp cận', short: 'Khách đang tiếp cận', form: true,
+    fields: [
+      { key: 'name', label: 'Tên khách hàng', type: 'text', required: true, help: 'Ghi tạm cũng được. Đúng tên theo giấy phép thì sửa khi Tạo mã khách hàng' },
+      { key: 'taxCode', label: 'Mã số thuế', type: 'text' },
+      { key: 'contact', label: 'Người liên hệ', type: 'text' },
+      { key: 'phone', label: 'Điện thoại', type: 'phone' },
+      { key: 'email', label: 'Email', type: 'email' },
+      { key: 'address', label: 'Địa chỉ', type: 'textarea' },
+      { key: 'plasticType', label: 'Loại hạt quan tâm', type: 'select', options: ['Nguyên sinh', 'Tái sinh', 'Cả hai'] },
+      { key: 'productsUsed', label: 'Loại hạt khách đang dùng', type: 'text' },
+      { key: 'monthlyVolume', label: 'Sản lượng (tấn/tháng)', type: 'number' },
+      { key: 'source', label: 'Nguồn khách', type: 'select', options: ['Giới thiệu', 'Online', 'Hội chợ', 'Tự tìm', 'Khác'], addable: true },
+      { key: 'stage', label: 'Giai đoạn', type: 'select', options: PROSPECT_STAGES, default: 'Mới tiếp cận', addable: true },
+      { key: 'note', label: 'Ghi chú', type: 'textarea' },
+    ],
+  },
+  {
+    key: 'activity', group: SALE, icon: '📞', title: 'Hoạt động chăm sóc khách hàng', short: 'Hoạt động KH', form: true,
+    fields: [
+      { key: 'date', label: 'Ngày', type: 'date', required: true, default: 'today' },
+      { key: 'type', label: 'Loại hoạt động', type: 'select', options: ACTIVITY_TYPES, required: true, addable: true },
+      { key: 'content', label: 'Nội dung', type: 'textarea' },
+      { key: 'result', label: 'Kết quả', type: 'textarea' },
+      { key: 'nextAction', label: 'Việc tiếp theo', type: 'text' },
+      { key: 'nextDate', label: 'Hẹn ngày', type: 'date' },
+    ],
+  },
+);
 // Mã biểu mẫu trường bổ sung của phiếu kho theo loại phiếu
 export const MV_FORM = { in: 'mvIn', out: 'mvOut', move: 'mvMove', status: 'mvStatus', adjust: 'mvAdjust' };
 export const catalogByKey = (k) => CATALOGS.find((c) => c.key === k) || FORM_DEFS.find((c) => c.key === k);

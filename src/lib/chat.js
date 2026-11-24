@@ -115,6 +115,7 @@ export const EVENTS = [
   { key: 'px_new', label: 'Lập phiếu xuất kho', icon: '📤', text: '📤 {nguoi} lập phiếu xuất {so} ({don}) · kho {kho} · khách {khach} · {hang}' },
   { key: 'pn_new', label: 'Lập phiếu nhập kho', icon: '📥', text: '📥 {nguoi} lập phiếu nhập {so} ({don}) · kho {kho} · {hang}' },
   { key: 'legal_transfer', label: 'Báo chuyển pháp nhân', icon: '🏛️', text: '🏛️ Chuyển pháp nhân: phiếu {so} ({don}) xuất cho {cty} lấy tồn {tu} · {hang}. Kế toán vui lòng chuyển trên phần mềm kế toán.' },
+  { key: 'customer_new', label: 'Tạo mã khách hàng mới (từ khách đang tiếp cận)', icon: '🏷', text: '🏷 {nguoi} tạo mã khách hàng {so} · {khach}' },
   { key: 'release_new', label: 'Lập đề nghị giải chấp', icon: '🔓', text: '🔓 {nguoi} lập đề nghị giải chấp {so} · {cty} · ngân hàng {nganhang} · {hang}' },
 ];
 // Mặc định (chưa cấu hình): chỉ báo chuyển pháp nhân cho kế toán

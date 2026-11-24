@@ -92,8 +92,17 @@ export default function Layout() {
   const srcTab = (sto) => ({ isActive }) => (isActive && (new URLSearchParams(loc.search).get('src') || '') === (sto === true ? 'sto' : sto || '') ? 'active' : '');
   // Mục "➕ Lập … mới": mở thẳng form tạo mới (?new=1), không tô sáng như trang đang xem
   const noActive = () => '';
+  const saleTab = (k) => ({ isActive }) => (isActive && (new URLSearchParams(loc.search).get('tab') || 'tiep-can') === k ? 'active' : '');
   const canSO = hasRole('kinh_doanh', 'ke_toan');
+  const isSale = hasRole('kinh_doanh');
   const sections = [
+    // Thư mục Sale control (gộp từ app Sale control): khách đang tiếp cận / đã chốt đơn, hoạt động, phân tích bán hàng
+    { key: 'sale', title: '💼 Sale control', items: [
+      { to: '/sale/khach-hang?tab=tiep-can', cls: saleTab('tiep-can'), ico: '🎯', label: 'Khách hàng đang tiếp cận', show: isSale },
+      { to: '/sale/khach-hang?tab=da-chot', cls: saleTab('da-chot'), ico: '✅', label: 'Khách hàng đã chốt đơn', show: isSale },
+      { to: '/sale/hoat-dong', ico: '📞', label: 'Hoạt động khách hàng', show: isSale },
+      { to: '/bao-cao/phan-tich-ban-hang', ico: '📈', label: 'Phân tích bán hàng', show: isSale },
+    ] },
     { key: 'ban', title: '🧾 Bán hàng (SO → xuất)', items: [
       { to: '/don-hang?tab=SO&new=1', cls: noActive, ico: '➕', label: 'Lập SO mới', show: canSO },
       { to: '/don-hang?tab=SO&scan=1', cls: noActive, ico: '📷', label: 'Lập SO từ ảnh Biên bản giao hàng (Ecount)', show: canSO },
@@ -172,6 +181,7 @@ export default function Layout() {
     { key: 'c:nhap', title: '📥 Nhập kho', items: ['/don-hang?tab=cho-nhap', '/kho/nhan-hang', '/don-hang?tab=cho-nhap&loai=STO'] },
     { key: 'c:kho', title: '🏭 Kho', items: ['/kho/ton', '/kho/phieu', '/kho/move', '/kho/kiem-ke'] },
   ] : [
+    ...(role === 'kinh_doanh' ? [{ key: 'c:sale', title: '💼 Sale control', items: ['/sale/khach-hang?tab=tiep-can', '/sale/khach-hang?tab=da-chot', '/sale/hoat-dong', '/bao-cao/phan-tich-ban-hang'] }] : []),
     { key: 'c:ban', title: '🧾 Bán hàng', items: ['/don-hang?tab=SO&new=1', '/don-hang?tab=SO&scan=1', '/du-kien-xuat?new=1', '/don-hang?tab=DO', '/du-kien-xuat', '/don-hang?tab=SO'] },
     { key: 'c:mua', title: '🛒 Mua hàng', items: ['/don-hang?tab=PO&new=1', '/don-hang?tab=PO&scan=1', '/don-hang?tab=PO', '/phan-bo', '/don-hang?tab=cho-nhap'] },
     { key: 'c:sto', title: '🔁 Chuyển kho', items: ['/don-hang?tab=STO&new=1', '/don-hang?tab=STO', '/don-hang?tab=cho-nhap&loai=STO'] },

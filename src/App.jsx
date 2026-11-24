@@ -35,6 +35,8 @@ import PrintDesigner from './pages/PrintDesigner';
 import Settings from './pages/Settings';
 import Chat from './pages/Chat';
 import ChatRules from './pages/admin/ChatRules';
+import SaleCustomers from './pages/sale/Customers';
+import SaleActivities from './pages/sale/Activities';
 
 export default function App() {
   const { user, allowed, isAdmin, isSuper, role, canDesign, hasRole, loading, logout, email } = useApp();
@@ -90,6 +92,8 @@ export default function App() {
         {canDesign && <Route path="mau-in" element={<PrintDesigner />} />}
         {canDesign && <Route path="mau-in/:id" element={<PrintDesigner />} />}
         <Route path="quan-tri/xoa" element={<Deletes />} />
+        {hasRole('kinh_doanh') && <Route path="sale/khach-hang" element={<SaleCustomers />} />}
+        {hasRole('kinh_doanh') && <Route path="sale/hoat-dong" element={<SaleActivities />} />}
         <Route path="tro-chuyen" element={<Chat />} />
         <Route path="cai-dat" element={<Settings />} />
         {isAdmin && <Route path="quan-tri/tin-nhan" element={<ChatRules />} />}

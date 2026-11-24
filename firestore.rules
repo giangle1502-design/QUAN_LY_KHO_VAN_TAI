@@ -465,6 +465,24 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ==== Sale control: khách đang tiếp cận (prospects), hoạt động chăm sóc khách (activities) ====
+    // Sale chỉ đọc / sửa bản ghi của mình (owner); sale quản lý (Kinh doanh xem đơn của mọi sale), quản trị, kế toán đọc tất cả
+    function saleAll() { return isAdmin() || hasRole('ke_toan') || (hasRole('kinh_doanh') && profile().get('seeAllOrders', false) == true); }
+    function saleEdit() { return isAdmin() || (hasRole('kinh_doanh') && profile().get('seeAllOrders', false) == true); }
+    function isSale() { return isAdmin() || hasRole('kinh_doanh'); }
+    match /prospects/{id} {
+      allow read: if isStaff() && (saleAll() || resource.data.owner == me());
+      allow create: if isSale() && (request.resource.data.owner == me() || saleEdit());
+      // Sale thường không chuyển khách sang sale khác
+      allow update: if isSale() && (saleEdit() || (resource.data.owner == me() && request.resource.data.owner == me()));
+    }
+    match /activities/{id} {
+      allow read: if isStaff() && (saleAll() || resource.data.owner == me());
+      allow create: if isSale() && request.resource.data.owner == me();
+      allow update: if isSale() && (saleEdit() || (resource.data.owner == me() && request.resource.data.owner == me()));
+      allow delete: if isSale() && (isAdmin() || resource.data.owner == me());
+    }
+
     // ==== Xóa dữ liệu ====
     // Chỉ quản trị gốc xóa thẳng; người khác gửi yêu cầu xóa để quản trị gốc duyệt
     match /deleteRequests/{id} {

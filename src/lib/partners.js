@@ -85,9 +85,11 @@ const stamp = (user, isNew) => ({ updatedAt: serverTimestamp(), updatedBy: user.
 // Lưu hồ sơ đối tác + đồng bộ Soldto / NCC cùng mã trong 1 lần ghi
 // p: hồ sơ (trường đối tác + trường tự thêm); roleData: { soldto: {...}, suppliers: {...} } trường riêng của vai trò
 // prev: dòng đang sửa (có _soldto, _supplier, _virtual) hoặc null khi thêm mới
-export async function savePartner(p, roleData, prev, user) {
+// more(batch, code): ghi thêm trong cùng lần lưu (vd. tạo mã từ khách đang tiếp cận: điểm giao + đánh dấu đã tạo mã)
+export async function savePartner(p, roleData, prev, user, more) {
   const batch = writeBatch(db);
   const code = partnerWrites(batch, p, roleData, prev, user);
+  if (more) more(batch, code);
   await batch.commit();
   return code;
 }

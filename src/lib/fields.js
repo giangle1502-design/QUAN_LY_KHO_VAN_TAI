@@ -49,7 +49,7 @@ export function mergeFields(catKey, stored = [], extra = {}) {
   for (const f of out) {
     f.form = catKey;
     // Trường có sẵn mà danh sách chọn cố định trong code (vd. Kiện / Xá) thì không thêm lựa chọn
-    if (f.builtin && sys.get(f.key)?.options) f.fixedChoices = true;
+    if (f.builtin && sys.get(f.key)?.options && !sys.get(f.key).addable) f.fixedChoices = true;
     else if (canChoose(f) && extra?.[f.key]?.length) f.options = [...new Set([...(f.options || []), ...parseChoices(extra[f.key].join(','), f.type)])];
   }
   return out;

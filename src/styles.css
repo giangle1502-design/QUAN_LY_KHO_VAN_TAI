@@ -778,3 +778,7 @@ td.cell-link:hover { background: var(--primary-soft); }
 .scan-transport { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .scan-transport .cell-add { min-width: 220px; }
 label.inline { display: inline-flex; gap: 4px; align-items: center; margin-right: 10px; cursor: pointer; }
+
+/* Sale control: thanh % đủ thông tin của khách đang tiếp cận */
+.pct-bar { display: inline-block; width: 46px; height: 6px; border-radius: 3px; background: #eef1f5; vertical-align: middle; overflow: hidden; }
+.pct-bar i { display: block; height: 100%; }
