@@ -1,4 +1,4 @@
-import { companyOfWh, locsOfWh } from '../../lib/whGroups';
+import { buysInto, buyWhText, companyOfWh, locsOfWh } from '../../lib/whGroups';
 import { MV_FORM, blockLocSet, inBlockLoc, kindOf, withBlock } from '../../catalogs';
 import { ExtraFields, useExtraFields } from '../../components/ExtraFields';
 import { RETURN_CONDITIONS } from '../../lib/orders';
@@ -746,6 +746,8 @@ function Form({ type }) {
     setErr('');
     if (!wh) return setErr('Chọn kho.');
     if (type === 'in' && !head.company) return setErr('Chọn công ty chủ hàng.');
+    if (type === 'in' && ['PO', 'direct'].includes(source) && !buysInto(wh.code))
+      return setErr(`Kho ${wh.code} không nhận hàng mua. Hàng mua (PO, nhập trực tiếp) chỉ nhập vào: ${buyWhText()}. Kho này nhập bằng chuyển kho (STO) hoặc khách trả hàng.`);
     if (type === 'in' && source === 'direct' && !head.partyCode.trim()) return setErr('Chọn nhà cung cấp (bấm + để thêm nhà cung cấp mới).');
     if (type === 'in' && source !== 'direct' && !head.orderId) return setErr(`Chọn ${{ PO: 'đơn mua (PO)', STO: 'lệnh chuyển kho (STO)', SO: 'đơn bán (SO) của hàng trả về', DRT: 'SO trả hàng (DRT)' }[source]}.`);
     if (type === 'adjust' && !head.reason) return setErr('Chọn lý do điều chỉnh.');
@@ -967,7 +969,7 @@ function Form({ type }) {
             <WithAdd cat="warehouses" onAdded={(id) => changeWh(id)}>
               <Select value={whCode} onChange={(e) => changeWh(e.target.value)}>
                 <option value="">-- Chọn kho --</option>
-                {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
+                {warehouses.filter((w) => !(type === 'in' && ['PO', 'direct'].includes(source)) || buysInto(w.code) || w.code === whCode).map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
               </Select>
             </WithAdd>
           </Field>

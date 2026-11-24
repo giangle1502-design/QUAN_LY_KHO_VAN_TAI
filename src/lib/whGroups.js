@@ -42,6 +42,12 @@ export const noCapacity = (whOrGroup) => {
   const g = groups.get(whOrGroup) || byWh.get(whOrGroup);
   return !!(g?.noCapacity || whRows.get(whOrGroup)?.noCapacity);
 };
+// Quy tắc nhập hàng: hàng mua (PO / nhập trực tiếp từ NCC) chỉ vào kho tích "Nhận hàng mua (PO)" (Cảng, Mua nội địa, Ngoại quan),
+// kho khác chỉ nhập bằng chuyển kho (STO) hoặc khách trả hàng. Chưa kho / kho chung nào tích = không giới hạn.
+export const poRuleOn = () => [...groups.values()].some((g) => g.poReceive) || [...whRows.values()].some((w) => w.poReceive && w.active !== false);
+export const buysInto = (wh) => !poRuleOn() || !wh || !!(whRows.get(wh)?.poReceive || byWh.get(wh)?.poReceive);
+export const buyWhText = () => [...[...groups.values()].filter((g) => g.poReceive).map((g) => g.name || g.code), ...[...whRows.values()].filter((w) => w.poReceive && !byWh.get(w.code || w._id)?.poReceive).map((w) => w.code || w._id)].join(', ');
+
 // Pháp nhân mặc định của kho (VD VAP-Cảng → VAP)
 export const companyOfWh = (wh) => whRows.get(wh)?.company || '';
 export const whLabel = (code) => {
