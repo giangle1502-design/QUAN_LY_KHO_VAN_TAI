@@ -1355,7 +1355,9 @@ export function InLine({ l, set, itemMap, locations, statuses, pledgees, locRequ
         <WithAdd cat="goodsStatus" onAdded={(id) => set({ goodsStatus: id })}>
           <Select value={l.goodsStatus} onChange={(e) => set({ goodsStatus: e.target.value })}>
             {statuses.map((s) => <option key={s.code} value={s.code}>{s.code} – {s.name}</option>)}
-            {!statuses.length && <option value="KTC">KTC</option>}
+            {/* Tình trạng lấy từ đơn (VD HTC) mà danh mục chưa có: vẫn hiện đúng, không tự nhảy về KTC */}
+            {l.goodsStatus && !statuses.some((s) => s.code === l.goodsStatus) && <option value={l.goodsStatus}>{l.goodsStatus}</option>}
+            {!statuses.length && l.goodsStatus !== 'KTC' && <option value="KTC">KTC</option>}
           </Select>
         </WithAdd>
       </Field>
