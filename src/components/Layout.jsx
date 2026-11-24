@@ -127,6 +127,12 @@ export default function Layout() {
       { to: '/sale/hoat-dong', ico: '📞', label: 'Hoạt động khách hàng', show: isSale },
       { to: '/bao-cao/phan-tich-ban-hang', ico: '📈', label: 'Phân tích bán hàng', show: isSale },
     ] },
+    // Điều phối kho: bàn điều phối đầu ngày + 2 danh sách đơn còn phải xuất / nhập (mỗi dòng 1 đơn)
+    { key: 'dieu-phoi', title: '🧭 Điều phối kho', items: [
+      { to: '/dieu-phoi', end: true, ico: '🧭', label: 'Bàn điều phối kho' },
+      { to: '/dieu-phoi/cho-xuat', ico: '📤', label: 'Đơn chờ xuất (SO, STO)' },
+      { to: '/dieu-phoi/cho-nhap', ico: '📥', label: 'Đơn chờ nhập (PO, STO, DRT)' },
+    ] },
     { key: 'ban', title: '🧾 Bán hàng (SO → xuất)', items: [
       { to: '/don-hang?tab=SO&new=1', cls: noActive, ico: '➕', label: 'Lập SO mới', show: canSO },
       { to: '/don-hang?tab=SO&scan=1', cls: noActive, ico: '📷', label: 'Lập SO từ ảnh Biên bản giao hàng (Ecount)', show: canSO },

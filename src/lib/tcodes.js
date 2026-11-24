@@ -14,6 +14,10 @@ export const TCODES = {
   '/sale/khach-hang?tab=tiep-can': 'KTC',
   '/sale/khach-hang?tab=da-chot': 'KDC',
   '/sale/hoat-dong': 'HD',
+  // Điều phối kho
+  '/dieu-phoi': 'DP',
+  '/dieu-phoi/cho-xuat': 'CX',
+  '/dieu-phoi/cho-nhap': 'CN',
   // Bán hàng
   '/don-hang?tab=SO&new=1': 'SON',
   '/don-hang?tab=SO&scan=1': 'SOA',
