@@ -22,10 +22,12 @@ export const KIND_LABEL = {
 export const isGHA = (c) => !!c && (c.kind === KIND.gha || c.uses3PL === true || String(c.code || '').toUpperCase() === 'GHA');
 export const isSelfPickup = (c) => !!c && c.kind === KIND.self;
 export const isInternal = (c) => !!c && c.kind === KIND.internal;
-// Xe trong danh mục Xe: chỉ xe nội bộ / xe nhà GHA
-export const usesVehicleList = (c) => isInternal(c) || isGHA(c);
-// Họ tên + CCCD tài xế chỉ khai cho xe nội bộ (nhóm xe) và xe nhà GHA; dịch vụ, 3PL, khách chỉ cần số xe
-export const needsDriverId = (c, via3pl = false) => usesVehicleList(c) && !via3pl;
+// Danh mục Xe: mọi đơn vị vận tải tự khai trước xe thường chạy (xe 3PL / thuê thỉnh thoảng thì gõ khi cần, lưu lịch sử)
+export const usesVehicleList = (c) => !!c;
+// Họ tên + CCCD tài xế: mọi loại vận tải đều nhập được (không bắt buộc), lưu lịch sử số xe → tài xế
+export const needsDriverId = (c) => !!c;
+// Bắt buộc họ tên tài xế trước khi chạy: chỉ nhóm xe nội bộ / xe nhà GHA
+export const requiresDriverName = (c, via3pl = false) => (isInternal(c) || isGHA(c)) && !via3pl;
 // Link tài xế của từng đơn vị vận tải (gửi nhóm Zalo; tài xế mở là dùng, không cần tài khoản)
 export const driverLink = (code, token) => `${window.location.origin}/tx/${encodeURIComponent(code)}/${token}`;
 export const newLinkToken = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(36).padStart(2, '0')).join('').slice(0, 20);
@@ -99,14 +101,14 @@ export function pendingDispatch({ orders, plans, allocs, moves, trips, shipto = 
     const groups = new Map();
     for (const l of p.lines || []) {
       const ol = o.lines.find((x) => x.no === l.orderLine);
+      // Chưa có đơn vị vận tải vẫn hiện (danh sách DO chờ chỉ định vận tải)
       const carrier = p.carrier || ol?.carrier || '';
-      if (!carrier) continue;
       const kg = Math.max(0, n(l.qtyKg) - n(cov.byPlan.get(`${p.id}#${l.orderLine}#${l.shipCode || ''}`)));
       if (kg <= 0.5) continue;
       take(`${o.id}#${l.orderLine}`, kg);
       const wh = l.warehouse || (ol ? lineWh(o, ol, 'out') : '');
       const gk = `${l.shipCode || ''}|${wh}|${carrier}`;
-      const g = groups.get(gk) || { key: `plan:${p.id}:${gk}`, src: 'plan', srcId: p.id, srcLabel: `📅 Dự kiến xuất ${p.id}`, orderId: o.id, orderType: o.type, company: o.company || '',
+      const g = groups.get(gk) || { key: `plan:${p.id}:${gk}`, src: 'plan', srcId: p.id, srcLabel: `📦 DO ${p.id}`, plan: p, orderId: o.id, orderType: o.type, company: o.company || '',
         date: p.date || '', warehouse: wh, partyCode: o.partyCode || '', partyName: o.partyName || '', shipCode: l.shipCode || '', address: l.shipAddress || addr(l.shipCode), carrier, items: [] };
       g.items.push({ orderId: o.id, no: l.orderLine, item: l.item, itemName: l.itemName || '', kg, planId: p.id, shipCode: l.shipCode || '', address: g.address, partyCode: g.partyCode, partyName: g.partyName });
       groups.set(gk, g);
@@ -149,26 +151,34 @@ export function pendingDispatch({ orders, plans, allocs, moves, trips, shipto = 
       date: m.date || '', warehouse: m.warehouse, partyCode: items[0].partyCode, partyName: items[0].partyName, shipCode: m.shipCode || '', address: addr(m.shipCode), carrier: m.carrier, items });
   }
 
-  // 4. Phần còn lại của dòng SO / STO đã chỉ định đơn vị vận tải
+  // 4. Phần còn lại của SO / STO chưa có DO (chưa / đã chỉ định vận tải): gộp các dòng cùng điểm giao, cùng kho, cùng vận tải
   for (const o of orders) {
     if (!['SO', 'STO'].includes(o.type) || !OPEN_STATUSES.includes(o.status)) continue;
+    const og = new Map();
     for (const l of o.lines || []) {
-      if (!l.carrier) continue;
       const k = `${o.id}#${l.no}`;
       const rest = Math.min(n(l.qtyKg) - n(cov.byLine.get(k)), leftKg(l)) - n(lineTaken.get(k));
       if (rest <= 0.5) continue;
       const sto = o.type === 'STO';
       const ship = sto ? '' : lineShip(o, l);
       const party = sto ? { partyCode: lineTo(o, l), partyName: `Kho ${lineTo(o, l)}` } : { partyCode: o.partyCode || '', partyName: o.partyName || '' };
-      rows.push({ key: `order:${k}`, src: 'order', srcId: o.id, srcLabel: `${sto ? '🔁 STO' : '🧾 SO'} ${o.id}`, orderId: o.id, orderType: o.type, company: o.company || '',
-        date: lineDue(o, l) || '', warehouse: lineWh(o, l, 'out'), ...party, shipCode: ship, address: addr(ship), carrier: l.carrier,
-        items: [{ orderId: o.id, no: l.no, item: l.item, itemName: l.itemName || '', kg: rest, shipCode: ship, address: addr(ship), ...party }] });
+      const wh = lineWh(o, l, 'out');
+      const gk = `${ship}|${party.partyCode}|${wh}|${l.carrier || ''}`;
+      const g = og.get(gk) || { key: `order:${o.id}:${gk}`, src: 'order', srcId: o.id, srcLabel: `${sto ? '🔁 STO' : '🧾 SO'} ${o.id}${sto ? '' : ' · chưa có DO'}`, orderId: o.id, orderType: o.type, company: o.company || '',
+        date: lineDue(o, l) || '', warehouse: wh, ...party, shipCode: ship, address: addr(ship), carrier: l.carrier || '', sales: o.sales || '', salesName: o.salesName || '', orderRef: o.refNo || '', items: [] };
+      if (lineDue(o, l) && (!g.date || lineDue(o, l) < g.date)) g.date = lineDue(o, l);
+      g.items.push({ orderId: o.id, no: l.no, item: l.item, itemName: l.itemName || '', kg: rest, shipCode: ship, address: addr(ship), packing: l.packing || '', ...party });
+      og.set(gk, g);
     }
+    rows.push(...og.values());
   }
   return rows.map((r) => ({ ...r, kg: r.items.reduce((s, i) => s + i.kg, 0) }))
     .sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')) || a.key.localeCompare(b.key));
 }
-export const SRC_LABEL = { plan: '📅 Dự kiến xuất', alloc: '📋 Kế hoạch phân bổ', px: '📤 Phiếu xuất', order: '🧾 SO / STO' };
+export const SRC_LABEL = { plan: '📦 DO', alloc: '📋 Kế hoạch phân bổ', px: '📤 Phiếu xuất', order: '🧾 SO / STO chưa có DO' };
+// Điểm giao của 1 dòng chờ vận tải: 1 Shipment chỉ đi 1 điểm giao (nhiều điểm giao = ghép Job)
+export const pointOf = (r) => (r.orderType === 'STO' ? `wh:${r.partyCode}${r.items?.[0]?.toLocation ? `/${r.items[0].toLocation}` : ''}` : `ship:${r.shipCode || r.partyCode || ''}`);
+export const pointText = (r) => (r.orderType === 'STO' ? r.partyName || r.partyCode : `${r.partyName || r.partyCode || ''}${r.shipCode ? ` · ${r.shipCode}` : ''}`);
 
 // ============================================================================
 // Điểm nhận hàng của chuyến = nơi xe đến lấy hàng rồi đi giao chỗ khác:

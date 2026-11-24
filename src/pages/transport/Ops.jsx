@@ -58,21 +58,27 @@ const byTime = (k) => (a, b) => String(a[k] || '').localeCompare(String(b[k] || 
 export function Guard() {
   const [wh, setWh] = useOpWarehouse();
   const [q, setQ] = useState('');
-  const { rows, error } = useTrips([ST.ARRIVED, ST.WAITING_EXIT], wh);
+  const { rows, error } = useTrips([ST.ARRIVED, ST.WAITING_GATE, ST.WAITING_EXIT], wh);
   const [act, err] = useTripAction();
   const list = rows.filter((t) => t.hasGuard && !noYard(t) && matchesTrip(t, q));
+  const queue = list.filter((t) => t.status === ST.WAITING_GATE).sort(byTime('gateConfirmTime'));
   const arrived = list.filter((t) => t.status === ST.ARRIVED).sort(byTime('arrivalTime'));
   const exiting = list.filter((t) => t.status === ST.WAITING_EXIT).sort(byTime('processDoneTime'));
   return (
     <div>
       <OpsHead title="🛡️ Bảo vệ cổng" wh={wh} setWh={setWh} q={q} setQ={setQ} />
       <ErrorBox error={error || err} />
-      <Section title="Xe đến kho, chờ cho vào cổng" count={arrived.length}>
+      <Section title="Xe đến kho: xác nhận giờ đăng ký để xếp tài" count={arrived.length}>
         {arrived.length ? arrived.map((t) => (
-          <TripCard key={t.id} trip={t} timeLabel="Đến" timeValue={t.arrivalTime}>
-            <button className="btn primary" onClick={() => act(t, { status: ST.WAITING_GATE, gateConfirmTime: nowISO() }, 'Cho vào cổng')}>Cho vào cổng</button>
+          <TripCard key={t.id} trip={t} timeLabel="Tài xế báo đến" timeValue={t.arrivalTime}>
+            <button className="btn primary" title="Ghi giờ đăng ký; thủ kho gọi xe vào cửa theo số thứ tự" onClick={() => act(t, { status: ST.WAITING_GATE, gateConfirmTime: nowISO() }, 'Bảo vệ xác nhận đăng ký (xếp tài)')}>✓ Xác nhận đăng ký (xếp tài)</button>
           </TripCard>
         )) : <Empty text="Không có xe chờ vào cổng." />}
+      </Section>
+      <Section title="Thứ tự xếp tài (đã đăng ký, chờ thủ kho gọi vào cửa)" count={queue.length}>
+        {queue.length ? queue.map((t, i) => (
+          <TripCard key={t.id} trip={t} timeLabel={`STT ${i + 1} · đăng ký`} timeValue={t.gateConfirmTime} />
+        )) : <Empty text="Chưa có xe nào đang xếp tài." />}
       </Section>
       <Section title="Xe xuất/nhập xong, chờ ra cổng" count={exiting.length}>
         {exiting.length ? exiting.map((t) => (
@@ -108,12 +114,12 @@ export function Dock() {
     <div>
       <OpsHead title="📦 Thủ kho điều phối cửa" wh={wh} setWh={setWh} q={q} setQ={setQ} />
       <ErrorBox error={error || err} />
-      <Section title="Chờ vào cửa" count={waiting.length}>
-        {waiting.length ? waiting.map((t) => {
+      <Section title="Chờ vào cửa (theo thứ tự xếp tài)" count={waiting.length}>
+        {waiting.length ? waiting.map((t, i) => {
           const opts = docksOf(t);
           const v = pick[t.id] || '';
           return (
-            <TripCard key={t.id} trip={t} timeLabel="Vào cổng" timeValue={t.gateConfirmTime}>
+            <TripCard key={t.id} trip={t} timeLabel={`STT ${i + 1} · đăng ký`} timeValue={t.gateConfirmTime}>
               {opts.length ? (
                 <WithAdd cat="docks" preset={{ warehouse: locWh(t.warehouse) }} onAdded={(id, r) => setPick({ ...pick, [t.id]: r?.code || String(id).split('__').pop() })}>
                 <Select value={v} onChange={(e) => setPick({ ...pick, [t.id]: e.target.value })}>

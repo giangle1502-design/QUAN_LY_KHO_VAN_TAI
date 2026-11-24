@@ -6,8 +6,9 @@ import { useCollection } from '../lib/hooks';
 import { STEPS, compressImage, doStep } from '../lib/transport';
 import { ErrorBox, Modal } from './ui';
 import { WithAdd } from './FormTools';
-import { driverLink, isGHA, isSelfPickup, needsDriverId, newLinkToken } from '../lib/dispatch';
+import { driverLink, isGHA, isSelfPickup, newLinkToken } from '../lib/dispatch';
 import Select from './Select';
+import PlateDriver from './PlateDriver';
 
 // Thực hiện 1 bước của chuyến (tài xế, hoặc điều phối làm thay)
 export function StepModal({ t, step, onClose, plate = '', threepl: cur3pl = '' }) {
@@ -18,19 +19,13 @@ export function StepModal({ t, step, onClose, plate = '', threepl: cur3pl = '' }
   const pick3 = step === 'reg' && can3PL && isGHA(car);
   const tpls = useCollection(pick3 ? 'threepl' : '').rows;
   const [tp, setTp] = useState(cur3pl);
-  const via3pl = !!tp;
   // Họ tên, CCCD và danh mục xe chỉ cho xe nội bộ nhóm (Sơn, Hậu, Quân…) và xe nhà GHA; xe dịch vụ, 3PL, khách tự lấy chỉ nhập số xe
-  const showDrv = needsDriverId(car, via3pl || role === 'tpl');
-  const vehicles = useCollection(showDrv ? 'vehicles' : '').rows.filter((v) => !t.carrier || v.carrier === t.carrier);
-  const drivers = useCollection(showDrv ? 'drivers' : '').rows.filter((d) => !t.carrier || d.carrier === t.carrier);
   const [f, setF] = useState(() => ({ plate: t.plate || plate || '', vehicleType: t.vehicleType || '', idCard: t.idCard || myIdCard || '',
     driverName: t.driverName || (myIdCard || role === 'tai_xe' ? userDoc?.name || name : ''), driverPhone: t.driverPhone || (myIdCard || role === 'tai_xe' ? userDoc?.phone || '' : ''), note: '' }));
   const [photos, setPhotos] = useState([]);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
-  const pickPlate = (v) => { const veh = vehicles.find((x) => x.plate === v.trim().toUpperCase()); setF((x) => ({ ...x, plate: v.toUpperCase(), ...(veh ? { vehicleType: veh.vehicleType || x.vehicleType } : {}) })); };
-  const pickDriver = (v) => { const d = drivers.find((x) => x.idCard === v); setF((x) => ({ ...x, idCard: v, ...(d ? { driverName: d.name || '', driverPhone: d.phone || '' } : {}) })); };
   const addPhotos = async (files) => {
     setErr('');
     try { const out = []; for (const fl of files) out.push(await compressImage(fl)); setPhotos((p) => [...p, ...out].slice(0, 4)); } catch (e) { setErr(e.message); }
@@ -44,7 +39,7 @@ export function StepModal({ t, step, onClose, plate = '', threepl: cur3pl = '' }
       // Giao cho 3PL, chưa có số xe: để 3PL tự đăng ký xe
       if (pick3 && tp && !f.plate.trim()) { onClose(true); setBusy(false); return; }
       // Tài xế chỉ xác nhận giao nhận; cước do điều phối / kế toán nhập sau (kể cả xe nội bộ)
-      await doStep(t, step, role === 'tpl' ? { email, name, as: t.carrierName || t.carrier || 'GHA' } : { email, name }, { ...f, ...(showDrv ? {} : { idCard: '', driverName: '' }), photos });
+      await doStep(t, step, role === 'tpl' ? { email, name, as: t.carrierName || t.carrier || 'GHA' } : { email, name }, { ...f, photos });
       onClose(true);
     } catch (e) { setErr(e.code === 'permission-denied' ? 'Bạn không có quyền thực hiện bước này cho chuyến này.' : e.message); }
     setBusy(false);
@@ -56,18 +51,10 @@ export function StepModal({ t, step, onClose, plate = '', threepl: cur3pl = '' }
           {pick3 && <label className="field full"><span>Xe chạy chuyến này</span><WithAdd cat="threepl" onAdded={(id) => setTp(id)}><Select value={tp} onChange={(e) => setTp(e.target.value)}>
             <option value="">Xe nhà GHA</option>{tpls.map((x) => <option key={x.code} value={x.code}>Thuê 3PL: {x.code} – {x.name}</option>)}</Select></WithAdd>
             {tp && <small className="small">Để trống số xe rồi lưu: 3PL tự đăng ký xe, tài xế. Biết xe rồi thì nhập luôn (đăng ký hộ).</small>}</label>}
-          <p className="small full" style={{ margin: 0 }}>{showDrv ? 'Xe nội bộ: chọn số xe trong danh sách, ghi họ tên và CCCD tài xế.' : 'Chỉ cần nhập số xe (gõ thẳng, không cần có trong danh mục).'}</p>
-          <label className="field"><span>Số xe{pick3 && tp ? ' (để trống nếu 3PL tự đăng ký)' : ' *'}</span>{showDrv ? <WithAdd cat="vehicles" preset={{ plate: f.plate, vehicleType: f.vehicleType }} onAdded={(id, r) => pickPlate(r?.plate || id)}><input list="dl-st-plate" value={f.plate} onChange={(e) => pickPlate(e.target.value)} placeholder="VD: 51C-12345" /></WithAdd>
-            : <input value={f.plate} onChange={(e) => pickPlate(e.target.value)} placeholder="VD: 51C-12345" style={{ fontSize: 18 }} />}</label>
+          <p className="small full" style={{ margin: 0 }}>Gõ số xe: xe đơn vị đã khai hoặc đã chạy trước tự hiện tài xế, CCCD (đổi được). Xe mới gõ thẳng, hệ thống tự lưu lịch sử.{pick3 && tp ? ' Để trống số xe nếu 3PL tự đăng ký.' : ''}</p>
+          <div className="full"><PlateDriver carrier={t.carrier} value={f} onChange={(p) => setF((x) => ({ ...x, ...p }))} required={!(pick3 && tp)} /></div>
           <label className="field"><span>Loại xe</span><Select value={f.vehicleType} onChange={(e) => set('vehicleType', e.target.value)}>
             {['', 'Xe tải', 'Container 20', 'Container 40', 'Đầu kéo + mooc'].map((x) => <option key={x} value={x}>{x || '--'}</option>)}</Select></label>
-          {showDrv && <>
-          <label className="field"><span>Số CCCD tài xế</span>{myIdCard ? <input value={f.idCard} disabled /> : <WithAdd cat="drivers" preset={{ idCard: f.idCard, name: f.driverName, phone: f.driverPhone }} onAdded={(id, r) => { pickDriver(r?.idCard || id); if (r?.name) set('driverName', r.name); }}><input list="dl-st-driver" value={f.idCard} onChange={(e) => pickDriver(e.target.value)} /></WithAdd>}</label>
-          <label className="field"><span>Họ tên tài xế</span><input value={f.driverName} onChange={(e) => set('driverName', e.target.value)} /></label>
-          </>}
-          <label className="field"><span>Điện thoại tài xế{showDrv ? '' : ' (nếu có)'}</span><input value={f.driverPhone} onChange={(e) => set('driverPhone', e.target.value)} /></label>
-          <datalist id="dl-st-plate">{vehicles.map((v) => <option key={v.plate} value={v.plate}>{v.vehicleType} {v.payload ? `${v.payload} tấn` : ''}</option>)}</datalist>
-          <datalist id="dl-st-driver">{drivers.map((d) => <option key={d.idCard} value={d.idCard}>{d.name}</option>)}</datalist>
         </div>
       )}
       {step === 'delivered' && (

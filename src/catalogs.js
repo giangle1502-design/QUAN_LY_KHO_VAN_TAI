@@ -391,12 +391,16 @@ export const CATALOGS = [
     ],
   },
   {
-    key: 'vehicles', group: 'Vận tải', icon: '🚚', title: 'Xe nội bộ (nhóm xe, xe nhà GHA)', short: 'Xe nội bộ', idField: 'plate', upperId: true, editRoles: ['van_tai'], carrierField: 'carrier',
+    key: 'vehicles', group: 'Vận tải', icon: '🚚', title: 'Xe của đơn vị vận tải (khai trước để tìm nhanh)', short: 'Xe vận tải',
+    help: 'Mỗi đơn vị vận tải tự khai trước các xe thường chạy (số xe, tải trọng, tài xế, CCCD): gõ số xe ở Shipment / link tài xế là tự hiện. Xe 3PL / xe thuê thỉnh thoảng mới chạy không cần khai: gõ số xe khi chạy, hệ thống tự lưu lịch sử.', idField: 'plate', upperId: true, editRoles: ['van_tai'], carrierField: 'carrier',
     fields: [
       { key: 'plate', label: 'Biển số xe', type: 'text', required: true },
-      { key: 'carrier', label: 'Đơn vị vận tải', type: 'ref', ref: 'carriers', help: 'Chỉ khai xe của nhóm xe nội bộ / xe nhà GHA. Xe dịch vụ, xe 3PL, xe khách không cần khai: gõ số xe tự do khi chạy chuyến' },
+      { key: 'carrier', label: 'Đơn vị vận tải', type: 'ref', ref: 'carriers', required: true },
       { key: 'vehicleType', label: 'Loại xe', type: 'select', options: ['Xe tải', 'Container 20', 'Container 40', 'Đầu kéo + mooc'] },
       { key: 'payload', label: 'Tải trọng (tấn)', type: 'number' },
+      { key: 'driverName', label: 'Tài xế thường chạy', type: 'text' },
+      { key: 'idCard', label: 'CCCD tài xế', type: 'text' },
+      { key: 'driverPhone', label: 'Điện thoại tài xế', type: 'text' },
       { key: 'note', label: 'Ghi chú', type: 'textarea' },
     ],
   },
@@ -411,7 +415,7 @@ export const CATALOGS = [
     ],
   },  {
     key: 'pickupPoints', group: 'Vận tải', icon: '⚓', title: 'Điểm nhận hàng (cảng, kho ngoài…)', short: 'Điểm nhận hàng', idField: 'code', upperId: true, editRoles: ['van_tai', 'ke_toan'],
-    help: 'Điểm nhận hàng = nơi xe đến nhận hàng rồi đi giao chỗ khác. Kho của mình (Kho VAP/PLA/DAM Đức Hòa…) lấy từ Danh sách kho, khách hàng khi thu hồi hàng lấy từ Shipto: không cần khai lại ở đây. Danh mục này chỉ khai nơi nhận khác: cảng Cát Lái, Hiệp Phước, ICD, kho ngoại quan… Chọn ở Vận tải → Chờ giao vận tải (cột Điểm nhận hàng) hoặc Chi phí chuyến.',
+    help: 'Điểm nhận hàng = nơi xe đến nhận hàng rồi đi giao chỗ khác. Kho của mình (Kho VAP/PLA/DAM Đức Hòa…) lấy từ Danh sách kho, khách hàng khi thu hồi hàng lấy từ Shipto: không cần khai lại ở đây. Danh mục này chỉ khai nơi nhận khác: cảng Cát Lái, Hiệp Phước, ICD, kho ngoại quan… Chọn ở Vận tải → DO chờ vận tải (cột Điểm nhận hàng) hoặc Chi phí chuyến.',
     fields: [
       { key: 'code', label: 'Mã điểm nhận', type: 'text', required: true, help: 'VD CATLAI' },
       { key: 'name', label: 'Tên điểm nhận', type: 'text', required: true, help: 'VD Cảng Cát Lái' },

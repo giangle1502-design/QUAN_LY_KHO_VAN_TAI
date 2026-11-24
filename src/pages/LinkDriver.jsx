@@ -6,6 +6,7 @@ import { STATUS_META, fmtTime } from '../lib/trips';
 import { STEPS, compressImage, doStep, nextStep, plateKey, stepBlocked, tripKg } from '../lib/transport';
 import { fmtDate, fmtNum } from '../lib/utils';
 import { navUrl } from '../lib/dispatch';
+import { histId } from '../lib/plates';
 
 // ============================================================================
 // Link tài xế (gửi vào nhóm Zalo của đơn vị vận tải), không cần tài khoản:
@@ -17,7 +18,7 @@ const n = (v) => Number(v) || 0;
 const KEY = 'tx-driver';
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { return {}; } };
 const keep = (v) => { try { localStorage.setItem(KEY, JSON.stringify({ ...load(), ...v })); } catch { /* bỏ qua */ } };
-// Họ tên, CCCD chỉ cho nhóm xe nội bộ và xe nhà GHA
+// Họ tên bắt buộc với nhóm xe nội bộ và xe nhà GHA; loại khác nhập được nếu muốn (lưu lịch sử số xe → tài xế)
 const needsId = (t) => ['Nội bộ', 'GHA'].includes(t.carrierKind);
 const big = { width: '100%', marginTop: 8, padding: 14, fontSize: 17 };
 
@@ -54,6 +55,24 @@ export default function LinkDriver() {
     return () => unsub();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Số xe → tài xế đã chạy (lịch sử) / tài xế đơn vị khai trong danh mục Xe: tự điền, tài xế khác thì chọn lại / gõ mới
+  const [pastDrivers, setPast] = useState([]);
+  useEffect(() => {
+    const k = plateKey(plate);
+    if (state !== 'ok' || k.length < 5) { setPast([]); return undefined; }
+    let live = true;
+    const tm = setTimeout(async () => {
+      const h = await getDoc(doc(db, 'plateHistory', histId(decodeURIComponent(code), plate))).then((x) => (x.exists() ? x.data().drivers || [] : [])).catch(() => []);
+      const v = vehicles.find((x) => plateKey(x.plate) === k);
+      const list = [...new Map([...h, ...(v && (v.driverName || v.idCard) ? [{ name: v.driverName || '', idCard: v.idCard || '', phone: v.driverPhone || '' }] : [])].map((d) => [d.idCard || d.name, d])).values()];
+      if (!live) return;
+      setPast(list);
+      if (list[0]) setMe((x) => (x.driverName && list.some((d) => d.name === x.driverName) ? x : { driverName: list[0].name || '', idCard: list[0].idCard || '', driverPhone: list[0].phone || x.driverPhone }));
+    }, 400);
+    return () => { live = false; clearTimeout(tm); };
+  }, [plate, state, vehicles]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pickName = (v) => { const d = pastDrivers.find((x) => x.name === v); setMe((x) => (d ? { driverName: d.name, idCard: d.idCard || '', driverPhone: d.phone || x.driverPhone } : { ...x, driverName: v })); };
+
   const pk = plateKey(plate);
   const mine = pk ? trips.filter((t) => plateKey(t.plate) === pk && !['completed', 'cancelled'].includes(t.status)) : [];
   const free = trips.filter((t) => !t.plate && t.status === 'planned');
@@ -69,7 +88,7 @@ export default function LinkDriver() {
       if (st === 'reg' && needsId(t) && !me.driverName.trim()) throw new Error('Nhập họ tên tài xế.');
       const p = t.plate || plate;
       if (!plateKey(p)) throw new Error('Nhập số xe ở ô trên cùng trước.');
-      const info = needsId(t) ? me : { driverName: '', idCard: '', driverPhone: me.driverPhone };
+      const info = me;
       await doStep(t, st, { email: `link:${plateKey(p)}`, name: me.driverName || `Tài xế xe ${p}` }, { ...info, plate: p, photos }, db);
       keep({ plate, ...me });
       setOpen(null); setPhotos([]);
@@ -118,14 +137,14 @@ export default function LinkDriver() {
           : !isOpen && <button className="btn primary" style={big} onClick={() => { setErr(''); setPhotos([]); setOpen({ t, st }); }}>{label}</button>)}
         {isOpen && (
           <div style={{ marginTop: 10, borderTop: '1px solid var(--line)', paddingTop: 10 }}>
-            {st === 'reg' && (needsId(t) ? <>
-              <label className="field"><span>Họ tên tài xế *</span><input value={me.driverName} onChange={(e) => setM('driverName', e.target.value)} style={{ fontSize: 17 }} /></label>
+            {st === 'reg' && <>
+              {!t.plate && <p style={{ margin: '0 0 6px' }}>Xác nhận nhận chuyến cho xe <b>{plate}</b>?</p>}
+              <label className="field"><span>Họ tên tài xế{needsId(t) ? ' *' : ''}</span><input list="tx-drv" value={me.driverName} onChange={(e) => pickName(e.target.value)} style={{ fontSize: 17 }} /></label>
+              <datalist id="tx-drv">{pastDrivers.map((d) => <option key={d.idCard || d.name} value={d.name}>{d.idCard ? `CCCD ${d.idCard}` : ''}</option>)}</datalist>
+              {pastDrivers.length > 1 && <div className="small" style={{ marginBottom: 6 }}>Tài xế từng chạy xe này: {pastDrivers.map((d) => <button key={d.idCard || d.name} type="button" className="btn sm" style={{ margin: 2 }} onClick={() => pickName(d.name)}>{d.name}</button>)}</div>}
               <label className="field"><span>Số CCCD</span><input inputMode="numeric" value={me.idCard} onChange={(e) => setM('idCard', e.target.value)} style={{ fontSize: 17 }} /></label>
               <label className="field"><span>Điện thoại</span><input type="tel" value={me.driverPhone} onChange={(e) => setM('driverPhone', e.target.value)} style={{ fontSize: 17 }} /></label>
-            </> : <>
-              <p style={{ margin: '0 0 6px' }}>Xác nhận nhận chuyến cho xe <b>{plate}</b>?</p>
-              <label className="field"><span>Điện thoại (nếu muốn)</span><input type="tel" value={me.driverPhone} onChange={(e) => setM('driverPhone', e.target.value)} style={{ fontSize: 17 }} /></label>
-            </>)}
+            </>}
             {['arrive', 'loaded', 'atDest'].includes(st) && <p style={{ margin: 0 }}>Xác nhận <b>{STEPS[st].toLowerCase()}</b> lúc này?</p>}
             {st === 'delivered' && <div>
               <p style={{ margin: '0 0 6px' }}>Chụp phiếu giao hàng có chữ ký khách (tối đa 4 ảnh).</p>
@@ -164,7 +183,7 @@ export default function LinkDriver() {
         <span className="small" style={{ width: '100%' }}>Xe của nhóm (bấm để chọn):</span>
         {vehicles.map((v) => <button key={v.plate} type="button" className="btn" style={{ fontSize: 18, padding: '8px 12px' }} onClick={() => { setPlate(v.plate); setOpen(null); keep({ plate: v.plate }); }}>{v.plate}</button>)}</div>}
       {!trips.some((t) => !['completed', 'cancelled'].includes(t.status)) && <p className="small" style={{ background: '#fff7e6', padding: 8, borderRadius: 6 }}>
-        Hiện chưa có chuyến nào được giao cho <b>{carrierName}</b>. Hàng chỉ định cho đơn vị vận tải chỉ hiện ở đây sau khi quản trị bấm <b>Giao vận tải</b> (Vận chuyển → Chờ giao vận tải).</p>}
+        Hiện chưa có chuyến nào được giao cho <b>{carrierName}</b>. Hàng chỉ định cho đơn vị vận tải chỉ hiện ở đây sau khi quản trị bấm <b>Gửi vận tải</b> (Vận chuyển → DO chờ vận tải).</p>}
       {!pk ? <p>Nhập số xe để thấy chuyến của xe bạn.</p> : <>
         <p className="small">Bấm nút xanh theo thứ tự: Đến điểm nhận hàng → Lấy hàng xong → Đến điểm giao hàng → Hoàn thành (chụp phiếu giao).</p>
         {mine.length ? mine.map((t) => card(t)) : <p>Xe <b>{plate}</b> chưa có chuyến đang chạy.</p>}

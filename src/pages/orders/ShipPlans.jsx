@@ -170,7 +170,7 @@ export default function ShipPlans() {
                         {waitIds.length > 0 && <div><Link className="badge amber" to="/kho/giai-chap" title={`Phiếu xuất chờ giải chấp: ${waitIds.join(', ')}`}>⏳ Chờ giải chấp ({waitIds.length})</Link></div>}
                         {(p.movementIds || []).length > 0 && <div className="small">{p.movementIds.map((m) => <Link key={m} className="mono" to={`/kho/phieu/${m}/in`} target="_blank" style={{ marginRight: 4 }}>{m}</Link>)}</div>}
                         {p.cancelReason && <div className="small">{p.cancelReason}</div>}
-                        {p.carrier && <div className="small" title="Đơn vị vận tải (admin giao ở Vận chuyển → Chờ giao vận tải)">🚚 {p.carrier}</div>}</td>
+                        {p.carrier && <div className="small" title="Đơn vị vận tải (admin giao ở Vận chuyển → DO chờ vận tải)">🚚 {p.carrier}</div>}</td>
                       <td rowSpan={ls.length} className="small">{saleName(p)}</td>
                       <td rowSpan={ls.length} style={{ whiteSpace: 'nowrap' }}>
                         {open && canOut && ships.map((s) => (blocked(s)
@@ -216,7 +216,7 @@ function PlanForm({ plan, orderId, plans, onClose }) {
   const [date, setDate] = useState(plan?.date || vnDate());
   const [note, setNote] = useState(plan?.note || '');
   const ex = useExtraFields('shipPlan', plan);
-  // Đơn vị vận tải: chỉ định ở đây thì chuyến tự vào Vận chuyển → Chờ giao vận tải để admin kiểm tra, giao
+  // Đơn vị vận tải: chỉ định ở đây thì chuyến tự vào Vận chuyển → DO chờ vận tải để admin kiểm tra, giao
   const carriers = useCollection('carriers').rows.filter((c) => c.active !== false);
   const [carrier, setCarrier] = useState(plan?.carrier ?? null);
   // Dòng đã chọn: `${SO}#${dòng}` → { qty, ship }
