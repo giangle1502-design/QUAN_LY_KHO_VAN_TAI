@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useScope } from '../../components/ScopeFilter';
 import { Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useMovesRange } from '../../lib/slips';
@@ -15,6 +16,7 @@ const n = (v) => Number(v) || 0;
 // Báo cáo chuyển pháp nhân: dòng phiếu xuất có công ty xuất (tên trên phiếu giao) khác công ty của tồn bị trừ.
 // Kế toán dựa vào đây để làm chuyển đổi tồn giữa VAP / PLA / DAM trên phần mềm kế toán.
 export default function LegalTransfer({ wh, co, q }) {
+  const S = useScope(wh, co);
   const { inMyWarehouses, hasRole, isAdmin, email, name } = useApp();
   const canMark = isAdmin || hasRole('ke_toan');
   const today = vnDate();
@@ -29,13 +31,13 @@ export default function LegalTransfer({ wh, co, q }) {
     const out = [];
     for (const m of moves) {
       if (m.type !== 'out' || m.status === 'cancelled') continue;
-      if (wh ? m.warehouse !== wh : !inMyWarehouses(m.warehouse)) continue;
+      if (!inMyWarehouses(m.warehouse) || !S.inWh(m.warehouse)) continue;
       const nt = notices.get(m.id);
       const done = nt?.status === 'done';
       if (state === 'open' && done) continue;
       if (state === 'done' && !done) continue;
       crossLines(m).forEach((l, i) => {
-        if (co && l.company !== co && m.company !== co) return;
+        if (S.cos.length && !S.inCo(l.company) && !S.inCo(m.company)) return;
         if (q && !norm([m.id, m.orderId, m.partyCode, m.partyName, l.item, l.itemName, l.lot].join(' ')).includes(q)) return;
         out.push({
           _k: `${m.id}|${i}`, m, first: i === 0, date: m.date, id: m.id, status: m.status === 'wait_release' ? 'Chờ giải chấp' : 'Đã xuất',
@@ -47,7 +49,7 @@ export default function LegalTransfer({ wh, co, q }) {
       });
     }
     return out.sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.id.localeCompare(b.id));
-  }, [moves, notices, wh, co, q, state, inMyWarehouses]);
+  }, [moves, notices, wh, co, q, state, inMyWarehouses, S]);
 
   // Tổng hợp theo cặp công ty và mã hàng (để làm phiếu chuyển trên phần mềm kế toán)
   const sum = useMemo(() => {

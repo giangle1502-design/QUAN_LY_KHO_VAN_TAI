@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react';
+import { ScopeFilters, useOpScope } from '../../components/ScopeFilter';
 import { Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
-import { useCollection, useOpCompany, useOpWarehouse, useOrders, useStock } from '../../lib/hooks';
+import { useCollection, useOrders, useStock } from '../../lib/hooks';
 import { leftKg, transitKg } from '../../lib/orders';
 import { blockLocSet, inBlockLoc } from '../../catalogs';
 import { exportSheets } from '../../lib/excel';
 import { vnDate } from '../../lib/trips';
 import { fmtNum, norm } from '../../lib/utils';
-import { CompanyPicker, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox } from '../../components/ui';
 
 const t = (kg) => fmtNum(Number(kg) || 0, 2);
@@ -15,12 +15,12 @@ const t = (kg) => fmtNum(Number(kg) || 0, 2);
 // Cân đối theo mã hàng: tồn được xuất + hàng mua chưa về − hàng bán chưa giao
 export default function Balance() {
   const { inMyWarehouses } = useApp();
-  const [wh, setWh] = useOpWarehouse();
-  const [co, setCo] = useOpCompany();
+  const scope = useOpScope();
+  const { wh } = scope;
   const { rows: allStock } = useStock(wh);
   const { rows: allOrders, error } = useOrders('', true);
-  const stock = useMemo(() => (co ? allStock.filter((r) => (r.company || '') === co) : allStock), [allStock, co]);
-  const orders = useMemo(() => (co ? allOrders.filter((o) => (o.company || '') === co) : allOrders), [allOrders, co]);
+  const stock = useMemo(() => allStock.filter(scope.row), [allStock, scope]);
+  const orders = useMemo(() => allOrders.filter((o) => scope.inCo(o.company)), [allOrders, scope]);
   const statuses = useCollection('goodsStatus').rows;
   const locations = useCollection('locations').rows;
   const items = useCollection('items').rows;
@@ -48,8 +48,8 @@ export default function Balance() {
         for (const l of o.lines) {
           const fw = l.fromWarehouse || o.fromWarehouse;
           const tw = l.toWarehouse || o.toWarehouse;
-          const from = !wh ? inMyWarehouses(fw) : fw === wh;
-          const to = !wh ? inMyWarehouses(tw) : tw === wh;
+          const from = inMyWarehouses(fw) && scope.inWh(fw);
+          const to = inMyWarehouses(tw) && scope.inWh(tw);
           const x = get(l.item, l.itemName);
           const left = leftKg(l);
           const tr = transitKg(l);
@@ -61,7 +61,7 @@ export default function Balance() {
       }
       for (const l of o.lines) {
         const lw = l.warehouse || o.warehouse;
-        if (lw && (!inMyWarehouses(lw) || (wh && lw !== wh))) continue;
+        if (lw && (!inMyWarehouses(lw) || !scope.inWh(lw))) continue;
         const left = leftKg(l);
         if (left <= 0) continue;
         const x = get(l.item, l.itemName);
@@ -70,7 +70,7 @@ export default function Balance() {
     }
     return [...m.values()].map((x) => ({ ...x, now: x.usable - x.so, plan: x.usable + x.transit + x.po - x.so }))
       .sort((a, b) => a.plan - b.plan || a.item.localeCompare(b.item));
-  }, [stock, orders, statuses, locations, items, inMyWarehouses, wh]);
+  }, [stock, orders, statuses, locations, items, inMyWarehouses, scope]);
 
   const f = norm(q);
   const list = rows.filter((r) => (!f || norm(`${r.item} ${r.name}`).includes(f)) && (!onlyShort || r.now < 0 || r.plan < 0));
@@ -92,8 +92,7 @@ export default function Balance() {
         Lệnh chuyển kho (STO): xem 1 kho thì kho đi tính như SO, kho đến tính như PO; xem tất cả kho thì hàng đang đi đường cộng vào Dự kiến.
       </p>
       <div className="filters">
-        <WarehousePicker value={wh} onChange={setWh} />
-        <CompanyPicker value={co} onChange={setCo} />
+        <ScopeFilters scope={scope} noLoc />
         <input type="search" placeholder="Tìm mã hàng…" value={q} onChange={(e) => setQ(e.target.value)} />
         <label className="small"><input type="checkbox" checked={onlyShort} onChange={(e) => setOnlyShort(e.target.checked)} /> Chỉ mã hàng bị thiếu</label>
         <span className="small">{short ? <b style={{ color: 'var(--red)' }}>{short} mã hàng dự kiến thiếu</b> : 'Không mã hàng nào dự kiến thiếu'}</span>

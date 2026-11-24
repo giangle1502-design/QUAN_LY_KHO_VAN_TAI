@@ -1,3 +1,4 @@
+import { locWh } from './lib/whGroups';
 // ============================================================================
 // Định nghĩa các danh mục. Mỗi danh mục = 1 collection Firestore cùng tên `key`.
 // Trường có sẵn (system) khai báo ở đây; admin đổi tên, ẩn, bắt buộc, sắp xếp
@@ -54,7 +55,8 @@ export const kindOf = (o) => o?.orderKind || (o?.type === 'PO' ? 'PON' : o?.type
 export const BLOCK_STATUS = { code: 'BLK', name: 'Block (dữ liệu cũ)', allowOutbound: false };
 export const withBlock = (rows) => rows.filter((r) => r.code !== 'BLK');
 export const blockLocSet = (locations = []) => new Set(locations.filter((l) => l.blockStock).map((l) => `${l.warehouse}__${l.code}`));
-export const inBlockLoc = (r, set) => !!r && (r.goodsStatus === 'BLK' || set.has(`${r.warehouse}__${r.location}`));
+// Vị trí của kho pháp nhân thuộc kho chung nằm ở kho chung (locWh)
+export const inBlockLoc = (r, set) => !!r && (r.goodsStatus === 'BLK' || set.has(`${locWh(r.warehouse)}__${r.location}`));
 
 const num = (v) => (v === '' || v == null ? null : Number(v));
 
@@ -241,10 +243,30 @@ export const CATALOGS = [
 
   // ---------------- Kho ----------------
   {
+    key: 'warehouseGroups', group: 'Kho', icon: '🏭', title: 'Kho chung (kho vật lý)', short: 'Kho chung', idField: 'code', upperId: true,
+    help: 'Kho vật lý dùng chung cho nhiều pháp nhân (VD Đức Hòa gồm VAP-Đức Hòa, PLA-Đức Hòa). Vị trí lưu trữ khai báo 1 lần cho kho chung: '
+      + 'mọi kho pháp nhân trong nhóm dùng chung vị trí, sức chứa, Empty bin. Một kho pháp nhân chỉ thuộc 1 kho chung.',
+    fields: [
+      { key: 'code', label: 'Mã kho chung', type: 'text', required: true, help: 'VD: DUCHOA, CANG, MUANOIDIA' },
+      { key: 'name', label: 'Tên kho chung', type: 'text', required: true, help: 'VD: Kho Đức Hòa, Kho Cảng, Kho Mua nội địa' },
+      { key: 'members', label: 'Gồm các kho (pháp nhân)', type: 'multiref', ref: 'warehouses', required: true,
+        help: 'Các kho pháp nhân dùng chung vị trí của kho này. VD Kho Cảng: VAP-Cảng, PLA-Cảng, DAM-Cảng' },
+      { key: 'noCapacity', label: 'Không cần sức chứa', type: 'checkbox',
+        help: 'Tích với cảng, kho mua nội địa…: vị trí không bắt nhập sức chứa, không cảnh báo vượt sức chứa (vẫn hiện Empty bin khi hết hàng)' },
+      { key: 'address', label: 'Địa chỉ', type: 'textarea' },
+      { key: 'note', label: 'Ghi chú', type: 'textarea' },
+      { key: 'active', label: 'Đang hoạt động', type: 'checkbox', default: true },
+    ],
+  },
+  {
     key: 'warehouses', group: 'Kho', icon: '🏬', title: 'Danh sách kho', short: 'Danh sách kho', idField: 'code',
     fields: [
       { key: 'code', label: 'Mã kho', type: 'text', required: true },
       { key: 'name', label: 'Tên kho', type: 'text', required: true },
+      { key: 'company', label: 'Pháp nhân', type: 'ref', ref: 'companies',
+        help: 'Công ty sở hữu hàng trong kho này (VD kho VAP-Cảng → VAP): lập phiếu ở kho này tự điền công ty chủ hàng. Để trống: chọn công ty trên phiếu' },
+      { key: 'noCapacity', label: 'Không cần sức chứa', type: 'checkbox',
+        help: 'Tích với kho cảng, mua nội địa, 3PL (Sotrans, Linh Phát…): vị trí không bắt nhập sức chứa, không cảnh báo vượt sức chứa' },
       { key: 'hasGuard', label: 'Có bảo vệ', type: 'checkbox', default: true,
         help: 'Kho không có bảo vệ = không có thủ kho: chuyến xe bỏ qua bảo vệ, thủ kho chỉ định cửa, ra cổng; tài xế lấy hàng xong là đi giao' },
       { key: 'releaseStatus', label: 'TTHH khi giải chấp', type: 'select', options: ['DGC', 'KTC'],
@@ -269,9 +291,11 @@ export const CATALOGS = [
     idOf: (r) => `${r.warehouse}__${r.code}`, keyFields: ['warehouse', 'code'],
     warehouseField: 'warehouse', editRoles: ['thu_kho'],
     fields: [
-      { key: 'warehouse', label: 'Kho', type: 'ref', ref: 'warehouses', required: true },
+      { key: 'warehouse', label: 'Kho / Kho chung', type: 'ref', ref: 'warehouses', refAlso: 'warehouseGroups', required: true,
+        help: 'Kho pháp nhân nằm trong một Kho chung: chọn mã Kho chung (VD CANG) để mọi pháp nhân dùng chung vị trí. Kho riêng (không thuộc kho chung): chọn mã kho' },
       { key: 'code', label: 'Vị trí', type: 'text', required: true },
-      { key: 'capacity', label: 'Sức chứa (pallet)', type: 'number', required: true },
+      { key: 'capacity', label: 'Sức chứa (pallet)', type: 'number',
+        help: 'Bỏ trống được với kho / kho chung tích "Không cần sức chứa" (cảng, mua nội địa, 3PL): không cảnh báo vượt sức chứa' },
       { key: 'currentPallets', label: 'Tồn kho hiện tại (pallet)', type: 'number', system: true, default: 0,
         help: 'Hệ thống tự cập nhật từ phiếu nhập/xuất' },
       { key: 'usedPct', label: '% pallet lưu trữ', type: 'number',

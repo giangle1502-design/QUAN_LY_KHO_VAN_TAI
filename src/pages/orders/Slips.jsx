@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
+import { ScopeFilters, useOpScope } from '../../components/ScopeFilter';
 import { Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
-import { useCollection, useOpCompany, useOpWarehouse, useOrders, usePendingIn, useWaitingOut } from '../../lib/hooks';
+import { useCollection, useOrders, usePendingIn, useWaitingOut } from '../../lib/hooks';
 import { OPEN_PLAN, planLeft, plannedByLine, usePlans } from '../../lib/shipPlans';
 import { DO_SOURCES, doSource, orderTypeOf, useSlips } from '../../lib/slips';
 import { leftKg, lineShip, lineWh, lineTo, orderTotals, OPEN_STATUSES, stoRoute, transitKg } from '../../lib/orders';
@@ -10,7 +11,6 @@ import { vnDate } from '../../lib/trips';
 import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum, norm } from '../../lib/utils';
 import { usePref } from '../../lib/prefs';
-import { CompanyPicker, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox } from '../../components/ui';
 import { MovementDetail } from '../stock/Movements';
 import EditSlip, { canEditSlip } from '../../components/EditSlip';
@@ -35,8 +35,7 @@ export default function SlipList({ kind, loai = '' }) {
   const isDO = kind === 'DO';
   const { inMyWarehouses, salesOnly, isAdmin, hasRole } = useApp();
   const [range, setRange] = useState({ from: addDays(vnDate(), -30), to: vnDate() });
-  const [wh, setWh] = useOpWarehouse();
-  const [co, setCo] = useOpCompany();
+  const scope = useOpScope();
   const [oTypePref, setOType] = usePref(`slips:${kind}:type`, '');
   // Mở từ nhóm Chuyển kho (?loai=STO): chỉ STO; mở từ nhóm Bán / Mua: theo lựa chọn đã nhớ
   const [oTypeUrl, setOTypeUrl] = useState(loai);
@@ -133,8 +132,9 @@ export default function SlipList({ kind, loai = '' }) {
     const f = norm(q);
     return rows
       .filter((r) => !r.m.warehouse || r.m.warehouse.split(', ').some((w) => inMyWarehouses(w)))
-      .filter((r) => !wh || r.m.warehouse === wh || (r.virtual && r.m.warehouse.split(', ').includes(wh)))
-      .filter((r) => !co || r.o?.company === co || r.m.company === co || (r.m.lines || []).some((l) => l.company === co))
+      .filter((r) => !scope.whs.length || scope.inWh(r.m.warehouse) || (r.virtual && String(r.m.warehouse).split(', ').some(scope.inWh)))
+      .filter((r) => !scope.cos.length || scope.inCo(r.o?.company) || scope.inCo(r.m.company) || (r.m.lines || []).some((l) => scope.inCo(l.company)))
+      .filter((r) => !scope.locs.length || (r.m.lines || []).some((l) => scope.inLoc(r.m.warehouse, l.location)))
       .filter((r) => !salesOnly || r.o) // Sale chỉ thấy phiếu của đơn mình phụ trách
       .filter((r) => !oType || r.type === oType)
       .filter((r) => !fStep || bucketOf(r) === fStep)
@@ -142,7 +142,7 @@ export default function SlipList({ kind, loai = '' }) {
       .filter((r) => !f || norm([r.m.id, r.m.orderId, r.o?.refNo, r.o?.partyCode, r.o?.partyName, r.m.partyName, r.m.plate, r.m.driverName, r.m.carrierName, r.m.shipCode, r.m.planId, r.m.warehouse, ...(r.m.lines || []).flatMap((l) => [l.item, l.itemName, l.lot])].join(' ')).includes(f))
       // Đang chờ lên đầu, rồi mới nhất trước
       .sort((a, b) => (bucketOf(b) === 'doing') - (bucketOf(a) === 'doing') || String(b.m.date).localeCompare(String(a.m.date)) || String(b.m.createdAt || '').localeCompare(String(a.m.createdAt || '')));
-  }, [rows, q, wh, co, oType, fStep, fSrc, inMyWarehouses, salesOnly]);
+  }, [rows, q, scope, oType, fStep, fSrc, inMyWarehouses, salesOnly]);
 
   const sum = list.reduce((s, r) => ({ n: s.n + 1, kg: s.kg + (r.virtual ? r.left : r.m.status === 'cancelled' ? 0 : kgOf(r.m)), doing: s.doing + (bucketOf(r) === 'doing' ? 1 : 0), done: s.done + (bucketOf(r) === 'done' ? 1 : 0) }), { n: 0, kg: 0, doing: 0, done: 0 });
   const current = open && slips.find((m) => m.id === open);
@@ -262,8 +262,7 @@ export default function SlipList({ kind, loai = '' }) {
         <input type="date" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} title="Phiếu đang chờ luôn hiện, kể cả lập trước ngày này" />
         <span>→</span>
         <input type="date" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} />
-        <WarehousePicker value={wh} onChange={setWh} />
-        <CompanyPicker value={co} onChange={setCo} />
+        <ScopeFilters scope={scope} />
         <Select value={oType} onChange={(e) => { setOTypeUrl(''); setOType(e.target.value); }}>
           <option value="">{isDO ? 'SO + STO' : 'PO + STO + DRT'}</option>
           {types.map((x) => <option key={x} value={x}>{x === 'SO' ? 'Đơn bán (SO)' : x === 'PO' ? 'Đơn mua (PO)' : x === 'DRT' ? 'SO trả hàng (DRT)' : 'Chuyển kho (STO)'}</option>)}

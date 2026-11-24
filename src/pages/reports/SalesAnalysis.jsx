@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useScope } from '../../components/ScopeFilter';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useOrders } from '../../lib/hooks';
 import { useOrderSecrets, viewOrder } from '../../lib/orderSecrets';
@@ -93,6 +94,7 @@ function groupBy(rows, key) {
 }
 
 export default function SalesAnalysis({ wh, co, q }) {
+  const S = useScope(wh, co);
   const { inMyWarehouses } = useApp();
   const money$ = useOrderMoney('SO');
   const { headSeen, lineSeen, amountKey, priceKey, perUnit, unitLabel, lineMoney } = money$;
@@ -118,9 +120,9 @@ export default function SalesAnalysis({ wh, co, q }) {
         p: price, full: amtFull, _l: l,
       };
     });
-  }).filter((r) => (!r.wh || inMyWarehouses(r.wh)) && (!wh || r.wh === wh) && (!co || r.co === co)
+  }).filter((r) => (!r.wh || inMyWarehouses(r.wh)) && S.inWh(r.wh) && S.inCo(r.co)
     && (!q || norm([r.so, r.cc, r.cn, r.ic, r.in, r.sp].join(' ')).includes(q))),
-  [raw, secMap, headSeen, lineSeen, basis, priceKey, amountKey, perUnit, inMyWarehouses, wh, co, q]); // eslint-disable-line react-hooks/exhaustive-deps
+  [raw, secMap, headSeen, lineSeen, basis, priceKey, amountKey, perUnit, inMyWarehouses, wh, co, q, S]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const months = useMemo(() => [...new Set(all.map((r) => r.m))].sort(), [all]);
   const [month, setMonth] = useState('');

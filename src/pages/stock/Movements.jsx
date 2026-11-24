@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ScopeFilters, useOpScope } from '../../components/ScopeFilter';
 import { Link, useSearchParams } from 'react-router-dom';
 import { collection, doc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
-import { useCollection, useOpCompany, useOpWarehouse } from '../../lib/hooks';
+import { useCollection } from '../../lib/hooks';
 import { MOVE_TYPES, cancelMovement } from '../../lib/stock';
 import { revertMovementFromOrderPlans, revertMovementFromPlan } from '../../lib/shipPlans';
 import { MVT, MVT_GROUPS, moveCodes, signedTotal, stepOf, wasPosted } from '../../lib/moveCodes';
 import { fmtTime, vnDate } from '../../lib/trips';
 import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum } from '../../lib/utils';
-import { CompanyPicker, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox, Modal } from '../../components/ui';
 import { WithAdd } from '../../components/FormTools';
 import EditSlip, { canEditSlip } from '../../components/EditSlip';
@@ -36,13 +36,14 @@ const STEP_FILTERS = [['', 'Mọi tình trạng'], ['doing', 'Đang làm (chưa 
 
 export default function Movements() {
   const { inMyWarehouses } = useApp();
-  const [wh, setWh] = useOpWarehouse();
+  const scope = useOpScope();
+  const { wh } = scope;
   const [range, setRange] = useState({ from: addDays(vnDate(), -30), to: vnDate() });
   const [type, setType] = useState('');
   const [fStep, setFStep] = useState('');
   const [sp] = useSearchParams();
   const [showMvt, setShowMvt] = useState(sp.get('mvt') === '1');
-  const [co, setCo] = useOpCompany();
+  const { co } = scope;
   const [q, setQ] = useState('');
   const [rows, setRows] = useState([]);
   const [error, setError] = useState('');
@@ -56,10 +57,10 @@ export default function Movements() {
   const list = useMemo(() => {
     const f = q.trim().toLowerCase();
     return rows
-      .filter((m) => inMyWarehouses(m.warehouse) && (!wh || m.warehouse === wh) && (!type || m.type === type) && (!fStep || (fStep === 'cancelled' ? m.status === 'cancelled' : fStep === 'doing' ? ['pending', 'wait_release'].includes(m.status) : m.status === 'posted')) && (!co || m.company === co || (m.lines || []).some((l) => l.company === co)))
+      .filter((m) => inMyWarehouses(m.warehouse) && scope.inWh(m.warehouse) && (!type || m.type === type) && (!fStep || (fStep === 'cancelled' ? m.status === 'cancelled' : fStep === 'doing' ? ['pending', 'wait_release'].includes(m.status) : m.status === 'posted')) && (!scope.cos.length || scope.inCo(m.company) || (m.lines || []).some((l) => scope.inCo(l.company))) && (!scope.locs.length || (m.lines || []).some((l) => scope.inLoc(m.warehouse, l.location) || scope.inLoc(m.warehouse, l.toLocation))))
       .filter((m) => !f || [m.id, ...moveCodes(m), ...(m.status === 'cancelled' ? moveCodes(m, true) : []), m.tripId, m.plate, m.driverName, m.carrierName, m.orderId, m.orderRef, m.partyCode, m.partyName, ...(m.lines || []).flatMap((l) => [l.item, l.lot, l.location])].join(' ').toLowerCase().includes(f))
       .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-  }, [rows, inMyWarehouses, wh, type, q, co, fStep]);
+  }, [rows, inMyWarehouses, scope, type, q, fStep]);
   // Phiếu đã ghi tồn rồi mới hủy: thêm 1 dòng đảo (mã hủy, số lượng ngược dấu) như SAP
   const view = useMemo(() => list.flatMap((m) => (m.status === 'cancelled' && wasPosted(m) ? [{ m }, { m, rev: true }] : [{ m }])), [list]);
   const current = open && rows.find((m) => m.id === open);
@@ -86,8 +87,7 @@ export default function Movements() {
         <input type="date" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} />
         <span>→</span>
         <input type="date" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} />
-        <WarehousePicker value={wh} onChange={setWh} />
-        <CompanyPicker value={co} onChange={setCo} />
+        <ScopeFilters scope={scope} />
         <Select value={type} onChange={(e) => setType(e.target.value)}>
           <option value="">Tất cả loại phiếu</option>
           {Object.entries(MOVE_TYPES).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}

@@ -401,6 +401,8 @@ async function importRows(cat, fields, file, app) {
     if (refData[f.ref]) continue;
     const s = await getDocs(collection(db, f.ref));
     refData[f.ref] = new Map(s.docs.map((d) => [d.id, d.data()]));
+    // refAlso (VD Kho chung): mã ở danh mục thứ 2 cũng hợp lệ
+    if (f.refAlso) (await getDocs(collection(db, f.refAlso))).docs.forEach((d) => { if (!refData[f.ref].has(d.id)) refData[f.ref].set(d.id, d.data()); });
   }
 
   // Đọc lại dữ liệu hiện có từ máy chủ (không phụ thuộc bảng đang hiển thị)

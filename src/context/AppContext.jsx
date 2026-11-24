@@ -1,10 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { auth, db, SUPER_ADMINS } from '../firebase';
 import { canSeeField, mergeFields, visibleFields } from '../lib/fields';
 import { setFormat } from '../lib/utils';
 import { migrateMyOldEmails } from '../lib/userRename';
+import { listenShared } from '../lib/live';
+import { setWhGroups, whsOfLocWh } from '../lib/whGroups';
 
 const Ctx = createContext(null);
 export const useApp = () => useContext(Ctx);
@@ -59,6 +61,17 @@ export function AppProvider({ children }) {
   }, [allowed]);
 
 
+  // Kho chung (vị trí dùng chung cho các kho pháp nhân): nạp bảng tra cứu kho → kho chung
+  const [whTick, setWhTick] = useState(0);
+  useEffect(() => {
+    if (!allowed) return undefined;
+    let g = [], w = [];
+    const upd = () => setWhTick(setWhGroups(g, w));
+    const o1 = listenShared('c|warehouseGroups', () => collection(db, 'warehouseGroups'), (st) => { g = st.snap ? st.snap.docs.map((d) => ({ _id: d.id, ...d.data() })) : []; upd(); });
+    const o2 = listenShared('c|warehouses', () => collection(db, 'warehouses'), (st) => { w = st.snap ? st.snap.docs.map((d) => ({ _id: d.id, ...d.data() })) : []; upd(); });
+    return () => { o1(); o2(); };
+  }, [allowed]);
+
   // Kho người dùng được thao tác (mảng rỗng = tất cả)
   // Điều phối vận tải / tài xế thuộc 1 đơn vị vận tải
   const myCarrier = ['van_tai', 'tai_xe', 'tpl'].includes(role) ? userDoc?.carrier || '' : '';
@@ -81,7 +94,9 @@ export function AppProvider({ children }) {
       labels: { ...(f.labels || {}), ...(f.labelsNo3PL || {}) }, help: f.helpNo3PL || f.help,
     } : f));
   }, [fieldConfig, choices, can3PL]);
-  const inMyWarehouses = useCallback((wh) => !myWarehouses.length || myWarehouses.includes(wh), [myWarehouses]);
+  // Mã kho chung: được thao tác khi được giao ít nhất 1 kho pháp nhân trong nhóm (sửa vị trí dùng chung)
+  const inMyWarehouses = useCallback((wh) => !myWarehouses.length || myWarehouses.includes(wh)
+    || whsOfLocWh(wh).some((m) => m !== wh && myWarehouses.includes(m)), [myWarehouses, whTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const canEdit = useCallback((cat, row) => {
     if (cat.only3PL && !can3PL) return false;
@@ -105,10 +120,10 @@ export function AppProvider({ children }) {
   const value = useMemo(() => ({
     user, email, role, isAdmin, isSuper, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, myCarrier, myThreepl, myIdCard, carrierDoc, can3PL, userDoc,
     name: userDoc?.name || user?.displayName || email,
-    fieldConfig, fieldsOf, settings, salesOnly, seeField, seenFieldsOf, remotePrefs, fmtKey, bumpFormat: () => setFmtTick((t) => t + 1),
+    fieldConfig, fieldsOf, settings, salesOnly, seeField, seenFieldsOf, remotePrefs, fmtKey, whTick, bumpFormat: () => setFmtTick((t) => t + 1),
     loading: user === undefined || (!!user && userDoc === undefined && !isSuper),
     logout: () => signOut(auth),
-  }), [user, email, role, isAdmin, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, myCarrier, myThreepl, myIdCard, carrierDoc, can3PL, userDoc, fieldConfig, fieldsOf, settings, isSuper, salesOnly, seeField, seenFieldsOf, remotePrefs, fmtKey, fmtTick]);
+  }), [user, email, role, isAdmin, canDesign, allowed, myWarehouses, inMyWarehouses, canEdit, hasRole, myCarrier, myThreepl, myIdCard, carrierDoc, can3PL, userDoc, fieldConfig, fieldsOf, settings, isSuper, salesOnly, seeField, seenFieldsOf, remotePrefs, fmtKey, fmtTick, whTick]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

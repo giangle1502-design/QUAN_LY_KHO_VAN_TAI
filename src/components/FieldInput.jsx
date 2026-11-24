@@ -89,7 +89,10 @@ function useRefRows(refKey, role) {
 }
 
 function RefInput({ field: f, value, onChange, disabled, onPick }) {
-  const opts = useRefRows(f.ref, f.refRole);
+  const main = useRefRows(f.ref, f.refRole);
+  // refAlso: chọn thêm từ danh mục thứ 2 (VD vị trí thuộc Kho hoặc Kho chung)
+  const also = useRefRows(f.refAlso || '');
+  const opts = useMemo(() => (f.refAlso ? [...main, ...also] : main), [main, also, f.refAlso]);
   const listId = `dl-${f.key}`;
   const known = !value || opts.some((o) => o.value === value);
   // Gõ mã trước khi danh mục tải xong: tự điền khi dữ liệu về

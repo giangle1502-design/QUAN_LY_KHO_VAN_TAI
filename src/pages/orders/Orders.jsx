@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ScopeFilters, useOpScope } from '../../components/ScopeFilter';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { collection, doc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
-import { useOpCompany, useOrders } from '../../lib/hooks';
+import { useOrders } from '../../lib/hooks';
 import { useOrderSecrets, viewOrder } from '../../lib/orderSecrets';
-import { CompanyPicker } from '../../components/TripBits';
 import { ORDER_STATUS, ORDER_TYPES, OPEN_STATUSES, createOrder, leftKg, lineDue, lineFrom, lineShip, lineTo, lineWh, orderTotals, returnableKg, setOrderState, stoRoute, summarizeLines, transitKg } from '../../lib/orders';
 import { MOVE_TYPES } from '../../lib/stock';
 import { kindOf } from '../../catalogs';
@@ -165,7 +165,9 @@ function OrderList({ type, initialQ = '', startNew = false, startScan = false, o
     stale.forEach((d) => updateDoc(doc(db, 'orderSecrets', d._id), { sales: salesOf.get(d.orderId) }).catch(() => {}));
   }, [isAdmin, secMap, rawRows]);
   const [status, setStatus] = useState(initialQ ? '' : 'opening');
-  const [co, setCo] = useOpCompany();
+  // Chọn nhiều kho / công ty (đơn có ít nhất 1 dòng thuộc kho đang chọn)
+  const scope = useOpScope();
+  const { co } = scope;
   const [q, setQ] = useState(initialQ);
   const [open, setOpen] = useState(null);
   const [edit, setEdit] = useState(null); // null | 'new' | order
@@ -224,14 +226,15 @@ function OrderList({ type, initialQ = '', startNew = false, startScan = false, o
     const f = norm(q);
     const base = rows
       .filter((o) => (o.lines || []).some((l) => [lineWh(o, l, 'out'), lineWh(o, l, 'in')].some((w) => !w || inMyWarehouses(w))))
-      .filter((o) => !co || o.company === co)
+      .filter((o) => scope.inCo(o.company))
+      .filter((o) => !scope.whs.length || (o.lines || []).some((l) => [lineWh(o, l, 'out'), lineWh(o, l, 'in')].some((w) => w && scope.inWh(w))))
       .filter((o) => (status === 'opening' ? OPEN_STATUSES.includes(o.status) : !status || o.status === status))
       .filter((o) => !f || norm([o.id, o.refNo, o.partyCode, o.partyName, o.fromWarehouse, o.toWarehouse, o.shipCode, ...(o.lines || []).flatMap((l) => [l.item, l.itemName, l.warehouse, l.fromWarehouse, l.toWarehouse, l.shipCode])].join(' ')).includes(f))
       .sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')) || String(b.createdAt).localeCompare(String(a.createdAt)));
     if (!advN) return base;
     const ok = new Set(applyFilter(base.map(withLines), advFields, adv).map((o) => o.id));
     return base.filter((o) => ok.has(o.id));
-  }, [rows, status, q, inMyWarehouses, sto, co, adv, advN, advFields]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rows, status, q, inMyWarehouses, sto, co, scope, adv, advN, advFields]); // eslint-disable-line react-hooks/exhaustive-deps
   const sum = list.reduce((s, o) => { const x = orderTotals(o); return { qty: s.qty + x.qty, done: s.done + x.done, transit: s.transit + x.transit, left: s.left + (OPEN_STATUSES.includes(o.status) ? x.left : 0) }; }, { qty: 0, done: 0, left: 0, transit: 0 });
   const late = list.filter((o) => OPEN_STATUSES.includes(o.status) && o.dueDate && o.dueDate < today);
   const current = open && rows.find((o) => o.id === open);
@@ -323,7 +326,7 @@ function OrderList({ type, initialQ = '', startNew = false, startScan = false, o
         <div className="stat red"><div className="stat-label">{type === 'SO' ? 'Quá hạn giao' : type === 'PO' ? 'Quá ngày hàng về' : 'Quá ngày chuyển'}</div><div className="stat-value">{late.length} đơn</div></div>
       </div>
       <div className="filters">
-        <CompanyPicker value={co} onChange={setCo} />
+        <ScopeFilters scope={scope} noLoc />
         <Select value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="opening">Đang mở (chưa xong)</option>
           <option value="">Tất cả trạng thái</option>

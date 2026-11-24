@@ -3,6 +3,7 @@ import { db } from '../firebase';
 import { catalogByKey } from '../catalogs';
 import { applyOrder, applyPoReturn, drtToSo, summarizeLines } from './orders';
 import { palletEffects, palletManaged, readPallets } from './pallets';
+import { locWh } from './whGroups';
 
 // ============================================================================
 // Tồn kho: mỗi dòng tồn = 1 document `stock/{kho__vị trí__mã hàng__lot__tình trạng}`
@@ -285,7 +286,8 @@ async function applyEffects(tx, mv, effects, user) {
     cur.receive = cur.receive || e.receive; cur.ship = cur.ship || e.ship;
     byStock.set(id, cur);
   }
-  const locIds = [...new Set(effects.map((e) => locationId(e.warehouse, e.location)))];
+  // Kho pháp nhân thuộc kho chung: vị trí (sức chứa, pallet đang có) nằm ở kho chung
+  const locIds = [...new Set(effects.map((e) => locationId(locWh(e.warehouse), e.location)))];
   // Xuất bán (SO / xuất lẻ) chỉ được hàng tình trạng cho phép xuất (KTC, DGC); STO chuyển kho được mọi tình trạng (kể cả HTC)
   const statusCodes = mv.orderType === 'STO' ? [] : [...new Set(effects.filter((e) => e.ship).map((e) => e.goodsStatus))];
 
@@ -304,9 +306,9 @@ async function applyEffects(tx, mv, effects, user) {
   }
   const locDelta = new Map();
   for (const [id, e] of byStock) {
-    const lid = locationId(e.warehouse, e.location);
+    const lid = locationId(locWh(e.warehouse), e.location);
     const ls = locSnaps.get(lid);
-    if (!ls.exists()) throw new Error(`Vị trí ${e.location} không có trong kho ${e.warehouse}.`);
+    if (!ls.exists()) throw new Error(`Vị trí ${e.location} không có trong kho ${locWh(e.warehouse) !== e.warehouse ? `chung ${locWh(e.warehouse)} (của kho ${e.warehouse})` : e.warehouse}.`);
     if (e.receive && e.dPallets > EPS && ls.data().locked) throw new Error(`Vị trí ${e.location} đang bị khóa.`);
     if (e.ship && !['STO', 'RTV'].includes(mv.orderType) && ls.data().blockStock)
       throw new Error(`Hàng ${e.item} lot ${e.lot || '-'} đang ở khu hàng block (${e.location}): không xuất bán được. Chuyển sang vị trí thường trước khi xuất.`);

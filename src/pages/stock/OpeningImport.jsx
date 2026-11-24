@@ -1,3 +1,4 @@
+import { locWh } from '../../lib/whGroups';
 import { useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useMyWarehouses, useOpWarehouse } from '../../lib/hooks';
@@ -57,7 +58,7 @@ export default function OpeningImport() {
   const fileRef = useRef();
 
   const itemMap = useMemo(() => new Map(items.map((i) => [i.code, i])), [items]);
-  const locMap = useMemo(() => new Map(locations.filter((l) => l.warehouse === wh?.code).map((l) => [l.code, l])), [locations, wh]);
+  const locMap = useMemo(() => new Map(locations.filter((l) => l.warehouse === locWh(wh?.code)).map((l) => [l.code, l])), [locations, wh]);
   const stSet = useMemo(() => new Set(statuses.map((s) => s.code)), [statuses]);
   const plSet = useMemo(() => new Set(pledgees.map((p) => p.code)), [pledgees]);
   const coSet = new Set(useCollection('companies').rows.map((c) => c.code));
