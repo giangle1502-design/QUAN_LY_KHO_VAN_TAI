@@ -93,8 +93,11 @@ export async function loadMovementData(m) {
   // Lệnh chuyển kho: kho nhận (bên nhận hàng trên phiếu giao hàng)
   const toCode = m.type === 'out' && (m.orderType === 'STO' || String(m.orderId || '').startsWith('STO')) ? order?.toWarehouse || order?.lines?.find((l) => l.toWarehouse)?.toWarehouse || '' : '';
   const toWh = toCode ? (await one('warehouses', toCode)) || { code: toCode, name: toCode } : null;
+  // Đơn vị vận tải: tên trên phiếu, hoặc tra danh mục theo mã trên phiếu / chuyến xe
+  const carrierCode = m.carrier || trip?.carrier || '';
+  const carrier = carrierCode && !(m.carrierName || (!m.carrier && trip?.carrierName)) ? await one('carriers', carrierCode) : null;
   const orders = m.orderIds?.length > 1 ? new Map((await Promise.all(m.orderIds.map((id) => one('orders', id)))).map((o, i) => [m.orderIds[i], o]).filter(([, o]) => o)) : null;
-  return { m, toWh, co: co || (company ? { code: company, name: company } : null), wh, trip, party, supplier, order, orders, items, shipto, lines: m.lines || [],
+  return { m, toWh, carrier, co: co || (company ? { code: company, name: company } : null), wh, trip, party, supplier, order, orders, items, shipto, lines: m.lines || [],
     palletRows: m.palletMode === 'pallet' && ['in', 'out'].includes(m.type) && palletManaged(wh) && m.palletTracked !== false ? m.pallets || [] : [] };
 }
 

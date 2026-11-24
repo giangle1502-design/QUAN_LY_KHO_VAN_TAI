@@ -93,6 +93,10 @@ function moveTitle(m, docType) {
   if (docType === 'nhan') return 'NHÃN NHẬP KHO';
   return `PHIẾU ${(MOVE_TYPES[m?.type]?.label || 'KHO').toUpperCase()}`;
 }
+// Tên đơn vị vận tải của phiếu: tên ghi trên phiếu → tên trong danh mục → tên trên chuyến xe → mã
+export const carrierText = (mv, trip, cat) => (mv?.carrier
+  ? mv.carrierName || cat?.name || mv.carrier
+  : mv?.carrierName || trip?.carrierName || cat?.name || trip?.carrier || '');
 const isSto = (d) => d.m?.orderType === 'STO' || String(d.m?.orderId || '').startsWith('STO');
 const lineSum = (d, k) => (d.m?.lines || []).reduce((s, l) => s + num(l[k]), 0);
 
@@ -151,7 +155,7 @@ export function fieldDefs(docType, fieldsOf) {
     { g: 'Xe', label: 'Tài xế', key: 'driverName', get: (d) => m(d).driverName || tr(d).driverName },
     { g: 'Xe', label: 'CCCD tài xế', key: 'idCard', get: (d) => m(d).idCard || tr(d).idCard },
     { g: 'Xe', label: 'Điện thoại tài xế', key: 'driverPhone', get: (d) => m(d).driverPhone || tr(d).driverPhone },
-    { g: 'Xe', label: 'Đơn vị vận tải', key: 'carrierName', get: (d) => m(d).carrierName || m(d).carrier || tr(d).carrierName },
+    { g: 'Xe', label: 'Đơn vị vận tải', key: 'carrierName', get: (d) => carrierText(d.m, d.trip, d.carrier) },
     { g: 'Xe', label: 'Số chuyến xe', key: 'tripId', get: (d) => m(d).tripId },
     { g: 'Xe', label: 'Cửa kho', key: 'dock', get: (d) => tr(d).dock },
     { g: 'Tổng', label: 'Tổng kg', key: 'totalKg', type: 'num', dec: 2, get: (d) => lineSum(d, 'kg') },
@@ -483,7 +487,6 @@ export function starterTemplate(docType, layout = '') {
 </tr></tbody></table>
 <h1 class="gx-title">{{Tiêu đề phiếu giao hàng}}</h1>
 <p class="gx-date">Ngày {{Ngày (dd)}} tháng {{Tháng (mm)}} năm {{Năm (yyyy)}}</p>
-{{#nếu Liên}}<p class="gx-copy">{{Liên}}</p>{{/nếu}}
 {{#nếu Lý do hủy}}<p style="text-align:center;color:#c00"><b>PHIẾU ĐÃ HỦY: {{Lý do hủy}}</b></p>{{/nếu}}
 <table class="gx-two"><tbody><tr>
 <td class="gx-cell"><div class="gx-box-h">Bên giao hàng</div><table class="gx-kv"><tbody>
