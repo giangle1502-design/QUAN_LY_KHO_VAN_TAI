@@ -207,20 +207,15 @@ function Catalog({ cat }) {
             <thead>
               <tr>
                 <th className="stt">STT</th>
-                <th className="no-print" style={{ width: 70 }}>Sửa</th>
                 {viewCols.map((c) => <th key={c.key} className={(c.num ? 'num ' : '') + 'col-drag'} {...dragHeadProps(c.key, colKeys, setColOrder)} {...tools.headProps(c)}>{c.label}{tools.headMark(c)}</th>)}
               </tr>
             </thead>
             <tbody>
-              {!list.length && <tr><td colSpan={viewCols.length + 2}><Empty text="Không có dòng nào khớp điều kiện lọc." /></td></tr>}
+              {!list.length && <tr><td colSpan={viewCols.length + 1}><Empty text="Không có dòng nào khớp điều kiện lọc." /></td></tr>}
               {list.map((r, i) => (
-                <tr key={r._id} onClick={() => setEditing(r)} style={{ cursor: 'pointer' }}>
+                <tr key={r._id} onClick={() => setEditing(r)} style={{ cursor: 'pointer' }} title={app.canEdit(cat, r) ? 'Bấm để sửa / xóa' : 'Bấm để xem'}>
                   <td className="stt" title={missingOf(r).length ? 'Còn thiếu: ' + missingOf(r).map((f) => f.label).join(', ') : undefined}>
                     {i + 1}{missingOf(r).length ? <span style={{ color: 'var(--amber)' }}> ⚠</span> : null}
-                  </td>
-                  <td className="no-print nowrap">
-                    <button type="button" className="btn sm" title={app.canEdit(cat, r) ? 'Sửa dòng này' : 'Xem dòng này'}
-                      onClick={(e) => { e.stopPropagation(); setEditing(r); }}>{app.canEdit(cat, r) ? '✏ Sửa' : '👁 Xem'}</button>
                   </td>
                   {viewCols.map(({ f }) => <td key={f.key} className={NUMERIC_TYPES.includes(f.type) ? 'num' : f.type === 'textarea' ? '' : 'nowrap'}><Cell f={f} r={r} /></td>)}
                 </tr>
@@ -251,6 +246,18 @@ function Cell({ f, r }) {
   if (f.type === 'url' && text) return <a href={/^https?:\/\//i.test(text) ? text : `https://${text}`} target="_blank" rel="noreferrer">{String(text).replace(/^https?:\/\//i, '').slice(0, 40)}</a>;
   if (f.type === 'textarea') return <span className="small" title={text}>{String(text).slice(0, 60)}{String(text).length > 60 ? '…' : ''}</span>;
   return text;
+}
+
+// Xóa 1 bản ghi danh mục (quản trị gốc xóa hẳn, người khác gửi đề nghị xóa). Trả về thông báo, '' khi người dùng bấm hủy
+export async function removeRecord(cat, row, { isSuper, email, name }) {
+  const used = await findUsage(cat, row._id);
+  if (used) throw new Error(`Không xóa được: đang được dùng ở ${used}.`);
+  let reason = '';
+  if (isSuper) { if (!window.confirm(`Xóa ${cat.short} ${row.code || row.name || row._id}? Không khôi phục được.`)) return ''; }
+  else { reason = window.prompt('Lý do xóa (quản trị gốc sẽ duyệt trước khi xóa hẳn):', ''); if (reason === null) return ''; }
+  const { _id, ...data } = row;
+  const r = await deleteOrRequest({ coll: cat.key, id: _id, label: data.name || data.code || _id, data, reason }, { email, name }, isSuper);
+  return r === 'deleted' ? 'Đã xóa.' : 'Đã gửi yêu cầu xóa, chờ quản trị gốc duyệt.';
 }
 
 // ---------------------------------------------------------------------------
@@ -317,15 +324,9 @@ export function EditForm({ cat, fields, row, existing = [], onClose, onSaved }) 
 
   const remove = async () => {
     setErr('');
-    const used = await findUsage(cat, row._id);
-    if (used) return setErr(`Không xóa được: đang được dùng ở ${used}.`);
-    let reason = '';
-    if (isSuper) { if (!window.confirm('Xóa bản ghi này? Không khôi phục được.')) return; }
-    else { reason = window.prompt('Lý do xóa (quản trị gốc sẽ duyệt trước khi xóa hẳn):', ''); if (reason === null) return; }
     try {
-      const { _id, ...data } = row;
-      const r = await deleteOrRequest({ coll: cat.key, id: _id, label: data.name || data.code || _id, data, reason }, { email, name }, isSuper);
-      onSaved(r === 'deleted' ? 'Đã xóa.' : 'Đã gửi yêu cầu xóa, chờ quản trị gốc duyệt.');
+      const m = await removeRecord(cat, row, { isSuper, email, name });
+      if (m) onSaved(m);
     } catch (e) {
       setErr(e.message);
     }
