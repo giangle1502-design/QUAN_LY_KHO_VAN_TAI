@@ -9,6 +9,7 @@ import { TripCard, WarehousePicker } from '../../components/TripBits';
 import { Empty, ErrorBox } from '../../components/ui';
 import Select from '../../components/Select';
 import { WithAdd } from '../../components/FormTools';
+import { locWh } from '../../lib/whGroups';
 
 // Cập nhật chuyến xe + ghi lịch sử thao tác
 export function useTripAction() {
@@ -99,8 +100,8 @@ export function Dock() {
   const waiting = list.filter((t) => t.status === ST.WAITING_GATE).sort(byTime('gateConfirmTime'));
   const processing = list.filter((t) => t.status === ST.PROCESSING).sort(byTime('dockAssignTime'));
   // Cửa đang có xe (để cảnh báo trùng)
-  const busy = useMemo(() => new Map(processing.map((t) => [`${t.warehouse}__${t.dock}`, t.plate])), [processing]);
-  const docksOf = (t) => docks.filter((d) => d.warehouse === t.warehouse && d.active !== false
+  const busy = useMemo(() => new Map(processing.map((t) => [`${locWh(t.warehouse)}__${t.dock}`, t.plate])), [processing]);
+  const docksOf = (t) => docks.filter((d) => (d.warehouse === t.warehouse || d.warehouse === locWh(t.warehouse)) && d.active !== false
     && (d.usage !== (t.purpose === 'import' ? 'Chỉ xuất' : 'Chỉ nhập')));
 
   return (
@@ -114,17 +115,17 @@ export function Dock() {
           return (
             <TripCard key={t.id} trip={t} timeLabel="Vào cổng" timeValue={t.gateConfirmTime}>
               {opts.length ? (
-                <WithAdd cat="docks" preset={{ warehouse: t.warehouse }} onAdded={(id, r) => setPick({ ...pick, [t.id]: r?.code || String(id).split('__').pop() })}>
+                <WithAdd cat="docks" preset={{ warehouse: locWh(t.warehouse) }} onAdded={(id, r) => setPick({ ...pick, [t.id]: r?.code || String(id).split('__').pop() })}>
                 <Select value={v} onChange={(e) => setPick({ ...pick, [t.id]: e.target.value })}>
                   <option value="">-- Chọn cửa --</option>
                   {opts.map((d) => {
-                    const by = busy.get(`${t.warehouse}__${d.code}`);
+                    const by = busy.get(`${locWh(t.warehouse)}__${d.code}`);
                     return <option key={d.code} value={d.code}>{d.code}{d.name ? ` – ${d.name}` : ''}{by ? ` (đang có xe ${by})` : ''}</option>;
                   })}
                 </Select>
                 </WithAdd>
               ) : (
-                <WithAdd cat="docks" preset={{ warehouse: t.warehouse }} onAdded={(id, r) => setPick({ ...pick, [t.id]: r?.code || String(id).split('__').pop() })}>
+                <WithAdd cat="docks" preset={{ warehouse: locWh(t.warehouse) }} onAdded={(id, r) => setPick({ ...pick, [t.id]: r?.code || String(id).split('__').pop() })}>
                   <input placeholder="Số cửa" value={v} onChange={(e) => setPick({ ...pick, [t.id]: e.target.value })} style={{ width: 110 }} />
                 </WithAdd>
               )}
