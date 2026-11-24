@@ -950,3 +950,35 @@ table.resized .cell-add > input, table.resized .cell-add > select, table.resized
 .bar-panel-head .actions { display: flex; gap: 6px; }
 .pick-cats { display: grid; gap: 8px; }
 .pick-cats .btn { justify-content: flex-start; text-align: left; padding: 10px 12px; }
+
+/* Form đơn SO / PO / STO gọn: vừa 1 màn hình, chỉ cuộn khi thật nhiều dòng.
+   Ghi chú trường hiện thành ⓘ (rê chuột xem), phần chung xếp nhiều cột, ô kho đủ rộng để đọc mã + tên kho */
+.modal.order-form { max-width: min(1560px, 98vw); }
+.order-form .modal-body { padding: 8px 12px; }
+.order-form .so-section { padding: 6px 10px; margin-bottom: 8px; }
+.order-form .so-section .section-head { font-size: 14px; margin-bottom: 4px; }
+.order-form .form-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 10px; }
+.order-form .field { gap: 2px; }
+.order-form .field-help { display: none; }
+.order-form .field input, .order-form .field select { padding: 5px 8px; }
+.order-form .field textarea { padding: 5px 8px; min-height: 32px; height: 32px; }
+.order-form .field.fh textarea { height: var(--fh); }
+.order-form table.so-lines td { padding: 3px; }
+.order-form table.so-lines th { white-space: normal; line-height: 1.2; }
+.order-form table.so-lines input, .order-form table.so-lines select { padding: 4px 6px; min-width: 70px; }
+table.so-lines td.w-wh { min-width: 262px; }
+.order-form table.so-lines td.w-item { min-width: 200px; }
+.order-form table.so-lines td.w-ship { min-width: 140px; }
+.order-form table.so-lines td.w-qty input { min-width: 90px; }
+.order-form .form-grid > .field.full:not(.fw) { grid-column: span 3; }
+table.so-lines td.w-sm { min-width: 120px; }
+table.so-lines td.w-wh .ss-trigger, table.so-lines td.w-wh select { text-overflow: ellipsis; }
+.modal-bg:has(.order-form) { padding: 8px; }
+.modal.order-form { max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px); }
+.order-form table.so-lines .cell-add { gap: 2px; }
+.order-form table.so-lines .cell-add .btn { padding: 3px 6px; min-width: 0; }
+.order-form table.so-lines input[type=date] { min-width: 120px; }
+.order-form table.so-lines td.w-sm { min-width: 95px; }
+.order-form table.so-lines td.w-name { min-width: 100px; }
+.order-form .form-actions { padding: 6px 0 8px; margin-top: 4px; }
+@media (max-width: 700px) { table.so-lines td.w-wh { min-width: 220px; } .order-form .form-grid > .field.full:not(.fw) { grid-column: 1 / -1; } }
