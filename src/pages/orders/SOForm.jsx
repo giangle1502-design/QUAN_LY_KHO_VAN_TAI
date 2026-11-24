@@ -234,6 +234,8 @@ export default function SOForm({ type = 'SO', order, onClose, draft }) {
     setErr('');
     if (!h.date) return setErr('Nhập ngày tạo đơn.');
     if (!h.company) return setErr(sto ? 'Chọn công ty chủ hàng.' : 'Chọn công ty xuất.');
+    // Mã công ty cũ (đã đổi mã / đã xóa) nhớ trên trình duyệt: bắt chọn lại, tránh đơn lưu mã không còn → không hiện trong danh sách
+    if (companies.length && !companies.some((c) => c.code === h.company)) return setErr(`Công ty "${h.company}" không còn trong danh mục (có thể đã đổi mã). Chọn lại công ty.`);
     if (!sto && !h.partyCode.trim()) return setErr(`Chọn ${cfg.partyLabel}.`);
     if (usd && !(n(h.fxRate) > 0)) return setErr(`Đơn USD: nhập ${fxLabel}.`);
     if (finished && !editReason.trim()) return setErr('Nhập lý do sửa đơn (đơn đã hoàn tất / đã đóng).');
