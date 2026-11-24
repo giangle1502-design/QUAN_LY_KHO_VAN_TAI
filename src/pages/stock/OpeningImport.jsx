@@ -6,7 +6,7 @@ import { exportTemplate, readFirstSheet, toNumber, toYmd } from '../../lib/excel
 import { kgOf, postMovement, suggestPallets } from '../../lib/stock';
 import { vnDate } from '../../lib/trips';
 import { fmtDate, fmtNum, norm } from '../../lib/utils';
-import { ErrorBox } from '../../components/ui';
+import { CloseButton, ErrorBox } from '../../components/ui';
 import { WithAdd } from '../../components/FormTools';
 import Select from '../../components/Select';
 
@@ -140,6 +140,7 @@ export default function OpeningImport() {
         <h1>📋 Nhập tồn đầu kỳ</h1>
         <div className="actions">
           <button className="btn ghost" onClick={() => exportTemplate('Mau_ton_dau_ky', COLS.map((c) => c[1]), COLS.map((c) => COL_NOTES[c[0]]))}>File mẫu</button>
+          <CloseButton to="/kho/ton" dirty={() => !busy && rows.length > 0} />
         </div>
       </div>
       <p className="hint">

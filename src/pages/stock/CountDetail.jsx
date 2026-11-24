@@ -4,7 +4,7 @@ import { collection, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { useCollection } from '../../lib/hooks';
-import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
+import { CloseButton, Empty, ErrorBox, Field, Modal } from '../../components/ui';
 import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtDateTime, fmtNum, norm } from '../../lib/utils';
 import {
@@ -87,6 +87,7 @@ export default function CountDetail() {
           {open && <Link className="btn primary" to={`/kho/kiem-ke/${id}/dem`}>📱 Đếm trên điện thoại</Link>}
           <Link className="btn" to={printUrl} target="_blank">🖨 In biểu mẫu{from || to ? ' (theo vị trí đã lọc)' : ''}</Link>
           <button className="btn" onClick={excel}>⬇ Excel</button>
+          <CloseButton to="/kho/kiem-ke" />
         </div>
       </div>
       <p className="hint">
