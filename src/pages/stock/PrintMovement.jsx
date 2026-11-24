@@ -12,6 +12,8 @@ import PalletChoice from '../../components/PalletChoice';
 import { ErrorBox } from '../../components/ui';
 import { MODE_LABEL, palletError, palletManaged, palletText, palletToText, setSlipPallets } from '../../lib/pallets';
 import Select from '../../components/Select';
+import { useCollection } from '../../lib/hooks';
+import { lotRequired } from '../../lib/lots';
 
 // 3 liên phiếu giao hàng: liên kho, liên vận tải (có dòng pallet), liên khách hàng (không có pallet vận tải mượn)
 const COPIES = [
@@ -51,6 +53,9 @@ export default function PrintMovement({ pick = false }) {
 
   // Kho không quản lý pallet: phiếu chỉ ghi Kiện / Xá, không có bảng pallet
   const managed = !!wh && palletManaged(wh) && m?.palletTracked !== false;
+  // Phiếu soạn hàng: mã bắt buộc quản lý lot phải lấy đúng lot (mã khác lot chỉ để tham khảo)
+  const itemRows = useCollection('items').rows;
+  const lotReq = (code) => lotRequired(itemRows.find((x) => x.code === code));
   const choice = useTemplateChoice(m ? docTypeOfMovement(m, pick) : null, { company: m?.company || m?.lines?.find((l) => l.company)?.company, party: m?.partyCode });
 
   if (m === undefined || choice.loading) return <div className="center">Đang tải…</div>;
@@ -163,16 +168,17 @@ export default function PrintMovement({ pick = false }) {
         <tfoot>{byOrder.map((x) => <tr key={x.oid} className="sub-total"><td colSpan={4}>Cộng đơn {x.oid}{x.ref ? ` (${x.ref})` : ''}</td><td className="num">{fmtNum(x.kg, 2)}</td><td className="num">{fmtNum(x.bags)}</td></tr>)}
           <tr><td colSpan={multi ? 4 : 3}>{multi ? 'Tổng cộng cả xe' : 'Cộng'}</td><td className="num">{fmtNum(tot('kg'), 2)}<div className="small">= {fmtNum(tot('kg') / 1000, 3, 3)} tấn</div></td><td className="num">{fmtNum(tot('bags'))}</td></tr></tfoot>
       </table>
-      ) : pick ? (
+      ) : pick ? (<>
       <table className="print-lines">
         <thead><tr><th>STT</th><th>Vị trí</th><th>Mã hàng</th><th>Tên hàng</th><th>Lot</th>{hasDates && <><th>NSX</th><th>HSD</th></>}<th>Tình trạng</th>{multi && <th>Số đơn</th>}<th className="num">Số kg</th><th className="num">Pallet</th><th className="num">Số bao</th><th>Đã soạn</th></tr></thead>
         <tbody>{pickLines.map((l, i) => (
-          <tr key={i}><td>{i + 1}</td><td><b>{l.location}</b></td><td>{l.item}</td><td>{l.itemName}</td><td>{l.lot}</td>{hasDates && <><td>{fmtDate(l.mfgDate)}</td><td>{fmtDate(l.expDate)}</td></>}
+          <tr key={i}><td>{i + 1}</td><td><b>{l.location}</b></td><td>{l.item}</td><td>{l.itemName}</td><td>{lotReq(l.item) ? <b>🔖 {l.lot || '(chưa có lot)'}</b> : l.lot}</td>{hasDates && <><td>{fmtDate(l.mfgDate)}</td><td>{fmtDate(l.expDate)}</td></>}
             <td>{l.goodsStatus}{l.pledgee ? ` (${l.pledgee})` : ''}</td>{multi && <td className="small">{l.sos.join(', ')}</td>}<td className="num">{fmtNum(l.kg, 2)}</td><td className="num">{fmtNum(l.pallets, 2)}</td><td className="num">{fmtNum(l.bags)}</td><td style={{ textAlign: 'center' }}>☐</td></tr>
         ))}</tbody>
         <tfoot><tr><td colSpan={(hasDates ? 8 : 6) + (multi ? 1 : 0)}>Cộng</td><td className="num">{fmtNum(tot('kg'), 2)}<div className="small">= {fmtNum(tot('kg') / 1000, 3, 3)} tấn</div></td><td className="num">{fmtNum(tot('pallets'), 2)}</td><td className="num">{fmtNum(tot('bags'))}</td><td></td></tr></tfoot>
       </table>
-      ) : (
+      {pickLines.some((l) => lotReq(l.item)) && <p className="small" style={{ margin: '4px 0' }}>🔖 Mã bắt buộc quản lý lot: phải lấy <b>đúng lot</b> ghi trên phiếu. Mã khác: trong cùng vị trí lấy lot ở phía ngoài (lot ít) trước.</p>}
+      </>) : (
       <table className="print-lines">
         <thead><tr><th>STT</th>{multi && <th>Số đơn</th>}<th>Mã hàng</th><th>Tên hàng</th><th>Lot</th><th>Vị trí</th>{m.type === 'move' && <th>Đến vị trí</th>}
           <th>Tình trạng</th>{m.type === 'status' && <th>Tình trạng mới</th>}<th className="num">{pend ? 'Dự kiến (kg)' : 'Số kg'}</th><th className="num">Pallet</th><th className="num">Số bao</th>{pend && <><th>Thực nhận (kg)</th><th>Vị trí thực</th></>}</tr></thead>

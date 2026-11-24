@@ -17,6 +17,8 @@ import { ExtraView } from '../../components/ExtraFields';
 import { PRINTED_KEY, clearLabelState, labelSig, readLabelsPrinted, saveLabelDraft } from '../../lib/labelDraft';
 import { fmtTime } from '../../lib/trips';
 import { cleanPallets, packingMode, palletError, palletManaged } from '../../lib/pallets';
+import LotListImport from '../../components/LotListImport';
+import { lotRequired } from '../../lib/lots';
 
 // Nhận hàng: quản trị lập và in phiếu nhập trước; thủ kho nhận hàng ngoài hiện trường,
 // nhập số thực nhận, lot, vị trí rồi xác nhận → tồn kho cập nhật (nhập trực tiếp: lập PO theo số thực nhận)
@@ -160,6 +162,7 @@ function ReceiveForm({ id }) {
       if (!num(l.kg) && !num(l.bags) && !num(l.pallets)) continue; // không nhận dòng này
       if (!l.item || !itemMap.has(l.item)) return setErr(no + 'chọn mã hàng có trong danh mục.');
       if (!l.location) return setErr(no + 'chọn vị trí nhận hàng.');
+      if (lotRequired(itemMap.get(l.item)) && !String(l.lot || '').trim()) return setErr(no + `mã ${l.item} bắt buộc quản lý lot: nhập số lot.`);
       if (l.goodsStatus === 'HTC' && !l.pledgee) return setErr(no + 'hàng HTC cần chọn bên nhận thế chấp.');
       // Dòng thêm mới (khác lot…) lấy dòng đơn của dòng cùng mã hàng trên phiếu (phiếu gộp: trong phiếu con của dòng)
       const pc = pieces.find((x) => x.id === l._mv) || pieces[0] || mv;
@@ -243,7 +246,7 @@ function ReceiveForm({ id }) {
       </div>
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="section-head">Hàng thực nhận ({lines.length})</div>
-        <p className="small">Sửa số kg / pallet / bao theo thực tế, lot (NSX, HSD nếu mã hàng có quản lý hạn dùng) và chọn vị trí. Dòng để trống số lượng = không nhận. Hàng về nhiều lot thì thêm dòng. Số pallet vượt chỗ trống của vị trí thì bấm <b>✂ Chia thành nhiều dòng</b> rồi chọn vị trí cho từng dòng.</p>
+        <p className="small">Sửa số kg / pallet / bao theo thực tế, lot (NSX, HSD nếu mã hàng có quản lý hạn dùng) và chọn vị trí. Dòng để trống số lượng = không nhận. Hàng về nhiều lot thì thêm dòng, hoặc bấm <b>📋 Nhập danh sách lot NCC</b> để dán / nhập Excel danh sách lot NCC gửi trước rồi in nhãn trước khi hàng về. Số pallet vượt chỗ trống của vị trí thì bấm <b>✂ Chia thành nhiều dòng</b> rồi chọn vị trí cho từng dòng.</p>
         {lines.map((l, i) => (
           <div key={i} className="mv-line">
             <div style={{ flex: 1 }}>
@@ -255,6 +258,7 @@ function ReceiveForm({ id }) {
           </div>
         ))}
         <button type="button" className="btn sm" onClick={() => setLines((ls) => [...ls, { ...newLine(), item: ls[ls.length - 1]?.item || '', goodsStatus: ls[ls.length - 1]?.goodsStatus || 'KTC', pledgee: ls[ls.length - 1]?.pledgee || '', _mv: ls[ls.length - 1]?._mv, _oid: ls[ls.length - 1]?._oid }])}>+ Thêm dòng (lot khác)</button>
+        {pending && <> <LotListImport lines={lines} setLines={setLines} itemMap={itemMap} /></>}
       </div>
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="section-head">🪵 Hàng về Kiện / Xá <span className="req">*</span></div>
