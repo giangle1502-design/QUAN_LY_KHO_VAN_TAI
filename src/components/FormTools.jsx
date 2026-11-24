@@ -10,6 +10,7 @@ import { dragHeadProps, orderCols } from '../lib/colOrder';
 
 const REF_TARGETS = CATALOGS.filter((c) => !['codeRules', 'users'].includes(c.key));
 import { norm } from '../lib/utils';
+import { locWh } from '../lib/whGroups';
 import { EditForm } from '../pages/CatalogPage';
 import { ErrorBox, Field, Modal } from './ui';
 import Select from './Select';
@@ -27,12 +28,21 @@ export function QuickAdd({ catKey, preset, onAdded, value }) {
   const openEdit = async () => {
     setBusy(true);
     try {
-      const id = cat.upperId ? code.toUpperCase() : cat.lowerId ? code.toLowerCase() : code;
-      let s = await getDoc(doc(db, catKey, id));
-      if (!s.exists() && cat.idField) {
-        const q = await getDocs(query(collection(db, catKey), where(cat.idField, '==', code), limit(1)));
-        s = q.docs[0];
+      // Lý do lưu dạng "mã – tên": lấy phần mã
+      const c0 = code.split(' – ')[0].trim();
+      const id = cat.upperId ? c0.toUpperCase() : cat.lowerId ? c0.toLowerCase() : c0;
+      // Vị trí / cửa kho: mã bản ghi = kho (hoặc kho chung) + mã → cần kho đang chọn trên form (preset.warehouse)
+      const wh = preset?.warehouse;
+      const ids = cat.idOf ? (wh ? [...new Set([cat.idOf({ warehouse: locWh(wh), code: c0 }), cat.idOf({ warehouse: wh, code: c0 })])] : []) : [id];
+      let s = null;
+      for (const x of ids) { const d = await getDoc(doc(db, catKey, x)); if (d.exists()) { s = d; break; } }
+      const keyF = cat.idField || (cat.keyFields || []).at(-1);
+      if (!s && keyF) {
+        const q = await getDocs(query(collection(db, catKey), where(keyF, '==', c0), limit(20)));
+        s = q.docs.find((d) => !wh || [wh, locWh(wh)].includes(d.data().warehouse)) || (wh ? null : q.docs[0]);
       }
+      // Ô lưu tên thay cho mã (VD lý do trả hàng): tìm theo tên
+      if (!s) s = (await getDocs(query(collection(db, catKey), where('name', '==', code), limit(1)))).docs[0] || null;
       if (s?.exists()) setEditRow({ _id: s.id, ...s.data() });
       else window.alert(`Không tìm thấy ${cat.short} "${code}" trong danh mục.`);
     } finally { setBusy(false); }
@@ -42,7 +52,7 @@ export function QuickAdd({ catKey, preset, onAdded, value }) {
   return (
     <>
       <button type="button" className="btn sm quick-add" title={`Thêm ${cat.short} mới`} onClick={() => setOpen(true)}>+</button>
-      {code && !cat.idOf && (
+      {code && (
         <button type="button" className="btn sm quick-add" title={`Sửa ${cat.short} ${code}`} disabled={busy} onClick={openEdit}>✏</button>
       )}
       {open && (
@@ -53,7 +63,8 @@ export function QuickAdd({ catKey, preset, onAdded, value }) {
       )}
       {editRow && (
         <span {...stop}>
-          <EditForm cat={cat} fields={fieldsOf(catKey)} row={editRow} onClose={() => setEditRow(null)} onSaved={() => setEditRow(null)} />
+          <EditForm cat={cat} fields={fieldsOf(catKey)} row={editRow} onClose={() => setEditRow(null)}
+            onSaved={(_m, id, rec) => { setEditRow(null); if (id && id !== editRow._id) onAdded?.(id, rec); }} />
         </span>
       )}
     </>

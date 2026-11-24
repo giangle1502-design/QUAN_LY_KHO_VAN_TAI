@@ -23,6 +23,7 @@ import { ColumnPicker } from '../components/FormTools';
 import { ViewPresets, useTableTools } from '../components/TableTools';
 import { dragHeadProps, orderCols } from '../lib/colOrder';
 import { RenameUserButton } from './admin/RenameUser';
+import { RenameCodeButton } from './admin/RenameCode';
 import { AddRoleButton, PartnerFixedFilters, PartnerForm, PartnerNotices, usePartnerRows } from './Partners';
 
 // Bố cục thẻ tìm kiếm gợi ý cho Đối tác (giống MISA); người dùng tự chỉnh lại được
@@ -349,6 +350,9 @@ export function EditForm({ cat, fields, row, existing = [], onClose, onSaved }) 
                   <div className="readonly-val">{String(displayValue(f, data[f.key]) || '—')}{f.key === 'usedPct' && data[f.key] != null ? '%' : ''}</div>
                 ) : (
                   <FieldInput field={f} value={form[f.key]} onChange={(v) => set(f.key, v)} disabled={ro} onPickRef={onPickRef} />
+                )}
+                {f.key === cat.idField && !isNew && (
+                  <div style={{ marginTop: 4 }}><RenameCodeButton cat={cat} row={row} onDone={(t, id) => onSaved(t, id)} /></div>
                 )}
                 {cat.key === 'users' && f.key === 'email' && !isNew && isAdmin && (
                   <div style={{ marginTop: 4 }}><RenameUserButton row={row} existing={existing} onDone={(t) => onSaved(t, row._id)} /></div>

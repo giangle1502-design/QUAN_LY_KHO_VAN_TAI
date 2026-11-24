@@ -5,6 +5,8 @@ service cloud.firestore {
     // Quản trị gốc được xóa mọi bản ghi (duyệt yêu cầu xóa, xóa dữ liệu chạy thử)
     match /{coll}/{id} {
       allow delete: if isSuper();
+      // Đổi mã danh mục (VD Công ty VAPC → VAP): quản trị gốc cập nhật mọi dữ liệu đang dùng mã cũ
+      allow create, update: if isSuper();
     }
 
     // ==== Email quản trị gốc (sửa cho khớp VITE_SUPER_ADMINS) ====

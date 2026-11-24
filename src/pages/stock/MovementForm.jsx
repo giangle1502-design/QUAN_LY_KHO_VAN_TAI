@@ -998,7 +998,7 @@ function Form({ type }) {
                   <div className="cell-add pair">
                     <input list="dl-mv-party" value={head.partyCode} placeholder="Mã" className="code"
                       onChange={(e) => { const p = parties.find((x) => x.code === e.target.value); setHead((h) => ({ ...h, partyCode: e.target.value, partyName: p ? p.name : h.partyName, shipCode: '', orderId: '' })); }} />
-                    <QuickAdd catKey={type === 'in' && !['SO', 'DRT'].includes(source) ? 'suppliers' : 'soldto'} onAdded={(id, r) => setHead((h) => ({ ...h, partyCode: r?.code || id, partyName: r?.name || h.partyName, shipCode: '', orderId: '' }))} />
+                    <QuickAdd catKey={type === 'in' && !['SO', 'DRT'].includes(source) ? 'suppliers' : 'soldto'} value={head.partyCode} onAdded={(id, r) => setHead((h) => ({ ...h, partyCode: r?.code || id, partyName: r?.name || h.partyName, shipCode: '', orderId: '' }))} />
                     <input value={head.partyName} placeholder="Tên" title={head.partyName} onChange={(e) => setH('partyName', e.target.value)} />
                   </div>
                 </Field>
@@ -1051,14 +1051,14 @@ function Form({ type }) {
                 <Field label="Đơn vị vận tải">
                   <div className="cell-add pair">
                     <input list="dl-mv-carrier" value={head.carrier} placeholder="Mã" className="code" onChange={(e) => pickCarrier(e.target.value)} />
-                    <QuickAdd catKey="carriers" onAdded={(id, r) => setHead((h) => ({ ...h, carrier: id, carrierName: r?.name || h.carrierName, carrierAuto: false }))} />
+                    <QuickAdd catKey="carriers" value={head.carrier} onAdded={(id, r) => setHead((h) => ({ ...h, carrier: id, carrierName: r?.name || h.carrierName, carrierAuto: false }))} />
                     <input value={head.carrierName} placeholder="Tên đơn vị" title={head.carrierName} onChange={(e) => setH('carrierName', e.target.value)} />
                   </div>
                 </Field>
                 <Field label="Tài xế (CCCD · họ tên · điện thoại)" size={{ width: 480 }}>
                   <div className="cell-add pair">
                     <input list="dl-mv-driver" value={head.idCard} placeholder="Số CCCD" className="code" onChange={(e) => pickDriver(e.target.value)} />
-                    <QuickAdd catKey="drivers" preset={{ idCard: head.idCard, name: head.driverName, phone: head.driverPhone, carrier: head.carrier }} onAdded={(id, r) => setHead((h) => ({ ...h, idCard: r?.idCard || id, driverName: r?.name || h.driverName, driverPhone: r?.phone || h.driverPhone }))} />
+                    <QuickAdd catKey="drivers" value={head.idCard} preset={{ idCard: head.idCard, name: head.driverName, phone: head.driverPhone, carrier: head.carrier }} onAdded={(id, r) => setHead((h) => ({ ...h, idCard: r?.idCard || id, driverName: r?.name || h.driverName, driverPhone: r?.phone || h.driverPhone }))} />
                     <input value={head.driverName} placeholder="Họ tên" onChange={(e) => setH('driverName', e.target.value)} />
                     <input value={head.driverPhone} placeholder="Điện thoại" className="code" onChange={(e) => setH('driverPhone', e.target.value)} />
                   </div>
@@ -1116,7 +1116,7 @@ function Form({ type }) {
                   <option value="">-- Chọn --</option>
                   {reasons.filter((r) => type !== 'adjust' || ['Điều chỉnh tồn', 'Hàng lỗi'].includes(r.appliesTo)).map((r) => <option key={r.code} value={`${r.code} – ${r.name}`}>{r.name}</option>)}
                 </Select>
-                <QuickAdd catKey="reasons" preset={{ appliesTo: { in: 'Nhập kho', out: 'Xuất kho', adjust: 'Điều chỉnh tồn' }[type] }}
+                <QuickAdd catKey="reasons" value={String(head.reason || '').split(' – ')[0]} preset={{ appliesTo: { in: 'Nhập kho', out: 'Xuất kho', adjust: 'Điều chỉnh tồn' }[type] }}
                   onAdded={(id, r) => setH('reason', `${id} – ${r?.name || ''}`)} />
               </div>
             </Field>

@@ -179,6 +179,27 @@ export async function addChoice(f, value) {
   const { db } = await import('../firebase');
   await setDoc(doc(db, 'settings', 'choices'), { [f.form]: { [f.key]: arrayUnion(value) } }, { merge: true });
 }
+// Sửa / xóa 1 lựa chọn đã có (nút ✏ cạnh ô danh sách chọn). newV '' = xóa lựa chọn.
+// Đổi ở cả lựa chọn thêm nhanh (settings/choices) và danh sách chọn đã lưu ở Sửa trường (settings/fields).
+// Bản ghi cũ đã lưu giá trị cũ giữ nguyên.
+export async function editChoice(f, oldV, newV) {
+  const { doc, getDoc, setDoc } = await import('firebase/firestore');
+  const { db } = await import('../firebase');
+  const swap = (list) => [...new Set((list || []).flatMap((x) => (String(x) === String(oldV) ? (newV === '' ? [] : [newV]) : [x])))];
+  let hit = false;
+  const ch = (await getDoc(doc(db, 'settings', 'choices'))).data()?.[f.form]?.[f.key];
+  if (ch?.some((x) => String(x) === String(oldV))) {
+    await setDoc(doc(db, 'settings', 'choices'), { [f.form]: { [f.key]: swap(ch) } }, { merge: true });
+    hit = true;
+  }
+  const stored = (await getDoc(doc(db, 'settings', 'fields'))).data()?.[f.form];
+  const sf = Array.isArray(stored) ? stored.find((x) => x.key === f.key) : null;
+  if (sf?.options?.some((x) => String(x) === String(oldV))) {
+    await setDoc(doc(db, 'settings', 'fields'), { [f.form]: stored.map((x) => (x.key === f.key ? { ...x, options: swap(x.options) } : x)) }, { merge: true });
+    hit = true;
+  }
+  if (!hit) throw new Error(`Lựa chọn "${oldV}" có sẵn trong chương trình, không sửa được ở đây.`);
+}
 // Sau khi Sửa trường lưu danh sách chọn (đã gồm các lựa chọn thêm nhanh) thì bỏ phần thêm nhanh để xóa lựa chọn được
 export async function clearChoices(...forms) {
   const { doc, setDoc, deleteField } = await import('firebase/firestore');
