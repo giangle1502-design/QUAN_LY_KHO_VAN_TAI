@@ -771,6 +771,7 @@ function Form({ type }) {
         // Vị trí: thủ kho chọn khi nhận hàng (quản trị lập phiếu có thể để trống)
         if (!num(l.kg) && !num(l.bags) && !num(l.pallets)) return setErr(no + 'nhập số kg, pallet hoặc số bao.');
         if (l.goodsStatus === 'HTC' && !l.pledgee) return setErr(no + 'hàng HTC cần chọn bên nhận thế chấp.');
+        if (lotRequired(itemMap.get(l.item)) && !String(l.lot || '').trim()) return setErr(no + `mã ${l.item} bắt buộc quản lý lot: nhập số lot.`);
         out.push({ ...(l.orderLine != null ? { orderLine: l.orderLine } : {}), ...(l.orderId ? { _oid: l.orderId } : {}), ...(l.toBlock ? { toBlock: true } : {}), item: l.item, itemName: itemMap.get(l.item).name, lot: l.lot.trim(), mfgDate: l.mfgDate, expDate: l.expDate,
           location: l.location, goodsStatus: l.goodsStatus, pledgee: l.goodsStatus === 'HTC' ? l.pledgee : '', company: l.company || head.company,
           bags: num(l.bags), pallets: num(l.pallets), kg: num(l.kg) });
