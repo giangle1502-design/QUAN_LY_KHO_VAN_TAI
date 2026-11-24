@@ -95,6 +95,37 @@ export function useNavLayout(sections, defaultFav = [], defaultBar = []) {
       set({ folders: lay.folders.filter((f) => f.key !== key), place, secOrder: lay.secOrder.filter((k) => k !== key) });
     },
     setBar: (bar) => set({ bar }),
+    // Kéo thả lên thanh trên cùng. id = công cụ; toKey = danh mục đích; beforeId = chèn trước công cụ này (null = cuối);
+    // fromKey = danh mục đang chứa (kéo từ bảng công cụ) → chuyển chứ không chép. Trả về 'exists' nếu đã có sẵn.
+    barDrop: (id, toKey, beforeId = null, fromKey = null) => {
+      const b = lay.bar.map((c) => ({ ...c, items: c.items.map((x) => (typeof x === 'string' ? x : itemId(x))) }));
+      const to = b.find((c) => c.key === toKey);
+      if (!to) return null;
+      if (!fromKey && !beforeId && to.items.includes(id)) return 'exists';
+      if (fromKey) { const f = b.find((c) => c.key === fromKey); if (f) f.items = f.items.filter((x) => x !== id); }
+      to.items = to.items.filter((x) => x !== id);
+      const at = beforeId ? to.items.indexOf(beforeId) : -1;
+      if (at < 0) to.items.push(id); else to.items.splice(at, 0, id);
+      set({ bar: b });
+      return 'ok';
+    },
+    barNew: (title, id) => {
+      const key = `c:${Date.now().toString(36)}`;
+      set({ bar: [...lay.bar, { key, title: title.trim() || '📁 Danh mục mới', items: id ? [id] : [] }] });
+      return key;
+    },
+    barRemove: (key, id) => set({ bar: lay.bar.map((c) => (c.key === key ? { ...c, items: c.items.filter((x) => x !== id) } : c)) }),
+    // Đổi chỗ danh mục: đặt key ngay trước beforeKey
+    barMoveCat: (key, beforeKey) => {
+      if (key === beforeKey) return;
+      const b = [...lay.bar];
+      const i = b.findIndex((c) => c.key === key);
+      if (i < 0) return;
+      const [c] = b.splice(i, 1);
+      const j = b.findIndex((x) => x.key === beforeKey);
+      if (j < 0) b.push(c); else b.splice(j, 0, c);
+      set({ bar: b });
+    },
     reset: () => setRaw(null),
     changed: raw !== null,
   };

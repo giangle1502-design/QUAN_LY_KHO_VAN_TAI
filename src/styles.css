@@ -921,3 +921,32 @@ table.resized .cell-add > input, table.resized .cell-add > select, table.resized
 .dp-detbox { position: sticky; left: 0; max-width: min(100%, calc(100vw - 290px)); box-sizing: border-box; }
 .dp-card .go .btn { white-space: nowrap; font-size: 12px; padding: 4px 8px; }
 .dp-table .dp-prog { min-width: 90px; }
+/* Kéo thả chức năng từ menu trái lên thanh Favorite phía trên */
+.side nav a[draggable="true"] { -webkit-touch-callout: none; }
+.bar-cat-wrap { position: relative; display: inline-flex; border-radius: 10px; }
+.bar-cat-wrap .bar-del { position: absolute; top: -7px; right: -7px; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line); background: #fff; color: #b91c1c; font-size: 10px; line-height: 1; padding: 0; cursor: pointer; display: none; }
+.bar-cat-wrap:hover .bar-del { display: block; }
+@media (hover: none) { .bar-cat-wrap .bar-del { display: block; } }
+.bar-cat.empty { border-style: dashed; color: var(--muted); }
+.bar-empty { font-size: 11px; font-weight: 400; opacity: .8; }
+.fav-add { border: 1px dashed var(--primary); background: var(--primary-soft); color: var(--primary); border-radius: 8px; padding: 6px 12px; cursor: pointer; font-weight: 600; font-size: 13px; white-space: nowrap; flex: none; font-family: inherit; }
+.fav-add:hover { background: var(--primary); color: #fff; }
+.bar-drop { display: inline-flex; align-items: center; padding: 6px 12px; border: 1px dashed var(--line); border-radius: 8px; font-size: 13px; color: var(--muted); white-space: nowrap; background: #fff; }
+.bar-drop.trash { color: #b91c1c; border-color: #fca5a5; }
+.fav-bar.dragging .bar-cat { border-style: dashed; border-color: var(--primary); }
+.fav-bar.dragging .fav-add, .fav-bar.dragging .bar-drop { animation: barPulse 1.2s ease-in-out infinite; }
+.bar-cat-wrap.drop .bar-cat, .fav-add.drop, .bar-drop.drop { background: var(--primary); color: #fff; border-style: solid; border-color: var(--primary); transform: scale(1.06); animation: none; }
+.bar-drop.trash.drop { background: #dc2626; border-color: #dc2626; }
+@keyframes barPulse { 50% { box-shadow: 0 0 0 4px var(--primary-soft); } }
+.bar-flash { position: absolute; z-index: 36; top: calc(100% + 4px); right: 16px; box-shadow: 0 4px 12px #0f172a1f; font-size: 12.5px; color: #15803d; background: #dcfce7; border-radius: 8px; padding: 4px 10px; white-space: nowrap; }
+.bar-tools.drop { outline: 2px dashed var(--primary); outline-offset: 4px; border-radius: 10px; }
+.bar-tools a { position: relative; }
+.bar-tools a .tool-x { margin-left: auto; color: var(--muted); font-size: 12px; padding: 0 4px; opacity: 0; }
+.bar-tools a:hover .tool-x { opacity: 1; }
+.bar-tools a .tool-x:hover { color: #b91c1c; }
+@media (hover: none) { .bar-tools a .tool-x { opacity: .7; } }
+.bar-tools a .tcode + .tool-x { margin-left: 6px; }
+.bar-hint { grid-column: 1 / -1; padding: 18px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: 10px; }
+.bar-panel-head .actions { display: flex; gap: 6px; }
+.pick-cats { display: grid; gap: 8px; }
+.pick-cats .btn { justify-content: flex-start; text-align: left; padding: 10px 12px; }

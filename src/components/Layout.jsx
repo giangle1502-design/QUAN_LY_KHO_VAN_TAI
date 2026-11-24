@@ -12,6 +12,7 @@ import NoticeBell from './NoticeBell';
 import ChatBell from './ChatBell';
 import { codeMatches, findTarget, parseCommand, tcodeOf } from '../lib/tcodes';
 import { BarEditor, FAV_KEY, MenuEditor, itemId, useNavLayout } from './NavCustom';
+import { Modal } from './ui';
 
 // Nhóm thu gọn sẵn lần đầu: các nhóm danh mục, quản trị dữ liệu
 const DEFAULT_CLOSED = ['quan-tri', ...GROUPS.map((g) => `dm:${g}`)];
@@ -243,8 +244,77 @@ export default function Layout() {
     document.addEventListener('mousedown', off);
     return () => document.removeEventListener('mousedown', off);
   }, [barOpen]);
-  const barCats = nav.bar.filter((c) => c.items.length);
+  // Hiện cả danh mục trống (vừa bấm ➕ Thêm Favorite) để người dùng kéo công cụ vào
+  const barCats = nav.bar;
   const openCat = barCats.find((c) => c.key === barOpen);
+  // ---------- Kéo thả công cụ từ menu trái lên thanh trên cùng ----------
+  // drag: { id } (mục menu trái) | { id, from } (công cụ trong bảng danh mục) | { cat } (đổi chỗ danh mục)
+  const [drag, setDrag] = useState(null);
+  const dragRef = useRef(null);
+  const [hover, setHover] = useState(null); // ô đang được kéo qua: key danh mục / 'new' / 'fav' / 'trash' / 'tool:<id>'
+  const hoverTimer = useRef(0);
+  const [flash, setFlash] = useState('');
+  const flashTimer = useRef(0);
+  const say = (t) => { setFlash(t); clearTimeout(flashTimer.current); flashTimer.current = setTimeout(() => setFlash(''), 2600); };
+  const labelOf = (id) => nav.all.get(id)?.label || id;
+  const catTitle = (k) => barCats.find((c) => c.key === k)?.title || '';
+  const startDrag = (e, d) => {
+    dragRef.current = d;
+    e.dataTransfer.effectAllowed = 'copyMove';
+    try { e.dataTransfer.setData('application/x-nav', d.id || d.cat); } catch { /* trình duyệt cũ */ }
+    setTimeout(() => setDrag(d), 0); // đổi giao diện sau khi trình duyệt chụp ảnh kéo
+  };
+  const endDrag = () => { dragRef.current = null; setDrag(null); setHover(null); clearTimeout(hoverTimer.current); };
+  // accept(d) → ô này có nhận kiểu kéo này không
+  const dropZone = (zone, accept, onDrop, openKey) => ({
+    onDragOver: (e) => {
+      const d = dragRef.current;
+      if (!d || !accept(d)) return;
+      e.preventDefault(); e.stopPropagation();
+      e.dataTransfer.dropEffect = d.from || d.cat ? 'move' : 'copy';
+      if (hover !== zone) {
+        setHover(zone);
+        clearTimeout(hoverTimer.current);
+        // Giữ chuột trên danh mục một lúc → mở bảng công cụ để thả đúng vị trí
+        if (openKey && d.id) hoverTimer.current = setTimeout(() => setBarOpen(openKey), 650);
+      }
+    },
+    onDragLeave: (e) => {
+      // Chrome hay báo rời ô khi đi qua chữ / biểu tượng bên trong → chỉ tính là rời khi chuột thật sự ra ngoài ô
+      const r = e.currentTarget.getBoundingClientRect();
+      if (e.clientX > r.left && e.clientX < r.right && e.clientY > r.top && e.clientY < r.bottom) return;
+      setHover((h) => (h === zone ? null : h)); clearTimeout(hoverTimer.current);
+    },
+    onDrop: (e) => { const d = dragRef.current; if (!d || !accept(d)) return; e.preventDefault(); e.stopPropagation(); onDrop(d); endDrag(); },
+  });
+  const addToCat = (id, key, beforeId = null, from = null) => {
+    if (from === key && !beforeId) return;
+    const r = navApi.barDrop(id, key, beforeId, from);
+    say(r === 'exists' ? `“${labelOf(id)}” đã có trong ${catTitle(key)}` : from && from !== key ? `↪ Đã chuyển “${labelOf(id)}” sang ${catTitle(key)}` : from ? '✓ Đã đổi thứ tự' : `✓ Đã thêm “${labelOf(id)}” vào ${catTitle(key)}`);
+  };
+  const newCat = (id) => {
+    const t = window.prompt('Tên mục Favorite mới (VD: 🧾 Việc hằng ngày)', id ? (nav.secs.find((s) => s.key === nav.all.get(id)?.home)?.title || '') : '⭐ Favorite');
+    if (t === null) return null;
+    const key = navApi.barNew(t, id);
+    say(id ? `✓ Đã tạo “${t.trim() || 'Danh mục mới'}” với “${labelOf(id)}”` : `✓ Đã tạo “${t.trim() || 'Danh mục mới'}” — kéo chức năng ở menu trái thả vào đây`);
+    return key;
+  };
+  const delCat = (c) => {
+    if (!window.confirm(`Xóa mục “${c.title}” khỏi thanh trên cùng? (Các chức năng vẫn còn trong menu trái)`)) return;
+    navApi.setBar(nav.bar.filter((x) => x.key !== c.key).map((x) => ({ key: x.key, title: x.title, items: x.items.map(itemId) })));
+    if (barOpen === c.key) setBarOpen(null);
+    say(`🗑 Đã xóa “${c.title}”`);
+  };
+  const toFav = (id) => { if (!nav.fav.some((x) => itemId(x) === id)) navApi.toggleFav(id); say(`⭐ Đã ghim “${labelOf(id)}”`); };
+  // Điện thoại / máy cảm ứng (không kéo thả được): giữ ngón tay trên mục menu hoặc bấm chuột phải → chọn mục để thêm vào
+  const [pick, setPick] = useState(null);
+  const press = useRef({ t: 0, fired: false });
+  const pressProps = (id) => ({
+    onContextMenu: (e) => { e.preventDefault(); setPick(id); },
+    onTouchStart: () => { press.current.fired = false; clearTimeout(press.current.t); press.current.t = setTimeout(() => { press.current.fired = true; setPick(id); }, 550); },
+    onTouchMove: () => clearTimeout(press.current.t),
+    onTouchEnd: () => clearTimeout(press.current.t),
+  });
   const [editMenu, setEditMenu] = useState(false);
   const shownSecs = [...(nav.fav.length ? [{ key: FAV_KEY, title: '⭐ Yêu thích', items: nav.fav }] : []), ...nav.secs];
   // Hạng mục lớn → hạng mục con: các nhóm danh mục / thiết lập / quản trị gom vào 1 mục lớn (đặt ở vị trí nhóm con đầu tiên)
@@ -286,7 +356,10 @@ export default function Layout() {
     </div>
   );
   const navItem = (x) => (
-    <NavLink key={x.to + x.label} to={x.to} end={x.end} className={x.cls} onClick={close}>
+    <NavLink key={x.to + x.label} to={x.to} end={x.end} className={x.cls}
+      onClick={(e) => { if (press.current.fired) { e.preventDefault(); press.current.fired = false; return; } close(); }}
+      draggable={fullMenu} onDragStart={(e) => startDrag(e, { id: itemId(x) })} onDragEnd={endDrag} {...(fullMenu ? pressProps(itemId(x)) : {})}
+      title={fullMenu ? 'Kéo thả lên thanh phía trên để thêm vào Favorite (điện thoại: giữ ngón tay)' : undefined}>
       <span className="ico">{x.ico}</span>{x.label}{x.badge ? <span className="badge red" style={{ marginLeft: 6 }}>{x.badge}</span> : null}
       {tcodeOf(x.to) && <span className="tcode" title={`Mã lệnh tắt: gõ /${tcodeOf(x.to)} (mở tại đây) hoặc /O&${tcodeOf(x.to)} (mở tab mới) vào ô Tìm chức năng`}>{tcodeOf(x.to)}</span>}
       <span className={'fav-star' + (x.fav ? ' on' : '')} role="button" title={x.fav ? 'Bỏ khỏi Yêu thích' : 'Ghim vào Yêu thích'}
@@ -376,34 +449,78 @@ export default function Layout() {
       </aside>
       {open && <div className="side-bg" onClick={close} />}
       {editBar && <BarEditor view={nav} api={navApi} onClose={() => setEditBar(false)} />}
+      {pick && (
+        <Modal title={`Thêm “${labelOf(pick)}” vào…`} onClose={() => setPick(null)}>
+          <div className="pick-cats">
+            {barCats.map((c) => (
+              <button key={c.key} type="button" className="btn" onClick={() => { addToCat(pick, c.key); setPick(null); }}>
+                {c.title}{c.items.some((x) => itemId(x) === pick) ? ' ✓' : ''}
+              </button>
+            ))}
+            <button type="button" className="btn" onClick={() => { toFav(pick); setPick(null); }}>⭐ Ghim lẻ lên thanh</button>
+            <button type="button" className="btn primary" onClick={() => { if (newCat(pick)) setPick(null); }}>➕ Tạo mục Favorite mới</button>
+          </div>
+        </Modal>
+      )}
       {editMenu && <MenuEditor view={nav} api={navApi} multi={multi} setMulti={setMulti} onClose={() => setEditMenu(false)} />}
       <main ref={mainRef}>
         <div className={'topwrap' + (fullMenu ? ' has-fav' : '')} ref={topRef}>
         <div className="topbar">
           <button className="menu-btn" onClick={() => setOpen(true)}>☰</button>
           {fullMenu && (
-            <div className="fav-bar">
+            <div className={'fav-bar' + (drag ? ' dragging' : '')}>
               {barCats.map((c) => (
-                <button type="button" key={c.key} className={'bar-cat' + (barOpen === c.key ? ' on' : '') + (c.items.some((x) => here(x.to)) ? ' cur' : '')}
-                  onClick={() => setBarOpen(barOpen === c.key ? null : c.key)} aria-expanded={barOpen === c.key}>
-                  {c.title} <span className="caret">{barOpen === c.key ? '▴' : '▾'}</span>
-                </button>
+                <span key={c.key} className={'bar-cat-wrap' + (hover === c.key ? ' drop' : '')}
+                  {...dropZone(c.key, (d) => (d.cat ? d.cat !== c.key : d.from !== c.key), (d) => (d.cat ? navApi.barMoveCat(d.cat, c.key) : addToCat(d.id, c.key, null, d.from)), c.key)}>
+                  <button type="button" className={'bar-cat' + (barOpen === c.key ? ' on' : '') + (c.items.some((x) => here(x.to)) ? ' cur' : '') + (c.items.length ? '' : ' empty')}
+                    draggable onDragStart={(e) => startDrag(e, { cat: c.key })} onDragEnd={endDrag}
+                    onClick={() => setBarOpen(barOpen === c.key ? null : c.key)} aria-expanded={barOpen === c.key}
+                    title={c.items.length ? `${c.items.length} chức năng · kéo để đổi chỗ` : 'Mục trống — kéo chức năng ở menu trái thả vào đây'}>
+                    {c.title} {!c.items.length && <span className="bar-empty">trống</span>}<span className="caret">{barOpen === c.key ? '▴' : '▾'}</span>
+                  </button>
+                  <button type="button" className="bar-del" title={`Xóa mục “${c.title}”`} onClick={() => delCat(c)}>✕</button>
+                </span>
               ))}
               {nav.fav.map((x) => (
                 <NavLink key={x.to} to={x.to} end={x.end} className={x.cls} title="Yêu thích (bấm ☆ trong menu để ghim / bỏ)">{x.ico} {x.label}</NavLink>
               ))}
-              <button type="button" className="fav-edit" title="Tạo / sửa danh mục công cụ của tôi" onClick={() => setEditBar(true)}>{barCats.length ? '⚙' : '+ Tạo danh mục công cụ'}</button>
+              {drag?.id && !drag.from && !nav.fav.some((x) => itemId(x) === drag.id) && (
+                <span className={'bar-drop' + (hover === 'fav' ? ' drop' : '')} {...dropZone('fav', (d) => d.id && !d.from, (d) => toFav(d.id))}>⭐ Ghim lẻ</span>
+              )}
+              <button type="button" className={'fav-add' + (hover === 'new' ? ' drop' : '')} title="Tạo mục Favorite mới trên thanh này, rồi kéo chức năng ở menu trái thả vào"
+                onClick={() => { const k = newCat(null); if (k) setBarOpen(k); }}
+                {...dropZone('new', (d) => !!d.id, (d) => { const k = newCat(d.id); if (k && d.from) navApi.barRemove(d.from, d.id); })}>
+                {drag?.id ? '➕ Thả vào đây để tạo mục mới' : '➕ Thêm Favorite'}
+              </button>
+              {drag?.from && <span className={'bar-drop trash' + (hover === 'trash' ? ' drop' : '')} {...dropZone('trash', (d) => !!d.from, (d) => { navApi.barRemove(d.from, d.id); say(`🗑 Đã bỏ “${labelOf(d.id)}” khỏi ${catTitle(d.from)}`); })}>🗑 Thả vào đây để bỏ</span>}
+              <button type="button" className="fav-edit" title="Sửa danh mục công cụ của tôi (đổi tên, thứ tự, xóa)" onClick={() => setEditBar(true)}>⚙</button>
+              {flash && !openCat && <span className="bar-flash">{flash}</span>}
             </div>
           )}
           <div className="top-tools"><ChatBell /><NoticeBell /></div>
         </div>
         {openCat && (
           <div className="bar-panel">
-            <div className="bar-panel-head"><b>{openCat.title}</b><button type="button" className="btn ghost sm" onClick={() => { setBarOpen(null); setEditBar(true); }}>⚙ Sửa danh mục</button></div>
-            <div className="bar-tools">
+            <div className="bar-panel-head">
+              <b>{openCat.title}</b>
+              <span className="actions">
+                <button type="button" className="btn ghost sm" onClick={() => { setBarOpen(null); setEditBar(true); }}>⚙ Sửa danh mục</button>
+                <button type="button" className="btn ghost sm" onClick={() => delCat(openCat)}>🗑 Xóa mục này</button>
+              </span>
+            </div>
+            <div className={'bar-tools' + (hover === `end:${openCat.key}` ? ' drop' : '')}
+              {...dropZone(`end:${openCat.key}`, (d) => !!d.id, (d) => addToCat(d.id, openCat.key, null, d.from))}>
               {openCat.items.map((x) => (
-                <NavLink key={x.to} to={x.to} end={x.end} className={x.cls} onClick={() => setBarOpen(null)}><span className="ico">{x.ico}</span>{x.label}{tcodeOf(x.to) && <span className="tcode">{tcodeOf(x.to)}</span>}</NavLink>
+                <NavLink key={x.to} to={x.to} end={x.end} className={x.cls}
+                  draggable onDragStart={(e) => startDrag(e, { id: itemId(x), from: openCat.key })} onDragEnd={endDrag}
+                  onClick={() => setBarOpen(null)} title="Kéo để đổi thứ tự, kéo sang mục khác để chuyển, kéo ra 🗑 để bỏ"
+                  {...dropZone(`tool:${itemId(x)}`, (d) => !!d.id && d.id !== itemId(x), (d) => addToCat(d.id, openCat.key, itemId(x), d.from))}
+                  style={hover === `tool:${itemId(x)}` ? { boxShadow: 'inset 3px 0 0 var(--primary)' } : undefined}>
+                  <span className="ico">{x.ico}</span>{x.label}{tcodeOf(x.to) && <span className="tcode">{tcodeOf(x.to)}</span>}
+                  <span className="tool-x" role="button" title="Bỏ khỏi mục này" onClick={(e) => { e.preventDefault(); e.stopPropagation(); navApi.barRemove(openCat.key, itemId(x)); }}>✕</span>
+                </NavLink>
               ))}
+              {!openCat.items.length && <div className="bar-hint">Mục này đang trống. Kéo chức năng ở menu bên trái thả vào đây (điện thoại: giữ ngón tay trên chức năng).</div>}
             </div>
           </div>
         )}
