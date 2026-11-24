@@ -24,6 +24,7 @@ import { ViewPresets, useTableTools } from '../components/TableTools';
 import { dragHeadProps, orderCols } from '../lib/colOrder';
 import { RenameUserButton } from './admin/RenameUser';
 import { RenameCodeButton } from './admin/RenameCode';
+import { mergeIntoGroup } from '../lib/mergeGroup';
 import { AddRoleButton, PartnerFixedFilters, PartnerForm, PartnerNotices, usePartnerRows } from './Partners';
 
 // Bố cục thẻ tìm kiếm gợi ý cho Đối tác (giống MISA); người dùng tự chỉnh lại được
@@ -269,6 +270,8 @@ export function EditForm({ cat, fields, row, existing = [], onClose, onSaved }) 
   const isNew = !row._id;
   const editable = canEdit(cat, isNew ? null : row);
   const keys = keyFieldsOf(cat);
+  // Vị trí / cửa xuất-nhập: quản trị đổi được Kho (VD DAMC → Kho chung CANG), bản ghi chuyển sang mã mới
+  const movable = !isNew && isAdmin && ['locations', 'docks'].includes(cat.key);
   const [form, setForm] = useState(() => (isNew ? { ...defaultsOf(fields), ...row } : { ...row }));
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -303,10 +306,21 @@ export function EditForm({ cat, fields, row, existing = [], onClose, onSaved }) 
       else out[f.key] = cleanValue(f, form[f.key]);
     });
     const final = applyComputed(fields, out);
-    const id = isNew ? docIdOf(cat, final) : row._id;
+    const newId = movable ? docIdOf(cat, final) : '';
+    const moved = movable && newId && newId !== row._id;
+    const id = isNew ? docIdOf(cat, final) : moved ? newId : row._id;
     if (!id) return setErr('Thiếu mã bản ghi.');
     setBusy(true);
     try {
+      if (moved) {
+        if ((await getDoc(doc(db, cat.key, id))).exists()) throw new Error(`${cat.short} ${final.code} đã có ở ${final.warehouse}. Xóa bản này hoặc chọn kho khác.`);
+        const { _id, ...old } = row;
+        await setDoc(doc(db, cat.key, id), { ...old, ...final, movedFrom: row._id, updatedAt: serverTimestamp(), updatedBy: email });
+        try { await deleteDoc(doc(db, cat.key, row._id)); } catch { /* quản trị thường không xóa được: bản cũ để quản trị gốc xóa */ }
+        onSaved(`Đã chuyển ${cat.short} ${final.code} sang ${final.warehouse}.`, id, final);
+        setBusy(false);
+        return;
+      }
       if (isNew) {
         if (existing.some((r) => r._id === id) || (await getDoc(doc(db, cat.key, id))).exists())
           throw new Error('Mã này đã tồn tại trong danh mục.');
@@ -316,7 +330,15 @@ export function EditForm({ cat, fields, row, existing = [], onClose, onSaved }) 
       }
       // Khách hàng / NCC: cập nhật hồ sơ đối tác cùng mã (không chặn nếu lỗi)
       await syncFromCatalog(cat.key, [{ id, data: final }], { email });
-      onSaved(isNew ? 'Đã thêm.' : 'Đã lưu.', id, final);
+      // Kho chung: tự gộp vị trí / cửa của các kho thành viên về Kho chung
+      let extra = '';
+      if (cat.key === 'warehouseGroups' && final.active !== false) {
+        try {
+          const r = await mergeIntoGroup({ ...final, code: id }, { email, canDelete: isSuper });
+          if (r.locs || r.docks) extra = ` Đã gộp ${r.locs} vị trí${r.docks ? ` và ${r.docks} cửa xuất/nhập` : ''} của ${(final.members || []).join(', ')} vào ${id}: các kho thành viên dùng chung.`;
+        } catch (e3) { extra = ` Chưa gộp được vị trí (${e3.code || e3.message}): vào Tồn kho & vận hành → Kho chung & vị trí dùng chung → Gộp.`; }
+      }
+      onSaved((isNew ? 'Đã thêm.' : 'Đã lưu.') + extra, id, final);
     } catch (e2) {
       setErr(e2.code === 'permission-denied'
         ? `Không có quyền ghi ${cat.short}. Nếu đây là danh mục mới (VD Kho chung): quản trị gốc dán lại quy tắc Firestore mới (Firebase → Firestore Database → Rules → Publish). Nếu không: kiểm tra phân quyền.`
@@ -345,7 +367,7 @@ export function EditForm({ cat, fields, row, existing = [], onClose, onSaved }) 
         )}
         <div className="form-grid">
           {shownFields.map((f) => {
-            const ro = !editable || f.computed || f.system || (!isNew && keys.includes(f.key));
+            const ro = !editable || f.computed || f.system || (!isNew && keys.includes(f.key) && !(movable && f.key === 'warehouse'));
             return (
               <Field key={f.key} label={f.label} required={f.required && !ro} help={f.help} full={f.type === 'multiref' || (f.type === 'textarea' && !f.width)} size={f}>
                 {ro && (f.computed || f.system) ? (
