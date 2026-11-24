@@ -5,6 +5,7 @@ import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { useCollection } from '../../lib/hooks';
 import { allGroups, locWh, noCapacity } from '../../lib/whGroups';
+import { estPallets } from '../../lib/stock';
 import { fmtNum } from '../../lib/utils';
 import { ErrorBox, Field } from '../../components/ui';
 import Select from '../../components/Select';
@@ -115,13 +116,16 @@ export default function WarehouseGroups() {
 
   // Tồn kho thực tế → số pallet từng vị trí (theo kho chung)
   const palletsByLoc = async () => {
-    const s = await getDocs(collection(db, 'stock'));
+    const [s, its] = await Promise.all([getDocs(collection(db, 'stock')), getDocs(collection(db, 'items'))]);
+    const itemMap = new Map(its.docs.map((d) => [d.data().code || d.id, d.data()]));
     const m = new Map();
     for (const d of s.docs) {
       const r = d.data();
       if (!r.location) continue;
       const k = `${locWh(r.warehouse)}__${r.location}`;
-      m.set(k, r3(n(m.get(k)) + Math.max(0, n(r.pallets))));
+      // Dòng tồn chỉ ghi kg / bao (phiếu cũ không ghi pallet): quy đổi theo quy cách mã hàng
+      if (n(r.kg) <= 0 && n(r.bags) <= 0 && n(r.pallets) <= 0) continue;
+      m.set(k, r3(n(m.get(k)) + Math.max(0, estPallets(itemMap.get(r.item), r))));
     }
     return m;
   };

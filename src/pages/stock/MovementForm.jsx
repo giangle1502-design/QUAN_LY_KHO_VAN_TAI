@@ -12,7 +12,7 @@ import { useApp } from '../../context/AppContext';
 import { useCollection, useCompanies, useMyWarehouses, useOpCompany, useOpWarehouse, useOrders, usePendingIn, useStock, useTrips, useWaitingOut } from '../../lib/hooks';
 import { CompanyPicker } from '../../components/TripBits';
 import { IN_SOURCES, OPEN_STATUSES, ORDER_FOR_MOVE, ORDER_TYPES, isReturn, lineFrom, lineShip, lineTo, lineWh, matchOrderLine, openKg, orderInWarehouse, orderWarehouse, stoRoute } from '../../lib/orders';
-import { MOVE_TYPES, ageDays, createWaitingOut, kgOf, postMovement, suggestPallets } from '../../lib/stock';
+import { MOVE_TYPES, ageDays, createWaitingOut, estPallets, kgOf, postMovement, suggestPallets } from '../../lib/stock';
 import { releaseStatusOfWh } from '../../lib/release';
 import { ST, vnDate } from '../../lib/trips';
 import { createPlannedTrips } from '../../lib/transport';
@@ -28,7 +28,7 @@ import { QuickAdd, WithAdd } from '../../components/FormTools';
 import { ItemCode, ItemStockModal } from '../../components/ItemStock';
 import PalletChoice from '../../components/PalletChoice';
 import { cleanPallets, packingMode, palletError, palletManaged } from '../../lib/pallets';
-import { OVER_CAP_CONFIRM, OVER_CAP_MSG, capacityCheck, splitByCapacity } from '../../lib/capacity';
+import { OVER_CAP_CONFIRM, OVER_CAP_MSG, capacityCheck, hasCapacity, splitByCapacity, withStockOccupancy } from '../../lib/capacity';
 import Select from '../../components/Select';
 import LotListImport from '../../components/LotListImport';
 import { LOT_REQ_HINT, lotPickOrder, lotRequired } from '../../lib/lots';
@@ -85,7 +85,7 @@ function Form({ type }) {
   // Tình trạng hàng HTC sau khi giải chấp ở kho này (DGC; cảng: KTC)
   const relTo = releaseStatusOfWh(wh);
   const items = useCollection('items').rows;
-  const locations = locsOfWh(useCollection('locations').rows, whCode);
+  const whLocations = locsOfWh(useCollection('locations').rows, whCode);
   const statusRows = useCollection('goodsStatus').rows;
   const statuses = useMemo(() => withBlock(statusRows), [statusRows]);
   const pledgees = useCollection('pledgees').rows;
@@ -102,6 +102,8 @@ function Form({ type }) {
   }).filter((r) => num(r.kg) > 0.001)), [stockAll, waitOut, type]);
   const { rows: trips } = useTrips([ST.PROCESSING], whCode);
   const itemMap = useMemo(() => new Map(items.map((i) => [i.code, i])), [items]);
+  // Số pallet đang chứa: lấy theo tồn thực tế nếu cao hơn số ghi trên vị trí (phiếu cũ chỉ ghi kg)
+  const locations = useMemo(() => withStockOccupancy(whLocations, stockAll, itemMap), [whLocations, stockAll, itemMap]);
   const statusMap = useMemo(() => new Map(statuses.map((s) => [s.code, s])), [statuses]);
 
   // Phiếu xuất theo SO hoặc STO (kho đi), phiếu nhập theo PO hoặc STO (kho đến, hàng đang đi đường)
@@ -778,9 +780,13 @@ function Form({ type }) {
         if (!num(l.kg) && !num(l.bags) && !num(l.pallets)) return setErr(no + 'nhập số kg, pallet hoặc số bao.');
         if (l.goodsStatus === 'HTC' && !l.pledgee) return setErr(no + 'hàng HTC cần chọn bên nhận thế chấp.');
         if (lotRequired(itemMap.get(l.item)) && !String(l.lot || '').trim()) return setErr(no + `mã ${l.item} bắt buộc quản lý lot: nhập số lot.`);
+        // Số pallet chiếm vị trí: chưa nhập thì quy đổi từ kg / bao; vị trí có sức chứa mà không quy đổi được thì bắt nhập
+        const inPallets = estPallets(itemMap.get(l.item), l);
+        if (!inPallets && hasCapacity(locations.find((x) => x.code === l.location)))
+          return setErr(no + `nhập số pallet (vị trí ${l.location} tính sức chứa theo pallet; mã ${l.item} chưa khai báo quy cách bao/pallet để tự quy đổi).`);
         out.push({ ...(l.orderLine != null ? { orderLine: l.orderLine } : {}), ...(l.orderId ? { _oid: l.orderId } : {}), ...(l.toBlock ? { toBlock: true } : {}), item: l.item, itemName: itemMap.get(l.item).name, lot: l.lot.trim(), mfgDate: l.mfgDate, expDate: l.expDate,
           location: l.location, goodsStatus: l.goodsStatus, pledgee: l.goodsStatus === 'HTC' ? l.pledgee : '', company: l.company || head.company,
-          bags: num(l.bags), pallets: num(l.pallets), kg: num(l.kg) });
+          bags: num(l.bags), pallets: inPallets, kg: num(l.kg) });
         continue;
       }
       const r = stockById.get(l.stockId);
@@ -1320,8 +1326,11 @@ function LocationSelect({ value, onChange, locations, exclude, wh }) {
     <Select value={value} onChange={(e) => onChange(e.target.value)}>
       <option value="">-- Vị trí --</option>
       {locations.filter((x) => x.code !== exclude).sort((a, b) => a.code.localeCompare(b.code)).map((x) => {
-        const free = num(x.capacity) - num(x.currentPallets);
-        return <option key={x.code} value={x.code} disabled={x.locked}>{x.blockStock ? '🚫 ' : ''}{x.code} · trống {fmtNum(free, 1)}/{fmtNum(x.capacity)} pallet{x.locked ? ' (khóa)' : ''}{x.blockStock ? ' · khu hàng block' : ''}</option>;
+        const free = Math.max(0, num(x.capacity) - num(x.currentPallets));
+        // Có hàng nhưng chưa quy đổi được pallet (mã hàng thiếu quy cách): không báo "trống" mà ghi số kg đang có
+        const occ = num(x.currentPallets) > 0.001 || !(num(x.stockKg) > 0.001) ? '' : ` · đang có ${fmtNum(x.stockKg)} kg`;
+        const room = num(x.capacity) ? `${num(x.currentPallets) > 0.001 || occ ? 'còn' : 'trống'} ${fmtNum(free, 1)}/${fmtNum(x.capacity)} pallet` : num(x.currentPallets) > 0.001 || occ ? 'có hàng' : 'trống';
+        return <option key={x.code} value={x.code} disabled={x.locked}>{x.blockStock ? '🚫 ' : ''}{x.code} · {room}{occ}{x.locked ? ' (khóa)' : ''}{x.blockStock ? ' · khu hàng block' : ''}</option>;
       })}
     </Select>
     </WithAdd>

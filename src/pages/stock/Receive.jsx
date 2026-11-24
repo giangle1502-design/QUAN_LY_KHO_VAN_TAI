@@ -5,13 +5,13 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
-import { useCollection } from '../../lib/hooks';
+import { useCollection, useStock } from '../../lib/hooks';
 import { IN_SOURCES } from '../../lib/orders';
-import { confirmIn } from '../../lib/stock';
+import { confirmIn, estPallets } from '../../lib/stock';
 import { fmtDate, fmtNum } from '../../lib/utils';
 import { CloseButton, Empty, ErrorBox, useDirty } from '../../components/ui';
 import { InLine, OverCapConfirm, newLine, splitLineAt } from './MovementForm';
-import { OVER_CAP_CONFIRM, OVER_CAP_MSG, capacityCheck } from '../../lib/capacity';
+import { OVER_CAP_CONFIRM, OVER_CAP_MSG, capacityCheck, hasCapacity, withStockOccupancy } from '../../lib/capacity';
 import PalletChoice from '../../components/PalletChoice';
 import { ExtraView } from '../../components/ExtraFields';
 import { PRINTED_KEY, clearLabelState, labelSig, readLabelsPrinted, saveLabelDraft } from '../../lib/labelDraft';
@@ -101,6 +101,8 @@ function ReceiveForm({ id }) {
   const items = useCollection('items').rows;
   const itemMap = useMemo(() => new Map(items.map((i) => [i.code, i])), [items]);
   const allLocations = useCollection('locations').rows;
+  // Tồn của kho phiếu: tính số pallet đang chứa thực tế của vị trí
+  const { rows: whStock } = useStock(mv?.warehouse || '__none__');
   const statusRows = useCollection('goodsStatus').rows;
   const statuses = useMemo(() => withBlock(statusRows), [statusRows]);
   const pledgees = useCollection('pledgees').rows;
@@ -148,7 +150,7 @@ function ReceiveForm({ id }) {
   const chg = useDirty({ lines, pal });
   if (mv === undefined) return <p>Đang tải…</p>;
   if (!mv) return <Empty text={`Không tìm thấy phiếu ${id}.`} />;
-  const locations = locsOfWh(allLocations, mv.warehouse);
+  const locations = withStockOccupancy(locsOfWh(allLocations, mv.warehouse), whStock, itemMap);
   const setLine = (i, p) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...p } : l)));
   // Sức chứa vị trí: dòng vượt chỗ trống phải chia dòng hoặc tích xác nhận nhập vượt
   const caps = capacityCheck(lines, locations);
@@ -165,13 +167,16 @@ function ReceiveForm({ id }) {
       if (!l.location) return setErr(no + 'chọn vị trí nhận hàng.');
       if (lotRequired(itemMap.get(l.item)) && !String(l.lot || '').trim()) return setErr(no + `mã ${l.item} bắt buộc quản lý lot: nhập số lot.`);
       if (l.goodsStatus === 'HTC' && !l.pledgee) return setErr(no + 'hàng HTC cần chọn bên nhận thế chấp.');
+      const inPallets = estPallets(itemMap.get(l.item), l);
+      if (!inPallets && hasCapacity(locations.find((x) => x.code === l.location)))
+        return setErr(no + `nhập số pallet (vị trí ${l.location} tính sức chứa theo pallet; mã ${l.item} chưa khai báo quy cách bao/pallet để tự quy đổi).`);
       // Dòng thêm mới (khác lot…) lấy dòng đơn của dòng cùng mã hàng trên phiếu (phiếu gộp: trong phiếu con của dòng)
       const pc = pieces.find((x) => x.id === l._mv) || pieces[0] || mv;
       const ol = l.orderLine ?? pc.lines.find((x) => x.item === l.item)?.orderLine;
       if (pc.orderId && ol == null) return setErr(no + `mã hàng ${l.item} không có trong phiếu / đơn ${pc.orderId}.`);
       out.push({ _mv: pc.id, ...(ol != null ? { orderLine: ol } : {}), item: l.item, itemName: itemMap.get(l.item).name, lot: String(l.lot || '').trim(), mfgDate: l.mfgDate || '', expDate: l.expDate || '',
         location: l.location, goodsStatus: l.goodsStatus, pledgee: l.goodsStatus === 'HTC' ? l.pledgee : '', company: l.company || mv.company || '',
-        bags: num(l.bags), pallets: num(l.pallets), kg: num(l.kg) });
+        bags: num(l.bags), pallets: inPallets, kg: num(l.kg) });
     }
     if (caps.some((c) => c?.over) && !overOk) return setErr(`${OVER_CAP_MSG}. Chia thành nhiều dòng hoặc tích "${OVER_CAP_CONFIRM}".`);
     if (!out.length) return setErr('Nhập số thực nhận cho ít nhất 1 dòng (hàng không về thì báo quản trị hủy phiếu).');
