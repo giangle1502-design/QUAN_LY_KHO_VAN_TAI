@@ -1,3 +1,4 @@
+import { printsLabels } from '../../lib/whGroups';
 import { useEffect, useMemo, useState } from 'react';
 import { ScopeFilters, useOpScope } from '../../components/ScopeFilter';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -129,7 +130,7 @@ export default function Movements() {
                   <td className="nowrap" onClick={(e) => e.stopPropagation()}>{m.status === 'cancelled' ? null
                     : m.status === 'pending' ? <Link className="btn sm" to={`/kho/nhan-hang/${m.id}`}>📥 Nhận hàng</Link>
                     : m.status === 'wait_release' ? <Link className="btn sm" to={`/kho/phieu/${m.id}/soan`} target="_blank">📋 Soạn hàng</Link>
-                    : m.type === 'in' ? <Link className="btn sm" to={`/kho/phieu/${m.id}/nhan`} target="_blank">🏷️ In nhãn</Link>
+                    : m.type === 'in' && printsLabels(m.warehouse) ? <Link className="btn sm" to={`/kho/phieu/${m.id}/nhan`} target="_blank">🏷️ In nhãn</Link>
                     : m.type === 'out' ? <Link className="btn sm" to={`/kho/phieu/${m.id}/soan`} target="_blank">📋 Soạn hàng</Link> : null}</td>
                 </tr>
                 );
@@ -220,7 +221,7 @@ export function MovementDetail({ m, onClose }) {
       <ExtraView formKey={MV_FORM[m.type]} rec={m} />
       <p><Link className="btn sm" to={`/kho/phieu/${m.id}/in`} target="_blank">🖨 In phiếu</Link>
         {m.status === 'pending' && <> <Link className="btn sm primary" to={`/kho/nhan-hang/${m.id}`}>📥 Thủ kho nhận hàng</Link></>}
-        {m.type === 'in' && m.status === 'posted' && <> <Link className="btn sm" to={`/kho/phieu/${m.id}/nhan`} target="_blank">🏷️ In nhãn pallet</Link></>}
+        {m.type === 'in' && m.status === 'posted' && printsLabels(m.warehouse) && <> <Link className="btn sm" to={`/kho/phieu/${m.id}/nhan`} target="_blank">🏷️ In nhãn pallet</Link></>}
         {m.type === 'out' && <> <Link className="btn sm" to={`/kho/phieu/${m.id}/soan`} target="_blank">📋 Phiếu soạn hàng</Link></>}
         {canEdit && <> <button type="button" className="btn sm" onClick={() => setEditing(true)} title="Sửa ngày, ghi chú, số lượng; tồn kho và đơn SO / PO / STO cập nhật theo">✏️ Sửa phiếu</button></>}</p>
       {editing && <EditSlip m={m} onClose={() => setEditing(false)} />}

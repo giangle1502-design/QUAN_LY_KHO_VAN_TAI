@@ -1,3 +1,4 @@
+import { printsLabels } from '../../lib/whGroups';
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
@@ -64,7 +65,7 @@ export default function PrintMovement({ pick = false }) {
     <>
       <Link className="btn" to="/kho/phieu">← Phiếu kho</Link>
       <button className="btn primary" onClick={() => window.print()}>🖨 In / Lưu PDF</button>
-      {m.type === 'in' && m.status === 'posted' && <Link className="btn" to={`/kho/phieu/${m.id}/nhan`}>🏷️ In nhãn pallet</Link>}
+      {m.type === 'in' && m.status === 'posted' && printsLabels(m.warehouse) && <Link className="btn" to={`/kho/phieu/${m.id}/nhan`}>🏷️ In nhãn pallet</Link>}
       {m.type === 'out' && (pick ? <Link className="btn" to={`/kho/phieu/${m.id}/in`}>📄 Phiếu xuất kho</Link> : <Link className="btn" to={`/kho/phieu/${m.id}/soan`}>📋 Phiếu soạn hàng</Link>)}
       {m.type === 'out' && !pick && (
         <label className="small">Số liên <Select value={nCopies} onChange={(e) => { const p = new URLSearchParams(params); p.set('lien', e.target.value); setParams(p, { replace: true }); }}>

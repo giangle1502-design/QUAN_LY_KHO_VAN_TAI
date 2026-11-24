@@ -59,6 +59,17 @@ export const hasKeeper = (wh) => {
   return whRows.get(wh)?.hasGuard !== false;
 };
 
+// In nhãn pallet / lot: chỉ kho mình tự quản lý (Kho Đức Hòa). Kho khách (Cảng, Mua nội địa, Ngoại quan, 3PL…) không in nhãn.
+// Kho thuộc Kho chung: theo ô "In nhãn pallet" của Kho chung (chưa đặt: Kho chung tên / mã có "Đức Hòa" = có).
+// Kho lẻ: ô "In nhãn pallet" của kho (chưa đặt: tên / mã có "Đức Hòa" = có)
+export const printsLabels = (wh) => {
+  if (!wh) return false;
+  const g = groups.get(wh) || byWh.get(wh);
+  if (g) return typeof g.printLabels === 'boolean' ? g.printLabels : isDucHoa(g);
+  const w = whRows.get(wh);
+  return typeof w?.printLabels === 'boolean' ? w.printLabels : isDucHoa(w || { code: wh });
+};
+
 // Pháp nhân mặc định của kho (VD VAP-Cảng → VAP)
 export const companyOfWh = (wh) => whRows.get(wh)?.company || '';
 export const whLabel = (code) => {

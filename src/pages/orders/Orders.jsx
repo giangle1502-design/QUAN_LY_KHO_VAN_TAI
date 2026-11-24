@@ -1,3 +1,4 @@
+import { printsLabels } from '../../lib/whGroups';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ScopeFilters, useOpScope } from '../../components/ScopeFilter';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -504,7 +505,7 @@ function OrderDetail({ o, onClose, onEdit }) {
               <td className="mono">{m.tripId}</td>
               <td className="num">{t(m.lines.reduce((s, l) => s + Math.abs(Number(l.kg) || 0), 0))} kg</td>
               <td>{m.status === 'cancelled' ? <span className="badge red">Đã hủy</span>
-                : m.type === 'in' ? <Link className="btn sm" to={`/kho/phieu/${m.id}/nhan`} target="_blank">🏷️ In nhãn</Link> : ''}</td>
+                : m.type === 'in' && printsLabels(m.warehouse) ? <Link className="btn sm" to={`/kho/phieu/${m.id}/nhan`} target="_blank">🏷️ In nhãn</Link> : ''}</td>
             </tr>
           ))}
         </tbody></table>
