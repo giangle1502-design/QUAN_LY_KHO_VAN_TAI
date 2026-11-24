@@ -10,7 +10,7 @@ import { DOC_TYPES, FONTS, MOVE_TYPES_OF, PAPERS, fieldDefs, marginOf, paperSize
 import { labelLines, loadMovementData, loadReleaseData } from '../lib/printData';
 import { TemplateSheets } from '../components/PrintTemplate';
 import RichEditor from '../components/RichEditor';
-import { Empty, ErrorBox } from '../components/ui';
+import { CloseButton, Empty, ErrorBox } from '../components/ui';
 import { norm, today } from '../lib/utils';
 import Select from '../components/Select';
 
@@ -280,6 +280,7 @@ function TemplateEditor({ id }) {
         <div className="toolbar" style={{ margin: 0 }}>
           <Link className="btn" to="/mau-in" onClick={(e) => { if (dirty && !window.confirm('Chưa lưu thay đổi. Vẫn rời trang?')) e.preventDefault(); }}>← Danh sách mẫu</Link>
           <button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Đang lưu…' : '💾 Lưu mẫu'}</button>
+          <CloseButton to="/mau-in" dirty={dirty} />
         </div>
       </div>
       <ErrorBox>{err}</ErrorBox>

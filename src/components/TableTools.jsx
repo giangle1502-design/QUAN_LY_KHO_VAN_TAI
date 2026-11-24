@@ -313,7 +313,7 @@ function ColumnMenu({ c, rect, kind, rows, getVal, value, sorts, setSorts, onApp
   const az = kind === 'number' ? ['Nhỏ → lớn', 'Lớn → nhỏ'] : kind === 'date' ? ['Cũ → mới', 'Mới → cũ'] : ['A → Z', 'Z → A'];
   const inputType = kind === 'number' ? 'number' : kind === 'date' ? 'date' : 'text';
   return createPortal(
-    <div className="col-menu" ref={ref} style={{ left: pos.left, top: pos.top }} onKeyDown={(e) => { if (e.key === 'Enter') apply(); if (e.key === 'Escape') onClose(); }}>
+    <div className="col-menu" ref={ref} style={{ left: pos.left, top: pos.top }} onKeyDown={(e) => { if (e.key === 'Enter') apply(); if (e.key === 'Escape') { e.preventDefault(); onClose(); } }}>
       <div className="col-menu-title">{c.label}</div>
       <div className="col-menu-sort">
         <button type="button" className="btn sm" onClick={() => sortOnly('asc')}>▲ {az[0]}</button>

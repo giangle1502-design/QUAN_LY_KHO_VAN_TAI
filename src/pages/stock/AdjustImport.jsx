@@ -7,7 +7,7 @@ import { exportTemplate, readFirstSheet, toNumber, toYmd } from '../../lib/excel
 import { kgOf, postMovement, stockId, suggestPallets } from '../../lib/stock';
 import { vnDate } from '../../lib/trips';
 import { fmtNum, norm } from '../../lib/utils';
-import { ErrorBox } from '../../components/ui';
+import { CloseButton, ErrorBox } from '../../components/ui';
 import { QuickAdd } from '../../components/FormTools';
 import { WithAdd } from '../../components/FormTools';
 import Select from '../../components/Select';
@@ -160,6 +160,7 @@ export default function AdjustImport() {
         <div className="actions">
           <Link className="btn" to="/kho/adjust">Điều chỉnh từng dòng</Link>
           <button className="btn ghost" onClick={() => exportTemplate('Mau_dieu_chinh_ton', COLS.map((c) => c[1]), COLS.map((c) => COL_NOTES[c[0]]))}>File mẫu</button>
+          <CloseButton to="/kho/ton" dirty={() => !busy && rows.length > 0} />
         </div>
       </div>
       <p className="hint">

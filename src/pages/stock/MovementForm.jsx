@@ -23,7 +23,7 @@ import { usePref } from '../../lib/prefs';
 import { ColumnPicker } from '../../components/FormTools';
 import { dragHeadProps, orderCols } from '../../lib/colOrder';
 import { useTableTools } from '../../components/TableTools';
-import { ErrorBox, Field, Modal } from '../../components/ui';
+import { CloseButton, ErrorBox, Field, Modal } from '../../components/ui';
 import { QuickAdd, WithAdd } from '../../components/FormTools';
 import { ItemCode, ItemStockModal } from '../../components/ItemStock';
 import PalletChoice from '../../components/PalletChoice';
@@ -954,6 +954,7 @@ function Form({ type }) {
         <div className="actions">
           {type === 'adjust' && <Link className="btn" to="/kho/dieu-chinh-excel">⬆ Nhập từ Excel</Link>}
           <Link className="btn" to="/kho/phieu">Danh sách phiếu</Link>
+          <CloseButton to="/kho/phieu" dirty={() => !busy && (lines.some((l) => l.item || l.stockId || num(l.kg) > 0) || !!(head.orderId || head.partyCode || head.refNo || head.note))} />
         </div>
       </div>
       {done && doneGroup && type === 'in' && <div className="ok-box" style={{ marginBottom: 10 }}>📦 Phiếu nhập gộp <b className="mono">{doneGroup.id}</b>: 1 xe về {doneGroup.orders.length} đơn ({doneGroup.orders.join(', ')}), đã lập phiếu <b className="mono">{doneGroup.ids.join(', ')}</b> (mỗi đơn 1 phiếu con). {donePosted ? <b>Tồn kho đã cập nhật.</b> : <><b>Chờ thủ kho nhận hàng</b>: thủ kho xác nhận 1 lần cho cả xe.</>}
