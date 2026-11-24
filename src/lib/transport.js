@@ -1,4 +1,4 @@
-import { locWh } from './whGroups';
+import { locWh, locOfWh } from './whGroups';
 import { collection, doc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore';
 import { enrichLine } from './dispatch';
 import { db } from '../firebase';
@@ -123,7 +123,7 @@ export async function createPlannedTrips({ wh, carrier, trips }, user, action = 
     const id = gids[i];
     // Vị trí lấy hàng (cảng SP-ITC, kho mua nội địa…): tài xế thấy vị trí + địa chỉ riêng của vị trí nếu có
     const locCodes = [...new Set(t.lines.flatMap((l) => String(l.location || '').split(',')).map((x) => x.trim()).filter(Boolean))];
-    const locRec = locCodes.map((c) => locs.find((x) => x.warehouse === locWh(wh.code) && x.code === c)).find((x) => x?.address || x?.mapLink);
+    const locRec = locCodes.map((c) => locs.find((x) => locOfWh(x, wh.code) && x.code === c)).find((x) => x?.address || x?.mapLink);
     const trip = {
       source: 'plan', purpose: 'export', warehouse: wh.code, warehouseName: wh.name || '', warehouseAddress: wh.address || '', warehouseMap: wh.mapLink || '',
       ...(t.pickup ? { pickup: t.pickup.code, pickupName: t.pickup.name || '', pickupAddress: t.pickup.address || '', pickupMap: t.pickup.mapLink || '' } : {}), hasGuard: wh.hasGuard !== false,

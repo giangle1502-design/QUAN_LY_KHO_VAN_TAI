@@ -1,3 +1,5 @@
+import { locOfWh } from './whGroups';
+
 // ============================================================================
 // Thông tin xuất hóa đơn cước vận chuyển: "Cước vận chuyển hạt nhựa từ <nơi nhận> đến <nơi giao>"
 //  • Nơi nhận: điểm nhận (cảng…) nếu chuyến có; không thì kho xuất:
@@ -16,7 +18,7 @@ export function whInvoice(code, locs = [], { warehouses = [], locations = [] } =
   if (!w) return { text: s(code), missing: !!code };
   const base = s(w.invoiceInfo) || s(w.address) || s(w.name) || code;
   if (w.invoiceCommon) return { text: base, missing: false };
-  const special = uniq(locs).map((lc) => locations.find((x) => x.warehouse === locWh(code) && x.code === lc)).filter((x) => x?.needInvoice);
+  const special = uniq(locs).map((lc) => locations.find((x) => locOfWh(x, code) && x.code === lc)).filter((x) => x?.needInvoice);
   if (special.length) {
     const texts = uniq(special.map((x) => s(x.invoiceInfo) || `${s(w.name) || code} – vị trí ${x.code}`));
     return { text: texts.join('; '), missing: special.some((x) => !s(x.invoiceInfo)) };

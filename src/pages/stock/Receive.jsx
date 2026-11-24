@@ -1,4 +1,4 @@
-import { locWh } from '../../lib/whGroups';
+import { locsOfWh } from '../../lib/whGroups';
 import { withBlock } from '../../catalogs';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -145,7 +145,7 @@ function ReceiveForm({ id }) {
   }, [id]);
   if (mv === undefined) return <p>Đang tải…</p>;
   if (!mv) return <Empty text={`Không tìm thấy phiếu ${id}.`} />;
-  const locations = allLocations.filter((l) => l.warehouse === locWh(mv.warehouse));
+  const locations = locsOfWh(allLocations, mv.warehouse);
   const setLine = (i, p) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...p } : l)));
   // Sức chứa vị trí: dòng vượt chỗ trống phải chia dòng hoặc tích xác nhận nhập vượt
   const caps = capacityCheck(lines, locations);

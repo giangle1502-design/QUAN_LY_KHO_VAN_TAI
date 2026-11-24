@@ -29,8 +29,14 @@ export const siblingsOf = (wh) => byWh.get(wh)?.members || (wh ? [wh] : []);
 // Mã kho / kho chung (của vị trí) → các kho pháp nhân dùng vị trí đó
 export const whsOfLocWh = (code) => groups.get(code)?.members || (code ? [code] : []);
 export const locIdOf = (wh, loc) => `${locWh(wh)}__${loc}`;
-// Vị trí của 1 kho pháp nhân (lọc danh mục Vị trí lưu trữ)
-export const locsOfWh = (locations, wh) => { const k = locWh(wh); return (locations || []).filter((l) => l.warehouse === k); };
+// Vị trí thuộc kho: vị trí của kho chung, hoặc vị trí còn khai báo riêng ở chính kho pháp nhân (chưa bấm Gộp)
+export const locOfWh = (l, wh) => !!wh && (l.warehouse === locWh(wh) || l.warehouse === wh);
+// Vị trí của 1 kho pháp nhân (lọc danh mục Vị trí lưu trữ). Trùng mã ở kho chung và kho riêng: lấy của kho chung
+export const locsOfWh = (locations, wh) => {
+  const k = locWh(wh);
+  const all = (locations || []).filter((l) => locOfWh(l, wh));
+  return k === wh ? all : all.filter((l) => l.warehouse === k || !all.some((x) => x.warehouse === k && x.code === l.code));
+};
 // Kho / kho chung không cần sức chứa (cảng, mua nội địa, 3PL…)
 export const noCapacity = (whOrGroup) => {
   const g = groups.get(whOrGroup) || byWh.get(whOrGroup);
