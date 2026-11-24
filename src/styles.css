@@ -806,3 +806,12 @@ table.resized td .nowrap, table.resized th .nowrap, table.resized .badge, table.
 .cell-add.ref-input { flex-wrap: wrap; }
 .cell-add.ref-input > small { flex: 1 0 100%; }
 table.resized .cell-add > input, table.resized .cell-add > select, table.resized .cell-add > .ss-trigger { min-width: 0; }
+
+/* Mã lệnh tắt kiểu SAP (/PO, /O&PO) trong ô Tìm chức năng */
+.tcode { margin-left: auto; flex: none; font: 600 10px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: .3px; color: #8fa3bf; border: 1px solid #ffffff26; border-radius: 4px; padding: 0 4px; }
+.side nav a .tcode + .fav-star { margin-left: 4px; }
+.side nav a.active .tcode { color: #fff; border-color: #ffffff55; }
+.bar-tools a .tcode { color: var(--muted, #64748b); border-color: var(--line, #e2e8f0); margin-left: 8px; }
+.nav-cmd { margin: 4px 12px 0; padding: 6px 9px; border-radius: 8px; background: #ffffff10; color: #cfd8e3; font-size: 12px; line-height: 1.4; }
+.nav-cmd b { color: #fff; }
+.nav-cmd-miss { color: #fca5a5; }
