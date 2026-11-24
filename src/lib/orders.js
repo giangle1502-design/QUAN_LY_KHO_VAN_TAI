@@ -179,6 +179,12 @@ export function applyOrder(order, m, sign) {
     if (lw && lw !== m.warehouse) throw new Error(`Dòng ${ml.item} của ${order.id} ${m.type === 'out' ? 'xuất từ' : 'nhập về'} kho ${lw}, phiếu đang ở kho ${m.warehouse}.`);
     lines[i][k] = Math.round((n(lines[i][k]) + sign * Math.abs(n(ml.kg))) * 1000) / 1000;
     if (lines[i][k] < -EPS) lines[i][k] = 0;
+    // PO chưa chỉ định kho (lập từ ảnh Ecount…): phiếu nhập đầu tiên ghi kho nhận vào dòng đơn;
+    // hủy / sửa phiếu đưa dòng về chưa nhận thì bỏ kho đã tự ghi, để nhập lại ở kho khác được
+    if (order.type === 'PO' && m.type === 'in' && !returning) {
+      if (sign > 0 && !lw && m.warehouse) { lines[i].warehouse = m.warehouse; lines[i].whFromSlip = true; }
+      else if (sign < 0 && lines[i].whFromSlip && n(lines[i][k]) <= EPS) { lines[i].warehouse = ''; delete lines[i].whFromSlip; }
+    }
   }
   if (sto && !receiving && sign < 0) {
     const bad = lines.find((l) => n(l.receivedKg) > n(l.doneKg) + EPS);

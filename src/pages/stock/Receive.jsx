@@ -254,7 +254,7 @@ function ReceiveForm({ id }) {
           <div key={i} className="mv-line">
             <div style={{ flex: 1 }}>
               {(l.plannedKg != null || pieces.length > 1) && <div className="small">{pieces.length > 1 && <span className="badge blue" title={`Phiếu con ${l._mv}`}>Đơn {l._oid || l._mv}</span>} {l.plannedKg != null && <>Dự kiến trên phiếu: <b>{t(l.plannedKg)} kg</b></>}</div>}
-              <InLine l={l} set={(p) => setLine(i, p)} itemMap={itemMap} locations={locations} statuses={statuses} pledgees={pledgees}
+              <InLine l={l} set={(p) => setLine(i, p)} itemMap={itemMap} locations={locations} statuses={statuses} pledgees={pledgees} wh={mv.warehouse}
                 cap={caps[i]} onSplit={() => setLines((ls) => splitLineAt(ls, i, caps[i]))} />
             </div>
             <button type="button" className="btn ghost" disabled={lines.length === 1} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>✕</button>
