@@ -12,7 +12,7 @@ import { ItemCode, ItemStockModal } from '../../components/ItemStock';
 import { createOrder, isFinished, ORDER_STATUS, saveOrder, summarizeLines } from '../../lib/orders';
 import { cleanValue, defaultsOf, fillEmptyLinks, isPrivate, linkPatch, visibleFields } from '../../lib/fields';
 import { computeFormulas } from '../../lib/formula';
-import { isUSD, moneyUnit, usesFx, withFx } from '../../lib/currency';
+import { headFxKey, isUSD, mirrorHeadFx, moneyUnit, usesFx, withFx } from '../../lib/currency';
 import { splitSecrets } from '../../lib/orderSecrets';
 import { usePref } from '../../lib/prefs';
 import { vnDate } from '../../lib/trips';
@@ -217,7 +217,9 @@ export default function SOForm({ type = 'SO', order, onClose, draft }) {
   // Số lượng (tấn) = kg / 1000, chỉ để xem và dùng trong công thức
   // Đơn USD: Thành tiền (VNĐ) = số lượng × đơn giá × [Tỷ giá]; đơn VNĐ thì [Tỷ giá] = 1
   const hx = withFx(h);
-  const lc = lines.map((l) => computeFormulas(lineFields, { ...l, qtyT: l.qtyKg === '' ? '' : n(l.qtyKg) / 1000 }, { extraFields: headFields, rowExtra: hx }));
+  // Trường dòng hàng "Đơn vị tiền tệ" / "Tỷ giá" (tự thêm) luôn theo phần chung
+  const fxLine = (l) => (sto ? l : mirrorHeadFx(lineFields, l, h));
+  const lc = lines.map((l) => computeFormulas(lineFields, { ...fxLine(l), qtyT: l.qtyKg === '' ? '' : n(l.qtyKg) / 1000 }, { extraFields: headFields, rowExtra: hx }));
   const hc = computeFormulas(headFields, hx, { lines: lc, lineFields });
   const usd = !sto && isUSD(h);
   const lists = [lineFields, headFields];
@@ -249,7 +251,7 @@ export default function SOForm({ type = 'SO', order, onClose, draft }) {
       headCustom[f.key] = v;
     }
     const out = [];
-    for (const [i, l] of lines.entries()) {
+    for (const [i, l] of lines.map(fxLine).entries()) {
       const no = `Dòng ${i + 1}: `;
       if (!l.item || !itemMap.has(l.item)) return setErr(no + 'chọn mã hàng có trong danh mục (hoặc bấm + để thêm mã hàng mới).');
       const kg = Math.round(n(l.qtyKg) * 1000) / 1000;
@@ -385,7 +387,11 @@ export default function SOForm({ type = 'SO', order, onClose, draft }) {
         </Select>
       );
       case 'note': return Number(f.height) > 40 ? <textarea value={l.note} onChange={(e) => set(e.target.value)} /> : <input value={l.note} onChange={(e) => set(e.target.value)} />;
-      default: return (
+      default: if (!sto && headFxKey(f)) {
+        const v = lc[i][f.key];
+        return <span className="readonly-val" title="Lấy theo Đơn vị tiền tệ / Tỷ giá ở phần chung của đơn">{headFxKey(f) === 'fxRate' && v !== '' ? fmtNum(v, 2) : v || <span className="req">chưa nhập ở phần chung</span>}</span>;
+      }
+      return (
         <div className="cell-add">
           <FieldInput field={f} value={f.type === 'formula' ? lc[i][f.key] : l[f.key]} unit={unitOf(f)} onChange={(v) => set(v)} />
         </div>
@@ -426,7 +432,7 @@ export default function SOForm({ type = 'SO', order, onClose, draft }) {
           <div className="table-wrap" style={{ overflowX: 'auto' }}>
             <table className="so-lines">
               <thead>
-                <tr><th>#</th>{shownLine.map((f) => <th key={f.key} className={(['qtyT', 'qtyKg'].includes(f.key) ? 'num ' : '') + 'col-drag'} {...dragHeadProps(f.key, lineKeys, setLineOrder)} title={f.link ? `Tự lấy theo ${viaLabel(LINE_VIAS, f.link.via)}` : f.help || ''}>{f.label}{f.required && <b className="req"> *</b>}{f.link ? ' ↳' : ''}</th>)}
+                <tr><th>#</th>{shownLine.map((f) => <th key={f.key} className={(['qtyT', 'qtyKg'].includes(f.key) ? 'num ' : '') + 'col-drag'} {...dragHeadProps(f.key, lineKeys, setLineOrder)} title={f.link ? `Tự lấy theo ${viaLabel(LINE_VIAS, f.link.via)}` : !sto && headFxKey(f) ? 'Tự lấy theo phần chung của đơn' : f.help || ''}>{f.label}{f.required && <b className="req"> *</b>}{f.link || (!sto && headFxKey(f)) ? ' ↳' : ''}</th>)}
                   {order && <th className="num">{cfg.done}</th>}{order && sto && <th className="num">{cfg.received}</th>}<th></th></tr>
               </thead>
               <tbody>

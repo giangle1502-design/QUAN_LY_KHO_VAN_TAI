@@ -5,12 +5,13 @@ import { useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { usePref } from './prefs';
 import { norm } from './utils';
-import { fxOf, isUSD, usesFx } from './currency';
+import { fxOf, headFxKey, isUSD, usesFx } from './currency';
 
 // Số có thể là chuỗi "29,500,000" (trường văn bản)
 export const n = (v) => Number(typeof v === 'string' ? v.replace(/,/g, '') : v) || 0;
 // Trường có thể chứa tiền: kiểu Tiền, công thức, hoặc số có tên chứa "giá" / "tiền"
-export const isMoneyField = (f) => f.custom && (f.type === 'currency' || f.type === 'formula'
+// Trường Tỷ giá / Đơn vị tiền tệ ở dòng không phải tiền
+export const isMoneyField = (f) => f.custom && !headFxKey(f) && (f.type === 'currency' || f.type === 'formula'
   || (['number', 'text'].includes(f.type) && /\b(gia|tien)\b/.test(norm(f.label))));
 const has = (f, ...words) => words.some((w) => norm(f.label).includes(w));
 
