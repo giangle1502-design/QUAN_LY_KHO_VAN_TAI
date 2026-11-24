@@ -1,4 +1,4 @@
-import { locsOfWh } from '../../lib/whGroups';
+import { locsOfWh, printsLabels } from '../../lib/whGroups';
 import { withBlock } from '../../catalogs';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -178,7 +178,9 @@ function ReceiveForm({ id }) {
   };
   const cur = collect();
   const curSig = cur.out ? labelSig(cur.out) : null;
-  const labelsOk = !!printed && !!curSig && printed.sig === curSig;
+  // Chỉ kho mình quản lý (Đức Hòa) mới in nhãn; kho khách xác nhận luôn, không cần nhãn
+  const needLabels = printsLabels(mv.warehouse);
+  const labelsOk = !needLabels || (!!printed && !!curSig && printed.sig === curSig);
 
   const openLabels = () => {
     setErr('');
@@ -209,7 +211,7 @@ function ReceiveForm({ id }) {
       for (const [k, p] of list.entries()) {
         const mine = out.filter((l) => l._mv === p.id).map(({ _mv, ...l }) => l); // eslint-disable-line no-unused-vars
         // Pallet nhập kèm ghi ở phiếu đầu của xe
-        const lab = { labelsPrintedAt: printed.at, labelsPrintedBy: printed.by || email };
+        const lab = needLabels && printed ? { labelsPrintedAt: printed.at, labelsPrintedBy: printed.by || email } : {};
         const res = await confirmIn(p.id, mine, { email, name }, { ...(k === 0 ? pals : { palletMode: pals.palletMode, pallets: [] }), ...lab });
         ok.push(typeof res === 'string' ? { id: res } : res);
       }
@@ -226,7 +228,7 @@ function ReceiveForm({ id }) {
     <div>
       <div className="page-head"><h1>📥 Nhận hàng {id}</h1></div>
       <div className="ok-box">Đã xác nhận nhận hàng phiếu <b className="mono">{done.group ? done.ids.join(', ') : done.id}</b>{done.group ? ` (phiếu nhập gộp ${mv.groupId}, ${done.ids.length} đơn)` : ''}{done.orderId ? <> và lập đơn mua <b className="mono">{done.orderId}</b> theo số thực nhận</> : null}. Tồn kho đã cập nhật.{' '}
-        <Link to={`/kho/phieu/${done.id}/in`} target="_blank">🖨 In phiếu</Link> · {(done.ids || [done.id]).map((x) => <Link key={x} className="btn primary" to={`/kho/phieu/${x}/nhan`} target="_blank" style={{ marginRight: 4 }}>🏷️ In lại nhãn{done.group ? ` ${x}` : ''}</Link>)} · <Link to="/kho/nhan-hang">← Phiếu chờ nhận khác</Link></div>
+        <Link to={`/kho/phieu/${done.id}/in`} target="_blank">🖨 In phiếu</Link> · {needLabels && (done.ids || [done.id]).map((x) => <Link key={x} className="btn primary" to={`/kho/phieu/${x}/nhan`} target="_blank" style={{ marginRight: 4 }}>🏷️ In lại nhãn{done.group ? ` ${x}` : ''}</Link>)} · <Link to="/kho/nhan-hang">← Phiếu chờ nhận khác</Link></div>
     </div>
   );
   const pending = mv.status === 'pending';
@@ -269,7 +271,7 @@ function ReceiveForm({ id }) {
           suggestQty={Math.ceil(lines.reduce((a, l) => a + (num(l.pallets) || 0), 0)) || ''} />
       </div>
       <OverCapConfirm caps={caps} checked={overOk} onChange={setOverOk} />
-      {pending && (
+      {pending && needLabels && (
         <div className={'card label-step ' + (labelsOk ? 'ok' : printed ? 'warn' : '')} style={{ marginBottom: 12 }}>
           <div className="section-head">🏷️ Bước 1: In nhãn pallet <span className="req">*</span></div>
           <p className="small" style={{ margin: '0 0 8px' }}>
@@ -282,7 +284,7 @@ function ReceiveForm({ id }) {
       )}
       <ErrorBox error={err} />
       {pending && <div className="form-actions">
-        <button className="btn primary" disabled={busy || !labelsOk} title={labelsOk ? '' : 'In nhãn pallet trước (Bước 1)'}>{busy ? 'Đang ghi…' : '✅ Bước 2: Xác nhận đã nhận hàng'}</button>
+        <button className="btn primary" disabled={busy || !labelsOk} title={labelsOk ? '' : 'In nhãn pallet trước (Bước 1)'}>{busy ? 'Đang ghi…' : needLabels ? '✅ Bước 2: Xác nhận đã nhận hàng' : '✅ Xác nhận đã nhận hàng'}</button>
         {!labelsOk && <span className="small" style={{ marginLeft: 8 }}>In nhãn pallet trước rồi mới xác nhận.</span>}
       </div>}
       <datalist id="dl-mv-item">{items.filter((x) => x.active !== false).map((x) => <option key={x.code} value={x.code}>{x.name}</option>)}</datalist>

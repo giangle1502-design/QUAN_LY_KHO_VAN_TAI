@@ -1,3 +1,4 @@
+import { printsLabels } from '../../lib/whGroups';
 import { useMemo, useState } from 'react';
 import { ScopeFilters, useOpScope } from '../../components/ScopeFilter';
 import { Link } from 'react-router-dom';
@@ -178,7 +179,7 @@ export default function SlipList({ kind, loai = '' }) {
         {m.status === 'wait_release' && <Link className="btn sm" to="/kho/giai-chap">🔓 Giải chấp</Link>}
         <Link className="btn sm" to={`/kho/phieu/${m.id}/in`} target="_blank">🖨</Link>
         {m.type === 'out' && <Link className="btn sm" to={`/kho/phieu/${m.id}/soan`} target="_blank" title="Phiếu soạn hàng">📋</Link>}
-        {m.type === 'in' && m.status === 'posted' && <Link className="btn sm" to={`/kho/phieu/${m.id}/nhan`} target="_blank" title="In nhãn pallet">🏷️</Link>}
+        {m.type === 'in' && m.status === 'posted' && printsLabels(m.warehouse) && <Link className="btn sm" to={`/kho/phieu/${m.id}/nhan`} target="_blank" title="In nhãn pallet">🏷️</Link>}
         {canEditSlip(m, { isAdmin, hasRole, inMyWarehouses }) && <button type="button" className="btn sm" onClick={() => setEdit(m.id)}>✏️ Sửa</button>}
       </>
     );
