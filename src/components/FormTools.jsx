@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { Children, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { doc, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, query, setDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
 import { CATALOGS, FIELD_TYPES, RESULT_TYPES, catalogByKey } from '../catalogs';
@@ -15,19 +15,45 @@ import { ErrorBox, Field, Modal } from './ui';
 import Select from './Select';
 
 // Nút "+" cạnh ô chọn: thêm ngay bản ghi mới vào danh mục mà không phải rời form đang nhập
-export function QuickAdd({ catKey, preset, onAdded }) {
+// value: mã đang chọn → thêm nút ✏ sửa nhanh mục đó trong danh mục (VD sửa tên công ty DAMC ngay trên form)
+export function QuickAdd({ catKey, preset, onAdded, value }) {
   const { canEdit, fieldsOf } = useApp();
   const cat = catalogByKey(catKey);
   const [open, setOpen] = useState(false);
+  const [editRow, setEditRow] = useState(null);
+  const [busy, setBusy] = useState(false);
   if (!cat || cat.form || !canEdit(cat)) return null;
+  const code = String(value ?? '').trim();
+  const openEdit = async () => {
+    setBusy(true);
+    try {
+      const id = cat.upperId ? code.toUpperCase() : cat.lowerId ? code.toLowerCase() : code;
+      let s = await getDoc(doc(db, catKey, id));
+      if (!s.exists() && cat.idField) {
+        const q = await getDocs(query(collection(db, catKey), where(cat.idField, '==', code), limit(1)));
+        s = q.docs[0];
+      }
+      if (s?.exists()) setEditRow({ _id: s.id, ...s.data() });
+      else window.alert(`Không tìm thấy ${cat.short} "${code}" trong danh mục.`);
+    } finally { setBusy(false); }
+  };
+  // Sự kiện React đi xuyên portal: chặn "Lưu" của hộp thêm / sửa nhanh khỏi submit luôn form đơn hàng bên dưới
+  const stop = { onSubmit: (e) => e.stopPropagation(), onClick: (e) => e.stopPropagation() };
   return (
     <>
       <button type="button" className="btn sm quick-add" title={`Thêm ${cat.short} mới`} onClick={() => setOpen(true)}>+</button>
+      {code && !cat.idOf && (
+        <button type="button" className="btn sm quick-add" title={`Sửa ${cat.short} ${code}`} disabled={busy} onClick={openEdit}>✏</button>
+      )}
       {open && (
-        // Sự kiện React đi xuyên portal: chặn "Lưu" của hộp thêm nhanh khỏi submit luôn form đơn hàng bên dưới
-        <span onSubmit={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+        <span {...stop}>
           <EditForm cat={cat} fields={fieldsOf(catKey)} row={preset || {}} onClose={() => setOpen(false)}
             onSaved={(_msg, id, rec) => { setOpen(false); if (id) onAdded?.(id, rec); }} />
+        </span>
+      )}
+      {editRow && (
+        <span {...stop}>
+          <EditForm cat={cat} fields={fieldsOf(catKey)} row={editRow} onClose={() => setEditRow(null)} onSaved={() => setEditRow(null)} />
         </span>
       )}
     </>
@@ -35,8 +61,10 @@ export function QuickAdd({ catKey, preset, onAdded }) {
 }
 
 // Ô chọn mã + nút (+) thêm nhanh vào danh mục: <WithAdd cat="carriers" onAdded={(id, rec) => …}><Select …/></WithAdd>
-export function WithAdd({ cat, preset, onAdded, children, style }) {
-  return <div className="cell-add" style={style}>{children}<QuickAdd catKey={cat} preset={preset} onAdded={onAdded} /></div>;
+export function WithAdd({ cat, preset, onAdded, children, style, value }) {
+  // Mã đang chọn lấy từ ô chọn bên trong (value của <Select>) để có nút ✏ sửa nhanh
+  const v = value ?? (Children.count(children) === 1 ? children?.props?.value : undefined);
+  return <div className="cell-add" style={style}>{children}<QuickAdd catKey={cat} preset={preset} onAdded={onAdded} value={v} /></div>;
 }
 
 // Chọn cột muốn hiển thị (mỗi người dùng một cấu hình). cols: [{ key, label, locked }]

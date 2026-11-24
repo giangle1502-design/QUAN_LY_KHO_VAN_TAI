@@ -120,7 +120,7 @@ function RefInput({ field: f, value, onChange, disabled, onPick }) {
       <datalist id={listId}>
         {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </datalist>
-      {!disabled && !f.noQuickAdd && <QuickAdd catKey={f.ref} preset={f.addPreset} onAdded={(id, rec) => { const v = rec ? refValue(f.ref, rec) || id : id; onChange(v); if (rec) onPick?.(f, rec); }} />}
+      {!disabled && !f.noQuickAdd && <QuickAdd catKey={f.ref} preset={f.addPreset} value={main.some((o) => o.value === value) ? value : ''} onAdded={(id, rec) => { const v = rec ? refValue(f.ref, rec) || id : id; onChange(v); if (rec) onPick?.(f, rec); }} />}
       {!known && <small className="req" style={{ flexBasis: '100%' }}>Không có trong danh mục {catalogByKey(f.ref)?.short}</small>}
     </div>
   );
