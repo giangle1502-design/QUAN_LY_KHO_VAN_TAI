@@ -43,7 +43,25 @@ export const purposeLabel = (p) => (p === 'import' ? 'Nhập hàng' : 'Lấy hà
 // Kho không có bảo vệ (= không có thủ kho) hoặc lấy hàng ở cảng / điểm nhận ngoài: chuyến theo kế hoạch không qua cổng, cửa, thủ kho
 export const noYard = (t) => t.source === 'plan' && (t.hasGuard === false || !!t.pickup);
 
+// Xe giao hàng VÀO kho có bảo vệ (VD lấy ở cảng / kho khác về Kho Đức Hòa): tài xế xác nhận điểm nhận,
+// bảo vệ kho nhận xác nhận xe đến (= đến điểm giao), thủ kho xác nhận nhập xong (= hoàn thành), bảo vệ cho ra cổng.
+// trip.destGuard / destWarehouse ghi khi tạo chuyến; trip.yard = 'dest' khi xe đã vào bãi kho nhận.
+export const destPhase = (t) => !!t.destGuard && (t.yard === 'dest' || t.status === ST.WAITING_DELIVERY);
+// Kho nơi xe đang / sắp ở bãi (để bảo vệ, thủ kho kho đó thấy)
+export const yardWh = (t) => (destPhase(t) ? t.destWarehouse : t.warehouse);
+// Chuyến đang cần bảo vệ / thủ kho của kho xử lý
+export function inYard(t) {
+  if (t.yard === 'dest') return !!t.destGuard && [ST.WAITING_GATE, ST.PROCESSING, ST.WAITING_EXIT].includes(t.status);
+  if (t.destGuard && t.status === ST.WAITING_DELIVERY) return !!(t.driverLoadedAt || t.processDoneTime) && !t.driverAtDestAt;
+  return !!t.hasGuard && !noYard(t) && [ST.PLANNED, ST.ARRIVED, ST.WAITING_GATE, ST.PROCESSING, ST.WAITING_EXIT].includes(t.status);
+}
+// Xe đang chờ bảo vệ xác nhận vào (tab Xe chờ vào kho)
+export const waitingIn = (t) => inYard(t) && t.yard !== 'dest' && [ST.PLANNED, ST.ARRIVED, ST.WAITING_DELIVERY].includes(t.status) && (t.status !== ST.PLANNED || !!t.plate);
+// Thủ kho đang làm hàng nhập (xe giao vào kho)
+export const isUnloading = (t) => t.yard === 'dest' || t.purpose === 'import';
+
 export function stagesOf(trip) {
+  if (trip.destGuard) return [ST.PLANNED, ST.WAITING_DELIVERY, ST.WAITING_GATE, ST.PROCESSING, ST.WAITING_EXIT, ST.COMPLETED];
   const skipYard = noYard(trip);
   return STAGES.filter((s) => {
     if (skipYard && [ST.ARRIVED, ST.WAITING_GATE, ST.PROCESSING, ST.WAITING_EXIT].includes(s)) return false;
@@ -55,8 +73,8 @@ export function stagesOf(trip) {
 }
 export const firstStatus = (hasGuard) => (hasGuard ? ST.ARRIVED : ST.WAITING_GATE);
 // Xe nhập hàng, khách tự lấy: ra cổng là hoàn thành (không có bước giao hàng)
-const afterExit = (trip) => (trip.purpose === 'import' || trip.selfPickup ? ST.COMPLETED : ST.WAITING_DELIVERY);
-export const afterProcess = (trip) => (trip.hasGuard ? ST.WAITING_EXIT : afterExit(trip));
+const afterExit = (trip) => (trip.purpose === 'import' || trip.selfPickup || trip.yard === 'dest' ? ST.COMPLETED : ST.WAITING_DELIVERY);
+export const afterProcess = (trip) => (trip.hasGuard || trip.yard === 'dest' ? ST.WAITING_EXIT : afterExit(trip));
 export { afterExit };
 
 export const nowISO = () => new Date().toISOString();

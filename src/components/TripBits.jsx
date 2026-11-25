@@ -54,8 +54,8 @@ export function TripCard({ trip: t, timeLabel, timeValue, children, onOpen }) {
         <div className="trip-main" onClick={onOpen} style={onOpen ? { cursor: 'pointer' } : undefined}>
           <span className="plate">{t.plate}</span>
           <span className="small mono">{t.id}</span>
-          <span className="badge">{purposeLabel(t.purpose)}</span>
-          <span className="badge blue">Kho {t.warehouse}</span>
+          <span className="badge">{t.yard === 'dest' ? 'Giao hàng vào kho' : purposeLabel(t.purpose)}</span>
+          <span className="badge blue">{t.yard === 'dest' ? `Từ ${t.pickupName || t.warehouse}` : `Kho ${t.warehouse}`}</span>
           {t.dock && <span className="badge purple">Cửa {t.dock}</span>}
           <StatusBadge status={t.status} />
         </div>

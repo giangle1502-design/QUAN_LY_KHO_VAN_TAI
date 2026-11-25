@@ -4,6 +4,7 @@ import { db } from '../firebase';
 import { useApp } from '../context/AppContext';
 import { stockId } from './stock';
 import { listenShared, useShared } from './live';
+import { yardWh } from './trips';
 
 // Nghe realtime toàn bộ 1 collection danh mục (danh mục thường nhỏ, vài nghìn dòng)
 // (dùng chung 1 kết nối cho mọi trang, xem lib/live.js)
@@ -58,14 +59,15 @@ export function useCompanies() {
 }
 
 // Chuyến xe theo trạng thái (realtime), lọc theo kho được giao và kho đang chọn
-export function useTrips(statuses, wh) {
+// byYard: lọc theo kho nơi xe đang ở bãi (xe giao vào Kho Đức Hòa thuộc bảo vệ / thủ kho Đức Hòa)
+export function useTrips(statuses, wh, byYard = false) {
   const { inMyWarehouses } = useApp();
   const key = statuses.join(',');
   const st = useShared(`trips|${key}`, () => query(collection(db, 'trips'), where('status', 'in', key.split(','))));
   const state = useMemo(() => ({ rows: st.snap ? st.snap.docs.map((d) => ({ ...d.data(), id: d.id })) : [], loading: st.loading, error: st.error }), [st]);
   const rows = useMemo(
-    () => state.rows.filter((t) => inMyWarehouses(t.warehouse) && (!wh || t.warehouse === wh)),
-    [state.rows, inMyWarehouses, wh]
+    () => state.rows.filter((t) => { const w = byYard ? yardWh(t) : t.warehouse; return inMyWarehouses(w) && (!wh || w === wh); }),
+    [state.rows, inMyWarehouses, wh, byYard]
   );
   return { ...state, rows };
 }

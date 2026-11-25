@@ -79,7 +79,9 @@ service cloud.firestore {
     // Chuyển trạng thái hợp lệ theo vai trò (quản trị được làm mọi bước)
     function st(from, to) { return resource.data.status == from && request.resource.data.status == to; }
     function guardStep() {
-      return st('arrived', 'waiting_gate')
+      // Bảo vệ tìm theo số xe: xe kế hoạch (tài xế chưa bấm Đến) hoặc tài xế đã báo đến → xếp tài
+      // Xe giao hàng vào kho có bảo vệ (đang đi giao): bảo vệ kho nhận xác nhận xe đến
+      return st('arrived', 'waiting_gate') || st('planned', 'waiting_gate') || st('waiting_delivery', 'waiting_gate')
         || st('waiting_exit', 'waiting_delivery') || st('waiting_exit', 'completed');
     }
     function dockStep() {
@@ -88,7 +90,7 @@ service cloud.firestore {
     }
     function sameTrip() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-        'status', 'gateConfirmTime', 'dock', 'dockAssignTime', 'processDoneTime', 'gateExitTime',
+        'status', 'arrivalTime', 'arrivalDate', 'gateConfirmTime', 'dock', 'yard', 'driverAtDestAt', 'lines', 'dockAssignTime', 'processDoneTime', 'gateExitTime',
         'deliveryCompleteTime', 'updatedAt', 'updatedBy', 'history']);
     }
     // ==== Vận tải theo chuyến (điều phối chia xe, tài xế xác nhận từng bước) ====
@@ -182,7 +184,7 @@ service cloud.firestore {
         && request.resource.data.status == 'planned' && request.resource.data.source == 'plan'
         && request.resource.data.createdBy == me();
       allow update: if isAdmin()
-        || (inMyWarehouse(resource.data.warehouse) && sameTrip()
+        || ((inMyWarehouse(resource.data.warehouse) || (resource.data.get('destGuard', false) == true && inMyWarehouse(resource.data.destWarehouse))) && sameTrip()
             && ((hasRole('bao_ve') && guardStep()) || (hasRole('thu_kho') && dockStep())))
         // Điều phối vận tải: sửa chuyến, làm thay tài xế, nhập chi phí
         || (hasRole('van_tai') && ownCarrierTrip() && stepStatus(true) && costOk(['entered'])

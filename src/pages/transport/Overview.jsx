@@ -195,7 +195,7 @@ function TripDetail({ trip: t, onClose }) {
                 if (r === 'requested') window.alert('Đã gửi yêu cầu xóa, chờ quản trị gốc duyệt.');
                 onClose();
               }}>{isSuper ? 'Xóa' : 'Đề nghị xóa'}</button>
-              {ACTIVE.includes(t.status) && (
+              {(ACTIVE.includes(t.status) || t.status === ST.PLANNED) && (
                 <>
                   <span className="cell-add"><Select value={cancelReason} onChange={(e) => setCancelReason(e.target.value)}>
                     <option value="">-- Lý do hủy --</option>
