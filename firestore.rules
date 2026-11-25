@@ -466,7 +466,7 @@ service cloud.firestore {
       allow update: if (isAdmin() || (orderMgr() && mySale(resource.data) && mySale(request.resource.data)))
           && request.resource.data.id == resource.data.id && request.resource.data.createdBy == resource.data.createdBy
         || (hasRole('thu_kho') && resource.data.status in ['open', 'partial'] && request.resource.data.status in ['partial', 'done']
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lines', 'status', 'movementIds', 'doneAt', 'updatedAt', 'updatedBy']));
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lines', 'status', 'movementIds', 'doneAt', 'shortClosed', 'shortKg', 'updatedAt', 'updatedBy']));
     }
 
     match /allocations/{id} {

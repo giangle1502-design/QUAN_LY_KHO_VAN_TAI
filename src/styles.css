@@ -951,6 +951,52 @@ table.resized .cell-add > input, table.resized .cell-add > select, table.resized
 .pick-cats { display: grid; gap: 8px; }
 .pick-cats .btn { justify-content: flex-start; text-align: left; padding: 10px 12px; }
 
+/* Phiếu xuất thiếu so với DO */
+.short-box { border: 1px solid #f3b0a8; background: #fffaf9; border-radius: var(--radius); padding: 10px 14px; margin-bottom: 10px; }
+.short-title { font-weight: 700; color: var(--red); margin-bottom: 4px; }
+.short-opt { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border-radius: 7px; margin-top: 4px; cursor: pointer; border: 1px solid transparent; }
+.short-opt.on { background: #fff; border-color: #f3b0a8; }
+.short-opt input { margin-top: 3px; }
+
+/* Phiếu xuất kho gọn: đầu phiếu 1 hàng, nút thu gọn, bảng hàng xuất nhóm theo mã hàng */
+.out-head .out-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 10px; align-items: end; }
+.out-head .out-grid > .wide { grid-column: span 2; }
+.out-head .out-grid .field > * { min-width: 0; }
+.out-head .out-grid .cell-add > :first-child { flex: 1; min-width: 0; }
+.out-head select.need, .out-head .need > button { border-color: var(--amber); background: var(--amber-soft); }
+.out-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.out-chip { border: 1px dashed #b9c4d2; border-radius: 16px; padding: 4px 11px; font-size: 12.5px; background: #fafbfc; cursor: pointer; color: var(--text); }
+.out-chip b { font-weight: 600; }
+.out-chip.ok { border-style: solid; border-color: #a5d6a7; background: var(--green-soft); }
+.out-chip.need { border-color: #f0b35a; background: var(--amber-soft); }
+.out-chip.open { box-shadow: 0 0 0 2px var(--primary-soft); border-color: var(--primary); }
+.out-panel { margin-top: 6px; }
+.out-merge { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.out-note { font-size: 12.5px; padding: 6px 10px; border-radius: 7px; background: var(--primary-soft); }
+.out-goods { padding: 0; overflow: hidden; }
+.out-goods-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; flex-wrap: wrap; }
+.out-goods-head > b { font-size: 15px; }
+.out-table-wrap { overflow-x: auto; }
+table.out-table th { position: static; background: #1f3a5f; color: #fff; font-weight: 700; font-size: 12px; border-right: 1px solid #ffffff55; padding: 7px 8px; }
+table.out-table th:last-child { border-right: 0; }
+table.out-table td { padding: 5px 8px; border-right: 1px solid var(--line); vertical-align: middle; }
+table.out-table td:last-child { border-right: 0; }
+table.out-table tr.grp td { background: #f3f6fa; border-top: 2px solid #c9d3df; }
+.grp-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+table.out-table .tag { font-size: 11px; background: #e6ebf2; border-radius: 4px; padding: 1px 6px; color: #3a4a5e; }
+table.out-table .pill { display: inline-block; border-radius: 10px; padding: 1px 8px; font-size: 11.5px; font-weight: 600; line-height: 18px; }
+.pill.ok { background: var(--green-soft); color: var(--green); }
+.pill.short { background: var(--red-soft); color: var(--red); }
+.pill.htc { background: var(--amber-soft); color: var(--amber); }
+table.out-table input.qty { width: 100px; padding: 4px 6px; text-align: right; }
+table.out-table input.qty.s { width: 72px; }
+table.out-table input.qty.bad { border-color: var(--red); color: var(--red); }
+table.out-table tr.miss td { background: #fff8f7; color: var(--red); font-style: italic; font-size: 12.5px; }
+.mv-kpis { display: flex; gap: 18px; margin-right: auto; flex-wrap: wrap; }
+.mv-kpis > span { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; }
+.mv-kpis b { font-size: 15px; color: var(--text); }
+.mv-kpis .bad b { color: var(--red); }
+@media (max-width: 700px) { .out-head .out-grid > .wide { grid-column: auto; } }
 /* Form đơn SO / PO / STO gọn: vừa 1 màn hình, chỉ cuộn khi thật nhiều dòng.
    Ghi chú trường hiện thành ⓘ (rê chuột xem), phần chung xếp nhiều cột, ô kho đủ rộng để đọc mã + tên kho */
 .modal.order-form { max-width: min(1560px, 98vw); }
