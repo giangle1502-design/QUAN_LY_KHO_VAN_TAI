@@ -1098,3 +1098,24 @@ td.row-act, th.row-act { width: 1%; white-space: nowrap; text-align: center; }
 .btn.row-open { padding: 2px 8px; font-size: 12px; white-space: nowrap; }
 table.out-table select.wh-pick, table.out-table .wh-pick { min-width: 230px; max-width: 320px; padding: 4px 6px; font-weight: 600; }
 table.out-table select.need, table.out-table .need { border-color: var(--amber); background: var(--amber-soft); }
+
+/* ---- Bảo vệ cổng: giao diện đơn giản, chữ to, nút lớn ---- */
+.guard-page { max-width: 760px; }
+.guard-tabs { display: flex; gap: 8px; margin-bottom: 10px; }
+.guard-tabs button { flex: 1; border: 2px solid var(--line); background: #fff; border-radius: 12px; padding: 14px 8px; font: inherit; font-size: 17px; font-weight: 700; cursor: pointer; }
+.guard-tabs button.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.guard-tabs .count { display: inline-block; min-width: 26px; padding: 0 6px; border-radius: 13px; background: #fff; color: var(--primary); margin-left: 4px; }
+.guard-search { width: 100%; font-size: 20px; padding: 12px 14px; border: 2px solid var(--line); border-radius: 12px; margin-bottom: 12px; text-transform: uppercase; box-sizing: border-box; }
+.guard-search::placeholder { text-transform: none; font-size: 16px; }
+.guard-card { background: #fff; border: 2px solid var(--line); border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
+.guard-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.guard-plate { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 28px; font-weight: 800; letter-spacing: 1px; background: #fffbe6; border: 2px solid #e6d27a; border-radius: 8px; padding: 2px 12px; }
+.guard-stt { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: #1f2937; color: #fff; font-weight: 800; font-size: 18px; }
+.guard-stt.sm { width: 28px; height: 28px; font-size: 14px; margin-right: 8px; }
+.guard-info { margin: 8px 0; font-size: 15px; line-height: 1.6; }
+.guard-note { color: #b45309; font-weight: 600; }
+.guard-acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.guard-btn { flex: 1 1 100%; background: #16a34a; border-color: #16a34a; color: #fff; font-size: 19px; font-weight: 800; padding: 14px; border-radius: 12px; }
+.guard-btn:hover:not(:disabled) { background: #15803d; }
+.guard-queue { display: flex; flex-direction: column; gap: 6px; }
+.guard-queue > div { display: flex; align-items: center; gap: 6px; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }

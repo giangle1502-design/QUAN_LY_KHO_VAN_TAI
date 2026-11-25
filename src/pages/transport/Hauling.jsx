@@ -11,8 +11,9 @@ import { enrichLine, pickupFrom, navUrl, placeOf, whOf, whText, isGHA, isInterna
 import Dispatch from './Dispatch';
 import Statements from './Statements';
 import TripReport from './Report';
-import { STATUS_META, fmtTime, nowISO } from '../../lib/trips';
-import { STEPS, costTotal, createPlannedTrips, nextStep, splitLoads, stepBlocked, suggestFreight, tripKg } from '../../lib/transport';
+import { STATUS_META, fmtTime, noYard, nowISO } from '../../lib/trips';
+import { guardArrive, guardExit, useTripAction } from './Ops';
+import { STEPS, costTotal, createPlannedTrips, nextStep, plateKey, splitLoads, stepBlocked, suggestFreight, tripKg } from '../../lib/transport';
 import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum, today } from '../../lib/utils';
 import { Empty, ErrorBox, Modal } from '../../components/ui';
@@ -228,6 +229,8 @@ function TripList({ trips, priv }) {
   };
   const jobOf = (t) => trips.filter((x) => x.jobId && x.jobId === t.jobId).sort((a, b) => n(a.jobSeq) - n(b.jobSeq));
   const jobBadge = (t) => (t.jobId ? <div className="small"><span className="badge purple" title="1 xe chạy nhiều Shipment">🔗 {t.jobId} · điểm {t.jobSeq}/{(t.jobTrips || []).length}</span></div> : null);
+  const [gAct, gErr] = useTripAction();
+  const sameCar = (t, status) => trips.filter((x) => x.id === t.id || (x.status === status && x.warehouse === t.warehouse && plateKey(x.plate) && plateKey(x.plate) === plateKey(t.plate)));
   const cancel = async (t) => {
     const reason = window.prompt(`Hủy chuyến ${t.id}? Lý do:`, ''); if (!reason) return;
     try { await updateDoc(doc(db, 'trips', t.id), { status: 'cancelled', cancelReason: reason, cancelTime: nowISO(), updatedAt: nowISO(), updatedBy: email,
@@ -269,6 +272,10 @@ function TripList({ trips, priv }) {
     const sz = big ? '' : ' sm';
     return <>
       {canStep && st && !blocked && <button className={'btn primary' + sz} style={big ? { width: '100%', padding: 10, fontSize: 15 } : undefined} onClick={() => setStep({ t, st })}>{st === 'reg' && can3PL && isGHA(c) && !p3?.threepl ? 'Đăng ký xe / chọn 3PL' : STEPS[st]}</button>}{big ? null : ' '}
+      {/* Quản trị làm thay bảo vệ khi bảo vệ chưa dùng app; thủ kho làm ở trang Thủ kho điều phối */}
+      {isAdmin && t.hasGuard && !noYard(t) && t.status === 'arrived' && <button className={'btn' + sz} onClick={() => guardArrive(gAct, sameCar(t, 'arrived'))}>🛡 Xe đã đến kho (thay bảo vệ)</button>}{' '}
+      {isAdmin && t.hasGuard && !noYard(t) && t.status === 'waiting_exit' && <button className={'btn' + sz} onClick={() => guardExit(gAct, sameCar(t, 'waiting_exit'))}>🛡 Xe ra cổng (thay bảo vệ)</button>}{' '}
+      {isAdmin && !noYard(t) && ['waiting_gate', 'processing'].includes(t.status) && <Link className={'btn ghost' + sz} to="/xe/thu-kho">🏭 Làm thay thủ kho</Link>}{' '}
       <span className={big ? 'trip-card-more' : ''}>
         {canStep && st && st !== 'reg' && t.status === 'planned' && <button className="btn sm" onClick={() => setStep({ t, st: 'reg' })}>Sửa xe</button>}{' '}
         {(isAdmin || isCarrier) && t.status === 'planned' && t.lines.length > 0 && <button className="btn sm" title="Hàng nhiều hơn 1 xe: tách bớt sang chuyến mới" onClick={() => setCut(t)}>✂ Tách</button>}{' '}
@@ -330,7 +337,7 @@ function TripList({ trips, priv }) {
       </div>
       {okMsg && <div className="ok-box" style={{ marginBottom: 10 }}>{okMsg}</div>}
       {isTpl && <p className="hint">Chuyến GHA đã chỉ định cho bạn: bấm <b>Nhập số xe</b> để ghi xe, tài xế; tài xế (hoặc bạn) bấm lần lượt Đến điểm nhận hàng → Nhận / lấy hàng xong → Đến điểm giao hàng → Hoàn thành; xong thì <b>💰 Cước 3PL</b> nhập cước với GHA.</p>}
-      <ErrorBox error={err} />
+      <ErrorBox error={err || gErr} />
       {!list.length ? <Empty text="Không có chuyến nào." /> : view === 'card' ? <div className="trip-cards">{list.map(card)}</div> : (
       <div className="table-wrap">
           <table>

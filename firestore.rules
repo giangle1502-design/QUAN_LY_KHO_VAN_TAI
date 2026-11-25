@@ -79,7 +79,8 @@ service cloud.firestore {
     // Chuyển trạng thái hợp lệ theo vai trò (quản trị được làm mọi bước)
     function st(from, to) { return resource.data.status == from && request.resource.data.status == to; }
     function guardStep() {
-      return st('arrived', 'waiting_gate')
+      // Bảo vệ tìm theo số xe: xe kế hoạch (tài xế chưa bấm Đến) hoặc tài xế đã báo đến → xếp tài
+      return st('arrived', 'waiting_gate') || st('planned', 'waiting_gate')
         || st('waiting_exit', 'waiting_delivery') || st('waiting_exit', 'completed');
     }
     function dockStep() {
@@ -88,7 +89,7 @@ service cloud.firestore {
     }
     function sameTrip() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-        'status', 'gateConfirmTime', 'dock', 'dockAssignTime', 'processDoneTime', 'gateExitTime',
+        'status', 'arrivalTime', 'arrivalDate', 'gateConfirmTime', 'dock', 'dockAssignTime', 'processDoneTime', 'gateExitTime',
         'deliveryCompleteTime', 'updatedAt', 'updatedBy', 'history']);
     }
     // ==== Vận tải theo chuyến (điều phối chia xe, tài xế xác nhận từng bước) ====
