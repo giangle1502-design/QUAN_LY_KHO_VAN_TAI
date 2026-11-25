@@ -9,7 +9,7 @@ import { db } from '../../firebase';
 import { applyMovementToOrderPlans, applyMovementToPlan, cutPlanShort, planLeft, OPEN_PLAN } from '../../lib/shipPlans';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
-import { useCollection, useCompanies, useMyWarehouses, useOpCompany, useOpWarehouse, useOrders, usePendingIn, useStock, useTrips, useWaitingOut } from '../../lib/hooks';
+import { useCollection, useCompanies, useMyWarehouses, useOpCompany, useOpWarehouse, useItemStock, useOrders, usePendingIn, useStock, useStockMulti, useTrips, useWaitingOut } from '../../lib/hooks';
 import { CompanyPicker } from '../../components/TripBits';
 import OrderLinePick from '../../components/OrderLinePick';
 import { orderLineChoices } from '../../lib/orders';
@@ -85,7 +85,11 @@ function Form({ type }) {
   // người lập tự chọn, hoặc lấy theo kho ghi trên dòng đơn / DO. Chỉ được thao tác 1 kho thì chọn sẵn kho đó.
   const [opWhMem, setOpWhMem] = useOpWarehouse();
   const [outWh, setOutWh] = useState('');
-  const opWh = type === 'out' ? outWh : opWhMem;
+  // Phiếu xuất 1 xe lấy hàng ở nhiều kho: kho chọn trên từng mã hàng ({ đơn|mã hàng: kho }); kho đầu tiên là kho chính của phiếu
+  const [itemWh, setItemWh] = useState({});
+  const [rowWh, setRowWh] = useState([]); // kho chọn ở dòng thêm tay (không theo đơn)
+  const outCodes = type === 'out' ? [...new Set([outWh, ...Object.values(itemWh), ...rowWh].filter(Boolean))] : [];
+  const opWh = type === 'out' ? outCodes[0] || '' : opWhMem;
   const setOpWh = type === 'out' ? setOutWh : setOpWhMem;
   const wh = warehouses.find((w) => w.code === opWh) || (warehouses.length === 1 ? warehouses[0] : null);
   const whCode = wh?.code || '';
@@ -100,7 +104,9 @@ function Form({ type }) {
   const soldto = useCollection('soldto').rows;
   const shipto = useCollection('shipto').rows;
   const reasons = useCollection('reasons').rows;
-  const { rows: stockAll, loading: stockLoading } = useStock(whCode || '__none__');
+  const one = useStock(type === 'out' ? '__none__' : whCode || '__none__');
+  const multi = useStockMulti(outCodes);
+  const { rows: stockAll, loading: stockLoading } = type === 'out' ? multi : one;
   // Phiếu xuất chờ giải chấp đã giữ chỗ hàng (chưa trừ tồn): phiếu xuất / chuyển khác chỉ thấy phần còn lại
   const waitOut = useWaitingOut();
   const stock = useMemo(() => (type === 'in' || !waitOut.byStock?.size ? stockAll : stockAll.map((r) => {
@@ -234,7 +240,25 @@ function Form({ type }) {
     // (kho đang chọn không còn phần nào của đơn thì chuyển sang kho có phần còn phải làm)
     const openWhs = o.lines.filter((l) => openK(o, l, type) > 0).map((l) => lineWh(o, l, type));
     const tw = opts.wh || ow || (whCode && openWhs.some((c) => !c || c === whCode) ? whCode : '') || openWhs.find((c) => c && warehouses.some((x) => x.code === c)) || whCode || '';
-    if (tw && tw !== opWh) setOpWh(tw);
+    if (type === 'out') {
+      // Phiếu xuất: không mặc định kho. Đơn ghi sẵn 1 kho cho mọi dòng thì lấy kho đó; đơn ghi kho theo từng dòng thì
+      // chọn sẵn kho cho mã hàng đó; dòng chưa ghi kho thì người lập chọn kho ở dòng mã hàng
+      setItemWh({}); setRowWh([]); setPendFill([]);
+      const one = opts.wh || ow || '';
+      setOutWh(one);
+      if (!one) {
+        const byItem = new Map();
+        o.lines.filter((l) => openK(o, l, type) > 0 && (!opts.plan || opts.plan[l.no] > 0)).forEach((l) => {
+          const w = lineWh(o, l, type);
+          byItem.set(l.item, byItem.has(l.item) && byItem.get(l.item) !== w ? '' : w);
+        });
+        const pre = [...byItem].filter(([, w]) => w && warehouses.some((x) => x.code === w));
+        if (pre.length) {
+          setItemWh(Object.fromEntries(pre.map(([it, w]) => [`${id}|${it}`, w])));
+          setPendFill(pre.map(([it, w]) => ({ oid: id, item: it, wh: w })));
+        }
+      }
+    } else if (tw && tw !== opWh) setOpWh(tw);
     // SO nhiều điểm giao: lấy mã giao của dòng đầu tiên làm ở kho này
     const inPlan = (l) => !opts.plan || opts.plan[l.no] > 0;
     const myLine = o.lines.find((l) => inPlan(l) && openK(o, l, type) > 0 && (!tw || !lineWh(o, l, type) || lineWh(o, l, type) === tw)) || null;
@@ -390,10 +414,11 @@ function Form({ type }) {
   const pickCmp = useMemo(() => lotPickOrder(stock), [stock]);
   // Chọn tồn theo FIFO cho các dòng của 1 đơn (pl: { dòng đơn: kg } khi chọn từ bảng / dự kiến); used: số bao đã lấy của từng dòng tồn
   // tag: số đơn gộp thêm (1 xe nhiều SO) ghi vào dòng phiếu để khi lưu tách đúng đơn
-  const fifoFor = (o, pl, used, tag) => {
+  const fifoFor = (o, pl, used, tag, opt = {}) => {
+    const W = opt.wh || whCode;
     // FIFO theo vị trí; trong cùng vị trí lot ít lấy trước (lot nhiều nằm trong cùng)
     const fifoSort = (a, b) => ownFirst(o.company || '')(a, b) || pickCmp(a, b);
-    const mine = [...stock].filter((r) => r.warehouse === whCode && coOk(r, o.company));
+    const mine = [...stock].filter((r) => r.warehouse === W && coOk(r, o.company));
     // Trả NCC (RTV): lấy được cả hàng ở khu block (thường là hàng không đạt), ưu tiên khu block trước
     const rtv = o.type === 'RTV';
     const bl = blockLocSet(locations);
@@ -407,7 +432,7 @@ function Form({ type }) {
     let anyNeed = false;
     for (const ol of o.lines) {
       // Dòng SO của kho khác thì để phiếu ở kho đó làm
-      if (lineWh(o, ol, 'out') && lineWh(o, ol, 'out') !== whCode) continue;
+      if (opt.item ? ol.item !== opt.item : lineWh(o, ol, 'out') && lineWh(o, ol, 'out') !== W) continue;
       // Chọn từ bảng: chỉ các dòng đã tích, đúng số lượng muốn xuất
       if (pl && !(pl[ol.no] > 0)) continue;
       let need = pl ? Math.min(pl[ol.no], openK(o, ol, 'out') * (1 + num(o.tolerancePct) / 100)) : openK(o, ol, 'out');
@@ -439,7 +464,7 @@ function Form({ type }) {
   // Xuất kho theo SO/STO: chọn sẵn tồn theo FIFO cho đủ phần còn lại của từng mặt hàng (kể cả các SO gộp thêm cùng xe)
   useEffect(() => {
     if (!autoFill || !order || order.id !== autoFill) return;
-    if (!whCode) { setFillNote(`Chọn kho xuất để chọn sẵn tồn theo FIFO cho ${order.id}.`); return; }
+    if (!whCode || (type === 'out' && !outWh)) { setFillNote(type === 'out' ? `Chọn kho xuất ở từng mã hàng (bảng Hàng xuất) để chọn sẵn tồn theo FIFO cho ${order.id}.` : `Chọn kho xuất để chọn sẵn tồn theo FIFO cho ${order.id}.`); return; }
     if (stockLoading) return;
     const ow = orderWarehouse(order, 'out');
     if (ow && ow !== whCode) return;
@@ -455,6 +480,38 @@ function Form({ type }) {
     setFillNote(`${next.length ? `Đã chọn sẵn ${next.length} dòng tồn theo FIFO cho ${ids}. Sửa số bao nếu xe chở ít hơn.` : `Kho ${whCode} không còn tồn được xuất cho ${ids}.`}${htcKg > 0.001 ? ` Trong đó ${fmtNum(htcKg, 2)} kg là hàng HTC: phiếu sẽ ở trạng thái Chờ giải chấp cho đến khi lập lệnh giải chấp (đổi sang ${relTo}).` : ''}${short.length ? ` Không đủ tồn: ${short.join(', ')}.` : ''}`);
     setAutoFill(''); setPlan(null);
   }, [autoFill, order, stock, stockLoading, whCode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Phiếu xuất: chọn kho ở dòng mã hàng → chọn lại tồn FIFO của mã hàng đó trong kho đã chọn (khi tồn kho đó tải xong)
+  const [pendFill, setPendFill] = useState([]); // [{ oid, item, wh }]
+  const pickGroupWh = (oid, item, code) => {
+    setItemWh((m) => ({ ...m, [`${oid}|${item}`]: code }));
+    setPendFill((p) => [...p.filter((x) => !(x.oid === oid && x.item === item)), { oid, item, wh: code }]);
+  };
+  const planMapOf = (oid) => (order && oid === order.id
+    ? (shipPlan && shipPlan.orderId === oid ? shipPlan.need || Object.fromEntries((shipPlan.lines || []).filter((x) => !shipPlan.ship || (x.shipCode || '') === shipPlan.ship).map((x) => [x.orderLine, planLeft(x)])) : null) || plan
+    : extra.find((e) => e.orderId === oid)?.plan || null);
+  useEffect(() => {
+    if (type !== 'out' || !pendFill.length || stockLoading || ordersLoading) return;
+    const inGroup = (l, f) => (stockById.get(l.stockId)?.item || l.pickItem) === f.item && (order ? l.orderId || order.id : '') === f.oid;
+    let ls = lines;
+    const short = [];
+    let n2 = 0;
+    for (const f of pendFill) {
+      ls = ls.filter((l) => !inGroup(l, f));
+      const o = orders.find((x) => x.id === f.oid);
+      if (!o || !f.wh) continue;
+      const used = new Map();
+      ls.forEach((l) => { if (l.stockId) used.set(l.stockId, (used.get(l.stockId) || 0) + num(l.bags)); });
+      const r = fifoFor(o, planMapOf(o.id), used, order && o.id !== order.id ? o.id : '', { wh: f.wh, item: f.item });
+      ls = [...ls, ...r.next];
+      n2 += r.next.length;
+      short.push(...r.short.map((x) => `${x} ở kho ${f.wh}`));
+    }
+    ls = ls.filter((l) => l.stockId || l.pickItem);
+    setLines(ls.length ? ls.slice(0, 30) : [stockLine()]);
+    setPendFill([]);
+    setFillNote(`${n2 ? `Đã chọn sẵn ${n2} dòng tồn theo FIFO.` : ''}${short.length ? ` Không đủ tồn: ${short.join(', ')}.` : ''}`.trim());
+  }, [pendFill, stockLoading, stock, ordersLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 1 xe đi / về nhiều đơn (cùng loại, cùng khóa gộp: xem mergeKey): gộp thêm đơn → điền hàng cho đơn đó (xuất: chọn tồn FIFO),
   // khi lưu mỗi đơn 1 phiếu con cùng mã gộp; in ra 1 bộ phiếu ghi đủ các đơn (mỗi dòng hàng ghi số đơn)
@@ -548,6 +605,7 @@ function Form({ type }) {
   // Đổi kho: phiếu nhập giữ nguyên mã hàng, số lượng đã có (theo PO / nhập tay), chỉ bỏ vị trí của kho cũ để chọn vị trí kho mới;
   // phiếu theo đơn chưa có dòng nào thì điền lại theo đơn cho kho mới. Phiếu xuất / chuyển: dòng tồn thuộc kho cũ nên chọn lại (theo đơn: FIFO lại)
   const changeWh = (code) => {
+    if (type === 'out') { setItemWh({}); setRowWh([]); }
     setOpWh(code);
     setFillNote('');
     if (type === 'in') {
@@ -795,7 +853,7 @@ function Form({ type }) {
   const submit = async (e) => {
     e.preventDefault();
     setErr('');
-    if (!wh) return setErr('Chọn kho.');
+    if (!wh) return setErr(type === 'out' ? 'Chọn kho xuất ở từng mã hàng (ô Kho cạnh mã hàng trong bảng Hàng xuất).' : 'Chọn kho.');
     if (type === 'in' && !head.company) return setErr('Chọn công ty chủ hàng.');
     if (type === 'in' && ['PO', 'direct'].includes(source) && !buysInto(wh.code))
       return setErr(`Kho ${wh.code} không nhận hàng mua. Hàng mua (PO, nhập trực tiếp) chỉ nhập vào: ${buyWhText()}. Kho này nhập bằng chuyển kho (STO) hoặc khách trả hàng.`);
@@ -843,6 +901,7 @@ function Form({ type }) {
       out.push({
         ...(l.orderLine != null ? { orderLine: l.orderLine } : {}),
         ...(releasable(r) ? { _rel: r } : {}),
+        ...(type === 'out' ? { _wh: r.warehouse } : {}),
         ...(l.orderId ? { _oid: l.orderId } : {}),
         item: r.item, itemName: r.itemName || '', lot: r.lot || '', mfgDate: r.mfgDate || '', expDate: r.expDate || '', inDate: r.inDate || '',
         location: r.location, goodsStatus: r.goodsStatus, pledgee: r.pledgee || '', company: r.company || '',
@@ -862,19 +921,22 @@ function Form({ type }) {
       if (gone) return setErr(`Đơn gộp thêm ${gone.orderId} không còn mở (đã ${type === 'in' ? 'nhận' : 'giao'} đủ / đóng): bỏ đơn đó ra.`);
       const all = [order, ...exOrders];
       const used = {};
-      const st = (l) => (type === 'out' ? (l._rel ? [relTo, 'HTC'] : l.goodsStatus) : '');
+      const st = (l) => (type === 'out' ? (l._rel ? [releaseStatusOfWh(warehouses.find((w) => w.code === l._wh) || wh), 'HTC'] : l.goodsStatus) : '');
+      // Phiếu xuất nhiều kho: gắn dòng đơn theo kho của dòng tồn; dòng đơn ghi kho khác (người lập đã chọn kho khác) thì gắn theo mã hàng
+      const whOf = (l) => (type === 'out' ? l._wh : whCode);
       for (const [i, l] of out.entries()) {
         let o = l._oid ? all.find((x) => x.id === l._oid) : order;
         if (!o) return setErr(`Dòng ${i + 1}: đơn ${l._oid} không còn trong phiếu.`);
         const u = (used[o.id] ||= {});
         const keep = o.lines.find((x) => x.no === l.orderLine && x.item === l.item);
         // 1 mã hàng có nhiều dòng đơn còn mở (vd. 2 đơn giá): không tự đoán dòng, bắt chọn để trừ đúng dòng / đúng giá
-        const amb = keep ? [] : ambiguousOrderLines(o, l.item, u, type, { warehouse: whCode, status: st(l) });
+        const amb = keep ? [] : ambiguousOrderLines(o, l.item, u, type, { warehouse: whOf(l), status: st(l) });
         if (amb.length) return setErr(`Dòng ${i + 1}: mã hàng ${l.item} có ${amb.length} dòng trong đơn ${o.id} (dòng ${amb.map((x) => x.no).join(', ')}, có thể khác đơn giá / mã giao). Chọn ô "Trừ vào dòng ${o.type}" ở dòng phiếu để trừ đúng dòng.`);
-        l.orderLine = keep ? keep.no : matchOrderLine(o, l.item, u, type, { warehouse: whCode, status: st(l) });
+        l.orderLine = keep ? keep.no : matchOrderLine(o, l.item, u, type, { warehouse: whOf(l), status: st(l) });
+        if (l.orderLine == null && type === 'out') l.orderLine = matchOrderLine(o, l.item, u, type, { status: st(l) });
         if (l.orderLine == null && !l._oid && exOrders.length) {
           for (const eo of exOrders) {
-            const no2 = matchOrderLine(eo, l.item, (used[eo.id] ||= {}), type, { warehouse: whCode, status: st(l) });
+            const no2 = matchOrderLine(eo, l.item, (used[eo.id] ||= {}), type, { warehouse: whOf(l), status: st(l) }) ?? (type === 'out' ? matchOrderLine(eo, l.item, (used[eo.id] ||= {}), type, { status: st(l) }) : null);
             if (no2 != null) { o = eo; l.orderLine = no2; break; }
           }
         }
@@ -936,7 +998,16 @@ function Form({ type }) {
       };
       // Dự kiến xuất đang lập theo của từng SO
       const planIdsOf = (oid) => (shipPlan && shipPlan.orderId === oid ? shipPlan.planIds || [shipPlan.id] : extra.find((e) => e.orderId === oid)?.planIds || []);
-      const pieces = parts.size > 1 ? [...parts.values()] : [{ order: head.orderId ? order : null, lines: out }];
+      let pieces = parts.size > 1 ? [...parts.values()] : [{ order: head.orderId ? order : null, lines: out }];
+      // Phiếu xuất 1 xe lấy hàng ở nhiều kho: mỗi đơn × mỗi kho 1 phiếu con (tồn trừ đúng kho), chung 1 số phiếu gộp
+      if (type === 'out') {
+        pieces = pieces.flatMap((pc) => {
+          const by = new Map();
+          for (const l of pc.lines) { const w = l._wh || wh.code; if (!by.has(w)) by.set(w, []); const { _wh, ...rest } = l; by.get(w).push(rest); }
+          return [...by].map(([w, ls]) => ({ ...pc, wh: w, lines: ls }));
+        });
+      }
+      const whOfPiece = (pc) => (pc.wh && warehouses.find((w) => w.code === pc.wh)) || wh;
       // 1 xe nhiều đơn: mỗi đơn 1 phiếu con (trừ đúng đơn, công nợ), cùng mã phiếu gộp; pallet xuất / nhập kèm ghi ở phiếu đầu
       const cutTotal = [];
       const groupId = pieces.length > 1 ? `${type === 'in' ? 'GN' : 'GX'}${Date.now().toString(36).toUpperCase()}` : '';
@@ -944,24 +1015,24 @@ function Form({ type }) {
         const oid = direct ? '' : pc.order?.id || '';
         const pids = planIdsOf(oid);
         const res = await mk({
-          ...base, ...(k > 0 ? { pallets: [] } : {}), orderId: oid, orderRef: pc.order?.refNo || '', lines: pc.lines,
+          ...base, warehouse: whOfPiece(pc).code, ...(k > 0 ? { pallets: [] } : {}), orderId: oid, orderRef: pc.order?.refNo || '', lines: pc.lines,
           // Nhập theo SO trả hàng: ghi SO gốc để cộng "khách trả về" của SO
           ...(pc.order?.type === 'DRT' ? { originalSoId: pc.order.originalSoId || '' } : {}),
           // Xuất trả NCC theo RTV: ghi PO gốc để cộng "đã trả NCC" của PO
           ...(pc.order?.type === 'RTV' ? { originalPoId: pc.order.originalPoId || '' } : {}),
           ...(pids.length === 1 ? { planId: pids[0] } : {}),
-          ...(groupId ? { groupId, groupOrders: pieces.map((x) => x.order.id), groupIndex: k } : {}),
+          ...(groupId ? { groupId, groupOrders: [...new Set(pieces.map((x) => x.order?.id || ''))], groupIndex: k, ...(type === 'out' ? { groupWarehouses: [...new Set(pieces.map((x) => whOfPiece(x).code))] } : {}) } : {}),
         });
         const mvId = typeof res === 'string' ? res : res.id;
         ids.push(mvId);
         if (k === 0) setDonePO(typeof res === 'string' ? '' : res.orderId);
         const mvLines = pc.lines.map(({ _rel, ...l }) => l);
         // Tin nhắn hệ thống: lập phiếu xuất / nhập (theo cấu hình, không chờ)
-        notifySlip({ id: mvId, type, orderId: oid, partyName: head.partyName.trim(), sales: pc.order?.sales || '', company: head.company || '', date: head.date, warehouse: wh.code, lines: mvLines }, { email, name });
+        notifySlip({ id: mvId, type, orderId: oid, partyName: head.partyName.trim(), sales: pc.order?.sales || '', company: head.company || '', date: head.date, warehouse: whOfPiece(pc).code, lines: mvLines }, { email, name });
         // Chuyển pháp nhân: dòng lấy tồn công ty khác công ty xuất → báo kế toán
         const crossHere = type === 'out' && head.company ? mvLines.filter((l) => l.company && l.company !== head.company) : [];
         if (crossHere.length) {
-          try { await notifyLegalTransfer({ id: mvId, type, company: head.company, date: head.date, warehouse: wh.code, orderId: oid, partyCode: head.partyCode.trim(), partyName: head.partyName.trim(), lines: mvLines }, { email, name }, { shortWarned: coShort.length > 0 }); }
+          try { await notifyLegalTransfer({ id: mvId, type, company: head.company, date: head.date, warehouse: whOfPiece(pc).code, orderId: oid, partyCode: head.partyCode.trim(), partyName: head.partyName.trim(), lines: mvLines }, { email, name }, { shortWarned: coShort.length > 0 }); }
           catch (e4) { setErr(`Đã lập phiếu ${mvId} nhưng chưa gửi được thông báo chuyển pháp nhân cho kế toán: ${e4.message}. Báo kế toán xem Báo cáo → Chuyển pháp nhân.`); }
         }
         // Phiếu lập từ dự kiến xuất: cộng số đã xuất vào dự kiến, đủ thì dự kiến chuyển "Đã lập phiếu xuất"
@@ -973,8 +1044,9 @@ function Form({ type }) {
           try { await applyMovementToOrderPlans(oid, { id: mvId, lines: mvLines, shipCode: head.shipCode }, { email, name }); }
           catch (e3) { console.warn('Chưa cập nhật được dự kiến xuất của', oid, e3); }
         }
-        // Xuất thiếu, chọn "Trả về SO": cắt phần còn lại của DO (cùng mã giao) để SO mở lại phần đó, DO đóng
-        if (type === 'out' && shortMode === 'so' && pids.length && doShort.some((x) => x.orderId === oid)) {
+        // Xuất thiếu, chọn "Trả về SO": sau phiếu con cuối cùng của đơn (nhiều kho), cắt phần còn lại của DO (cùng mã giao) để SO mở lại phần đó, DO đóng
+        const lastOfOrder = !pieces.slice(k + 1).some((x) => (x.order?.id || '') === oid);
+        if (type === 'out' && lastOfOrder && shortMode === 'so' && pids.length && doShort.some((x) => x.orderId === oid)) {
           for (const pid of pids) {
             try { const c = await cutPlanShort(pid, mvId, shipParam, { email, name }); if (c > 0) cutTotal.push(`${pid} ${fmtNum(c, 2)} kg`); }
             catch (e6) { setErr(`Đã lập phiếu ${mvId} nhưng chưa trả được phần thiếu của DO ${pid} về SO: ${e6.message}`); }
@@ -994,11 +1066,12 @@ function Form({ type }) {
         } catch (e5) { setErr(`Đã lập phiếu ${mvId} nhưng chưa tạo được chuyến thu hồi: ${e5.message}. Tạo chuyến ở Vận tải.`); }
       }
       setDoneCut(cutTotal.length ? cutTotal.join(', ') : '');
+      if (type === 'out') { setItemWh({}); setRowWh([]); setOutWh(''); setFillNote(''); }
       setOpenBox('');
       setShortMode('so');
       setDoneCross(cross.length ? [...new Set(cross.map((l) => l.company))].join(', ') : '');
       setShipPlan(null); setExtra([]); setGroupPlans([]);
-      setDoneGroup(groupId ? { id: groupId, ids, orders: pieces.map((x) => x.order.id) } : null);
+      setDoneGroup(groupId ? { id: groupId, ids, orders: [...new Set(pieces.map((x) => x.order?.id || '').filter(Boolean))], whs: [...new Set(pieces.map((x) => whOfPiece(x).code))] } : null);
       setDonePosted(oneStep);
       setDone(mvId);
       if (!(type === 'in' && ['SO', 'DRT'].includes(source) && ret.carrier)) setDoneTrip('');
@@ -1024,7 +1097,6 @@ function Form({ type }) {
     if (type !== 'out' || !order) return m;
     const add = (o, planMap) => {
       for (const ol of o.lines) {
-        if (lineWh(o, ol, 'out') && whCode && lineWh(o, ol, 'out') !== whCode) continue;
         const k = planMap ? num(planMap[ol.no]) : openK(o, ol, 'out');
         if (k > 0.001) { const key = `${o.id}|${ol.item}`; const cur = m.get(key) || { kg: 0, nos: [] }; cur.kg += k; cur.nos.push(ol.no); m.set(key, cur); }
       }
@@ -1057,14 +1129,17 @@ function Form({ type }) {
   }, [type, lines, stockById, outNeed, order]); // eslint-disable-line react-hooks/exhaustive-deps
   // Cột "Dòng SO": khi 1 mã hàng có từ 2 dòng đơn còn mở (vd. giá khác nhau) thì chọn dòng đơn cho từng dòng phiếu
   const orderOf = (oid) => (oid && orders.find((o) => o.id === oid)) || order;
-  const lineCol = type === 'out' && !!order && outGroups.some((g) => g.item && orderLineChoices(orderOf(g.oid), g.item, 'out', { warehouse: whCode }).length > 1);
+  // Kho xuất của 1 mã hàng: kho đã chọn ở dòng mã hàng, không thì kho của dòng tồn đã chọn, kho ghi trên đơn
+  const groupWh = (g) => itemWh[g.key] || g.rows.map(({ l }) => stockById.get(l.stockId)?.warehouse || l.pickWh).find(Boolean) || outWh || '';
+  const multiWh = new Set(lines.map((l) => stockById.get(l.stockId)?.warehouse).filter(Boolean)).size > 1;
+  const lineCol = type === 'out' && !!order && outGroups.some((g) => g.item && orderLineChoices(orderOf(g.oid), g.item, 'out', { warehouse: groupWh(g) }).length > 1);
   const orderName = (oid) => { const o = orders.find((x) => x.id === oid); return o ? `${o.id}${o.refNo ? ` (${o.refNo})` : ''}` : oid; };
   // Tồn của mã hàng ở kho này không xuất được (hư hỏng, khóa xuất, vị trí Block): nêu ra khi thiếu
-  const lockedOf = (item) => {
-    const rs = stock.filter((r) => r.item === item && blocked(r));
+  const lockedOf = (item, w) => {
+    const rs = stock.filter((r) => r.item === item && (!w || r.warehouse === w) && blocked(r));
     return rs.length ? rs.map((r) => `${fmtNum(num(r.kg), 2)} kg ở ${r.location} (${statusMap.get(r.goodsStatus)?.name || r.goodsStatus})`).join(', ') : '';
   };
-  const addLotLine = (item, oid) => setLines((ls) => [...ls.filter((l) => l.stockId || l.pickItem), { ...stockLine(), pickItem: item, ...(oid && order && oid !== order.id ? { orderId: oid } : {}) }].slice(0, 30));
+  const addLotLine = (item, oid, w) => setLines((ls) => [...ls.filter((l) => l.stockId || l.pickItem), { ...stockLine(), pickItem: item, pickWh: w || '', ...(oid && order && oid !== order.id ? { orderId: oid } : {}) }].slice(0, 30));
   const trSummary = [head.plate, head.carrierName || head.carrier, head.driverName].filter(Boolean).join(' · ');
   const palSummary = pal.palletMode === 'pallet' ? `Kiện${pal.pallets?.length ? ` · ${pal.pallets.reduce((a, x) => a + num(x.qty), 0)} pallet` : ''}` : pal.palletMode ? 'Xá (không pallet)' : '';
   const noteSummary = [String(head.reason || '').split(' – ')[1], head.note].filter(Boolean).join(' · ');
@@ -1084,14 +1159,6 @@ function Form({ type }) {
             </Select>
             <button type="button" className="btn primary sm" title="Tìm, tích chọn 1 hay nhiều đơn → Tạo từng đơn / Tạo gộp" onClick={() => setOrdPicking(true)}>🔎 Nhiều đơn</button>
           </div>
-        </Field>
-        <Field label="Kho xuất" required>
-          <WithAdd cat="warehouses" onAdded={(id) => changeWh(id)}>
-            <Select value={whCode} onChange={(e) => changeWh(e.target.value)} className={whCode ? '' : 'need'}>
-              <option value="">-- Chọn kho xuất --</option>
-              {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
-            </Select>
-          </WithAdd>
         </Field>
         <Field label="Công ty xuất" help="Phiếu giao hàng mang tên công ty này. Chỉ hiện tồn của công ty này (bật Lấy tồn công ty cùng chủ để chuyển pháp nhân)">
           <CompanyPicker value={head.company} allowAll={false}
@@ -1212,7 +1279,7 @@ function Form({ type }) {
           </label>
         )}
       </div>
-      {!whCode && <div className="warn-box" style={{ margin: '0 12px 8px' }}>🏬 <b>Chọn kho xuất</b> ở ô Kho xuất phía trên{order ? ` (đơn ${order.id} chưa ghi kho)` : ''}. Chưa biết hàng nằm ở kho nào? Gõ mã hàng rồi bấm <b>📦 Tồn</b> để xem tồn theo từng kho.</div>}
+      {outGroups.some((g) => g.item && !groupWh(g)) && <div className="warn-box" style={{ margin: '0 12px 8px' }}>🏬 <b>Chọn kho xuất ở từng mã hàng</b> (ô Kho ngay cạnh mã hàng, có ghi số tồn từng kho). Các mã hàng lấy ở kho khác nhau vẫn đi chung 1 xe: khi lưu, mỗi kho 1 phiếu con, chung 1 số phiếu gộp và in chung 1 bộ phiếu.</div>}
       {stockItem && (
         <ItemStockModal item={stockItem} itemName={itemMap.get(stockItem)?.name || ''} whCode={whCode} warehouses={warehouses} company={head.company}
           blocked={blocked} chosen={new Set(lines.map((l) => l.stockId).filter(Boolean))} need={order ? order.lines.filter((l) => l.item === stockItem).reduce((a, l) => a + openK(order, l, type), 0) : 0}
@@ -1233,46 +1300,55 @@ function Form({ type }) {
       )}
       <div className="out-table-wrap">
         <table className="out-table">
-          <thead><tr><th style={{ width: 34 }}>#</th>{(crossCo || crossPicked.length > 0) && <th>Công ty</th>}<th>Lot</th><th>Vị trí</th><th>TTHH</th><th>Nhập ngày</th><th className="num">Tồn vị trí (kg)</th><th className="num">Xuất (kg)</th><th className="num">Bao</th><th className="num">Pallet</th>{lineCol && <th>Dòng SO</th>}<th style={{ width: 34 }} /></tr></thead>
+          <thead><tr><th style={{ width: 34 }}>#</th>{multiWh && <th>Kho</th>}{(crossCo || crossPicked.length > 0) && <th>Công ty</th>}<th>Lot</th><th>Vị trí</th><th>TTHH</th><th>Nhập ngày</th><th className="num">Tồn vị trí (kg)</th><th className="num">Xuất (kg)</th><th className="num">Bao</th><th className="num">Pallet</th>{lineCol && <th>Dòng SO</th>}<th style={{ width: 34 }} /></tr></thead>
           {outGroups.map((g) => {
             const need = outNeed.get(g.key);
             const got = g.rows.reduce((a, { l }) => a + (stockById.get(l.stockId) ? Math.abs(num(l.kg)) : 0), 0);
             const miss = need ? need.kg - got : 0;
             const tol = need ? Math.max(1, need.kg * 0.005) : 1;
-            const cols = 10 + ((crossCo || crossPicked.length > 0) ? 1 : 0) + (lineCol ? 1 : 0);
+            const cols = 10 + ((crossCo || crossPicked.length > 0) ? 1 : 0) + (lineCol ? 1 : 0) + (multiWh ? 1 : 0);
+            const gw = groupWh(g);
             const itemName = itemMap.get(g.item)?.name || order?.lines.find((x) => x.item === g.item)?.itemName || '';
-            const locked = miss > tol ? lockedOf(g.item) : '';
+            const locked = miss > tol ? lockedOf(g.item, groupWh(g)) : '';
             return (
               <tbody key={g.key}>
                 <tr className="grp"><td colSpan={cols}>
                   <div className="grp-row">
-                    {g.item ? <><ItemCode code={g.item} onStock={setStockItem} /> <b>{itemName}</b></> : <b>Chọn hàng trong kho</b>}
+                    {g.item ? <><ItemCode code={g.item} onStock={setStockItem} /> <b>{itemName}</b>
+                      <WhPick item={g.item} value={gw} warehouses={warehouses} ok={(r) => !blocked(r) && coOk(r)} onChange={(c) => pickGroupWh(g.oid, g.item, c)} /></> : <b>Chọn hàng trong kho</b>}
                     {extra.length > 0 && g.oid && <span className="tag">{orderName(g.oid)}</span>}
                     {need && <span className="tag">Dòng đơn {need.nos.join(', ')}</span>}
                     {need ? <span>{shipPlan && g.oid === shipPlan.orderId ? 'DO cần' : 'Còn phải xuất'} <b>{fmtNum(need.kg, 2)}</b> · chọn được <b>{fmtNum(got, 2)}</b> kg</span>
                       : g.item ? <span>xuất <b>{fmtNum(got, 2)}</b> kg</span> : null}
-                    {need && whCode && (miss > tol ? <span className="pill short">⚠ Thiếu {fmtNum(miss, 2)} kg</span>
+                    {need && gw && (miss > tol ? <span className="pill short">⚠ Thiếu {fmtNum(miss, 2)} kg</span>
                       : miss < -tol ? <span className="pill short">Vượt {fmtNum(-miss, 2)} kg</span> : <span className="pill ok">✓ Đủ</span>)}
                     <span style={{ flex: 1 }} />
-                    {g.item && <button type="button" className="btn sm" disabled={!whCode} onClick={() => addLotLine(g.item, g.oid)}>+ Lot khác</button>}
+                    {g.item && <button type="button" className="btn sm" disabled={!gw} onClick={() => addLotLine(g.item, g.oid, gw)}>+ Lot khác</button>}
                   </div>
                 </td></tr>
                 {g.rows.map(({ l, i }, k) => {
                   const r = stockById.get(l.stockId);
                   const q = qtySetters(r, (p) => setLine(i, p));
                   if (!r) {
-                    const opts = stockRows.filter((x) => !l.pickItem || x.item === l.pickItem);
+                    const rw = l.pickWh || gw;
+                    const opts = stockRows.filter((x) => (!l.pickItem || x.item === l.pickItem) && (!rw || x.warehouse === rw));
                     return (
                       <tr key={i}><td className="muted">{k + 1}</td>
                         <td colSpan={cols - 2}>
+                          <div className="cell-add">
+                          {!g.item && <Select value={l.pickWh || ''} className={l.pickWh ? '' : 'need'} style={{ maxWidth: 220 }} onChange={(e) => { const c = e.target.value; setLine(i, { pickWh: c }); if (c) setRowWh((x) => [...new Set([...x, c])]); }}>
+                            <option value="">-- Kho xuất --</option>
+                            {warehouses.map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
+                          </Select>}
                           <Select searchable value="" onChange={(e) => { const x = stockById.get(e.target.value); if (!x) return; if (order) pickOutStock(i, x); else setLine(i, { stockId: x._id, bags: x.bags, pallets: x.pallets, kg: x.kg, kgTxt: undefined }); }}>
-                            <option value="">{whCode ? `-- Chọn lot / vị trí trong kho ${whCode}${l.pickItem ? ` (${l.pickItem})` : ''} --` : '-- Chọn kho xuất trước --'}</option>
+                            <option value="">{rw ? `-- Chọn lot / vị trí trong kho ${rw}${l.pickItem ? ` (${l.pickItem})` : ''} --` : '-- Chọn kho xuất trước --'}</option>
                             {opts.map((x) => (
                               <option key={x._id} value={x._id} disabled={blocked(x)}>
                                 {x.company ? `[${x.company}] ` : ''}{x.item} · lot {x.lot || '-'} · {x.location} · {x.goodsStatus}{x.pledgee ? `(${x.pledgee})` : ''} · {fmtNum(num(x.kg), 2)} kg · nhập {fmtDate(x.inDate)}{blocked(x) ? ' · KHÓA XUẤT' : releasable(x) ? ' · chờ giải chấp' : ''}
                               </option>
                             ))}
                           </Select>
+                          </div>
                         </td>
                         <td><button type="button" className="btn ghost sm" disabled={lines.length === 1} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>✕</button></td></tr>
                     );
@@ -1281,6 +1357,7 @@ function Form({ type }) {
                   return (
                     <tr key={i}>
                       <td className="muted">{k + 1}</td>
+                      {multiWh && <td className="mono">{r.warehouse}</td>}
                       {(crossCo || crossPicked.length > 0) && <td>{r.company || '-'}{head.company && r.company && r.company !== head.company ? <span className="pill htc" title={`Chuyển pháp nhân → ${head.company}`}>🏛️</span> : ''}</td>}
                       <td className="mono">{r.lot || '-'}{lotRequired(itemMap.get(r.item)) && <b style={{ color: 'var(--red)' }} title={LOT_REQ_HINT}> 🔖</b>}</td>
                       <td className="mono">{r.location}</td>
@@ -1295,8 +1372,8 @@ function Form({ type }) {
                     </tr>
                   );
                 })}
-                {need && miss > tol && whCode && (
-                  <tr className="miss"><td /><td colSpan={cols - 1}>Kho {whCode} không còn tồn xuất được cho {fmtNum(miss, 2)} kg{locked ? ` (${locked}: khóa xuất)` : ''}. Bấm <b>+ Lot khác</b> nếu còn hàng ở vị trí khác{doShort.some((x) => x.orderId === g.oid && x.item === g.item) ? '; phần thiếu xử lý ở khung bên dưới' : ''}.</td></tr>
+                {need && miss > tol && gw && (
+                  <tr className="miss"><td /><td colSpan={cols - 1}>Kho {gw} không còn tồn xuất được cho {fmtNum(miss, 2)} kg{locked ? ` (${locked}: khóa xuất)` : ''}. Bấm <b>+ Lot khác</b> nếu còn hàng ở vị trí khác{doShort.some((x) => x.orderId === g.oid && x.item === g.item) ? '; phần thiếu xử lý ở khung bên dưới' : ''}.</td></tr>
                 )}
               </tbody>
             );
@@ -1319,7 +1396,7 @@ function Form({ type }) {
       </div>
       {done && doneGroup && type === 'in' && <div className="ok-box" style={{ marginBottom: 10 }}>📦 Phiếu nhập gộp <b className="mono">{doneGroup.id}</b>: 1 xe về {doneGroup.orders.length} đơn ({doneGroup.orders.join(', ')}), đã lập phiếu <b className="mono">{doneGroup.ids.join(', ')}</b> (mỗi đơn 1 phiếu con). {donePosted ? <b>Tồn kho đã cập nhật.</b> : <><b>Chờ thủ kho nhận hàng</b>: thủ kho xác nhận 1 lần cho cả xe.</>}
         {' '}<Link className="btn primary" to={`/kho/phieu/${done}/in`} target="_blank">🖨 In phiếu nhập gộp</Link>{donePosted && printsLabels(whCode) && doneGroup.ids.map((x) => <span key={x}> <Link className="btn" to={`/kho/phieu/${x}/nhan`} target="_blank">🏷️ In nhãn {x}</Link></span>)}{!donePosted && <> <Link className="btn" to={`/kho/nhan-hang/${done}`}>📥 Nhận hàng cả xe</Link></>}</div>}
-      {done && doneGroup && type !== 'in' && <div className="ok-box" style={{ marginBottom: 10 }}>🚚 Phiếu xuất gộp <b className="mono">{doneGroup.id}</b>: 1 xe {doneGroup.orders.length} đơn ({doneGroup.orders.join(', ')}), đã lập phiếu <b className="mono">{doneGroup.ids.join(', ')}</b> (mỗi đơn 1 phiếu con){doneRel ? '' : ', tồn kho đã cập nhật'}.
+      {done && doneGroup && type !== 'in' && <div className="ok-box" style={{ marginBottom: 10 }}>🚚 Phiếu xuất gộp <b className="mono">{doneGroup.id}</b>: 1 xe {doneGroup.orders.length} đơn ({doneGroup.orders.join(', ')}){doneGroup.whs?.length > 1 ? ` lấy ở ${doneGroup.whs.length} kho (${doneGroup.whs.join(', ')})` : ''}, đã lập phiếu <b className="mono">{doneGroup.ids.join(', ')}</b> (mỗi đơn, mỗi kho 1 phiếu con){doneRel ? '' : ', tồn kho đã cập nhật'}.
         In chung 1 bộ: <Link className="btn primary" to={`/kho/phieu/${done}/soan`} target="_blank">📋 Phiếu soạn hàng gộp</Link> <Link className="btn" to={`/kho/phieu/${done}/in`} target="_blank">🖨 Phiếu {order?.type === 'STO' || String(doneGroup.orders[0]).startsWith('STO') ? 'xuất' : 'giao hàng'} gộp</Link>
         {doneRel && <div style={{ marginTop: 6 }}>⏳ Có hàng HTC nên phiếu có hàng HTC đang <b>chờ giải chấp</b>; vào <Link to="/kho/giai-chap">Đề nghị giải chấp → Chờ giải chấp</Link>.</div>}</div>}
       {done && !doneGroup && <div className="ok-box" style={{ marginBottom: 10 }}>Đã lập phiếu <b className="mono">{done}</b>{donePO && <> và đơn mua <Link className="mono" to="/don-hang?tab=PO">{donePO}</Link> (nhập trực tiếp)</>}.{type === 'in' && donePosted ? ' Tồn kho đã cập nhật.' : type === 'in' ? <> <b>Chờ thủ kho nhận hàng</b> và xác nhận số thực nhận, vị trí (tồn kho cập nhật khi thủ kho xác nhận{source === 'direct' ? ', đơn mua PO lập theo số thực nhận' : ''}).</> : doneRel ? '' : ' Tồn kho đã cập nhật.'} <Link to={`/kho/phieu/${done}/in`} target="_blank">🖨 In phiếu</Link>{type === 'in' && donePosted && printsLabels(whCode) && <> · <Link className="btn primary" to={`/kho/phieu/${done}/nhan`} target="_blank">🏷️ In nhãn pallet</Link></>}
@@ -1581,6 +1658,20 @@ function Form({ type }) {
       <datalist id="dl-mv-party">{parties.map((p) => <option key={p.code} value={p.code}>{p.name}</option>)}</datalist>
       <datalist id="dl-mv-item">{items.filter((x) => x.active !== false).map((x) => <option key={x.code} value={x.code}>{x.name}</option>)}</datalist>
     </form>
+  );
+}
+
+// Kho xuất của 1 mã hàng trên phiếu xuất: liệt kê các kho, ghi số tồn xuất được của mã đó ở từng kho (kho có tồn lên trước)
+function WhPick({ item, value, onChange, warehouses, ok }) {
+  const { rows } = useItemStock(item);
+  const avail = new Map();
+  rows.filter(ok).forEach((r) => avail.set(r.warehouse, (avail.get(r.warehouse) || 0) + num(r.kg)));
+  const list = [...warehouses].sort((a, b) => (avail.has(b.code) ? 1 : 0) - (avail.has(a.code) ? 1 : 0));
+  return (
+    <Select value={value} onChange={(e) => onChange(e.target.value)} className={value ? 'wh-pick' : 'wh-pick need'} title="Kho xuất của mã hàng này">
+      <option value="">-- Chọn kho xuất --</option>
+      {list.map((w) => <option key={w.code} value={w.code}>🏬 {w.code} – {w.name}{avail.has(w.code) ? ` · còn ${fmtNum(avail.get(w.code), 2)} kg` : ' · không có tồn'}</option>)}
+    </Select>
   );
 }
 

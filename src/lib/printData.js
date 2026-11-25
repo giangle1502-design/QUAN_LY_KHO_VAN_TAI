@@ -67,7 +67,8 @@ export async function loadGroupMovement(m) {
   return {
     ...first,
     orderId: orderIds.join(', '), orderRef: refs.join(', '), orderIds, groupMoves: list,
-    lines: list.flatMap((x) => (x.lines || []).map((l) => ({ ...l, orderId: x.orderId, orderRef: x.orderRef || '', moveId: x.id }))),
+    lines: list.flatMap((x) => (x.lines || []).map((l) => ({ ...l, orderId: x.orderId, orderRef: x.orderRef || '', moveId: x.id, warehouse: l.warehouse || x.warehouse }))),
+    warehouses: [...new Set(list.map((x) => x.warehouse).filter(Boolean))],
     pallets: list.flatMap((x) => x.pallets || []),
     status: list.some((x) => x.status === 'wait_release') ? 'wait_release' : first.status,
     note: [...new Set(list.map((x) => x.note).filter(Boolean))].join('; '),
