@@ -5,7 +5,7 @@ import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { MOVE_TYPES } from '../../lib/stock';
-import { fmtDate, fmtNum } from '../../lib/utils';
+import { fmtDate, fmtInt, fmtNum } from '../../lib/utils';
 import { carrierText, docTypeOfMovement } from '../../lib/printTemplates';
 import { loadGroupMovement, loadMovementData } from '../../lib/printData';
 import { TemplatePage, TemplateSheets, useTemplateChoice } from '../../components/PrintTemplate';
@@ -312,9 +312,9 @@ function PalletTable({ m, rows }) {
         <thead><tr><th>STT</th><th>Mã pallet</th><th>Loại pallet</th><th className="num">Số lượng (cái)</th>{m.type !== 'in' && <th>Ghi chú</th>}</tr></thead>
         <tbody>{rows.map((p, i) => (
           <tr key={i}><td>{i + 1}</td><td>{p.code}</td><td>{p.name || p.material}{p.name && p.material && !p.name.includes(p.material) ? ` (${p.material})` : ''}</td>
-            <td className="num"><b>{fmtNum(p.qty)}</b></td>{m.type !== 'in' && <td>{palletToText(p)}</td>}</tr>
+            <td className="num"><b>{fmtInt(p.qty)}</b></td>{m.type !== 'in' && <td>{palletToText(p)}</td>}</tr>
         ))}</tbody>
-        <tfoot><tr><td colSpan={3}>Cộng pallet</td><td className="num">{fmtNum(rows.reduce((a, p) => a + (Number(p.qty) || 0), 0))}</td>{m.type !== 'in' && <td></td>}</tr></tfoot>
+        <tfoot><tr><td colSpan={3}>Cộng pallet</td><td className="num">{fmtInt(rows.reduce((a, p) => a + (Number(p.qty) || 0), 0))}</td>{m.type !== 'in' && <td></td>}</tr></tfoot>
       </table>
     </>
   );

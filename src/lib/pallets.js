@@ -1,6 +1,6 @@
 import { collection, doc, runTransaction } from 'firebase/firestore';
 import { db } from '../firebase';
-import { fmtNum } from './utils';
+import { fmtInt, fmtNum } from './utils';
 
 // ============================================================================
 // Pallet xuất kèm hàng (pallet gỗ / pallet nhựa có mã trong danh mục `pallets`):
@@ -168,7 +168,7 @@ export async function postPalletMove(mv, user) {
 
 export function palletText(v) {
   if (v?.palletMode !== 'pallet') return '';
-  return (v.pallets || []).map((p) => `${p.name || p.code} ${fmtNum(p.qty)} cái${palletToText(p) ? ` (${palletToText(p)})` : ''}`).join('; ');
+  return (v.pallets || []).map((p) => `${p.name || p.code} ${fmtInt(p.qty)} cái${palletToText(p) ? ` (${palletToText(p)})` : ''}`).join('; ');
 }
 export function palletToText(p) {
   if (p.to === 'carrier') return `vận tải ${p.carrierName || p.carrier || ''} mượn, trả lại kho`;

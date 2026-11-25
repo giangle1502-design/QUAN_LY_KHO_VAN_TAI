@@ -78,3 +78,20 @@ export const whLabel = (code) => {
   const w = whRows.get(code);
   return w ? `${w.code} – ${w.name || ''}` : code || '';
 };
+
+// Tên kho đầy đủ để hiển thị trên báo cáo (không bắt nhớ mã kho): "VAP - Việt An Pha Đức Hòa", "Kho ngoại quan ICD Long Bình".
+// Kho có pháp nhân mà tên chưa ghi pháp nhân → thêm "PHÁP NHÂN - " phía trước. Kho chung → tên kho chung. Không có trong danh mục → giữ mã.
+const plainUp = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'D').toUpperCase();
+export const whFullName = (code) => {
+  if (!code) return '';
+  const w = whRows.get(code);
+  if (w) {
+    const name = String(w.name || '').trim() || code;
+    const co = String(w.company || '').trim();
+    return co && !plainUp(name).startsWith(plainUp(co)) ? `${co} - ${name}` : name;
+  }
+  const g = groups.get(code);
+  return g ? String(g.name || '').trim() || code : code;
+};
+// Danh sách mã kho "K1, K2" → tên đầy đủ
+export const whFullNames = (codes) => String(codes || '').split(/\s*,\s*/).filter(Boolean).map(whFullName).join(', ');

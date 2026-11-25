@@ -3,7 +3,7 @@
 // {{CHỮ KÝ}} = hàng ô ký tên, {{#nếu Tên trường}} ... {{/nếu}} = chỉ in đoạn này khi trường có giá trị.
 // Mỗi loại phiếu có thể có nhiều mẫu; mẫu áp dụng cho công ty chủ hàng / khách hàng cụ thể được chọn tự động.
 import { MOVE_TYPES } from './stock';
-import { fmtDate, fmtNum, norm } from './utils';
+import { fmtDate, fmtInt, fmtNum, norm } from './utils';
 import { evalTree, parseFormula } from './formula';
 
 export const DOC_TYPES = {
@@ -230,9 +230,9 @@ function palletTableHtml(d) {
   if (!rows.length) return '';
   const to = (p) => (p.to === 'carrier' ? `vận tải ${p.carrierName || p.carrier || ''} mượn, trả lại kho` : p.to === 'customer' ? 'khách hàng giữ' : p.to === 'transfer' ? 'chuyển theo hàng sang kho nhận' : '');
   const showTo = rows.some((p) => to(p));
-  const body = rows.map((p, i) => `<tr><td style="text-align:center">${i + 1}</td><td>${esc(p.code)}</td><td>${esc(p.name || p.material)}</td><td style="text-align:right"><b>${esc(fmtNum(p.qty))}</b></td>${showTo ? `<td>${esc(to(p))}</td>` : ''}</tr>`).join('');
+  const body = rows.map((p, i) => `<tr><td style="text-align:center">${i + 1}</td><td>${esc(p.code)}</td><td>${esc(p.name || p.material)}</td><td style="text-align:right"><b>${esc(fmtInt(p.qty))}</b></td>${showTo ? `<td>${esc(to(p))}</td>` : ''}</tr>`).join('');
   const total = rows.reduce((a, p) => a + num(p.qty), 0);
-  return `<p style="margin:8px 0 2px"><b>PALLET KÈM HÀNG</b></p><table class="tpl-lines no-resize"><thead><tr><th>STT</th><th>Mã pallet</th><th>Loại pallet</th><th>Số lượng (cái)</th>${showTo ? '<th>Ghi chú</th>' : ''}</tr></thead><tbody>${body}</tbody><tfoot><tr><td colspan="3"><b>Cộng pallet</b></td><td style="text-align:right"><b>${esc(fmtNum(total))}</b></td>${showTo ? '<td></td>' : ''}</tr></tfoot></table>`;
+  return `<p style="margin:8px 0 2px"><b>PALLET KÈM HÀNG</b></p><table class="tpl-lines no-resize"><thead><tr><th>STT</th><th>Mã pallet</th><th>Loại pallet</th><th>Số lượng (cái)</th>${showTo ? '<th>Ghi chú</th>' : ''}</tr></thead><tbody>${body}</tbody><tfoot><tr><td colspan="3"><b>Cộng pallet</b></td><td style="text-align:right"><b>${esc(fmtInt(total))}</b></td>${showTo ? '<td></td>' : ''}</tr></tfoot></table>`;
 }
 
 function valueMap(defs, d, l) {

@@ -208,7 +208,7 @@ export default function SalesAnalysis({ wh, co, q }) {
     { key: 'share', label: '% tổng', render: (r) => `${Math.round(r.share)}%`, excel: (r) => Math.round(r.share) },
     { key: 'q', label: qLabel, num: true, sum: true },
     ...(M ? [{ key: 'avgP', label: `Giá BQ (${unitLabel})`, num: true }] : []),
-    { key: 'nCust', label: 'Số KH', num: true }, ...(cmpOn ? [{ key: 'newCust', label: 'KH mới', num: true }] : []), { key: 'nSo', label: 'Số đơn', num: true },
+    { key: 'nCust', label: 'Số KH', num: true, int: true }, ...(cmpOn ? [{ key: 'newCust', label: 'KH mới', num: true }] : []), { key: 'nSo', label: 'Số đơn', num: true, int: true },
     ...chgCol(mainKey, prevKey),
   ];
   const itemCols = [
@@ -216,14 +216,14 @@ export default function SalesAnalysis({ wh, co, q }) {
     { key: 'q', label: qLabel, num: true, sum: true }, { key: '_t', label: 'Tấn', render: (r) => tan(r.q), excel: (r) => n(r.q) / 1000 },
     ...(M ? [{ key: 'a', label: 'Doanh thu (đ)', num: true, sum: true }, { key: 'avgP', label: `Giá BQ (${unitLabel})`, num: true, style: () => ({ fontWeight: 700 }) },
       { key: 'range', label: 'Giá thấp – cao' }] : []),
-    { key: 'nCust', label: 'Số KH', num: true },
+    { key: 'nCust', label: 'Số KH', num: true, int: true },
     ...(cmpOn ? [{ key: 'prevQ', label: 'Kỳ trước (kg)', num: true }, ...chgCol('q', 'prevQ', '± sản lượng'), ...(M ? [{ key: 'prevAvg', label: 'Giá BQ kỳ trước', num: true }] : [])] : []),
   ];
   const custCols = [
     { key: 'name', label: 'Khách hàng', render: (r) => <>{r.name}{r.isNew && <> <span className="badge green">KH mới</span></>}</>, excel: (r) => r.name },
     { key: 'code', label: 'Mã KH' }, { key: 'sale', label: 'Sale' },
     ...(M ? [{ key: 'a', label: 'Doanh thu (đ)', num: true, sum: true, style: () => ({ fontWeight: 700 }) }] : []),
-    { key: 'q', label: qLabel, num: true, sum: true }, { key: 'nSo', label: 'Số đơn', num: true },
+    { key: 'q', label: qLabel, num: true, sum: true }, { key: 'nSo', label: 'Số đơn', num: true, int: true },
     ...chgCol(mainKey, prevKey),
   ];
   const smallCust = [{ key: 'name', label: 'Khách hàng' }, { key: 'sale', label: 'Sale' }, ...(M ? [{ key: 'a', label: 'Doanh thu (đ)', num: true, sum: true }] : []), { key: 'q', label: qLabel, num: true, sum: true }];

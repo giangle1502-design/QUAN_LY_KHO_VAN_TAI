@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usePref } from '../lib/prefs';
-import { fmtDate, fmtNum, getFormat, norm } from '../lib/utils';
+import { fmtDate, fmtInt, fmtNum, getFormat, norm } from '../lib/utils';
 import DynamicFilterPanel, { activeConds, applyFilter, EMPTY_FILTER } from './DynamicFilterPanel';
 import Select from './Select';
 
@@ -84,7 +84,7 @@ const kindOf = (c, rows, getVal) => {
 // Chữ hiển thị của 1 giá trị trong danh sách tích chọn
 const showVal = (v, kind, c) => {
   if (empty(v)) return '(Trống)';
-  if (kind === 'number') return fmtNum(v, c.ton ? 3 : c.digits ?? 2);
+  if (kind === 'number') return c.int ? fmtInt(v) : fmtNum(v);
   if (kind === 'date') return fmtDate(String(v).slice(0, 10));
   return txt(v);
 };

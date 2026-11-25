@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { usePref } from '../lib/prefs';
 import Select from '../components/Select';
 import {
-  DATE_FORMATS, DEC_SEPS, DEFAULT_FORMAT, GROUP_SEPS, TIME_FORMATS, fmtDate, fmtDateTime, fmtNum, getFormat, setFormat, today,
+  DATE_FORMATS, DECIMAL_COUNTS, DEC_SEPS, DEFAULT_FORMAT, GROUP_SEPS, TIME_FORMATS, fmtDate, fmtDateTime, fmtNum, getFormat, setFormat, today,
 } from '../lib/utils';
 
 // ============================================================================
@@ -57,11 +57,16 @@ export default function Settings() {
               {GROUP_SEPS.filter(([k]) => k !== f.dec).map(([k, l]) => <option key={k || 'none'} value={k}>{l}</option>)}
             </Select>
           </label>
+          <label className="field"><span>Số chữ số thập phân</span>
+            <Select value={String(f.decimals ?? DEFAULT_FORMAT.decimals)} onChange={(e) => set('decimals', Number(e.target.value))}>
+              {DECIMAL_COUNTS.map((d) => <option key={d} value={String(d)}>{d} → {preview(() => { setFormat({ ...f, decimals: d }); return fmtNum(1375); })}</option>)}
+            </Select>
+          </label>
         </div>
         <div className="card" style={{ background: 'var(--primary-soft)', marginTop: 12 }}>
           <div className="small"><b>Xem trước</b></div>
           <div>Ngày: <b>{preview(() => fmtDate(today()))}</b> · Ngày giờ: <b>{preview(() => fmtDateTime(sample))}</b></div>
-          <div>Số lượng: <b>{preview(() => fmtNum(1234567.891, 3))}</b> kg · Tiền: <b>{preview(() => fmtNum(25500000))}</b> đ · Tỷ lệ: <b>{preview(() => fmtNum(12.5, 2))}</b>%</div>
+          <div>Số lượng: <b>{preview(() => fmtNum(1234567.891))}</b> kg · Tiền: <b>{preview(() => fmtNum(25500000))}</b> đ · Tỷ lệ: <b>{preview(() => fmtNum(12.5))}</b>%</div>
         </div>
         <div className="actions" style={{ marginTop: 12 }}>
           <button className="btn primary" disabled={same} onClick={() => save(f)}>Lưu cài đặt</button>

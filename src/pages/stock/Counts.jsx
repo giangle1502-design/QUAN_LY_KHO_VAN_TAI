@@ -7,7 +7,7 @@ import { CompanyPicker } from '../../components/TripBits';
 import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
 import { exportSheets } from '../../lib/excel';
 import { vnDate } from '../../lib/trips';
-import { fmtDate, fmtNum, matchQ } from '../../lib/utils';
+import { fmtDate, fmtInt, fmtNum, matchQ } from '../../lib/utils';
 import { COUNT_KINDS, COUNT_STATUS, createCount, lineResult, loadLines, pickStock, scopeText } from '../../lib/counts';
 import { WithAdd } from '../../components/FormTools';
 import Select from '../../components/Select';
@@ -87,7 +87,7 @@ function List({ counts, loading }) {
                   <td><Link className="mono" to={`/kho/kiem-ke/${c.id}`}>{c.id}</Link></td>
                   <td>{COUNT_KINDS[c.kind]}{c.blind ? <span className="small"> · đếm mù</span> : null}</td>
                   <td>{fmtDate(c.date)}</td><td>{c.company || 'Tất cả'}</td><td>{c.warehouse}</td>
-                  <td className="small">{scopeText(c)}</td><td className="num">{fmtNum(c.nLines)}</td>
+                  <td className="small">{scopeText(c)}</td><td className="num">{fmtInt(c.nLines)}</td>
                   <td><StatusBadge s={c.status} /></td><td className="small">{c.createdByName || c.createdBy}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     {c.status === 'open' && <Link className="btn sm primary" to={`/kho/kiem-ke/${c.id}/dem`}>📱 Đếm</Link>}{' '}
@@ -247,8 +247,8 @@ function Report({ counts }) {
       {data && (
         <>
           <div className="stats">
-            <div className="stat"><div className="stat-label">Dòng đã đếm / tổng</div><div className="stat-value">{fmtNum(tot.counted)} / {fmtNum(tot.n)}</div><div className="stat-sub">{pct(tot.counted, tot.n)} hoàn thành</div></div>
-            <div className="stat green"><div className="stat-label">Độ chính xác (dòng khớp / đã đếm)</div><div className="stat-value">{pct(tot.match, tot.counted)}</div><div className="stat-sub">{fmtNum(tot.match)} dòng khớp</div></div>
+            <div className="stat"><div className="stat-label">Dòng đã đếm / tổng</div><div className="stat-value">{fmtInt(tot.counted)} / {fmtInt(tot.n)}</div><div className="stat-sub">{pct(tot.counted, tot.n)} hoàn thành</div></div>
+            <div className="stat green"><div className="stat-label">Độ chính xác (dòng khớp / đã đếm)</div><div className="stat-value">{pct(tot.match, tot.counted)}</div><div className="stat-sub">{fmtInt(tot.match)} dòng khớp</div></div>
             <div className="stat red"><div className="stat-label">Dòng lệch</div><div className="stat-value">{fmtNum(tot.counted - tot.match)}</div><div className="stat-sub">thừa {fmtNum(tot.plus, 2)} kg · thiếu {fmtNum(-tot.minus, 2)} kg</div></div>
           </div>
           <h3>Theo phiếu</h3>
