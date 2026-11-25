@@ -10,6 +10,7 @@ import { costTotal } from '../../lib/transport';
 import { vnDate } from '../../lib/trips';
 import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum, norm } from '../../lib/utils';
+import { whFullName } from '../../lib/whGroups';
 import { Empty, ErrorBox } from '../../components/ui';
 import { ReportTable, toSheet } from './Reports';
 import MoneyConfig, { NoMoneyNote } from './MoneyConfig';
@@ -141,17 +142,17 @@ export default function Overview({ wh, co, q }) {
     const rs = x.__rows; const kg = sum(rs, (r) => r.kg); const cost = sum(rs, (r) => r.cost);
     return { ...x, trips: rs.length, kg, freight: sum(rs, (r) => r.freight), extra: sum(rs, (r) => r.extra), cost, perT: kg ? (cost / kg) * 1000 : 0, missing: rs.filter((r) => !r.hasCost).length, approved: rs.filter((r) => r.approved).length };
   }).sort((a, b) => b.kg - a.kg);
-  const carCols = [{ key: 'carrier', label: 'Mã' }, { key: 'name', label: 'Đơn vị vận tải' }, { key: 'trips', label: 'Số chuyến', num: true, sum: true },
+  const carCols = [{ key: 'carrier', label: 'Mã' }, { key: 'name', label: 'Đơn vị vận tải' }, { key: 'trips', label: 'Số chuyến', num: true, int: true, sum: true },
     { key: 'kg', label: 'Đã chở (kg)', num: true, sum: true }, { key: 'freight', label: 'Cước (đ)', num: true, sum: true, style: () => ({ fontWeight: 700 }) },
     { key: 'extra', label: 'Chi hộ, bốc xếp, khác (đ)', num: true, sum: true }, { key: 'cost', label: 'Tổng chi phí (đ)', num: true, sum: true },
-    { key: 'perT', label: 'Chi phí BQ (đ/tấn)', num: true }, { key: 'missing', label: 'Chuyến chưa nhập cước', num: true, sum: true, style: (r) => (r.missing ? { color: 'var(--amber)', fontWeight: 600 } : undefined) },
+    { key: 'perT', label: 'Chi phí BQ (đ/tấn)', num: true }, { key: 'missing', label: 'Chuyến chưa nhập cước', num: true, int: true, sum: true, style: (r) => (r.missing ? { color: 'var(--amber)', fontWeight: 600 } : undefined) },
     { key: 'approved', label: 'Kế toán đã chốt', num: true, sum: true }];
   const tripCols = [{ key: 'date', label: 'Ngày đi', render: (r) => fmtDate(r.date), nowrap: true }, { key: 'id', label: 'Chuyến', nowrap: true }, { key: 'carrierName', label: 'Đơn vị vận tải' },
     { key: 'plate', label: 'Số xe' }, { key: 'wh', label: 'Kho đi' }, { key: 'dest', label: 'Giao đến' }, { key: 'orders', label: 'Đơn' },
     { key: 'kg', label: 'Kg', num: true, sum: true }, { key: 'freight', label: 'Cước (đ)', num: true, sum: true }, { key: 'cost', label: 'Tổng chi phí (đ)', num: true, sum: true },
     { key: 'hasCost', label: 'Chi phí', render: (r) => (r.approved ? 'Đã chốt' : r.hasCost ? 'Đã nhập' : 'Chưa nhập'), excel: (r) => (r.approved ? 'Đã chốt' : r.hasCost ? 'Đã nhập' : 'Chưa nhập') }];
   const stoK = { n: new Set(STO.map((r) => r.id)).size, qty: sum(STO, (r) => r.qty), done: sum(STO, (r) => r.done), received: sum(STO, (r) => r.received), transit: sum(STO, (r) => r.transit) };
-  const byRoute = group(STO, (r) => `${r.wh || '?'} → ${r.wh2 || '?'}`, (r) => ({ route: `${r.wh || '?'} → ${r.wh2 || '?'}` })).map((x) => {
+  const byRoute = group(STO, (r) => `${whFullName(r.wh) || '?'} → ${whFullName(r.wh2) || '?'}`, (r) => ({ route: `${whFullName(r.wh) || '?'} → ${whFullName(r.wh2) || '?'}` })).map((x) => {
     const rs = x.__rows;
     return { ...x, nSto: new Set(rs.map((r) => r.id)).size, qty: sum(rs, (r) => r.qty), done: sum(rs, (r) => r.done), received: sum(rs, (r) => r.received), transit: sum(rs, (r) => r.transit), left: sum(rs, (r) => r.left),
       carriers: [...new Set(rs.map((r) => carrierName.get(r.carrier) || r.carrier).filter(Boolean))].join(', ') };
@@ -169,8 +170,8 @@ export default function Overview({ wh, co, q }) {
     .map((x) => { const a = soAgg(x.__rows); return { ...x, ...a, avg: a.qty ? (a.amt / a.qty) * mSO.perUnit : 0 }; }).sort((a, b) => b.amt - a.amt || b.qty - a.qty);
   const soByCust = group(SO, (r) => r.party, (r) => ({ code: r.party, name: r.partyName }))
     .map((x) => { const a = soAgg(x.__rows); return { ...x, ...a, avg: a.qty ? (a.amt / a.qty) * mSO.perUnit : 0 }; }).sort((a, b) => b.amt - a.amt || b.qty - a.qty);
-  const soQtyCols = [{ key: 'nSo', label: 'Số đơn', num: true }, { key: 'qty', label: 'Đặt (kg)', num: true, sum: true }, { key: 'done', label: 'Đã giao (kg)', num: true, sum: true }, { key: 'left', label: 'Còn phải giao (kg)', num: true, sum: true }];
-  const saleCols = [{ key: 'sale', label: 'Sale phụ trách' }, { key: 'nCust', label: 'Số KH', num: true }, ...soQtyCols, ...soMoneyCols];
+  const soQtyCols = [{ key: 'nSo', label: 'Số đơn', num: true, int: true }, { key: 'qty', label: 'Đặt (kg)', num: true, sum: true }, { key: 'done', label: 'Đã giao (kg)', num: true, sum: true }, { key: 'left', label: 'Còn phải giao (kg)', num: true, sum: true }];
+  const saleCols = [{ key: 'sale', label: 'Sale phụ trách' }, { key: 'nCust', label: 'Số KH', num: true, int: true }, ...soQtyCols, ...soMoneyCols];
   const custCols = [{ key: 'code', label: 'Mã KH' }, { key: 'name', label: 'Khách hàng' }, ...soQtyCols, ...soMoneyCols];
 
   const excel = () => exportSheets(`BC_tong_quan_${from}_${to}`, {

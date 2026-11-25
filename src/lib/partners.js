@@ -109,13 +109,15 @@ function partnerWrites(batch, p, roleData, prev, user) {
   return code;
 }
 // Nhập Excel danh mục Đối tác: đồng bộ sang Soldto / NCC cho các mã vừa nhập. list: [{ id, data }], current: mergePartners hiện có
-export async function syncPartnersToRoles(list, current, user) {
+// salesByCode (tùy chọn): Map mã → { salesVirgin?, salesRecycled? } đọc từ 2 cột Sale phụ trách của file Excel (ghi vào Soldto cùng mã)
+export async function syncPartnersToRoles(list, current, user, salesByCode) {
   const byCode = new Map(current.map((r) => [r.code, r]));
   for (let i = 0; i < list.length; i += 120) {
     const batch = writeBatch(db);
     list.slice(i, i + 120).forEach(({ id, data }) => {
       const prev = byCode.get(id) || null;
-      partnerWrites(batch, { ...(prev || {}), ...data, code: id }, {}, prev, user);
+      const sales = salesByCode?.get(id);
+      partnerWrites(batch, { ...(prev || {}), ...data, code: id }, sales ? { soldto: sales } : {}, prev, user);
     });
     await batch.commit();
   }
@@ -177,4 +179,59 @@ export async function syncFromCatalog(catKey, items, user) {
   } catch (e) {
     console.warn('Chưa đồng bộ được hồ sơ đối tác', e);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Sale phụ trách hạt nhựa Nguyên sinh / Tái sinh trong file Excel Khách hàng / NCC
+// (lưu ở Soldto cùng mã: salesVirgin / salesRecycled = email tài khoản Kinh doanh)
+// ---------------------------------------------------------------------------
+const SALE_NOTE = (t) => [
+  'Kiểu: Email tài khoản (hoặc họ tên) vai trò Kinh doanh trong Phân quyền.',
+  'Không bắt buộc. Chỉ dùng cho dòng có tích Là khách hàng.',
+  `Sale được bán mã hàng loại ${t} cho khách này. Khách đã gán sale: chỉ sale được gán mới thấy khách. Chưa gán ai: mọi sale đều thấy.`,
+  'Để trống: giữ nguyên sale đang gán (dòng mới: chưa gán). Ghi Bỏ để bỏ gán.',
+  'Không phân biệt hoa thường, có dấu hay không dấu.',
+  'Ví dụ: sale.a@vietanpha.vn hoặc Nguyễn Văn A',
+].join('\n');
+export const SALE_COLS = [
+  { key: 'salesVirgin', label: 'Sale phụ trách hạt nhựa nguyên sinh', note: SALE_NOTE('Nguyên sinh') },
+  { key: 'salesRecycled', label: 'Sale phụ trách hạt nhựa tái sinh', note: SALE_NOTE('Tái sinh') },
+];
+const CLEAR_WORDS = ['bo', 'bo gan', 'xoa', '-', 'khong'];
+
+// Đọc 2 cột Sale phụ trách từ sheet (mảng dòng, dòng 1 là tiêu đề). codeLabel: tên cột mã đối tác.
+// users: danh sách tài khoản { email, name, role }. Trả về { byCode: Map, notes: [...] }
+export function readPartnerSales(sheet, codeLabel, users) {
+  const header = (sheet[0] || []).map(norm);
+  const codeCol = header.findIndex((h) => h && (h === norm(codeLabel) || h === 'code'));
+  const cols = SALE_COLS.map((c) => ({ ...c, i: header.findIndex((h) => h && (h === norm(c.label) || h === norm(c.key))) })).filter((c) => c.i >= 0);
+  const byCode = new Map();
+  const notes = [];
+  if (codeCol < 0 || !cols.length) return { byCode, notes };
+  const sales = users.filter((u) => u.active !== false && !u.renamedTo);
+  const find = (raw) => {
+    const s = String(raw ?? '').trim();
+    const low = s.toLowerCase();
+    const byMail = sales.find((u) => String(u.email || u._id || '').toLowerCase() === low);
+    if (byMail) return byMail;
+    const byName = sales.filter((u) => norm(u.name) === norm(s));
+    return byName.length === 1 ? byName[0] : byName.length > 1 ? 'many' : null;
+  };
+  sheet.slice(1).forEach((cells, idx) => {
+    const code = String(cells[codeCol] ?? '').trim();
+    if (!code) return;
+    const o = {};
+    cols.forEach((c) => {
+      const raw = String(cells[c.i] ?? '').trim();
+      if (!raw) return;
+      if (CLEAR_WORDS.includes(norm(raw))) { o[c.key] = ''; return; }
+      const u = find(raw);
+      if (u === 'many') return notes.push(`Dòng ${idx + 2}: ${c.label} "${raw}" trùng tên nhiều tài khoản, hãy ghi email`);
+      if (!u) return notes.push(`Dòng ${idx + 2}: ${c.label} "${raw}" không có trong Phân quyền (chưa gán)`);
+      if (u.role !== 'kinh_doanh') notes.push(`Dòng ${idx + 2}: ${c.label} "${raw}" không phải vai trò Kinh doanh (vẫn gán)`);
+      o[c.key] = String(u.email || u._id).toLowerCase();
+    });
+    if (Object.keys(o).length) byCode.set(code, o);
+  });
+  return { byCode, notes };
 }

@@ -170,7 +170,7 @@ export default function StockInbound({ wh, co, q }) {
     { key: 'avail', label: 'Có thể bán', num: true, render: (x) => <b style={{ color: x.avail < 0 ? 'var(--red)' : x.avail > 0 ? 'var(--green)' : undefined }}>{kg(x.avail)}</b> },
     { key: 'next', label: 'Hàng về gần nhất', date: true, sortVal: (x) => x.next?.eta || '',
       render: (x) => <span className="nowrap small">{x.next ? <span style={{ color: x.next.eta < today ? 'var(--red)' : undefined }}>{fmtDate(x.next.eta)} · {tan(x.next.kg)} t</span> : x.lots.length ? 'Chưa có ETA' : '-'}</span> },
-    { key: 'soN', label: 'Số đơn chưa giao', num: true, hideDefault: true, sortVal: (x) => x.sos.length, render: (x) => x.sos.length || '' },
+    { key: 'soN', label: 'Số đơn chưa giao', num: true, int: true, hideDefault: true, sortVal: (x) => x.sos.length, render: (x) => x.sos.length || '' },
   ];
   const [hidden, setHidden] = usePref('stockInbound:hidden', allCols.filter((c) => c.hideDefault).map((c) => c.key));
   const [colOrder, setColOrder] = usePref('rpOrder:stockInbound', []);

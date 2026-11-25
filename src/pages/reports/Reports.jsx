@@ -13,9 +13,9 @@ import { vnDate } from '../../lib/trips';
 import { exportSheets } from '../../lib/excel';
 import { useOrderSecrets, viewOrder } from '../../lib/orderSecrets';
 import { moneyUnit } from '../../lib/currency';
-import { fmtDate, fmtDateTime, fmtNum, norm } from '../../lib/utils';
+import { fmtDate, fmtDateTime, fmtInt, fmtNum, norm } from '../../lib/utils';
 import { ScopeContext, ScopeFilters, useOpScope, useScope } from '../../components/ScopeFilter';
-import { locWh } from '../../lib/whGroups';
+import { locWh, whFullName, whFullNames } from '../../lib/whGroups';
 import { Empty, ErrorBox, RowOpen } from '../../components/ui';
 import { ViewPresets, useTableTools } from '../../components/TableTools';
 import { StockDetailModal } from '../../components/StockDetail';
@@ -24,6 +24,7 @@ import IOPlan from './IOPlan';
 import Overview from './Overview';
 import LegalTransfer from './LegalTransfer';
 import StockInbound, { SaleItemInline } from './StockInbound';
+import StockLedger from './StockLedger';
 
 // ============================================================================
 // Báo cáo: mỗi báo cáo = bộ lọc + 1 hoặc nhiều bảng; bảng nào cũng xuất Excel và in được.
@@ -32,6 +33,7 @@ import StockInbound, { SaleItemInline } from './StockInbound';
 
 export const REPORTS = [
   ['ke-hoach-xuat-nhap', '🗓️', 'Kế hoạch xuất nhập (Xá / Kiện)'],
+  ['xuat-nhap-ton', '📒', 'Xuất nhập tồn theo mã hàng'],
   ['ton-theo-kho', '🏭', 'Tồn kho tổng theo kho'],
   ['ton-theo-vi-tri', '📍', 'Tồn kho theo vị trí'],
   ['ton-theo-trang-thai', '🔒', 'Tồn kho theo trạng thái'],
@@ -60,9 +62,17 @@ const SHOWN = new WeakMap();
 // Mỗi người tự chọn / sắp xếp cột (⚙ Cột hiển thị, lưu trên trình duyệt) và thêm cột:
 //  - extra: cột tùy chọn bảng tự có (vd. trường tự thêm của đơn hàng), mặc định ẩn
 //  - links: [{ key, cat, label?, id?(row) }] → mọi trường (có sẵn + tự thêm) của danh mục liên kết, vd. Mã hàng › Nhóm hàng
-export function ReportTable({ cols: baseCols, rows, empty = 'Không có dữ liệu.', rowStyle, id, links, extra = [], onRowClick, rowTitle, defaultSort, expandKey, renderExpand }) {
+// Cột mã kho trong báo cáo hiện tên kho đầy đủ (VAP - Việt An Pha Đức Hòa) thay cho mã; lọc / sắp xếp / Excel theo tên
+const WH_KEYS = ['warehouse', 'fromWarehouse', 'toWarehouse', 'whs', 'wh'];
+const withWhNames = (cols) => cols.map((c) => (WH_KEYS.includes(c.key) && !c.render && !c.num && !c.keepCode
+  ? { ...c, render: (r) => whFullNames(r[c.key]), excel: (r) => whFullNames(r[c.key]), sortVal: (r) => whFullNames(r[c.key]) }
+  : c));
+
+export function ReportTable({ cols: rawCols, rows, empty = 'Không có dữ liệu.', rowStyle, id, links, extra = [], onRowClick, rowTitle, defaultSort, expandKey, renderExpand }) {
   const { pathname } = useLocation();
   const { seenFieldsOf } = useApp();
+  // mảng cols gốc vẫn là khóa SHOWN (Excel của trang tra theo đúng mảng truyền vào)
+  const baseCols = withWhNames(rawCols);
   const pid = id || `${pathname}|${baseCols.slice(0, 3).map((c) => c.key).join(',')}`;
   const linkList = (links || baseCols.filter((c) => DEFAULT_LINKS[c.key]).map((c) => ({ key: c.key, cat: DEFAULT_LINKS[c.key] })))
     .filter((lk) => catalogByKey(lk.cat))
@@ -102,10 +112,10 @@ export function ReportTable({ cols: baseCols, rows, empty = 'Không có dữ li�
   // Sắp xếp nhiều cấp + lọc từng cột / nâng cao (lưu riêng người dùng, từng bảng)
   const tools = useTableTools(pid, all, rows, { defaultSort });
   const list = tools.rows;
-  SHOWN.set(baseCols, { cols, rows: list });
+  SHOWN.set(rawCols, { cols, rows: list });
 
   if (!rows.length) return <Empty text={empty} />;
-  const show = (c, r) => (c.render ? c.render(r) : c.ton ? t3(r[c.key]) : c.num ? fmtNum(r[c.key], c.digits ?? 0) : c.date ? fmtDate(r[c.key]) : r[c.key]);
+  const show = (c, r) => (c.render ? c.render(r) : c.ton ? t3(r[c.key]) : c.int ? fmtInt(r[c.key]) : c.num ? fmtNum(r[c.key]) : c.date ? fmtDate(r[c.key]) : r[c.key]);
   const hasSum = cols.some((c) => c.sum);
   return (
     <>
@@ -144,7 +154,7 @@ export function ReportTable({ cols: baseCols, rows, empty = 'Không có dữ li�
           {hasSum && list.length > 0 && (
             <tfoot><tr><td />{onRowClick && <td className="no-print" />}{cols.map((c, i) => (
               <td key={c.key} className={c.num || c.ton ? 'num' : ''}>
-                {c.sum ? (c.ton ? t3(list.reduce((s, r) => s + n(r[c.key]), 0)) : fmtNum(list.reduce((s, r) => s + n(r[c.key]), 0), c.digits ?? 0)) : i === 0 ? 'Cộng' : ''}
+                {c.sum ? (c.ton ? t3(list.reduce((s, r) => s + n(r[c.key]), 0)) : (c.int ? fmtInt : fmtNum)(list.reduce((s, r) => s + n(r[c.key]), 0))) : i === 0 ? 'Cộng' : ''}
               </td>
             ))}</tr></tfoot>
           )}
@@ -189,7 +199,7 @@ export default function Reports() {
   const { wh, co } = scope;
   const [q, setQ] = useState('');
   const props = { wh, co, q: norm(q) };
-  const Body = { 'ton-theo-kho': ByWarehouse, 'ton-theo-vi-tri': ByLocation, 'ton-theo-trang-thai': ByStatus,
+  const Body = { 'xuat-nhap-ton': StockLedger, 'ton-theo-kho': ByWarehouse, 'ton-theo-vi-tri': ByLocation, 'ton-theo-trang-thai': ByStatus,
     'ton-kho-hang-ve': StockInbound, 'ton-cho-sale': ForSales, 'don-chua-giao': OpenSO, 'po-chua-nhap': OpenPO, 'phan-tich-ban-hang': SalesAnalysis, 'ke-hoach-xuat-nhap': IOPlan, 'tong-quan': Overview, 'chuyen-phap-nhan': LegalTransfer }[cur[0]];
   return (
     <div className="report-page">
@@ -257,8 +267,8 @@ function ByWarehouse({ wh, co, q }) {
   }, [list]);
   // Bấm ô số lượng → hàng đó trong kho đó đang ở vị trí nào (vd. KVAC: Cảng Cát Lái 2,000 kg, VICT 30,000 kg)
   const pivotCols = [{ key: 'item', label: 'Mã hàng', nowrap: true, onClick: (r) => setDetail({ item: r.item }), clickTitle: 'Bấm để xem mã hàng ở các kho / vị trí' }, { key: 'itemName', label: 'Tên hàng' },
-    ...warehouses.map((w) => ({ key: `w_${w.code}`, label: w.code, ton: true, sum: true,
-      onClick: (r) => n(r[`w_${w.code}`]) && setDetail({ item: r.item, warehouse: w.code }), clickTitle: `Bấm để xem ${w.code} đang để ở vị trí nào` })),
+    ...warehouses.map((w) => ({ key: `w_${w.code}`, label: whFullName(w.code), ton: true, sum: true,
+      onClick: (r) => n(r[`w_${w.code}`]) && setDetail({ item: r.item, warehouse: w.code }), clickTitle: `Bấm để xem ${whFullName(w.code)} (${w.code}) đang để ở vị trí nào` })),
     { key: 'total', label: 'Tổng', ton: true, sum: true, onClick: (r) => setDetail({ item: r.item }) },
     { key: 'detail', label: 'Chi tiết', noSort: true, noFilter: true, noExcel: true, render: (r) => <DetailBtn onClick={() => setDetail({ item: r.item })} /> }];
 
@@ -581,7 +591,7 @@ function OpenSO({ wh, co, q }) {
     { key: 'left', label: 'Còn phải giao', ton: true, sum: true, style: () => ({ fontWeight: 700 }) },
     { key: 'avail', label: 'Tồn được xuất (mã hàng)', ton: true, style: (r) => (r.avail < r.left ? { color: 'var(--amber)', fontWeight: 600 } : undefined) },
     { key: 'due', label: 'Hạn giao', render: (r) => fmtDate(r.due), nowrap: true, style: lateStyle },
-    { key: 'late', label: 'Trễ (ngày)', num: true, style: lateStyle },
+    { key: 'late', label: 'Trễ (ngày)', num: true, int: true, style: lateStyle },
     { key: 'status', label: 'Trạng thái', render: (r) => ORDER_STATUS[r.status]?.label, excel: (r) => ORDER_STATUS[r.status]?.label },
   ];
   const byCustomer = useMemo(() => {
@@ -593,7 +603,7 @@ function OpenSO({ wh, co, q }) {
     }
     return [...m.values()].map((x) => ({ ...x, orders: x.orders.size })).sort((a, b) => b.left - a.left);
   }, [list]); // eslint-disable-line react-hooks/exhaustive-deps
-  const custCols = [{ key: 'partyCode', label: 'Mã KH' }, { key: 'partyName', label: 'Khách hàng' }, { key: 'orders', label: 'Số đơn', num: true, sum: true },
+  const custCols = [{ key: 'partyCode', label: 'Mã KH' }, { key: 'partyName', label: 'Khách hàng' }, { key: 'orders', label: 'Số đơn', num: true, int: true, sum: true },
     { key: 'left', label: 'Còn phải giao', ton: true, sum: true }, { key: 'late', label: 'Trong đó quá hạn', ton: true, sum: true, style: (r) => (r.late > 0 ? { color: 'var(--red)' } : undefined) }];
   const excel = () => exportSheets(`BC_don_chua_giao_${vnDate()}`, { 'Chi tiết': toSheet(cols, list), 'Theo khách hàng': toSheet(custCols, byCustomer) });
   return (
@@ -622,7 +632,7 @@ function OpenPO({ wh, co, q }) {
     { key: 'qty', label: 'Đặt', ton: true, sum: true }, { key: 'done', label: 'Đã nhận', ton: true, sum: true },
     { key: 'left', label: 'Còn chưa về', ton: true, sum: true, style: () => ({ fontWeight: 700 }) },
     { key: 'due', label: 'ETA', render: (r) => fmtDate(r.due), nowrap: true, style: lateStyle },
-    { key: 'late', label: 'Trễ ETA (ngày)', num: true, style: lateStyle },
+    { key: 'late', label: 'Trễ ETA (ngày)', num: true, int: true, style: lateStyle },
     { key: 'status', label: 'Trạng thái', render: (r) => ORDER_STATUS[r.status]?.label, excel: (r) => ORDER_STATUS[r.status]?.label },
   ];
   const bySupplier = useMemo(() => {

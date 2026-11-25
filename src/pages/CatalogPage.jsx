@@ -18,7 +18,8 @@ import { Empty, ErrorBox, Field, Modal, RowOpen } from '../components/ui';
 import { deleteOrRequest } from '../lib/deletes';
 import { usePref } from '../lib/prefs';
 import DynamicFilterPanel, { AdvButton, activeConds, applyFilter, EMPTY_FILTER } from '../components/DynamicFilterPanel';
-import { matchType, syncFromCatalog, syncPartnersToRoles } from '../lib/partners';
+import { matchType, readPartnerSales, SALE_COLS, syncFromCatalog, syncPartnersToRoles } from '../lib/partners';
+import { PriceQuoteButtons } from '../components/PriceQuote';
 import { ColumnPicker } from '../components/FormTools';
 import { ViewPresets, useTableTools } from '../components/TableTools';
 import { dragHeadProps, orderCols } from '../lib/colOrder';
@@ -45,7 +46,8 @@ export default function CatalogPage() {
 function Catalog({ cat }) {
   const app = useApp();
   const { isAdmin, canDesign, canEdit, inMyWarehouses, fieldsOf, email } = app;
-  const fields = fieldsOf(cat.key);
+  // Giá bán trên mã hàng (priceOnly): chỉ kinh doanh, kế toán, quản trị thấy
+  const fields = fieldsOf(cat.key).filter((f) => !f.priceOnly || app.hasRole('kinh_doanh', 'ke_toan'));
   const shown = fields.filter((f) => !f.hidden);
   // Đối tác (BP): hồ sơ partners gộp với Soldto + NCC theo mã
   const isBP = cat.key === 'partners';
@@ -117,9 +119,14 @@ function Catalog({ cat }) {
 
   // Cột nhập được (giống File mẫu): Xuất đầy đủ dùng đúng các cột này để sửa trong Excel rồi Nhập lại
   const tplFields = shown.filter((f) => !f.computed && !f.system && f.type !== 'formula' && f.type !== 'image');
-  const downloadTemplate = () => exportTemplate(`Mau_${cat.short}`, tplFields.map((f) => f.label), tplFields.map((f) => fieldNote(cat, f)));
-  const exportFull = () => exportTemplate(`${cat.short}_day_du_${today()}`, tplFields.map((f) => f.label), tplFields.map((f) => fieldNote(cat, f)),
-    list.map((r) => tplFields.map((f) => { const v = displayValue(f, r[f.key], true); return v == null ? '' : v; })));
+  // Khách hàng / NCC: thêm 2 cột Sale phụ trách hạt nhựa nguyên sinh / tái sinh (lưu ở Soldto cùng mã)
+  const saleCols = isBP ? SALE_COLS : [];
+  const tplHeads = [...tplFields.map((f) => f.label), ...saleCols.map((c) => c.label)];
+  const tplNotes = [...tplFields.map((f) => fieldNote(cat, f)), ...saleCols.map((c) => c.note)];
+  const downloadTemplate = () => exportTemplate(`Mau_${cat.short}`, tplHeads, tplNotes);
+  const exportFull = () => exportTemplate(`${cat.short}_day_du_${today()}`, tplHeads, tplNotes,
+    list.map((r) => [...tplFields.map((f) => { const v = displayValue(f, r[f.key], true); return v == null ? '' : v; }),
+      ...saleCols.map((c) => r._soldto?.[c.key] || '')]));
 
   const seed = async (list = cat.seed) => {
     const batch = writeBatch(db);
@@ -135,13 +142,30 @@ function Catalog({ cat }) {
     setErr(''); setMsg('');
     try {
       const res = await importRows(cat, fields, file, app);
-      // Đối tác ↔ Soldto / NCC cùng mã
-      if (isBP) await syncPartnersToRoles(res.written, rows, { email, name: app.name });
-      else await syncFromCatalog(cat.key, res.written, { email });
+      // Đối tác ↔ Soldto / NCC cùng mã (kèm Sale phụ trách nguyên sinh / tái sinh nếu file có 2 cột đó)
+      if (isBP) {
+        const sheet = await readFirstSheet(file);
+        let sales = { byCode: new Map(), notes: [] };
+        if (SALE_COLS.some((c) => (sheet[0] || []).some((h) => norm(h) === norm(c.label)))) {
+          const users = (await getDocs(collection(db, 'users'))).docs.map((d) => ({ _id: d.id, ...d.data() }));
+          sales = readPartnerSales(sheet, fields.find((f) => f.key === 'code')?.label || 'Mã đối tác', users);
+          res.written.forEach(({ id, data }) => {
+            const prev = rows.find((r) => r.code === id);
+            if (sales.byCode.has(id) && !(data.isCustomer ?? prev?.isCustomer)) {
+              sales.notes.push(`Mã ${id}: chưa tích Là khách hàng nên chưa gán Sale phụ trách`);
+              sales.byCode.delete(id);
+            }
+          });
+        }
+        await syncPartnersToRoles(res.written, rows, { email, name: app.name }, sales.byCode);
+        res.saleNotes = sales.notes;
+        res.saleCount = sales.byCode.size;
+      } else await syncFromCatalog(cat.key, res.written, { email });
       setMsg(`Nhập Excel: ${res.added} dòng mới, ${res.updated} dòng cập nhật.`
+        + (res.saleCount ? ` Đã gán Sale phụ trách cho ${res.saleCount} khách hàng.` : '')
         + (res.incomplete.length ? ` ${res.incomplete.length} dòng còn thiếu thông tin, đã nhập và đánh dấu ⚠ để bổ sung sau.` : '')
         + (res.skipped.length ? ` Bỏ qua ${res.skipped.length} dòng.` : ''));
-      const notes = [...res.skipped, ...res.incomplete];
+      const notes = [...res.skipped, ...res.incomplete, ...(res.saleNotes || [])];
       if (notes.length) setErr(notes.slice(0, 15).join('\n') + (notes.length > 15 ? `\n… và ${notes.length - 15} dòng khác` : ''));
       if (res.incomplete.length) setOnlyMissing(true);
     } catch (e) {
@@ -163,6 +187,7 @@ function Catalog({ cat }) {
             <>
               <button className="btn" onClick={() => fileRef.current.click()}>⬆ Nhập Excel</button>
               <button className="btn ghost" onClick={downloadTemplate} title="File Excel trống, mỗi cột có ghi chú hướng dẫn (kiểu dữ liệu, bắt buộc, ví dụ) và sheet Huong dan">📄 Tải file mẫu</button>
+              {cat.key === 'items' && <PriceQuoteButtons items={rows} onMsg={(t, e) => { setMsg(t); setErr(e || ''); }} />}
               <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" hidden onChange={(e) => e.target.files[0] && importExcel(e.target.files[0])} />
             </>
           )}

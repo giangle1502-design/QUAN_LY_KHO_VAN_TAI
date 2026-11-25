@@ -2,6 +2,7 @@ import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { savePlateHistory } from './plates';
 import { calcFreight, matchRate } from './freight';
+import { fmtNum } from './utils';
 
 // ============================================================================
 // Job = 1 xe chạy nhiều Shipment (nhiều điểm lấy và / hoặc nhiều điểm giao).
@@ -107,7 +108,7 @@ export function jobFreight(trips, rates, method, fee) {
   const best = per.filter((p) => p.rate).map((p) => ({ p, amt: p.rate.basis === 'Theo chuyến' ? num(p.rate.price) : Math.round(num(p.rate.price) * totalKg / 1000) }))
     .sort((a, b) => b.amt - a.amt)[0];
   const base = best ? Math.max(best.amt, best.p.rate.basis === 'Theo chuyến' ? 0 : num(best.p.rate.minAmount)) : 0;
-  return { amount: base + num(fee) * extra, base, detail: best ? `Giá ${best.p.rate.code || ''} (${best.p.id}) cho ${(totalKg / 1000).toLocaleString('vi-VN')} tấn + ${extra} điểm thêm × phí` : 'Chưa có bảng giá khớp', per, extra };
+  return { amount: base + num(fee) * extra, base, detail: best ? `Giá ${best.p.rate.code || ''} (${best.p.id}) cho ${fmtNum(totalKg / 1000)} tấn + ${extra} điểm thêm × phí` : 'Chưa có bảng giá khớp', per, extra };
 }
 
 // Phân bổ số tiền về từng Shipment theo tấn (Shipment cuối nhận phần lẻ)

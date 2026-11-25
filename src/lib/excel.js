@@ -1,11 +1,21 @@
 import * as XLSX from 'xlsx';
+import { excelNumFmt } from './utils';
 
 // sheets: { 'Tên sheet': [ {cột: giá trị}, ... ] }
 export function exportSheets(fileName, sheets) {
   const wb = XLSX.utils.book_new();
   Object.entries(sheets).forEach(([name, rows]) => {
     const ws = XLSX.utils.json_to_sheet(rows);
+    // Ô số: hiển thị có dấu phẩy hàng nghìn + đúng số chữ số thập phân như trên màn hình (1,375.000)
+    // (trừ cột mã/STT/điện thoại/MST/năm… là số định danh, không phải số lượng)
+    const z = excelNumFmt();
     const cols = Object.keys(rows[0] || {});
+    const idCol = cols.map((c) => /^(stt|#|năm|year)$|mã|ma |code|\bid\b|điện thoại|sđt|phone|mst|mã số thuế|số xe|biển số|cmnd|cccd|tài khoản/i.test(c));
+    Object.keys(ws).forEach((a) => {
+      if (a[0] === '!' || ws[a].t !== 'n') return;
+      const { c, r } = XLSX.utils.decode_cell(a);
+      if (r > 0 && !idCol[c]) ws[a].z = z;
+    });
     ws['!cols'] = cols.map((c) => ({
       wch: Math.min(50, Math.max(c.length, ...rows.slice(0, 200).map((r) => String(r[c] ?? '').length)) + 2),
     }));
@@ -18,9 +28,14 @@ export function exportSheets(fileName, sheets) {
 // notes: mảng song song với headers (kiểu dữ liệu, bắt buộc hay không, giá trị hợp lệ, ví dụ).
 // Thêm sheet "Huong dan" liệt kê lại toàn bộ ghi chú (sheet nhập vẫn là sheet đầu tiên).
 // rows (tùy chọn): kèm dữ liệu từ dòng 2, dùng để xuất đầy đủ danh mục rồi sửa và nhập lại
-export function exportTemplate(fileName, headers, notes = [], rows = []) {
+// numCols (tùy chọn): chỉ số cột số, định dạng dấu phẩy ngăn hàng nghìn, dấu chấm thập phân, 3 số lẻ (1,375.000)
+export function exportTemplate(fileName, headers, notes = [], rows = [], numCols = []) {
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  rows.forEach((_, r) => numCols.forEach((c) => {
+    const cell = ws[XLSX.utils.encode_cell({ r: r + 1, c })];
+    if (cell && cell.t === 'n') cell.z = '#,##0.000';
+  }));
   ws['!cols'] = headers.map((h) => ({ wch: Math.max(14, String(h).length + 4) }));
   headers.forEach((h, i) => {
     if (!notes[i]) return;

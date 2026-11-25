@@ -3,7 +3,7 @@ import { fmtDate, fmtDayMonth, fmtNum } from '../../lib/utils';
 import { stageMeta } from '../../lib/pending';
 
 // Mảnh giao diện dùng chung cho Bàn điều phối kho và 2 danh sách Đơn chờ xuất / Đơn chờ nhập
-export const kg = (v) => fmtNum(Math.round(Number(v) || 0));
+export const kg = (v) => fmtNum(Number(v) || 0);
 export const tan = (v) => fmtNum((Number(v) || 0) / 1000, 1);
 
 export const TYPE_LABEL = { SO: 'Đơn bán (SO)', STO: 'Chuyển kho (STO)', PO: 'Đơn mua (PO)', DRT: 'SO trả hàng (DRT)' };

@@ -9,6 +9,7 @@ import { OPEN_PLAN, planLeft, plannedByLine, usePlans } from '../../lib/shipPlan
 import { exportSheets } from '../../lib/excel';
 import { vnDate } from '../../lib/trips';
 import { fmtDate, fmtNum, norm } from '../../lib/utils';
+import { whFullName } from '../../lib/whGroups';
 import { Empty, ErrorBox } from '../../components/ui';
 
 const n = (v) => Number(v) || 0;
@@ -41,7 +42,6 @@ export default function IOPlan({ wh, co, q }) {
   }, [mode, from, to]);
 
   const palKg = useMemo(() => new Map(items.map((i) => [i.code, n(i.bagsPerLayer) * n(i.layersPerPallet) * n(i.bagWeight)])), [items]);
-  const whName = useMemo(() => new Map(whs.map((w) => [w.code, w.name])), [whs]);
 
   // Từng dòng việc: { date, wh, dir 'out'|'in', pack, kg, pallets, src, ref, who, item }
   const tasks = useMemo(() => {
@@ -126,7 +126,7 @@ export default function IOPlan({ wh, co, q }) {
 
   const exportExcel = () => exportSheets(`ke-hoach-xuat-nhap-${from}-${to}`, {
     'Theo ngày, kho': groups.map((g) => ({
-      'Ngày': dayLabel(g.day), 'Kho': g.wh || 'Chưa chọn kho', 'Tên kho': whName.get(g.wh) || '',
+      'Ngày': dayLabel(g.day), 'Kho': g.wh || 'Chưa chọn kho', 'Tên kho': g.wh ? whFullName(g.wh) : '',
       'Xuất Xá (kg)': g.out.xa, 'Xuất Kiện (kg)': g.out.kien, 'Pallet xuất (ước)': g.palOut, 'Xuất chưa ghi Kiện/Xá (kg)': g.out.none, 'Tổng xuất (kg)': sum3(g.out),
       'Nhập Xá (kg)': g.in.xa, 'Nhập Kiện (kg)': g.in.kien, 'Pallet nhập (ước)': g.palIn, 'Nhập chưa ghi Kiện/Xá (kg)': g.in.none, 'Tổng nhập (kg)': sum3(g.in),
       'Số đơn / phiếu': g.refs.size,
@@ -195,7 +195,7 @@ export default function IOPlan({ wh, co, q }) {
                     {gs.map((g, i) => (
                       <tr key={g.wh || '-'}>
                         {!i && <td rowSpan={gs.length + (gs.length > 1 ? 1 : 0)} style={{ fontWeight: 600, color: d === LATE ? 'var(--red)' : undefined }}>{dayLabel(d)}</td>}
-                        <td>{g.wh || <span className="small">Chưa chọn kho</span>}{g.wh && <div className="small">{whName.get(g.wh)}</div>}</td>
+                        <td>{g.wh ? <><b>{whFullName(g.wh)}</b><div className="small">{g.wh}</div></> : <span className="small">Chưa chọn kho</span>}</td>
                         <td className="num">{kg(g.out.xa)}</td><td className="num">{kg(g.out.kien)}</td><td className="num small">{g.palOut || ''}</td>
                         <td className="num" style={{ color: 'var(--amber)' }}>{kg(g.out.none)}</td><td className="num"><b>{kg(sum3(g.out))}</b></td>
                         <td className="num">{kg(g.in.xa)}</td><td className="num">{kg(g.in.kien)}</td><td className="num small">{g.palIn || ''}</td>
