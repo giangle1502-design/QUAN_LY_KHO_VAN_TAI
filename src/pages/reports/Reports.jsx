@@ -6,7 +6,7 @@ import { displayValue } from '../../components/FieldInput';
 import { usePref } from '../../lib/prefs';
 import { dragHeadProps, orderCols } from '../../lib/colOrder';
 import { useApp } from '../../context/AppContext';
-import { useCollection, useCollections, useCompanies, useOrders, useStock } from '../../lib/hooks';
+import { useCollection, useCollections, useOrders, useStock } from '../../lib/hooks';
 import { OPEN_STATUSES, ORDER_STATUS, leftKg, transitKg } from '../../lib/orders';
 import { ageDays } from '../../lib/stock';
 import { vnDate } from '../../lib/trips';
@@ -15,7 +15,7 @@ import { useOrderSecrets, viewOrder } from '../../lib/orderSecrets';
 import { moneyUnit } from '../../lib/currency';
 import { fmtDate, fmtDateTime, fmtNum, norm } from '../../lib/utils';
 import { ScopeContext, ScopeFilters, useOpScope, useScope } from '../../components/ScopeFilter';
-import { locWh, noCapacity, whsOfLocWh } from '../../lib/whGroups';
+import { locWh } from '../../lib/whGroups';
 import { Empty, ErrorBox, RowOpen } from '../../components/ui';
 import { ViewPresets, useTableTools } from '../../components/TableTools';
 import { StockDetailModal } from '../../components/StockDetail';
@@ -221,39 +221,10 @@ const matchItem = (q, ...xs) => !q || norm(xs.join(' ')).includes(q);
 const DetailBtn = ({ onClick }) => <button type="button" className="btn sm" onClick={(e) => { e.stopPropagation(); onClick(); }} title="Xem hàng đang nằm ở vị trí nào">🔍 Xem chi tiết</button>;
 
 function ByWarehouse({ wh, co, q }) {
-  const { stock, error, statusCodes, warehouses } = useBase(wh, co);
-  const locations = useCollection('locations').rows;
+  const { stock, error, warehouses } = useBase(wh, co);
   const [detail, setDetail] = useState(null); // { item?, warehouse? } → bảng tồn theo vị trí
   const list = stock.filter((r) => matchItem(q, r.item, r.itemName));
 
-  const whRows = warehouses.map((w) => {
-    const rs = list.filter((r) => r.warehouse === w.code);
-    // Kho thuộc kho chung: vị trí, sức chứa là của cả kho chung (dùng chung với các pháp nhân khác)
-    const lw = locWh(w.code);
-    const locs = locations.filter((l) => l.warehouse === lw);
-    const cap = noCapacity(w.code) ? 0 : locs.reduce((s, l) => s + n(l.capacity), 0);
-    const pal = locs.reduce((s, l) => s + n(l.currentPallets), 0);
-    return {
-      _k: w.code, code: w.code, name: w.name, kg: rs.reduce((s, r) => s + n(r.kg), 0), bags: rs.reduce((s, r) => s + n(r.bags), 0),
-      pallets: rs.reduce((s, r) => s + n(r.pallets), 0), items: new Set(rs.map((r) => r.item)).size,
-      used: locs.filter((l) => n(l.currentPallets) > 0).length, locs: locs.length, cap, fill: cap ? Math.round((pal / cap) * 1000) / 10 : null, shared: lw !== w.code ? lw : '',
-      ...Object.fromEntries(statusCodes.map((c) => [`st_${c}`, rs.filter((r) => r.goodsStatus === c).reduce((s, r) => s + n(r.kg), 0)])),
-    };
-  });
-  const whCols = [
-    { key: 'code', label: 'Kho', onClick: (r) => setDetail({ warehouse: r.code }), clickTitle: 'Bấm để xem tồn từng vị trí của kho' }, { key: 'name', label: 'Tên kho' },
-    { key: 'kg', label: 'Tồn (kg)', ton: true, sum: true },
-    ...statusCodes.map((c) => ({ key: `st_${c}`, label: c, ton: true, sum: true })),
-    { key: 'bags', label: 'Số bao', num: true, sum: true }, { key: 'pallets', label: 'Pallet', num: true, digits: 1, sum: true },
-    { key: 'items', label: 'Số mã hàng', num: true },
-    { key: 'used', label: 'Vị trí đang dùng', render: (r) => `${r.used}/${r.locs}`, excel: (r) => `${r.used}/${r.locs}` },
-    { key: 'shared', label: 'Kho chung', hideDefault: true },
-    { key: 'cap', label: 'Sức chứa (pallet)', num: true },
-    { key: 'fill', label: '% lấp đầy', num: true, digits: 1 },
-    { key: 'detail', label: 'Chi tiết', noSort: true, noFilter: true, noExcel: true, render: (r) => <DetailBtn onClick={() => setDetail({ warehouse: r.code })} /> },
-  ];
-
-  // Ma trận mã hàng × kho
   const pivot = useMemo(() => {
     const m = new Map();
     for (const r of list) {
@@ -271,14 +242,12 @@ function ByWarehouse({ wh, co, q }) {
     { key: 'total', label: 'Tổng', ton: true, sum: true, onClick: (r) => setDetail({ item: r.item }) },
     { key: 'detail', label: 'Chi tiết', noSort: true, noFilter: true, noExcel: true, render: (r) => <DetailBtn onClick={() => setDetail({ item: r.item })} /> }];
 
-  const excel = () => exportSheets(`BC_ton_theo_kho_${vnDate()}`, { 'Theo kho': toSheet(whCols, whRows), 'Mã hàng x kho': toSheet(pivotCols, pivot) });
+  const excel = () => exportSheets(`BC_ton_theo_kho_${vnDate()}`, { 'Mã hàng x kho': toSheet(pivotCols, pivot) });
   return (
     <>
       <ErrorBox error={error} />
       <Actions onExcel={excel} />
-      <div className="section-head">Tổng theo kho</div>
-      <ReportTable cols={whCols} rows={whRows} links={[{ key: 'code', cat: 'warehouses' }]} />
-      <div className="section-head" style={{ marginTop: 16 }}>Theo mã hàng và kho (kg)</div>
+      <div className="section-head">Theo mã hàng và kho (kg)</div>
       <p className="hint no-print">Bấm vào số tồn của một kho (hoặc nút 🔍 Xem chi tiết) để xem hàng đang nằm ở vị trí nào.</p>
       <ReportTable cols={pivotCols} rows={pivot} empty="Chưa có tồn kho." />
       {detail && <StockDetailModal stock={list} filter={detail} onClose={() => setDetail(null)} />}
@@ -287,77 +256,93 @@ function ByWarehouse({ wh, co, q }) {
 }
 
 // ---------------------------------------------------------------------------
-// 2. Tồn kho theo vị trí (kể cả vị trí trống)
+// 2. Tồn kho theo vị trí: mỗi dòng = 1 mã hàng tại 1 vị trí (không cộng tổng theo kho / công ty)
 function ByLocation({ wh, co, q }) {
-  const { stock, error, inMyWarehouses, S } = useBase(wh, co);
+  const { stock, error, itemMap, inMyWarehouses, S } = useBase(wh, co);
   const locations = useCollection('locations').rows;
-  const companies = useCompanies();
-  const [mode, setMode] = useState('');
+  const [mode, setMode] = useState('used');
   const [detail, setDetail] = useState(null);
-  // Vị trí dùng chung (kho chung): 1 dòng / vị trí, cộng hàng của mọi kho pháp nhân trong nhóm, tách cột từng công ty
-  const { rows, coCodes } = useMemo(() => {
+  const { rows, nLoc, nEmpty } = useMemo(() => {
+    // Vị trí dùng chung (kho chung): vị trí thuộc kho chung, gom hàng của mọi kho pháp nhân trong nhóm
     const byLoc = new Map();
     for (const r of stock) {
-      const k = `${locWh(r.warehouse)}__${r.location}`;
+      if (!(n(r.kg) > 0 || n(r.bags) > 0)) continue;
+      const k = `${locWh(r.warehouse)}__${r.location || ''}`;
       const x = byLoc.get(k) || [];
       x.push(r);
       byLoc.set(k, x);
     }
-    const cos = new Set();
-    const list = locations.filter((l) => inMyWarehouses(l.warehouse) && S.locRow(l))
-      .map((l) => {
-        const rs = byLoc.get(`${l.warehouse}__${l.code}`) || [];
-        const byCo = {};
-        for (const r of rs) { const c = r.company || '(khác)'; cos.add(c); byCo[`co_${c}`] = n(byCo[`co_${c}`]) + n(r.kg); }
-        const noCap = noCapacity(l.warehouse) || !n(l.capacity);
-        return {
-          _k: `${l.warehouse}-${l.code}`, warehouse: l.warehouse, whs: [...new Set(rs.map((r) => r.warehouse))].join(', '), members: whsOfLocWh(l.warehouse).join(', '),
-          code: l.code, zone: l.zone || '', capacity: noCap ? null : n(l.capacity), pallets: n(l.currentPallets),
-          free: noCap ? null : Math.max(0, n(l.capacity) - n(l.currentPallets)), pct: noCap ? null : n(l.usedPct),
-          // Empty bin: vị trí không còn hàng của pháp nhân nào
-          empty: !rs.some((r) => n(r.kg) > 0 || n(r.bags) > 0) && n(l.currentPallets) <= 0, locked: !!l.locked,
-          items: [...new Set(rs.map((r) => r.item))].join(', '), lots: [...new Set(rs.map((r) => r.lot).filter(Boolean))].join(', '),
-          status: [...new Set(rs.map((r) => r.goodsStatus))].sort((a, b) => rankSt(a) - rankSt(b)).join(', '),
-          bags: rs.reduce((s, r) => s + n(r.bags), 0), kg: rs.reduce((s, r) => s + n(r.kg), 0), ...byCo,
-          oldest: rs.map((r) => r.inDate).filter(Boolean).sort()[0] || '',
-        };
-      })
-      .filter((x) => matchItem(q, x.code, x.items, x.lots))
-      .filter((x) => !mode || (mode === 'used' && !x.empty) || (mode === 'empty' && x.empty && !x.locked) || (mode === 'full' && x.pct >= 85) || (mode === 'locked' && x.locked))
-      .sort((a, b) => a.warehouse.localeCompare(b.warehouse) || a.code.localeCompare(b.code, 'vi', { numeric: true }));
-    const order = companies.map((c) => c.code);
-    return { rows: list, coCodes: [...cos].sort((a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99) || a.localeCompare(b)) };
-  }, [stock, locations, inMyWarehouses, S, q, mode, companies]);
+    const out = [];
+    const seen = new Set();
+    let used = 0, empty = 0;
+    const addItems = (warehouse, code, rs, locked) => {
+      const byItem = new Map();
+      for (const r of rs) {
+        const x = byItem.get(r.item) || [];
+        x.push(r);
+        byItem.set(r.item, x);
+      }
+      for (const [item, xs] of byItem) {
+        const uniq = (f) => [...new Set(xs.map(f).filter(Boolean))];
+        out.push({
+          _k: `${warehouse}-${code}-${item}`, warehouse, code, locked, item, itemName: itemMap.get(item)?.name || '',
+          whs: uniq((r) => r.warehouse).join(', '), company: uniq((r) => r.company).join(', '),
+          lots: uniq((r) => r.lot).join(', '), status: uniq((r) => r.goodsStatus).sort((a, b) => rankSt(a) - rankSt(b)).join(', '),
+          bags: xs.reduce((s, r) => s + n(r.bags), 0), kg: xs.reduce((s, r) => s + n(r.kg), 0),
+          oldest: xs.map((r) => r.inDate).filter(Boolean).sort()[0] || '',
+        });
+      }
+    };
+    for (const l of locations) {
+      if (!inMyWarehouses(l.warehouse) || !S.locRow(l)) continue;
+      const k = `${l.warehouse}__${l.code}`;
+      seen.add(k);
+      const rs = byLoc.get(k) || [];
+      if (rs.length) { used++; addItems(l.warehouse, l.code, rs, !!l.locked); } else if (!l.locked) empty++;
+      // Empty bin / vị trí khóa không có hàng: vẫn hiện 1 dòng trống để biết còn chỗ
+      if (!rs.length) out.push({ _k: `${l.warehouse}-${l.code}`, warehouse: l.warehouse, code: l.code, locked: !!l.locked, empty: true, item: '', bags: 0, kg: 0 });
+    }
+    // Hàng nằm ở vị trí chưa khai báo trong danh mục (hoặc chưa có vị trí)
+    for (const [k, rs] of byLoc) {
+      if (seen.has(k)) continue;
+      const [w, c] = k.split('__');
+      used++;
+      addItems(w, c, rs, false);
+    }
+    const list = out
+      .filter((x) => matchItem(q, x.code, x.item, x.itemName, x.lots))
+      .filter((x) => !mode || (mode === 'used' && !x.empty) || (mode === 'empty' && x.empty && !x.locked) || (mode === 'locked' && x.locked))
+      .sort((a, b) => a.warehouse.localeCompare(b.warehouse) || a.code.localeCompare(b.code, 'vi', { numeric: true }) || a.item.localeCompare(b.item));
+    return { rows: list, nLoc: used, nEmpty: empty };
+  }, [stock, locations, inMyWarehouses, S, q, mode, itemMap]);
   const cols = [
-    { key: 'warehouse', label: 'Kho / Kho chung' }, { key: 'code', label: 'Vị trí', nowrap: true },
-    { key: 'whs', label: 'Kho pháp nhân đang để hàng' }, { key: 'members', label: 'Dùng chung cho kho', hideDefault: true },
-    { key: 'capacity', label: 'Sức chứa (pallet)', num: true, sum: true }, { key: 'pallets', label: 'Đang chứa (pallet)', num: true, digits: 1, sum: true },
-    { key: 'free', label: 'Còn trống (pallet)', num: true, digits: 1, sum: true },
-    { key: 'pct', label: '% lưu trữ', num: true, digits: 1, style: (r) => (r.pct >= 100 ? { color: 'var(--red)', fontWeight: 700 } : r.pct >= 85 ? { color: 'var(--amber)', fontWeight: 600 } : undefined) },
-    { key: 'state', label: 'Trạng thái', render: (r) => (r.locked ? <span className="badge red">Khóa</span> : r.empty ? <span className="badge green">Empty bin</span> : ''),
-      excel: (r) => (r.locked ? 'Khóa' : r.empty ? 'Empty bin' : '') },
-    { key: 'items', label: 'Mã hàng' }, { key: 'lots', label: 'Lot' }, { key: 'status', label: 'Tình trạng' },
-    { key: 'bags', label: 'Số bao', num: true, sum: true },
-    ...coCodes.map((c) => ({ key: `co_${c}`, label: `${c} (kg)`, ton: true, sum: true })),
-    { key: 'kg', label: 'Tổng tồn (kg)', ton: true, sum: true },
+    { key: 'warehouse', label: 'Kho / Kho chung' },
+    { key: 'code', label: 'Vị trí', nowrap: true, render: (r) => r.code || '(chưa có vị trí)', excel: (r) => r.code },
+    { key: 'item', label: 'Mã hàng', nowrap: true,
+      render: (r) => (r.empty ? (r.locked ? <span className="badge red">Khóa</span> : <span className="badge green">Empty bin</span>) : <b>{r.item}</b>),
+      excel: (r) => (r.empty ? (r.locked ? 'Khóa' : 'Empty bin') : r.item) },
+    { key: 'itemName', label: 'Tên hàng' },
+    { key: 'lots', label: 'Lot' }, { key: 'status', label: 'Tình trạng' },
+    { key: 'company', label: 'Công ty', hideDefault: true }, { key: 'whs', label: 'Kho pháp nhân', hideDefault: true },
+    { key: 'bags', label: 'Số bao', num: true },
+    { key: 'kg', label: 'Tồn (kg)', ton: true },
     { key: 'oldest', label: 'Nhập sớm nhất', render: (r) => fmtDate(r.oldest), nowrap: true },
   ];
-  const excel = () => exportSheets(`BC_ton_theo_vi_tri_${vnDate()}`, { 'Theo vị trí': toSheet(cols, rows) });
-  const cnt = (f) => rows.filter(f).length;
+  const excel = () => exportSheets(`BC_ton_theo_vi_tri_${vnDate()}`, { 'Mã hàng theo vị trí': toSheet(cols, rows) });
   return (
     <>
       <ErrorBox error={error} />
       <div className="toolbar no-print">
         <div className="seg">
-          {[['', 'Tất cả'], ['used', 'Đang chứa hàng'], ['empty', 'Empty bin'], ['full', '≥ 85%'], ['locked', 'Đang khóa']].map(([k, l]) => (
+          {[['used', 'Đang chứa hàng'], ['empty', 'Empty bin'], ['locked', 'Đang khóa'], ['', 'Tất cả']].map(([k, l]) => (
             <button key={k} type="button" className={mode === k ? 'on' : ''} onClick={() => setMode(k)}>{l}</button>
           ))}
         </div>
-        <span className="small">{rows.length} vị trí · {cnt((x) => !x.empty)} đang chứa · {cnt((x) => x.empty && !x.locked)} Empty bin</span>
+        <span className="small">{nLoc} vị trí đang chứa · {nEmpty} Empty bin · {rows.length} dòng</span>
         <span style={{ marginLeft: 'auto' }}><Actions onExcel={excel} /></span>
       </div>
-      <ReportTable cols={cols} rows={rows} empty="Không có vị trí nào." defaultSort={[{ key: 'warehouse', dir: 'asc' }, { key: 'code', dir: 'asc' }]}
-        onRowClick={(r) => !r.empty && setDetail({ locWh: r.warehouse, location: r.code })} rowTitle="Bấm để xem hàng trong vị trí"
+      <ReportTable id="rp-loc-items" cols={cols} rows={rows} empty="Không có dữ liệu." defaultSort={[{ key: 'warehouse', dir: 'asc' }, { key: 'code', dir: 'asc' }, { key: 'item', dir: 'asc' }]}
+        onRowClick={(r) => !r.empty && setDetail({ locWh: r.warehouse, location: r.code, item: r.item })} rowTitle="Bấm để xem lot / tình trạng của mã hàng ở vị trí này"
         links={[{ key: 'code', cat: 'locations', id: (r) => `${r.warehouse}__${r.code}` }]} />
       {detail && <StockDetailModal stock={stock} filter={detail} onClose={() => setDetail(null)} />}
     </>
