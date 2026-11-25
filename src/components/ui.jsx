@@ -46,7 +46,7 @@ export function CloseButton({ to = '/', dirty, label = '✕ Đóng', className =
 }
 
 // dirty: form trong hộp thoại có thay đổi chưa lưu (true/false hoặc hàm) → hỏi lại trước khi đóng
-export function Modal({ title, onClose, children, wide, dirty }) {
+export function Modal({ title, onClose, children, wide, dirty, cls }) {
   const ref = useRef();
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
@@ -62,7 +62,7 @@ export function Modal({ title, onClose, children, wide, dirty }) {
   }, [close]);
   return createPortal(
     <div ref={ref} className="modal-bg" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className={'modal' + (wide ? ' wide' : '')}>
+      <div className={'modal' + (wide ? ' wide' : '') + (cls ? ` ${cls}` : '')}>
         <div className="modal-head">
           <h3>{title}</h3>
           <button type="button" className="btn modal-close" onClick={close} title="Đóng (Esc)">✕ Đóng</button>
@@ -88,7 +88,7 @@ export function Field({ label, required, help, children, full, size }) {
     <label className={'field' + (wide ? ' full' : '') + (w && !wide ? ' fw' : '') + (h ? ' fh' : '')} style={style}>
       <span>{label}{required && <b className="req"> *</b>}{typeof help === 'string' && help && <i className="help-tip" title={help}> ⓘ</i>}</span>
       {children}
-      {help && <small className="small">{help}</small>}
+      {help && <small className="small field-help">{help}</small>}
     </label>
   );
 }
