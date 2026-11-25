@@ -101,3 +101,20 @@ export function ErrorBox({ error }) {
   if (!error) return null;
   return <div className="error-box">{error}</div>;
 }
+
+// Nút mở bản ghi trong bảng (thay cho bấm cả dòng): bấm vào chữ trong dòng không tự mở, bôi đen / copy thoải mái
+export function RowOpen({ onClick, edit = true, label, title }) {
+  return (
+    <button type="button" className="btn sm ghost row-open" title={title || (edit ? 'Mở để sửa / xóa' : 'Mở xem chi tiết')}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}>{label || (edit ? '✏ Sửa' : '👁 Xem')}</button>
+  );
+}
+
+// Bấm dòng để chọn / mở rộng: bỏ qua khi người dùng đang bôi đen chữ để copy
+export function noSel(fn) {
+  return (...args) => {
+    const s = typeof window !== 'undefined' && window.getSelection ? String(window.getSelection()) : '';
+    if (s.trim()) return;
+    fn(...args);
+  };
+}

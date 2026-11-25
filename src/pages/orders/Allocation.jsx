@@ -6,7 +6,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useCollections, useOpCompany, useOrders } from '../../lib/hooks';
 import { CompanyPicker } from '../../components/TripBits';
-import { Empty, ErrorBox, Modal } from '../../components/ui';
+import { Empty, ErrorBox, Modal, noSel } from '../../components/ui';
 import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum, norm, today } from '../../lib/utils';
 import { OPEN_STATUSES, leftKg, lineShip, lineWh } from '../../lib/orders';
@@ -368,7 +368,7 @@ function PlanSummary({ rows, whName, open, setOpen, onPick }) {
             <thead><tr><th>Mã hàng</th><th>Tên hàng</th><th>Nơi nhận</th><th className="num">Tổng (kg)</th><th className="num">Giao khách</th><th className="num">Về kho mình</th><th className="num">Để tồn kho nhận</th>
               <th className="num">Chưa chốt</th><th className="num">Nháp</th><th className="num">Đã tạo đơn</th><th className="num">Đã giao / để tồn</th><th>Khách hàng</th></tr></thead>
             <tbody>{data.map((r) => (
-              <tr key={`${r.item}|${r.wh}`} style={{ cursor: 'pointer' }} title="Bấm để lọc bảng kế hoạch theo mã hàng + kho này" onClick={() => onPick(r.item, r.wh)}>
+              <tr key={`${r.item}|${r.wh}`} style={{ cursor: 'pointer' }} title="Bấm để lọc bảng kế hoạch theo mã hàng + kho này" onClick={noSel(() => onPick(r.item, r.wh))}>
                 <td><b>{r.item}</b></td><td className="small">{r.itemName}</td><td>{whName.get(r.wh) || r.wh || '–'}{whName.get(r.wh) ? <div className="small">{r.wh}</div> : null}</td>
                 <td className="num"><b>{kg(r.total)}</b><div className="small">{tn(r.total)}</div></td><td className="num">{c(r.customer)}</td><td className="num">{c(r.warehouse)}</td><td className="num">{c(r.keep)}</td>
                 <td className="num" style={r.pending > 0.001 ? { color: 'var(--amber)', fontWeight: 600 } : undefined}>{c(r.pending)}</td>

@@ -4,7 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { ScopeFilters, useOpScope } from '../../components/ScopeFilter';
 import { ColumnPicker } from '../../components/FormTools';
 import { ViewPresets, useTableTools } from '../../components/TableTools';
-import { Empty, Modal } from '../../components/ui';
+import { Empty, Modal, noSel } from '../../components/ui';
 import Select from '../../components/Select';
 import { usePref } from '../../lib/prefs';
 import { dragHeadProps, orderCols } from '../../lib/colOrder';
@@ -244,7 +244,7 @@ export default function PendingList({ kind }) {
                     const warn = !r.late && (r.stage === 'goods' || r.stage === 'release' || (r.stage === 'truck' && !r.plate));
                     return (
                       <Fragment key={r.key}>
-                        <tr className={'dp-row' + (r.late ? ' late' : warn ? ' warn' : '') + (open ? ' open' : '')} onClick={() => setOpenId(open ? '' : r.id)}>
+                        <tr className={'dp-row' + (r.late ? ' late' : warn ? ' warn' : '') + (open ? ' open' : '')} onClick={noSel(() => setOpenId(open ? '' : r.id))}>
                           <td className="dp-cb" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} /></td>
                           <td className="dp-caret"><span>▸</span></td>
                           {shown.map((c) => <td key={c.key} className={c.cls || (c.num ? 'num' : undefined)}>{c.render(r)}</td>)}

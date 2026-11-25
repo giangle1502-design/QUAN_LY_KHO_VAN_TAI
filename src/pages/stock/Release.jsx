@@ -10,7 +10,7 @@ import { usePendingRelease, useShortfall } from '../../lib/shortfall';
 import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum, today } from '../../lib/utils';
 import { CompanyPicker } from '../../components/TripBits';
-import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
+import { Empty, ErrorBox, Field, Modal, noSel } from '../../components/ui';
 import { loadReleaseData } from '../../lib/printData';
 import { pageToPdf, savePdf } from '../../lib/pdf';
 import { TemplatePage, useTemplateChoice } from '../../components/PrintTemplate';
@@ -264,7 +264,7 @@ function Waiting({ co, setCo, canEdit, slips, onDone }) {
               <th>Công ty</th><th>Ngân hàng</th><th>Mã hàng</th><th>Tên hàng</th><th>Kho</th><th>Đơn bán</th><th>Phiếu xuất</th><th className="num">HTC cần giải chấp (kg)</th></tr></thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.k} className={tick.has(r.key) ? 'picked' : ''} onClick={() => toggle(r.key)} style={{ cursor: 'pointer' }}>
+                <tr key={r.k} className={tick.has(r.key) ? 'picked' : ''} onClick={noSel(() => toggle(r.key))} style={{ cursor: 'pointer' }}>
                   <td><input type="checkbox" checked={tick.has(r.key)} onChange={() => toggle(r.key)} onClick={(e) => e.stopPropagation()} /></td>
                   <td>{r.company}</td><td>{bankName(r.pledgee)}</td><td className="nowrap"><b>{r.item}</b></td><td>{r.itemName}</td>
                   <td>{[...r.whs].join(', ')}</td><td className="small">{[...r.orders].join(', ')}</td>

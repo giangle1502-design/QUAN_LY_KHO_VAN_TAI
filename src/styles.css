@@ -950,3 +950,7 @@ table.resized .cell-add > input, table.resized .cell-add > select, table.resized
 .bar-panel-head .actions { display: flex; gap: 6px; }
 .pick-cats { display: grid; gap: 8px; }
 .pick-cats .btn { justify-content: flex-start; text-align: left; padding: 10px 12px; }
+
+/* Nút ✏ Sửa / 👁 Xem đầu dòng (thay cho bấm cả dòng) */
+td.row-act, th.row-act { width: 1%; white-space: nowrap; text-align: center; }
+.btn.row-open { padding: 2px 8px; font-size: 12px; white-space: nowrap; }
