@@ -18,9 +18,14 @@ export function exportSheets(fileName, sheets) {
 // notes: mảng song song với headers (kiểu dữ liệu, bắt buộc hay không, giá trị hợp lệ, ví dụ).
 // Thêm sheet "Huong dan" liệt kê lại toàn bộ ghi chú (sheet nhập vẫn là sheet đầu tiên).
 // rows (tùy chọn): kèm dữ liệu từ dòng 2, dùng để xuất đầy đủ danh mục rồi sửa và nhập lại
-export function exportTemplate(fileName, headers, notes = [], rows = []) {
+// numCols (tùy chọn): chỉ số cột số, định dạng dấu phẩy ngăn hàng nghìn, dấu chấm thập phân, 3 số lẻ (1,375.000)
+export function exportTemplate(fileName, headers, notes = [], rows = [], numCols = []) {
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  rows.forEach((_, r) => numCols.forEach((c) => {
+    const cell = ws[XLSX.utils.encode_cell({ r: r + 1, c })];
+    if (cell && cell.t === 'n') cell.z = '#,##0.000';
+  }));
   ws['!cols'] = headers.map((h) => ({ wch: Math.max(14, String(h).length + 4) }));
   headers.forEach((h, i) => {
     if (!notes[i]) return;
