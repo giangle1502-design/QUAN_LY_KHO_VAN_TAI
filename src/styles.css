@@ -950,3 +950,10 @@ table.resized .cell-add > input, table.resized .cell-add > select, table.resized
 .bar-panel-head .actions { display: flex; gap: 6px; }
 .pick-cats { display: grid; gap: 8px; }
 .pick-cats .btn { justify-content: flex-start; text-align: left; padding: 10px 12px; }
+
+/* Phiếu xuất thiếu so với DO */
+.short-box { border: 1px solid #f3b0a8; background: #fffaf9; border-radius: var(--radius); padding: 10px 14px; margin-bottom: 10px; }
+.short-title { font-weight: 700; color: var(--red); margin-bottom: 4px; }
+.short-opt { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border-radius: 7px; margin-top: 4px; cursor: pointer; border: 1px solid transparent; }
+.short-opt.on { background: #fff; border-color: #f3b0a8; }
+.short-opt input { margin-top: 3px; }

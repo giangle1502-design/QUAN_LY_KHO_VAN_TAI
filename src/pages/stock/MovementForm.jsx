@@ -6,7 +6,7 @@ import { notifySlip } from '../../lib/chat';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { applyMovementToOrderPlans, applyMovementToPlan, planLeft, OPEN_PLAN } from '../../lib/shipPlans';
+import { applyMovementToOrderPlans, applyMovementToPlan, cutPlanShort, planLeft, OPEN_PLAN } from '../../lib/shipPlans';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useCompanies, useMyWarehouses, useOpCompany, useOpWarehouse, useOrders, usePendingIn, useStock, useTrips, useWaitingOut } from '../../lib/hooks';
@@ -157,6 +157,7 @@ function Form({ type }) {
   const [done, setDone] = useState('');
   const [donePO, setDonePO] = useState('');
   const [doneRel, setDoneRel] = useState(null);
+  const [doneCut, setDoneCut] = useState('');
   const [doneCross, setDoneCross] = useState('');
   const [doneTrip, setDoneTrip] = useState('');
   const [doneGroup, setDoneGroup] = useState(null);
@@ -678,6 +679,36 @@ function Form({ type }) {
     }
     return res;
   }, [type, order, isSTO, head.company, whCode, stockLoading, stock, lines, shipPlan, grp]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Xuất thiếu so với DO: kho không đủ tồn xuất được (hư hỏng, khóa xuất…) → phiếu xuất đúng số đang chọn,
+  // phần thiếu mặc định trả về SO (DO đóng, SO còn mở phần đó) hoặc giữ trên DO chờ xuất tiếp
+  const [shortMode, setShortMode] = useState('so');
+  const doShort = useMemo(() => {
+    if (type !== 'out' || !order || isSTO) return [];
+    const res = [];
+    const plansOf = [];
+    if (shipPlan && shipPlan.orderId === order.id) {
+      const need = shipPlan.need || Object.fromEntries((shipPlan.lines || []).filter((x) => !shipPlan.ship || (x.shipCode || '') === shipPlan.ship).map((x) => [x.orderLine, planLeft(x)]));
+      plansOf.push({ o: order, need, planIds: shipPlan.planIds || [shipPlan.id], main: true });
+    }
+    for (const e of extra) {
+      const o = orders.find((x) => x.id === e.orderId);
+      if (o && e.plan && (e.planIds || []).length) plansOf.push({ o, need: e.plan, planIds: e.planIds, main: false });
+    }
+    for (const { o, need, planIds, main } of plansOf) {
+      const byItem = new Map();
+      for (const [no, kg] of Object.entries(need || {})) {
+        const ol = o.lines.find((x) => String(x.no) === String(no));
+        if (ol && num(kg) > 0.001) byItem.set(ol.item, (byItem.get(ol.item) || 0) + num(kg));
+      }
+      const mine = lines.filter((l) => (l.orderId ? l.orderId === o.id : main));
+      for (const [item, needKg] of byItem) {
+        const got = mine.filter((l) => stockById.get(l.stockId)?.item === item).reduce((a, l) => a + Math.abs(num(l.kg)), 0);
+        const miss = needKg - got;
+        if (miss > Math.max(1, needKg * 0.005)) res.push({ orderId: o.id, planIds, item, itemName: o.lines.find((x) => x.item === item)?.itemName || '', need: needKg, got, miss });
+      }
+    }
+    return res;
+  }, [type, order, isSTO, shipPlan, extra, orders, lines, stockById]);
   // Dòng phiếu đang lấy tồn của công ty khác công ty xuất
   const crossPicked = type === 'out' && head.company ? lines.map((l) => stockById.get(l.stockId)).filter((r) => r && (r.company || '') && r.company !== head.company) : [];
   const pickPlate = (v) => {
@@ -731,7 +762,7 @@ function Form({ type }) {
       if (!list.length) return setErr(`Dự kiến xuất ${ids.join(', ')} không còn dòng nào cần xuất.`);
       const [first, ...rest] = list;
       const main = ps.find((p) => p.id === first.planIds[0]);
-      setShipPlan({ ...main, key: planParam, ship: first.ship, planIds: first.planIds });
+      setShipPlan({ ...main, key: planParam, ship: first.ship, planIds: first.planIds, need: first.plan });
       setGroupPlans(ps);
       pickOrder(first.orderId, { plan: first.plan, force: true, extra: rest.map((e) => ({ orderId: e.orderId, plan: e.plan, planIds: e.planIds })) });
       setHead((h) => ({ ...h, shipCode: first.ship || h.shipCode, note: h.note || [...new Set(ps.map((p) => p.note).filter(Boolean))].join('; ') }));
@@ -867,6 +898,9 @@ function Form({ type }) {
     const rel = out.filter((l) => l._rel);
     if (rel.length && !window.confirm(`Phiếu có ${rel.length} dòng hàng HTC (${fmtNum(rel.reduce((a, l) => a + num(l.kg), 0), 2)} kg).\n`
       + `Phiếu sẽ lưu ở trạng thái CHỜ GIẢI CHẤP: in phiếu, soạn hàng được nhưng chưa trừ tồn. Vào Đề nghị giải chấp → Chờ giải chấp để tạo lệnh giải chấp (gộp nhiều đơn). Tiếp tục?`)) return;
+    const shortTotal = doShort.reduce((a, x) => a + x.miss, 0);
+    if (shortTotal > 0 && !window.confirm(`Phiếu xuất thiếu ${fmtNum(shortTotal, 2)} kg so với DO (${doShort.map((x) => `${x.item} ${fmtNum(x.miss, 2)} kg`).join(', ')}).\n`
+      + (shortMode === 'so' ? 'Phần thiếu sẽ TRẢ VỀ SO: DO đóng sau phiếu này, SO còn mở phần thiếu để lập DO mới. Tiếp tục?' : 'Phần thiếu GIỮ TRÊN DO: DO chờ lập phiếu xuất tiếp. Tiếp tục?'))) return;
     setBusy(true);
     const ids = [];
     try {
@@ -889,6 +923,7 @@ function Form({ type }) {
       const planIdsOf = (oid) => (shipPlan && shipPlan.orderId === oid ? shipPlan.planIds || [shipPlan.id] : extra.find((e) => e.orderId === oid)?.planIds || []);
       const pieces = parts.size > 1 ? [...parts.values()] : [{ order: head.orderId ? order : null, lines: out }];
       // 1 xe nhiều đơn: mỗi đơn 1 phiếu con (trừ đúng đơn, công nợ), cùng mã phiếu gộp; pallet xuất / nhập kèm ghi ở phiếu đầu
+      const cutTotal = [];
       const groupId = pieces.length > 1 ? `${type === 'in' ? 'GN' : 'GX'}${Date.now().toString(36).toUpperCase()}` : '';
       for (const [k, pc] of pieces.entries()) {
         const oid = direct ? '' : pc.order?.id || '';
@@ -923,6 +958,13 @@ function Form({ type }) {
           try { await applyMovementToOrderPlans(oid, { id: mvId, lines: mvLines, shipCode: head.shipCode }, { email, name }); }
           catch (e3) { console.warn('Chưa cập nhật được dự kiến xuất của', oid, e3); }
         }
+        // Xuất thiếu, chọn "Trả về SO": cắt phần còn lại của DO (cùng mã giao) để SO mở lại phần đó, DO đóng
+        if (type === 'out' && shortMode === 'so' && pids.length && doShort.some((x) => x.orderId === oid)) {
+          for (const pid of pids) {
+            try { const c = await cutPlanShort(pid, mvId, shipParam, { email, name }); if (c > 0) cutTotal.push(`${pid} ${fmtNum(c, 2)} kg`); }
+            catch (e6) { setErr(`Đã lập phiếu ${mvId} nhưng chưa trả được phần thiếu của DO ${pid} về SO: ${e6.message}`); }
+          }
+        }
       }
       const mvId = ids[0];
       if (pickAtCustomer && ret.carrier && mvId) {
@@ -936,6 +978,8 @@ function Form({ type }) {
           setDoneTrip(tid);
         } catch (e5) { setErr(`Đã lập phiếu ${mvId} nhưng chưa tạo được chuyến thu hồi: ${e5.message}. Tạo chuyến ở Vận tải.`); }
       }
+      setDoneCut(cutTotal.length ? cutTotal.join(', ') : '');
+      setShortMode('so');
       setDoneCross(cross.length ? [...new Set(cross.map((l) => l.company))].join(', ') : '');
       setShipPlan(null); setExtra([]); setGroupPlans([]);
       setDoneGroup(groupId ? { id: groupId, ids, orders: pieces.map((x) => x.order.id) } : null);
@@ -974,6 +1018,7 @@ function Form({ type }) {
 
         {type === 'out' && <> · <Link className="btn primary" to={`/kho/phieu/${done}/soan`} target="_blank">📋 In phiếu soạn hàng</Link></>}
         {doneTrip && <div style={{ marginTop: 6 }}>🚚 Đã tạo chuyến đi lấy hàng ở khách <b className="mono">{doneTrip}</b>: đơn vị vận tải thấy chuyến trên link tài xế, điểm nhận hàng là địa chỉ khách. Xem ở <Link to="/van-tai">Vận tải</Link>.</div>}
+        {doneCut && <div style={{ marginTop: 6 }}>↩ Xuất thiếu: phần còn lại của DO đã trả về SO ({doneCut}). DO đã đóng; SO hiện lại phần chưa xuất ở Đơn chờ xuất.</div>}
         {doneCross && <div style={{ marginTop: 6 }}>🏛️ Phiếu có hàng lấy từ tồn công ty <b>{doneCross}</b> (chuyển pháp nhân): đã gửi thông báo cho kế toán. Xem <Link to="/bao-cao/chuyen-phap-nhan">Báo cáo chuyển pháp nhân</Link>.</div>}
         {doneRel && <div style={{ marginTop: 6 }}>⏳ Phiếu có hàng HTC nên đang <b>chờ giải chấp</b> (tồn chưa trừ). In phiếu, soạn hàng được; vào <Link to="/kho/giai-chap">Đề nghị giải chấp → Chờ giải chấp</Link> để tạo lệnh giải chấp, khi đó phiếu mới ghi xuất kho.</div>}</div>}
       {queueN > 0 && (
@@ -1256,6 +1301,7 @@ function Form({ type }) {
         {type === 'in' && <> <LotListImport lines={lines} setLines={setLines} itemMap={itemMap} maxLines={30} /></>}
       </div>
       {type === 'in' && <OverCapConfirm caps={caps} checked={overOk} onChange={setOverOk} />}
+      {doShort.length > 0 && <ShortBox short={doShort} mode={shortMode} setMode={setShortMode} />}
       <ErrorBox error={err} />
       {/* Ghim ở đáy màn hình: phiếu nhiều dòng không phải kéo xuống cuối mới thấy nút */}
       <div className="form-actions sticky-actions">
@@ -1265,6 +1311,23 @@ function Form({ type }) {
       <datalist id="dl-mv-party">{parties.map((p) => <option key={p.code} value={p.code}>{p.name}</option>)}</datalist>
       <datalist id="dl-mv-item">{items.filter((x) => x.active !== false).map((x) => <option key={x.code} value={x.code}>{x.name}</option>)}</datalist>
     </form>
+  );
+}
+
+// Phiếu xuất thiếu so với DO: chọn trả phần thiếu về SO (mặc định) hay giữ trên DO
+function ShortBox({ short, mode, setMode }) {
+  const total = short.reduce((a, x) => a + x.miss, 0);
+  const sos = [...new Set(short.map((x) => x.orderId))].join(', ');
+  const dos = [...new Set(short.flatMap((x) => x.planIds))].join(', ');
+  return (
+    <div className="short-box">
+      <div className="short-title">⚠ Kho không đủ tồn: thiếu {fmtNum(total, 2)} kg so với DO ({short.map((x) => `${x.item} ${fmtNum(x.miss, 2)} kg`).join(', ')})</div>
+      <div className="small">Phiếu này xuất đúng số đang chọn. Phần thiếu:</div>
+      <label className={`short-opt${mode === 'so' ? ' on' : ''}`}><input type="radio" checked={mode === 'so'} onChange={() => setMode('so')} />
+        <span><b>Trả {fmtNum(total, 2)} kg về {sos}</b> (mặc định). DO {dos} đóng sau phiếu này; SO còn mở phần thiếu, hiện lại ở Đơn chờ xuất và báo cáo Đơn hàng chưa xuất để lập DO mới khi có hàng.</span></label>
+      <label className={`short-opt${mode === 'keep' ? ' on' : ''}`}><input type="radio" checked={mode === 'keep'} onChange={() => setMode('keep')} />
+        <span><b>Giữ trên DO</b>: DO ở trạng thái Đã xuất một phần, chờ lập phiếu xuất tiếp phần thiếu (khi hàng sắp về kho).</span></label>
+    </div>
   );
 }
 

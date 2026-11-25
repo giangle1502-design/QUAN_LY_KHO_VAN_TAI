@@ -18,7 +18,8 @@ export const OPEN_PLAN = ['open', 'partial'];
 const n = (v) => Number(v) || 0;
 const nowISO = () => new Date().toISOString();
 const r3 = (x) => Math.round(x * 1000) / 1000;
-export const planLeft = (l) => Math.max(0, n(l.qtyKg) - n(l.doneKg));
+// cutKg: phần thiếu đã trả về SO khi kho không đủ tồn (phiếu xuất lấy được bao nhiêu xuất bấy nhiêu, DO đóng)
+export const planLeft = (l) => Math.max(0, n(l.qtyKg) - n(l.doneKg) - n(l.cutKg));
 
 export function usePlans() {
   const { salesOnly, email } = useApp();
@@ -91,13 +92,16 @@ export async function revertMovementFromPlan(planId, mv, user) {
       // Số đã ghi theo đúng phiếu này (nếu có), không thì trừ theo dòng phiếu
       const sub = l.byMove ? Math.min(n(l.byMove[mv.id]), n(l.doneKg)) : Math.min(byLine[l.orderLine] || 0, n(l.doneKg));
       if (sub > 0) byLine[l.orderLine] -= sub;
-      if (!(sub > 0)) return l;
+      const cut = Math.min(n(l.cutBy?.[mv.id]), n(l.cutKg));
+      if (!(sub > 0) && !(cut > 0)) return l;
       const { [mv.id]: _gone, ...rest } = l.byMove || {};
-      return { ...l, doneKg: r3(n(l.doneKg) - sub), byMove: rest };
+      const { [mv.id]: _gone2, ...restCut } = l.cutBy || {};
+      return { ...l, doneKg: r3(n(l.doneKg) - Math.max(0, sub)), byMove: rest, ...(cut > 0 ? { cutKg: r3(n(l.cutKg) - cut), cutBy: restCut } : {}) };
     });
     const any = lines.some((l) => n(l.doneKg) > 0.001);
+    const anyCut = lines.some((l) => n(l.cutKg) > 0.001);
     tx.update(ref, { lines, status: any ? 'partial' : 'open', movementIds: (p.movementIds || []).filter((x) => x !== mv.id), doneAt: null,
-      updatedAt: nowISO(), updatedBy: user.email });
+      ...(p.shortClosed && !anyCut ? { shortClosed: false, shortKg: 0 } : {}), updatedAt: nowISO(), updatedBy: user.email });
   });
 }
 
@@ -146,4 +150,34 @@ export async function revertMovementFromOrderPlans(orderId, mv, user) {
   if (!orderId || !String(orderId).startsWith('SO')) return;
   const snap = await getDocs(query(collection(db, 'shipPlans'), where('orderId', '==', orderId)));
   for (const d of snap.docs) if ((d.data().movementIds || []).includes(mv.id)) await revertMovementFromPlan(d.id, mv, user);
+}
+
+// Xuất thiếu (kho không đủ tồn: hàng hư hỏng, khóa xuất…): phiếu xuất được bao nhiêu xuất bấy nhiêu, phần còn lại của DO
+// trả về SO (cutKg) để SO hiện lại phần chưa xuất ở Đơn chờ xuất / báo cáo đơn chưa xuất; DO đóng. ship: chỉ cắt các dòng cùng mã giao.
+// Gọi sau applyMovementToPlan / applyMovementToOrderPlans của phiếu mvId. Trả về số kg đã trả về SO.
+export async function cutPlanShort(planId, mvId, ship, user) {
+  const ref = doc(db, 'shipPlans', planId);
+  let total = 0;
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) return;
+    const p = snap.data();
+    if (!OPEN_PLAN.includes(p.status)) return;
+    total = 0;
+    const lines = (p.lines || []).map((l) => {
+      if (ship != null && ship !== '' && (l.shipCode || '') !== ship) return l;
+      const left = planLeft(l);
+      if (!(left > 0.0005)) return l;
+      total += left;
+      return { ...l, cutKg: r3(n(l.cutKg) + left), cutBy: { ...(l.cutBy || {}), [mvId]: r3(n(l.cutBy?.[mvId]) + left) } };
+    });
+    if (!(total > 0)) return;
+    const done = lines.every((l) => planLeft(l) <= Math.max(1, n(l.qtyKg) * 0.005));
+    tx.update(ref, {
+      lines, status: done ? 'done' : 'partial', shortClosed: true, shortKg: r3(n(p.shortKg) + total),
+      movementIds: [...new Set([...(p.movementIds || []), mvId])],
+      ...(done ? { doneAt: nowISO() } : {}), updatedAt: nowISO(), updatedBy: user.email,
+    });
+  });
+  return r3(total);
 }
