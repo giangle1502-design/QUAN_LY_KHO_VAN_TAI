@@ -22,6 +22,8 @@ import { dragHeadProps, orderCols } from '../../lib/colOrder';
 import { BASE_COST_FIELDS, COST_GROUPS, TRIP_VARS, calcCosts, checkCostFormula, costFieldsWith, freightTotalOf, groupTotalOf, useCostConfig, useCostFields } from '../../lib/tripCosts';
 import Select from '../../components/Select';
 import { ExtraFields, useExtraFields } from '../../components/ExtraFields';
+import { JobCostModal, JobModal } from './JobBits';
+import { leaveJob } from '../../lib/jobs';
 
 // Vận chuyển theo chuyến: đơn cần chia xe → chuyến xe (tài xế xác nhận từng bước) → chi phí & cước
 const n = (v) => (v === '' || v == null ? 0 : Number(v) || 0);
@@ -204,12 +206,28 @@ function TripList({ trips, priv }) {
   const [cost3, setCost3] = useState(null);
   const [cut, setCut] = useState(null);
   const [err, setErr] = useState('');
+  // Ghép Job: tick nhiều Shipment chưa chạy của cùng 1 đơn vị vận tải
+  const canJob = isAdmin || isCarrier;
+  const [pick, setPick] = useState({});
+  const [jobM, setJobM] = useState(null);
+  const [jobC, setJobC] = useState(null);
+  const [okMsg, setOkMsg] = useState('');
   const carOf = (t) => carriers.find((c) => c.code === t.carrier) || { code: t.carrier, kind: t.carrierKind };
   const list = trips.filter((t) => (!f.from || (t.plannedDate || '') >= f.from || ['planned'].includes(t.status)) && (!f.to || (t.plannedDate || '') <= f.to)
     && (f.status === '' || (f.status === 'active' ? !['completed', 'cancelled'].includes(t.status) : t.status === f.status))
     && (!f.carrier || t.carrier === f.carrier)
     && (!f.q || [t.id, t.plate, t.driverName, t.idCard, t.warehouse, priv[t.id]?.threeplName, ...(t.lines || []).flatMap((l) => [l.orderId, l.partyName, l.item, l.shipCode])].join(' ').toLowerCase().includes(f.q.toLowerCase())));
   const setFF = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const picked = trips.filter((t) => pick[t.id]);
+  const openJob = () => {
+    setErr(''); setOkMsg('');
+    if (picked.length < 2) return setErr('Tick ít nhất 2 Shipment để ghép Job.');
+    if (picked.some((t) => t.carrier !== picked[0].carrier)) return setErr('Job chỉ ghép Shipment của cùng 1 đơn vị vận tải.');
+    if (picked.some((t) => t.status !== 'planned' || t.jobId)) return setErr('Chỉ ghép Shipment chưa chạy và chưa thuộc Job nào.');
+    return setJobM({ trips: picked, carrier: carOf(picked[0]) });
+  };
+  const jobOf = (t) => trips.filter((x) => x.jobId && x.jobId === t.jobId).sort((a, b) => n(a.jobSeq) - n(b.jobSeq));
+  const jobBadge = (t) => (t.jobId ? <div className="small"><span className="badge purple" title="1 xe chạy nhiều Shipment">🔗 {t.jobId} · điểm {t.jobSeq}/{(t.jobTrips || []).length}</span></div> : null);
   const cancel = async (t) => {
     const reason = window.prompt(`Hủy chuyến ${t.id}? Lý do:`, ''); if (!reason) return;
     try { await updateDoc(doc(db, 'trips', t.id), { status: 'cancelled', cancelReason: reason, cancelTime: nowISO(), updatedAt: nowISO(), updatedBy: email,
@@ -257,6 +275,9 @@ function TripList({ trips, priv }) {
         {(t.photoCount > 0 || t.status === 'completed') && <button className="btn sm" onClick={() => setPhoto(t)}>📷 Ảnh</button>}{' '}
         {!isTpl && (isAdmin || isCarrier || hasRole('ke_toan')) && t.status === 'completed' && <button className="btn sm" onClick={() => setCost(t)}>💰 Chi phí</button>}{' '}
         {(isTpl || can3PL) && p3?.threepl && t.status === 'completed' && <button className="btn sm" onClick={() => setCost3(t)}>💰 Cước 3PL</button>}{' '}
+        {t.jobId && <a className="btn sm" href={`/van-tai/job/${t.jobId}/giao`} target="_blank" rel="noreferrer" title="Phiếu giao hàng gộp các Shipment cùng khách">🖨 Phiếu giao gộp</a>}{' '}
+        {t.jobId && !isTpl && (isAdmin || isCarrier || hasRole('ke_toan')) && <button className="btn sm" onClick={() => setJobC(t.jobId)}>💰 Cước Job</button>}{' '}
+        {t.jobId && canJob && t.status === 'planned' && <button className="btn ghost sm" onClick={() => leaveJob(t, { email, name }).catch((e) => setErr(e.message))}>Tách khỏi Job</button>}{' '}
         {(isAdmin || isCarrier) && t.status === 'planned' && <button className="btn ghost sm" onClick={() => cancel(t)}>Hủy</button>}
       </span>
     </>;
@@ -268,7 +289,7 @@ function TripList({ trips, priv }) {
     const dests = [...new Map(t.lines.map((l) => [`${l.partyCode}|${l.shipCode}`, l])).values()];
     return (
       <div key={t.id} className="card trip-card" style={{ opacity: t.status === 'cancelled' ? 0.5 : 1 }}>
-        <div className="trip-card-head"><b className="mono">{t.id}</b><span>{fmtDate(t.plannedDate)}</span></div>
+        <div className="trip-card-head"><b className="mono">{t.id}</b><span>{fmtDate(t.plannedDate)}</span></div>{jobBadge(t)}
         <div><span className={'badge ' + (STATUS_META[t.status]?.tone || '')}>{statusText(t)}</span>{t.selfPickup ? <span className="badge" style={{ marginLeft: 4 }}>khách tự lấy</span> : null}</div>
         <div>Đơn hàng: <b>{(t.orderIds || []).join(', ')}</b></div>
         {t.company && <div>Công ty xuất hàng: <b>{companyName(t.company)}</b></div>}
@@ -305,18 +326,21 @@ function TripList({ trips, priv }) {
         <input type="search" placeholder="Tìm chuyến, xe, tài xế, đơn, khách…" value={f.q} onChange={(e) => setFF('q', e.target.value)} />
         <span className="seg"><button type="button" className={'btn sm' + (view === 'card' ? ' primary' : '')} onClick={() => setView('card')}>▦ Thẻ</button><button type="button" className={'btn sm' + (view === 'table' ? ' primary' : '')} onClick={() => setView('table')}>☰ Bảng</button></span>
         {(isAdmin || isCarrier || isTpl) && <DriverLinkBox compact />}
+        {canJob && <button className="btn" disabled={picked.length < 2} onClick={openJob} title="1 xe chạy nhiều Shipment: nhiều điểm lấy (Đức Hòa, Sotrans, Linh Phát…) / nhiều điểm giao">🔗 Ghép Job{picked.length ? ` (${picked.length})` : ''}</button>}
       </div>
+      {okMsg && <div className="ok-box" style={{ marginBottom: 10 }}>{okMsg}</div>}
       {isTpl && <p className="hint">Chuyến GHA đã chỉ định cho bạn: bấm <b>Nhập số xe</b> để ghi xe, tài xế; tài xế (hoặc bạn) bấm lần lượt Đến điểm nhận hàng → Nhận / lấy hàng xong → Đến điểm giao hàng → Hoàn thành; xong thì <b>💰 Cước 3PL</b> nhập cước với GHA.</p>}
       <ErrorBox error={err} />
       {!list.length ? <Empty text="Không có chuyến nào." /> : view === 'card' ? <div className="trip-cards">{list.map(card)}</div> : (
       <div className="table-wrap">
           <table>
-            <thead><tr><th>Shipment</th><th>Ngày đi</th><th>Kho</th><th>Xe · tài xế</th>{!isCarrier && !isTpl && <th>Vận tải</th>}{can3PL && <th>3PL</th>}<th>Giao đến · hàng</th><th className="num">Tấn</th><th>Tiến độ</th>{!isTpl && <th>Chi phí</th>}{(can3PL || isTpl) && <th>Cước 3PL</th>}<th></th></tr></thead>
+            <thead><tr>{canJob && <th title="Tick để ghép Job"></th>}<th>Shipment</th><th>Ngày đi</th><th>Kho</th><th>Xe · tài xế</th>{!isCarrier && !isTpl && <th>Vận tải</th>}{can3PL && <th>3PL</th>}<th>Giao đến · hàng</th><th className="num">Tấn</th><th>Tiến độ</th>{!isTpl && <th>Chi phí</th>}{(can3PL || isTpl) && <th>Cước 3PL</th>}<th></th></tr></thead>
             <tbody>{list.map((t) => {
               const { st, blocked, c, p3, open } = info(t);
               return (
                 <tr key={t.id} style={{ opacity: t.status === 'cancelled' ? 0.5 : 1 }}>
-                  <td className="mono">{t.id}{t.selfPickup ? <div className="small">khách tự lấy</div> : null}</td><td className="nowrap">{fmtDate(t.plannedDate)}</td><td>{t.warehouse}{t.pickup ? <div className="small">⚓ {t.pickupName || t.pickup}</div> : null}</td>
+                  {canJob && <td>{t.status === 'planned' && !t.jobId ? <input type="checkbox" checked={!!pick[t.id]} onChange={() => setPick((m) => ({ ...m, [t.id]: !m[t.id] }))} /> : null}</td>}
+                  <td className="mono">{t.id}{t.selfPickup ? <div className="small">khách tự lấy</div> : null}{jobBadge(t)}</td><td className="nowrap">{fmtDate(t.plannedDate)}</td><td>{t.warehouse}{t.pickup ? <div className="small">⚓ {t.pickupName || t.pickup}</div> : null}</td>
                   <td>{t.plate ? <b>{t.plate}</b> : <span className="small">{isInternal(c) ? 'chờ tài xế nhóm nhận' : 'chưa có xe'}</span>}{t.driverName ? <div className="small">{t.driverName}{t.driverPhone ? ` · ${t.driverPhone}` : ''}</div> : null}</td>
                   {!isCarrier && !isTpl && <td>{t.carrierName || t.carrier}<div className="small">{kindText(c)}</div></td>}
                   {can3PL && <td>{isGHA(c) ? (p3?.threeplName || p3?.threepl || 'Xe nhà GHA') : ''}</td>}
@@ -339,6 +363,8 @@ function TripList({ trips, priv }) {
       {cost && <CostModal t={trips.find((x) => x.id === cost.id) || cost} onClose={() => setCost(null)} />}
       {cost3 && <Cost3plModal t={cost3} p={priv[cost3.id] || {}} onClose={() => setCost3(null)} />}
       {cut && <CutModal t={cut} p3={priv[cut.id]} onClose={() => setCut(null)} />}
+      {jobM && <JobModal trips={jobM.trips} carrier={jobM.carrier} onClose={(m) => { setJobM(null); if (m) { setOkMsg(m); setPick({}); } }} />}
+      {jobC && <JobCostModal jobId={jobC} trips={jobOf({ jobId: jobC })} carrier={carOf(jobOf({ jobId: jobC })[0] || {})} onClose={(m) => { setJobC(null); if (m) setOkMsg(m); }} />}
     </div>
   );
 }
