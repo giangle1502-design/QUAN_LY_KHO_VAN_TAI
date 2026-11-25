@@ -142,7 +142,7 @@ function OrderList({ type, initialQ = '', startNew = false, startScan = false, o
   const pendIn = usePendingIn();
   const waitOut = useWaitingOut();
   const meta = ORDER_TYPES[type];
-  const { hasRole, inMyWarehouses, fieldsOf, seenFieldsOf, isAdmin, email } = useApp();
+  const { hasRole, inMyWarehouses, fieldsOf, seenFieldsOf, isAdmin, email, salesOnly } = useApp();
   const canManage = canManageOrders(hasRole, type);
   const sto = type === 'STO';
   const so = type === 'SO';
@@ -377,7 +377,9 @@ function OrderList({ type, initialQ = '', startNew = false, startScan = false, o
                 const ctx = { x: orderTotals(o), isLate: OPEN_STATUSES.includes(o.status) && o.dueDate && o.dueDate < today };
                 return (
                   <tr key={o.id} style={{ opacity: ['closed', 'cancelled'].includes(o.status) ? 0.6 : 1 }}>
-                    <td className="row-act"><RowOpen edit={false} onClick={() => setOpen(o.id)} /></td>
+                    <td className="row-act"><RowOpen edit={false} onClick={() => setOpen(o.id)} />
+                      {canManage && o.status !== 'cancelled' && (!salesOnly || o.type === 'STO' || o.sales === email)
+                        && <RowOpen onClick={() => setEdit(o)} title={OPEN_STATUSES.includes(o.status) ? 'Sửa đơn' : 'Sửa đơn đã hoàn tất / đã đóng (ghi lý do, lưu lịch sử)'} />}</td>
                     {shownCols.map((c) => <td key={c.key} className={(c.num ? 'num ' : '') + (c.cls || '')} style={c.style?.(o, ctx)}>{c.render(o, ctx)}</td>)}
                     <td className="nowrap"><MoveButtons o={o} sm pend={pendIn.get(o.id)} wait={waitOut.get(o.id)} /></td>
                   </tr>
@@ -456,6 +458,8 @@ function OrderDetail({ o, onClose, onEdit }) {
 
   return (
     <Modal title={`${meta.label} ${o.id}`} onClose={onClose} wide>
+      {canManage && o.status !== 'cancelled' && <button className="btn primary sm" style={{ float: 'right', marginLeft: 8 }} onClick={onEdit}
+        title={isOpen ? 'Sửa đơn' : 'Sửa giá, thông tin đơn đã hoàn tất / đã đóng (ghi lý do, lưu lịch sử)'}>✏️ Sửa đơn</button>}
       <p>
         <OrderStatus status={o.status} /> {o.refNo ? <> · Số Ecount <b className="mono">{o.refNo}</b></> : null} · Ngày {fmtDate(o.date)}
         {' · '}{meta.partyLabel}: <b>{sto ? partyText(o) : `${o.partyCode} ${o.partyName}`}</b>{o.sales ? <> · Sale: <b>{o.sales}</b></> : null}
