@@ -82,7 +82,9 @@ export function useSaleStock(wh, co) {
       if (!S.row(r)) continue;
       const x = get(r.item, r.itemName); if (!x) continue;
       x.onHand += n(r.kg);
-      const k = `${r.company ? `${coShort.get(r.company) || r.company} - ` : ''}${whName.get(r.warehouse) || r.warehouse}`;
+      const wn = whName.get(r.warehouse) || r.warehouse; const cs = r.company ? coShort.get(r.company) || r.company : '';
+      // Tên kho đã bắt đầu bằng mã công ty (vd. "VAP - Kho Cảng") thì không ghép thêm
+      const k = cs && !wn.startsWith(`${cs} `) ? `${cs} - ${wn}` : wn;
       const w = x.wh.get(k) || { kg: 0, locked: 0, code: r.warehouse };
       w.kg += n(r.kg); if (r.goodsStatus === 'HTC') w.locked += n(r.kg);
       x.wh.set(k, w);
@@ -108,7 +110,7 @@ export function useSaleStock(wh, co) {
         if (o.type === 'SO' && inScope(l.warehouse || o.warehouse) && leftKg(l) > 0) {
           const x = get(l.item, l.itemName); x.unshipped += leftKg(l);
           x.sos.push({ id: o.id, due: eta, date: o.date || '', party: o.partyName || o.partyCode, partyCode: o.partyCode || '', left: leftKg(l), qty: n(l.qtyKg), done: n(l.doneKg),
-            wh: l.warehouse || o.warehouse || '', sales: o.sales || '', by: o.createdByName || o.createdBy || '', refNo: o.refNo || '', company: o.company || '' });
+            wh: whName.get(l.warehouse || o.warehouse) || l.warehouse || o.warehouse || '', sales: o.sales || '', by: o.createdByName || o.createdBy || '', refNo: o.refNo || '', company: o.company || '' });
         }
         if (o.type === 'PO' && inScope(l.warehouse || o.warehouse) && leftKg(l) > 0) {
           const x = get(l.item, l.itemName); x.incoming += leftKg(l);
@@ -125,7 +127,7 @@ export function useSaleStock(wh, co) {
           }
           if (anyWh && S.inWh(fw) && !S.inWh(tw) && leftKg(l) > 0) {
             const x = get(l.item, l.itemName); x.unshipped += leftKg(l);
-            x.sos.push({ id: o.id, due: eta, date: o.date || '', party: `Chuyển đến ${whName.get(tw) || tw}`, left: leftKg(l), qty: n(l.qtyKg), done: n(l.doneKg), wh: fw, sales: '', by: o.createdByName || o.createdBy || '', sto: true });
+            x.sos.push({ id: o.id, due: eta, date: o.date || '', party: `Chuyển đến ${whName.get(tw) || tw}`, left: leftKg(l), qty: n(l.qtyKg), done: n(l.doneKg), wh: whName.get(fw) || fw, sales: '', by: o.createdByName || o.createdBy || '', sto: true });
           }
         }
       }
@@ -353,5 +355,18 @@ export function SaleItemModal({ item, wh, co, onClose }) {
       {!x ? <Empty text="Đang tải…" /> : <SaleItemPanel x={x} ctx={{ saleName, saleAdmin, salesOnly, poMoney, today }} onStockDetail={setDetail} />}
       {detail && <StockDetailModal stock={stockAll.filter(S.row)} filter={detail} onClose={() => setDetail(null)} />}
     </Modal>
+  );
+}
+
+// Chi tiết 1 mã hàng mở ngay dưới dòng (báo cáo Tồn kho cho Sale: bấm mã hàng)
+export function SaleItemInline({ item, wh, co }) {
+  const { all, saleName, saleAdmin, salesOnly, poMoney, stockAll, today, S } = useSaleStock(wh, co);
+  const [detail, setDetail] = useState(null);
+  const x = all.find((r) => r.item === item);
+  return (
+    <>
+      {!x ? <Empty text="Đang tải…" /> : <SaleItemPanel x={x} ctx={{ saleName, saleAdmin, salesOnly, poMoney, today }} onStockDetail={setDetail} />}
+      {detail && <StockDetailModal stock={stockAll.filter(S.row)} filter={detail} onClose={() => setDetail(null)} />}
+    </>
   );
 }
