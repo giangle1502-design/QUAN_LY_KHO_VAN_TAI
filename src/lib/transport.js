@@ -34,14 +34,26 @@ export function nextStep(t) {
   if (t.status === ST.PLANNED) return 'arrive';
   // Khách tự lấy: xe ra cổng / xuất xong là hoàn thành, không có bước giao hàng
   if (t.selfPickup && !noYard(t)) return null;
-  if (!t.driverLoadedAt) return 'loaded';
+  // Lấy hàng ở kho có bảo vệ (Đức Hòa): thủ kho xuất xong là đã lấy hàng, tài xế không bấm
+  if (!t.driverLoadedAt && !(!noYard(t) && t.processDoneTime)) return 'loaded';
   if (t.selfPickup) return null;
   if (!t.driverAtDestAt) return 'atDest';
+  // Giao vào kho có bảo vệ: thủ kho xác nhận nhập xong là hoàn thành
+  if (t.yard === 'dest' && t.deliveryCompleteTime) return null;
   return 'delivered';
 }
 // Bước chưa làm được vì còn chờ kho / bảo vệ
 export function stepBlocked(t, step) {
+  // Giao hàng vào kho có bảo vệ: bảo vệ xác nhận xe đến, thủ kho xác nhận hoàn thành
+  if (t.destGuard) {
+    const wh = t.destWarehouseName || t.destWarehouse;
+    if (step === 'atDest') return `Đến ${wh}: trình thông tin cho bảo vệ, bảo vệ xác nhận xe đến`;
+    if (step === 'delivered' && t.yard === 'dest') return t.status === ST.WAITING_GATE ? 'Chờ thủ kho gọi vào cửa' : 'Thủ kho xác nhận nhập xong (hoàn thành)';
+  }
   if (noYard(t)) return '';
+  // Lấy hàng ở kho có bảo vệ: bảo vệ xác nhận xe đến kho (tài xế không tự bấm)
+  if (step === 'arrive') return 'Đến kho: trình thông tin cho bảo vệ, bảo vệ xác nhận xe đã đến';
+  if (step === 'loaded' && t.status === ST.PROCESSING) return `Thủ kho đang xuất hàng${t.dock ? ` ở cửa ${t.dock}` : ''}`;
   if (step === 'loaded' && [ST.ARRIVED, ST.WAITING_GATE].includes(t.status)) return t.status === ST.ARRIVED ? 'Chờ bảo vệ cho xe vào cổng' : 'Chờ thủ kho gọi vào cửa';
   if ((step === 'atDest' || step === 'delivered') && t.status !== ST.WAITING_DELIVERY)
     return t.status === ST.WAITING_EXIT ? 'Chờ bảo vệ xác nhận ra cổng' : 'Chờ thủ kho xuất hàng xong';
@@ -142,6 +154,7 @@ export async function createPlannedTrips({ wh, carrier, trips }, user, action = 
         // Nguồn của phần hàng (để biết dự kiến xuất / phân bổ / phiếu xuất nào đã giao vận tải)
         ...(l.planId ? { planId: l.planId } : {}), ...(l.allocId ? { allocId: l.allocId } : {}), ...(l.movementId ? { movementId: l.movementId } : {}) })),
       company: t.company || '', carrierKind: carrier.kind || '', selfPickup: carrier.kind === 'Khách tự lấy',
+      ...destOf(t.lines, wh.code, whs),
       orderIds: [...new Set(t.lines.map((l) => l.orderId))],
       // Trường bổ sung của biểu mẫu chuyến điều phối (+ Thêm trường)
       ...(t.extra || {}),
@@ -155,6 +168,12 @@ export async function createPlannedTrips({ wh, carrier, trips }, user, action = 
     if (t.threepl) await setDoc(doc(db, 'tripPrivate', id), { tripId: id, carrier: carrier.code, threepl: t.threepl, threeplName: t.threeplName || '', by: user.email, at });
   }
   return gids;
+}
+// Điểm giao là kho có bảo vệ (STO về Kho Đức Hòa): bảo vệ, thủ kho kho nhận xác nhận đến / hoàn thành
+function destOf(lines, fromWh, whs) {
+  const codes = [...new Set(lines.map((l) => String(l.partyCode || '').split(',')[0].trim()).filter((c) => whs.some((w) => w.code === c)))];
+  if (codes.length !== 1 || !hasKeeper(codes[0]) || locWh(codes[0]) === locWh(fromWh)) return {};
+  return { destGuard: true, destWarehouse: codes[0], destWarehouseName: whs.find((w) => w.code === codes[0])?.name || '' };
 }
 const fmtT = (kg) => fmtNum(Math.round(kg) / 1000, 3);
 
