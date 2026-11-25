@@ -24,6 +24,7 @@ import IOPlan from './IOPlan';
 import Overview from './Overview';
 import LegalTransfer from './LegalTransfer';
 import StockInbound, { SaleItemModal } from './StockInbound';
+import StockLedger from './StockLedger';
 
 // ============================================================================
 // Báo cáo: mỗi báo cáo = bộ lọc + 1 hoặc nhiều bảng; bảng nào cũng xuất Excel và in được.
@@ -32,6 +33,7 @@ import StockInbound, { SaleItemModal } from './StockInbound';
 
 export const REPORTS = [
   ['ke-hoach-xuat-nhap', '🗓️', 'Kế hoạch xuất nhập (Xá / Kiện)'],
+  ['xuat-nhap-ton', '📒', 'Xuất nhập tồn theo mã hàng'],
   ['ton-theo-kho', '🏭', 'Tồn kho tổng theo kho'],
   ['ton-theo-vi-tri', '📍', 'Tồn kho theo vị trí'],
   ['ton-theo-trang-thai', '🔒', 'Tồn kho theo trạng thái'],
@@ -169,7 +171,7 @@ export default function Reports() {
   const { wh, co } = scope;
   const [q, setQ] = useState('');
   const props = { wh, co, q: norm(q) };
-  const Body = { 'ton-theo-kho': ByWarehouse, 'ton-theo-vi-tri': ByLocation, 'ton-theo-trang-thai': ByStatus,
+  const Body = { 'xuat-nhap-ton': StockLedger, 'ton-theo-kho': ByWarehouse, 'ton-theo-vi-tri': ByLocation, 'ton-theo-trang-thai': ByStatus,
     'ton-kho-hang-ve': StockInbound, 'ton-cho-sale': ForSales, 'don-chua-giao': OpenSO, 'po-chua-nhap': OpenPO, 'phan-tich-ban-hang': SalesAnalysis, 'ke-hoach-xuat-nhap': IOPlan, 'tong-quan': Overview, 'chuyen-phap-nhan': LegalTransfer }[cur[0]];
   return (
     <div className="report-page">
