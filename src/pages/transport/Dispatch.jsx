@@ -4,6 +4,7 @@ import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { useCollection } from '../../lib/hooks';
 import { createPlan, updatePlan, usePlans } from '../../lib/shipPlans';
+import { PlanForm } from '../orders/ShipPlans';
 import { useMovesRange } from '../../lib/slips';
 import { setCarrier as setAllocCarrier } from '../../lib/allocations';
 import { KIND_LABEL, SRC_LABEL, kindText, pendingDispatch, pickupFrom, pointOf, pointText } from '../../lib/dispatch';
@@ -49,7 +50,9 @@ export default function Dispatch({ orders, trips, onSplit }) {
   const [bulkCar, setBulkCar] = useState('');
   const [ship, setShip] = useState(null); // rows → modal Shipment
   const [cut, setCut] = useState(null); // row → modal Tách DO
+  const [doFor, setDoFor] = useState(null); // SO chưa có DO → form Lập DO (sửa SL thực xuất, bỏ dòng không xuất)
   const car = (code) => carriers.find((c) => c.code === code);
+  const soNoDO = (r) => r.src === 'order' && r.orderType === 'SO';
   const need = all.filter((r) => !r.carrier).length;
   const ready = all.length - need;
   const rows = all.filter((r) => (f.st === 'all' || (f.st === 'need' ? !r.carrier : !!r.carrier)) && (!f.src || r.src === f.src) && (!f.carrier || r.carrier === f.carrier)
@@ -164,10 +167,12 @@ export default function Dispatch({ orders, trips, onSplit }) {
                   <td>{pointText(r)}{r.address ? <div className="small">{r.address}</div> : null}</td>
                   <td className="small">{r.items.map((i) => <div key={`${i.orderId}${i.no}${i.item}`}>{i.item} {t3(i.kg)} t</div>)}</td>
                   <td className="num"><b>{t3(r.kg)}</b></td>
-                  <td><WithAdd cat="carriers" onAdded={(id) => run(() => setCarrierFor(r, id))}><Select value={r.carrier || ''} disabled={busy} onChange={(e) => run(() => setCarrierFor(r, e.target.value))}>
+                  <td><WithAdd cat="carriers" onAdded={(id) => (soNoDO(r) ? setDoFor({ orderId: r.orderId, carrier: id }) : run(() => setCarrierFor(r, id)))}><Select value={r.carrier || ''} disabled={busy}
+                    onChange={(e) => (soNoDO(r) ? setDoFor({ orderId: r.orderId, carrier: e.target.value }) : run(() => setCarrierFor(r, e.target.value)))}>
                     <option value="">-- Chọn vận tải --</option>{carOpts(r.carrier)}</Select></WithAdd>
                     {c ? <div className="small" title={KIND_LABEL[c.kind] || ''}>{kindText(c)}</div> : null}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>
+                    {soNoDO(r) && <button className="btn sm" disabled={busy} onClick={() => setDoFor({ orderId: r.orderId, carrier: r.carrier || '' })} title="Mở form DO theo SO: sửa SL thực xuất, bỏ tick dòng không xuất">📝 Lập DO</button>}
                     {(r.src === 'plan' || (r.src === 'order' && r.orderType === 'SO')) && <button className="btn sm" disabled={busy} onClick={() => setCut(r)} title="Tách DO theo số tấn mỗi xe">✂</button>}
                     <button className="btn primary sm" disabled={busy || !c} onClick={() => openShip([r])} title={c ? 'Tạo Shipment, nhập xe nếu biết, gửi vận tải' : 'Chọn vận tải trước'}>Gửi</button></td>
                 </tr>
@@ -178,6 +183,8 @@ export default function Dispatch({ orders, trips, onSplit }) {
       </div>
       {ship && <ShipmentModal rows={ship} carrier={car(ship[0].carrier)} warehouses={warehouses} points={points} shipto={shipto} asDO={asDO}
         onClose={(m) => { setShip(null); if (m) { setMsg(m); setSel({}); } }} />}
+      {doFor && <PlanForm orderId={doFor.orderId} initCarrier={doFor.carrier} plans={plans}
+        onClose={(saved) => { if (saved) setMsg(`Đã lập DO cho ${doFor.orderId}.`); setDoFor(null); }} />}
       {cut && <SplitDO row={cut} carrier={car(cut.carrier)} materialize={materialize} onClose={(m) => { setCut(null); if (m) { setMsg(m); setSel({}); } }} />}
     </div>
   );

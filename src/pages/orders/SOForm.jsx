@@ -140,7 +140,13 @@ export default function SOForm({ type = 'SO', order, onClose, draft }) {
   const [lineOrder, setLineOrder] = usePref(`${type}LineOrder`, []);
   const orderedLine = orderCols(lineFields, lineOrder);
   const lineKeys = orderedLine.map((f) => f.key);
-  const shownLine = orderedLine.filter((f) => f.required || !hiddenCols.includes(f.key));
+  // Tên hàng không chiếm 1 cột riêng: hiện chữ nhỏ ngay dưới ô Mã hàng (ẩn / hiện bằng ⚙ Cột hiển thị như cũ) → bảng dòng hàng hẹp lại, không phải kéo ngang
+  const showName = !hiddenCols.includes('itemName');
+  // Lớp độ rộng cột của bảng dòng hàng (bảng table-layout: fixed, độ rộng đặt ở tiêu đề)
+  const colCls = (f) => (f.key === 'item' ? 'w-item' : ['warehouse', 'fromWarehouse', 'toWarehouse'].includes(f.key) ? 'w-wh' : f.key === 'shipCode' ? 'w-ship'
+    : f.key === 'qtyKg' ? 'w-qty' : f.key === 'qtyT' ? 'w-t' : ['goodsStatus', 'packing'].includes(f.key) ? 'w-sm' : f.type === 'date' ? 'w-date'
+      : ['currency', 'number', 'formula', 'percent'].includes(f.type) ? 'w-money' : f.type === 'textarea' ? 'w-long' : 'w-text');
+  const shownLine = orderedLine.filter((f) => (f.required || !hiddenCols.includes(f.key)) && f.key !== 'itemName');
   const myShips = shipto.filter((s) => s.customerCode === h.partyCode);
   // Loại hạt nhựa (SO): sale chỉ thấy khách mình được gán, chỉ chọn mã hàng loại mình phụ trách; mỗi SO một loại
   const isSO = type === 'SO';
@@ -365,6 +371,7 @@ export default function SOForm({ type = 'SO', order, onClose, draft }) {
           <input list="dl-so-item" value={l.item} disabled={done} title={done ? 'Dòng đã giao, không đổi mã hàng được' : ''} onChange={(e) => set(e.target.value)} />
           {!done && <QuickAdd catKey="items" value={l.item} onAdded={(id, rec) => set(id, rec)} />}
           {canStock && itemMap.has(l.item) && !done && <ItemCode code={l.item} label="📦" onStock={() => setStockAt(i)} />}
+          {showName && (itemMap.get(l.item)?.name || l.itemName) && <small className="item-sub">{itemMap.get(l.item)?.name || l.itemName}</small>}
         </div>
       );
       case 'itemName': return <span className="small">{itemMap.get(l.item)?.name || l.itemName}</span>;
@@ -440,15 +447,15 @@ export default function SOForm({ type = 'SO', order, onClose, draft }) {
           <div className="table-wrap" style={{ overflowX: 'auto' }}>
             <table className="so-lines">
               <thead>
-                <tr><th>#</th>{shownLine.map((f) => <th key={f.key} className={(['qtyT', 'qtyKg'].includes(f.key) ? 'num ' : '') + 'col-drag'} {...dragHeadProps(f.key, lineKeys, setLineOrder)} title={f.link ? `Tự lấy theo ${viaLabel(LINE_VIAS, f.link.via)}` : !sto && headFxKey(f) ? 'Tự lấy theo phần chung của đơn' : f.help || ''}>{f.label}{f.required && <b className="req"> *</b>}{f.link || (!sto && headFxKey(f)) ? ' ↳' : ''}</th>)}
-                  {order && <th className="num">{cfg.done}</th>}{order && sto && <th className="num">{cfg.received}</th>}<th></th></tr>
+                <tr><th className="w-no">#</th>{shownLine.map((f) => <th key={f.key} className={(['qtyT', 'qtyKg'].includes(f.key) ? 'num ' : '') + 'col-drag ' + colCls(f)} style={f.width ? { width: Math.min(f.width, 600) } : undefined} {...dragHeadProps(f.key, lineKeys, setLineOrder)} title={f.link ? `Tự lấy theo ${viaLabel(LINE_VIAS, f.link.via)}` : !sto && headFxKey(f) ? 'Tự lấy theo phần chung của đơn' : f.help || ''}>{f.label}{f.required && <b className="req"> *</b>}{f.link || (!sto && headFxKey(f)) ? ' ↳' : ''}</th>)}
+                  {order && <th className="num w-done">{cfg.done}</th>}{order && sto && <th className="num w-done">{cfg.received}</th>}<th className="w-act"></th></tr>
               </thead>
               <tbody>
                 {lines.map((l, i) => (
                   <tr key={i}>
                     <td className="small">{i + 1}</td>
                     {shownLine.map((f) => <td key={f.key} style={{ ...(f.width ? { minWidth: Math.min(f.width, 600) } : {}), ...(f.height ? { '--fh': `${f.height}px` } : {}) }}
-                      className={(f.key === 'item' ? 'w-item' : ['warehouse', 'fromWarehouse', 'toWarehouse'].includes(f.key) ? 'w-wh' : f.key === 'shipCode' ? 'w-ship' : f.key === 'qtyKg' ? 'w-qty' : f.key === 'itemName' ? 'w-name' : ['dueDate', 'goodsStatus', 'packing'].includes(f.key) ? 'w-sm' : '') + (f.height ? ' fh' : '')}>{lineInput(f, l, i)}</td>)}
+                      className={colCls(f) + (f.height ? ' fh' : '')}>{lineInput(f, l, i)}</td>)}
                     {order && <td className="num">{n(l.doneKg) ? fmtNum(n(l.doneKg), 2) : ''}</td>}
                     {order && sto && <td className="num">{n(l.receivedKg) ? fmtNum(n(l.receivedKg), 2) : ''}</td>}
                     <td className="nowrap">

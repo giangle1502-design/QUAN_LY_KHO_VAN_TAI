@@ -11,7 +11,8 @@ import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useCompanies, useMyWarehouses, useOpCompany, useOpWarehouse, useOrders, usePendingIn, useStock, useTrips, useWaitingOut } from '../../lib/hooks';
 import { CompanyPicker } from '../../components/TripBits';
-import { IN_SOURCES, OPEN_STATUSES, ORDER_FOR_MOVE, ORDER_TYPES, isReturn, lineFrom, lineShip, lineTo, lineWh, matchOrderLine, openKg, orderInWarehouse, orderWarehouse, stoRoute } from '../../lib/orders';
+import OrderLinePick from '../../components/OrderLinePick';
+import { IN_SOURCES, OPEN_STATUSES, ORDER_FOR_MOVE, ORDER_TYPES, ambiguousOrderLines, isReturn, lineFrom, lineShip, lineTo, lineWh, matchOrderLine, openKg, orderInWarehouse, orderWarehouse, stoRoute } from '../../lib/orders';
 import { MOVE_TYPES, ageDays, createWaitingOut, estPallets, kgOf, postMovement, suggestPallets } from '../../lib/stock';
 import { releaseStatusOfWh } from '../../lib/release';
 import { ST, vnDate } from '../../lib/trips';
@@ -626,7 +627,10 @@ function Form({ type }) {
     const others = lines.filter((_, j) => j !== i);
     const need = needFor(x.item, others);
     if (need === Infinity) return setLine(i, { stockId: x._id, bags: '', pallets: '', kg: '', kgTxt: undefined });
-    setTopped(lines.map((l, j) => (j === i ? (need > 0.001 ? takeFrom(x, need) : { ...stockLine(), stockId: x._id }) : l)));
+    // Đổi vị trí / lot của dòng đang gắn dòng đơn: giữ dòng đơn đó (cùng mã hàng)
+    const old = lines[i];
+    const keepNo = old.orderLine != null && stockById.get(old.stockId)?.item === x.item ? { orderLine: old.orderLine, ...(old.orderId ? { orderId: old.orderId } : {}) } : {};
+    setTopped(lines.map((l, j) => (j === i ? { ...(need > 0.001 ? takeFrom(x, need) : { ...stockLine(), stockId: x._id }), ...keepNo } : l)));
   };
   // Sức chứa vị trí (phiếu nhập): dòng vượt chỗ trống phải chia dòng hoặc tích xác nhận
   const caps = type === 'in' ? capacityCheck(lines, locations) : [];
@@ -825,6 +829,9 @@ function Form({ type }) {
         if (!o) return setErr(`Dòng ${i + 1}: đơn ${l._oid} không còn trong phiếu.`);
         const u = (used[o.id] ||= {});
         const keep = o.lines.find((x) => x.no === l.orderLine && x.item === l.item);
+        // 1 mã hàng có nhiều dòng đơn còn mở (vd. 2 đơn giá): không tự đoán dòng, bắt chọn để trừ đúng dòng / đúng giá
+        const amb = keep ? [] : ambiguousOrderLines(o, l.item, u, type, { warehouse: whCode, status: st(l) });
+        if (amb.length) return setErr(`Dòng ${i + 1}: mã hàng ${l.item} có ${amb.length} dòng trong đơn ${o.id} (dòng ${amb.map((x) => x.no).join(', ')}, có thể khác đơn giá / mã giao). Chọn ô "Trừ vào dòng ${o.type}" ở dòng phiếu để trừ đúng dòng.`);
         l.orderLine = keep ? keep.no : matchOrderLine(o, l.item, u, type, { warehouse: whCode, status: st(l) });
         if (l.orderLine == null && !l._oid && exOrders.length) {
           for (const eo of exOrders) {
@@ -1249,6 +1256,8 @@ function Form({ type }) {
               <>{extra.length > 0 && <span className="badge" title="Dòng này xuất cho đơn" style={{ alignSelf: 'center' }}>{l.orderId || order?.id}</span>}<StockLine type={type} slipCo={type === 'out' ? head.company : ''} l={l} set={(p) => setLine(i, p)} onPickOut={type === 'out' && order ? (x) => pickOutStock(i, x) : null} rows={stockRows} byId={stockById} blocked={blocked} releasable={releasable} onStock={setStockItem} itemMap={itemMap}
                 locations={locations} statuses={statuses} pledgees={pledgees} /></>
             )}
+            {order && <OrderLinePick order={(l.orderId && orders.find((o) => o.id === l.orderId)) || order} item={type === 'in' ? l.item : stockById.get(l.stockId)?.item}
+              moveType={type} wh={whCode} value={l.orderLine} onChange={(no) => setLine(i, { orderLine: no })} />}
             <button type="button" className="btn ghost" disabled={lines.length === 1} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>✕</button>
           </div>
         ))}
