@@ -94,6 +94,12 @@ input[type='checkbox'] { width: 18px; height: 18px; }
 
 /* Tables */
 .table-wrap { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); overflow-x: auto; }
+/* Cố định dòng tiêu đề khi cuộn: bảng tự cuộn trong khung cao vừa màn hình nên tiêu đề (th sticky) luôn hiện
+   trên cùng, cả danh sách SO/PO/DO… lẫn báo cáo. Bảng ngắn không bị ảnh hưởng. */
+.table-wrap { overflow: auto; max-height: calc(100vh - 150px); max-height: calc(100dvh - 150px); }
+.table-wrap thead th { z-index: 3; }
+.modal .table-wrap { max-height: 60vh; }
+@media print { .table-wrap { overflow: visible !important; max-height: none !important; } .table-wrap th { position: static; } }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 th { background: var(--th-bg); font-size: 12px; color: var(--th-text); font-weight: 700; white-space: nowrap; position: sticky; top: 0; }

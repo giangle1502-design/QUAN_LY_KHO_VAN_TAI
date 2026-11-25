@@ -16,9 +16,10 @@ export function matchQ(q, ...vals) {
 
 // ----------------------------------------------------------------------------
 // Định dạng hiển thị riêng của từng người dùng (⚙ Cài đặt hiển thị): kiểu ngày, giờ, dấu thập phân, dấu hàng nghìn.
-// Mặc định theo quy ước công ty: 1,234.5 · 31/12/2026 · 14:30. Chỉ đổi cách HIỂN THỊ, dữ liệu lưu không đổi.
+// Mặc định theo quy ước công ty: 1,234.500 (luôn 3 số thập phân) · 31/12/2026 · 14:30. Chỉ đổi cách HIỂN THỊ, dữ liệu lưu không đổi.
 // ----------------------------------------------------------------------------
-export const DEFAULT_FORMAT = { date: 'dd/MM/yyyy', time: 'HH:mm', dec: '.', group: ',' };
+export const DEFAULT_FORMAT = { date: 'dd/MM/yyyy', time: 'HH:mm', dec: '.', group: ',', decimals: 3 };
+export const DECIMAL_COUNTS = [0, 1, 2, 3, 4];
 export const DATE_FORMATS = ['dd/MM/yyyy', 'dd-MM-yyyy', 'dd.MM.yyyy', 'd/M/yyyy', 'dd/MM/yy', 'MM/dd/yyyy', 'yyyy-MM-dd', 'yyyy/MM/dd'];
 export const TIME_FORMATS = [['HH:mm', '24 giờ (14:30)'], ['HH:mm:ss', '24 giờ có giây (14:30:05)'], ['hh:mm a', '12 giờ (02:30 CH)'], ['hh:mm:ss a', '12 giờ có giây (02:30:05 CH)']];
 export const DEC_SEPS = [['.', 'Dấu chấm  .'], [',', 'Dấu phẩy  ,']];
@@ -30,13 +31,28 @@ export function setFormat(f) {
   if (FMT.group === FMT.dec) FMT.group = FMT.dec === ',' ? '.' : ',';
 }
 
-// Số: dấu ngăn cách theo cài đặt của người dùng
-export function fmtNum(n, digits = 0, minDigits = 0) {
+// Số: dấu ngăn cách theo cài đặt của người dùng. Quy ước công ty: MỌI số (số lượng, tiền, tỷ lệ…) hiển thị
+// đúng FMT.decimals chữ số thập phân (mặc định 3: 1,375.000). Tham số digits cũ được giữ để không phải sửa
+// nơi gọi nhưng không còn quyết định số chữ số; chỉ số đếm (số dòng, số ngày, số đơn…) dùng fmtInt.
+export function fmtNum(n) {
+  const d = Number.isInteger(FMT.decimals) ? FMT.decimals : DEFAULT_FORMAT.decimals;
+  return fmtFixed(n, d);
+}
+// Số đếm nguyên (số đơn, số ngày trễ, số dòng, STT): không có phần thập phân
+export function fmtInt(n) { return fmtFixed(n, 0); }
+function fmtFixed(n, d) {
   if (n === null || n === undefined || n === '' || Number.isNaN(Number(n))) return '';
-  const s = Number(n).toLocaleString('en-US', { maximumFractionDigits: digits, minimumFractionDigits: Math.min(minDigits, digits) });
+  let v = Number(n);
+  if (Math.abs(v) < 0.5 / 10 ** d) v = 0; // tránh "-0.000"
+  const s = v.toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
   if (FMT.dec === '.' && FMT.group === ',') return s;
   return s.replace(/[,.]/g, (c) => (c === ',' ? FMT.group : FMT.dec));
 }
+// Định dạng số cho ô Excel khi xuất (cùng số chữ số thập phân với màn hình)
+export const excelNumFmt = () => {
+  const d = Number.isInteger(FMT.decimals) ? FMT.decimals : DEFAULT_FORMAT.decimals;
+  return d ? `#,##0.${'0'.repeat(d)}` : '#,##0';
+};
 
 const pad = (x) => String(x).padStart(2, '0');
 function applyDate(pattern, y, m, d) {

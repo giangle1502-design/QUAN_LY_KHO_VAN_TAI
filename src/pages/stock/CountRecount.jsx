@@ -55,7 +55,7 @@ export function RecountModal({ lines, onClose }) {
   return (
     <Modal title={`🔁 Tạo lệnh đếm lại ${lines.length} dòng lệch`} onClose={() => onClose('')}>
       <p className="small">
-        Kho: <b>{whs.map(whLabel).join(', ')}</b> · {new Set(lines.map((l) => l.location)).size} vị trí · tổng lệch lần trước {fmtNum(diffKg, 3)} kg.
+        Kho: <b>{whs.map(whLabel).join(', ')}</b> · {new Set(lines.map((l) => l.location)).size} vị trí · tổng lệch lần trước {fmtNum(diffKg)} kg.
         Số hệ thống được chụp lại theo tồn <b>hiện tại</b>; thủ kho thấy cả số đếm lần trước để đối chiếu.
       </p>
       <div className="form-grid">

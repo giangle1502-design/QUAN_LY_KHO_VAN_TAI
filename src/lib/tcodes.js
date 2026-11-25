@@ -72,6 +72,7 @@ export const TCODES = {
   '/van-tai?tab=bang-ke': 'BKC',
   // Báo cáo
   '/bao-cao/ke-hoach-xuat-nhap': 'BCKH',
+  '/bao-cao/xuat-nhap-ton': 'XNT',
   '/bao-cao/ton-theo-kho': 'BCTK',
   '/bao-cao/ton-theo-vi-tri': 'BCVT',
   '/bao-cao/ton-theo-trang-thai': 'BCTT',

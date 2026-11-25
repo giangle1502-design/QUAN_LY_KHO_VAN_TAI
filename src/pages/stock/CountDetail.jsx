@@ -6,7 +6,7 @@ import { useApp } from '../../context/AppContext';
 import { useCollection } from '../../lib/hooks';
 import { CloseButton, Empty, ErrorBox, Field, Modal } from '../../components/ui';
 import { exportSheets } from '../../lib/excel';
-import { fmtDate, fmtDateTime, fmtNum, norm } from '../../lib/utils';
+import { fmtDate, fmtDateTime, fmtInt, fmtNum, norm } from '../../lib/utils';
 import {
   COUNT_KINDS, COUNT_STATUS, addFoundLine, adjustPlan, assigneeText, countValue, countWhs, inLocRange, lineResult, lineWh, locCmp, postAdjust, saveCount, scopeText, setCountStatus, specOf, whsText,
 } from '../../lib/counts';
@@ -28,9 +28,9 @@ function useCount(id) {
   return { count, lines, error };
 }
 
-const qtyHint = (l, kg, bags) => (l.bpp ? `${fmtNum(Math.floor(bags / l.bpp))} pl + ${fmtNum(bags - Math.floor(bags / l.bpp) * l.bpp)} bao` : '');
-const sysText = (l) => `${fmtNum(l.sysKg, 3)} kg`;
-const signKg = (x) => `${x > 0 ? '+' : ''}${fmtNum(x, 3)} kg`;
+const qtyHint = (l, kg, bags) => (l.bpp ? `${fmtInt(Math.floor(bags / l.bpp))} pl + ${fmtInt(bags - Math.floor(bags / l.bpp) * l.bpp)} bao` : '');
+const sysText = (l) => `${fmtNum(l.sysKg)} kg`;
+const signKg = (x) => `${x > 0 ? '+' : ''}${fmtNum(x)} kg`;
 
 function Progress({ lines }) {
   const res = lines.map(lineResult);
@@ -42,6 +42,7 @@ function Progress({ lines }) {
 // ============================================================================
 // Trang chi tiết (máy tính): xem / nhập số đếm từ biểu mẫu giấy, chốt số, điều chỉnh tồn
 // ============================================================================
+const pct1 = (x) => (Math.round(x * 1000) / 10).toFixed(1); // tỉ lệ → phần trăm 1 số lẻ
 export default function CountDetail() {
   const { id } = useParams();
   const { hasRole, email, name, isSuper, isAdmin } = useApp();
@@ -103,8 +104,8 @@ export default function CountDetail() {
         {count.recountIds?.length ? <> · đã tạo lệnh đếm lại {count.recountIds.map((x, i) => <span key={x}>{i ? ', ' : ''}<Link className="mono" to={`/kho/kiem-ke/${x}`}>{x}</Link></span>)}</> : ''}. Số final = số kiểm lại nếu có, không thì số thực kiểm. Chênh lệch = final − hệ thống (lúc lập phiếu).
       </p>
       <div className="stats">
-        <div className="stat"><div className="stat-label">Đã đếm</div><div className="stat-value">{p.counted} / {p.total}</div><div className="stat-sub">{p.total ? fmtNum((p.counted / p.total) * 100, 1) : 0}%</div></div>
-        <div className="stat green"><div className="stat-label">Khớp</div><div className="stat-value">{p.match}</div><div className="stat-sub">{p.counted ? `${fmtNum((p.match / p.counted) * 100, 1)}% chính xác` : ''}</div></div>
+        <div className="stat"><div className="stat-label">Đã đếm</div><div className="stat-value">{p.counted} / {p.total}</div><div className="stat-sub">{p.total ? pct1(p.counted / p.total) : 0}%</div></div>
+        <div className="stat green"><div className="stat-label">Khớp</div><div className="stat-value">{p.match}</div><div className="stat-sub">{p.counted ? `${pct1(p.match / p.counted)}% chính xác` : ''}</div></div>
         <div className="stat red"><div className="stat-label">Lệch</div><div className="stat-value">{p.diff}</div>
           <div className="stat-sub">{signKg(lines.reduce((s, l) => { const r = lineResult(l); return s + (r.counted ? r.diffKg : 0); }, 0))}</div></div>
       </div>
@@ -143,9 +144,9 @@ export default function CountDetail() {
                     <td className="num">{sysText(l)}<div className="small">{qtyHint(l, l.sysKg, l.sysBags)}</div></td>
                     <td><CountCell l={l} round={1} disabled={!open || !canManage} onSave={(v) => act(() => saveCount(id, l.no, 1, v, user))} /></td>
                     <td><CountCell l={l} round={2} disabled={!open || !canManage || !l.c1} onSave={(v) => act(() => saveCount(id, l.no, 2, v, user))} /></td>
-                    <td className="num">{r.counted ? <>{fmtNum(r.final.kg, 3)}<div className="small">{r.recount ? 'theo kiểm lại' : 'theo thực kiểm'}</div></> : ''}</td>
+                    <td className="num">{r.counted ? <>{fmtNum(r.final.kg)}<div className="small">{r.recount ? 'theo kiểm lại' : 'theo thực kiểm'}</div></> : ''}</td>
                     <td className="num">{r.counted ? (r.match ? <span className="badge green">Khớp</span>
-                      : <b style={{ color: r.diffKg < 0 ? 'var(--red)' : 'var(--green)' }}>{signKg(r.diffKg)}{l.bpp ? <div className="small">{r.diffBags > 0 ? '+' : ''}{fmtNum(r.diffBags)} bao</div> : null}</b>) : ''}</td>
+                      : <b style={{ color: r.diffKg < 0 ? 'var(--red)' : 'var(--green)' }}>{signKg(r.diffKg)}{l.bpp ? <div className="small">{r.diffBags > 0 ? '+' : ''}{fmtInt(r.diffBags)} bao</div> : null}</b>) : ''}</td>
                   </tr>
                 );
               })}
@@ -182,7 +183,7 @@ function CountCell({ l, round, disabled, onSave }) {
   return (
     <div className="cnt-cell">
       {bySpec ? <>{inp('pallets', 'pl')}{inp('bags', 'bao')}</> : inp('kg', 'kg')}
-      {c && bySpec ? <div className="small">= {fmtNum(c.kg, 3)} kg</div> : null}
+      {c && bySpec ? <div className="small">= {fmtNum(c.kg)} kg</div> : null}
     </div>
   );
 }
@@ -212,8 +213,8 @@ function AdjustModal({ count, lines, user, onClose }) {
                 <thead><tr><th>Kho</th><th>Vị trí</th><th>Mã hàng</th><th>Lot</th><th>TTHH</th><th className="num">Hệ thống lúc đếm</th><th className="num">Tồn hiện tại</th><th className="num">Final</th><th className="num">Điều chỉnh (kg)</th><th className="num">Bao</th></tr></thead>
                 <tbody>{plan.map(({ l, d, now, changed: ch }) => (
                   <tr key={l.no} style={ch ? { background: 'var(--amber-soft)' } : undefined}>
-                    <td className="small">{lineWh(l, count)}</td><td>{l.location}</td><td>{l.item}</td><td>{l.lot}</td><td>{l.goodsStatus}</td><td className="num">{fmtNum(l.sysKg, 3)}</td><td className="num">{fmtNum(now.kg, 3)}</td>
-                    <td className="num">{fmtNum(lineResult(l).final.kg, 3)}</td><td className="num" style={{ color: d.kg < 0 ? 'var(--red)' : 'var(--green)' }}><b>{signKg(d.kg)}</b></td><td className="num">{d.bags > 0 ? '+' : ''}{fmtNum(d.bags)}</td>
+                    <td className="small">{lineWh(l, count)}</td><td>{l.location}</td><td>{l.item}</td><td>{l.lot}</td><td>{l.goodsStatus}</td><td className="num">{fmtNum(l.sysKg)}</td><td className="num">{fmtNum(now.kg)}</td>
+                    <td className="num">{fmtNum(lineResult(l).final.kg)}</td><td className="num" style={{ color: d.kg < 0 ? 'var(--red)' : 'var(--green)' }}><b>{signKg(d.kg)}</b></td><td className="num">{d.bags > 0 ? '+' : ''}{fmtInt(d.bags)}</td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -298,8 +299,8 @@ export function CountMobile() {
                   <td>{newLoc ? <b className="cnt-locb">{l.location}</b> : null}{newLoc && multiWh ? <div className="small">{lineWh(l, count)}</div> : null}</td>
                   <td><b>{l.item}</b>{l.extra ? <span className="badge amber"> mới</span> : null}<div className="small">{l.itemName}</div>
                     <div className="small">{l.lot ? `Lot ${l.lot} · ` : ''}{l.goodsStatus}{l.company ? ` · ${l.company}` : ''}</div></td>
-                  <td className="num">{!count.blind || r.counted ? <><b>{fmtNum(l.sysKg, 3)}</b><div className="small">kg{l.bpp ? ` · ${qtyHint(l, l.sysKg, l.sysBags)}` : ''}</div></> : <span className="small">đếm mù</span>}
-                    {l.prev?.kg != null ? <div className="small">lần trước {fmtNum(l.prev.kg, 3)}</div> : null}</td>
+                  <td className="num">{!count.blind || r.counted ? <><b>{fmtNum(l.sysKg)}</b><div className="small">kg{l.bpp ? ` · ${qtyHint(l, l.sysKg, l.sysBags)}` : ''}</div></> : <span className="small">đếm mù</span>}
+                    {l.prev?.kg != null ? <div className="small">lần trước {fmtNum(l.prev.kg)}</div> : null}</td>
                   <td><MobileCell l={l} count={count} open={open} user={user} onSaved={() => setKeep((k) => new Set(k).add(l.no))} /></td>
                 </tr>
               );
@@ -339,7 +340,7 @@ function MobileCell({ l, count, open, user, onSaved }) {
   return (
     <div className="cnt-cell2">
       {bySpec ? <div className="cnt-pb">{inp('pallets', 'pallet')}{inp('bags', 'bao lẻ')}</div> : inp('kg', 'kg')}
-      {bySpec && (v.pallets !== '' || v.bags !== '') ? <div className="small">= {fmtNum(countValue(v, spec).kg, 3)} kg</div> : null}
+      {bySpec && (v.pallets !== '' || v.bags !== '') ? <div className="small">= {fmtNum(countValue(v, spec).kg)} kg</div> : null}
       {st ? <div className="small" style={{ color: st === '…' ? undefined : 'var(--red)' }}>{st === '…' ? 'Đang lưu…' : st}</div>
         : r.counted && !count.blind ? (r.match ? <div className="cnt-tag ok">✓ Khớp</div> : <div className="cnt-tag diff">Lệch {signKg(r.diffKg)}</div>)
           : r.counted ? <div className="cnt-tag ok">✓ Đã lưu</div> : null}
@@ -404,7 +405,7 @@ export function PrintCount() {
   const setP = (k, v) => { const p = new URLSearchParams(params); if (v === '' || v == null) p.delete(k); else p.set(k, v); setParams(p, { replace: true }); };
   const locs = [...new Set(lines.map((l) => l.location))].sort(locCmp);
   const rows = lines.filter((l) => inLocRange(l.location, from, to)).sort((a, b) => locCmp(a.location, b.location) || a.no - b.no);
-  const q = (c, l) => (c ? `${fmtNum(c.kg, 3)}${l.bpp ? ` (${fmtNum(c.pallets)}pl+${fmtNum(c.bags)}b)` : ''}` : '');
+  const q = (c, l) => (c ? `${fmtNum(c.kg)}${l.bpp ? ` (${fmtInt(c.pallets)}pl+${fmtInt(c.bags)}b)` : ''}` : '');
   return (
     <div className="print-page count-print">
       <style>{'@media print { @page { size: A4 landscape; margin: 10mm; } }'}</style>
@@ -434,9 +435,9 @@ export function PrintCount() {
           const r = lineResult(l);
           return (
             <tr key={l.no}><td>{i + 1}</td><td><b>{l.location}</b></td><td>{l.item}</td><td>{l.itemName}</td><td>{l.lot}</td><td>{l.goodsStatus}</td>
-              {!hideSys && <td className="num">{fmtNum(l.sysKg, 3)}{l.bpp ? <div className="small">{qtyHint(l, l.sysKg, l.sysBags)}</div> : null}</td>}
+              {!hideSys && <td className="num">{fmtNum(l.sysKg)}{l.bpp ? <div className="small">{qtyHint(l, l.sysKg, l.sysBags)}</div> : null}</td>}
               <td style={{ minWidth: 90 }}>{filled ? q(l.c1, l) : ''}</td><td style={{ minWidth: 80 }}>{filled ? q(l.c2, l) : ''}</td>
-              <td className="num" style={{ minWidth: 70 }}>{filled && r.counted ? fmtNum(r.final.kg, 3) : ''}</td>
+              <td className="num" style={{ minWidth: 70 }}>{filled && r.counted ? fmtNum(r.final.kg) : ''}</td>
               <td className="num" style={{ minWidth: 70 }}>{filled && r.counted && !hideSys ? signKg(r.diffKg) : ''}</td><td style={{ minWidth: 70 }}></td></tr>
           );
         })}</tbody>

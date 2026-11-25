@@ -7,7 +7,7 @@ import { CompanyPicker } from '../../components/TripBits';
 import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
 import { exportSheets } from '../../lib/excel';
 import { vnDate } from '../../lib/trips';
-import { fmtDate, fmtNum, matchQ } from '../../lib/utils';
+import { fmtDate, fmtInt, fmtNum, matchQ } from '../../lib/utils';
 import { COUNT_KINDS, COUNT_STATUS, assigneeText, countWhs, createCount, isAssigned, itemsMoved, lineResult, lineWh, loadLines, pickStock, scopeText, whsText } from '../../lib/counts';
 import Select from '../../components/Select';
 import MultiPick from '../../components/MultiPick';
@@ -15,6 +15,7 @@ import { KeeperPick, RecountModal } from './CountRecount';
 import { ExtraFields, useExtraFields } from '../../components/ExtraFields';
 
 // Kiểm kê (toàn kho / theo vị trí) và cycle count (khu vực, mã có giao dịch trong ngày): danh sách, lập phiếu, báo cáo
+const pct1 = (x) => (Math.round(x * 1000) / 10).toFixed(1); // tỉ lệ → phần trăm 1 số lẻ
 export default function Counts() {
   const { hasRole, email } = useApp();
   const [params, setParams] = useSearchParams();
@@ -65,7 +66,7 @@ function List({ counts, loading, email }) {
           <b>📱 Lệnh kiểm đếm giao cho bạn ({mineOpen.length})</b>
           {mineOpen.map((c) => (
             <Link key={c.id} className="cnt-locbtn" to={`/kho/kiem-ke/${c.id}/dem`}>
-              <b>{c.id} · {COUNT_KINDS[c.kind]}</b><span>{fmtDate(c.date)} · {whsText(c)} · {fmtNum(c.nLines)} dòng · {scopeText(c)} →</span>
+              <b>{c.id} · {COUNT_KINDS[c.kind]}</b><span>{fmtDate(c.date)} · {whsText(c)} · {fmtInt(c.nLines)} dòng · {scopeText(c)} →</span>
             </Link>
           ))}
         </div>
@@ -100,7 +101,7 @@ function List({ counts, loading, email }) {
                   <td className="mono">{c.id}</td>
                   <td>{COUNT_KINDS[c.kind]}{c.blind ? <span className="small"> · đếm mù</span> : null}</td>
                   <td>{fmtDate(c.date)}</td><td>{c.company || 'Tất cả'}</td><td className="small">{whsText(c)}</td>
-                  <td className="small">{scopeText(c)}</td><td className="num">{fmtNum(c.nLines)}</td>
+                  <td className="small">{scopeText(c)}</td><td className="num">{fmtInt(c.nLines)}</td>
                   <td className="small">{assigneeText(c) || '–'}</td>
                   <td><StatusBadge s={c.status} />{c.recountIds?.length ? <div className="small">đếm lại: {c.recountIds.join(', ')}</div> : null}</td><td className="small">{c.createdByName || c.createdBy}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>
@@ -158,7 +159,7 @@ function CreateCount({ onClose }) {
   const itemOpts = useMemo(() => {
     const m = new Map();
     for (const r of stock) { if (!whs.includes(r.warehouse) || (f.company && r.company !== f.company)) continue; m.set(r.item, (m.get(r.item) || 0) + Number(r.kg || 0)); }
-    return [...m].sort((a, b) => a[0].localeCompare(b[0])).map(([code, kg]) => ({ value: code, label: `${code} – ${itemMap.get(code)?.name || ''} · ${fmtNum(kg, 3)} kg`, short: code }));
+    return [...m].sort((a, b) => a[0].localeCompare(b[0])).map(([code, kg]) => ({ value: code, label: `${code} – ${itemMap.get(code)?.name || ''} · ${fmtNum(kg)} kg`, short: code }));
   }, [stock, whKey, f.company, itemMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = async () => {
@@ -217,7 +218,7 @@ function CreateCount({ onClose }) {
       <ExtraFields ex={ex} />
       <datalist id="kk-locs">{locs.map((l) => <option key={l} value={l} />)}</datalist>
       <p className="small">
-        {loading || (f.mode === 'moved' && !moved && whs.length) ? 'Đang tải tồn kho…' : <>Lệnh sẽ có <b>{fmtNum(preview.length)}</b> dòng tồn ({fmtNum(preview.reduce((s, r) => s + Number(r.kg || 0), 0), 3)} kg) ở {new Set(preview.map((r) => r.location)).size} vị trí, {new Set(preview.map((r) => r.item)).size} mã hàng.</>}
+        {loading || (f.mode === 'moved' && !moved && whs.length) ? 'Đang tải tồn kho…' : <>Lệnh sẽ có <b>{fmtInt(preview.length)}</b> dòng tồn ({fmtNum(preview.reduce((s, r) => s + Number(r.kg || 0), 0), 3)} kg) ở {new Set(preview.map((r) => r.location)).size} vị trí, {new Set(preview.map((r) => r.item)).size} mã hàng.</>}
         {' '}Số hệ thống được chụp lại lúc lập lệnh.
       </p>
       <ErrorBox error={err} />
@@ -268,7 +269,7 @@ function Report({ counts }) {
   });
   const tot = summary.reduce((a, s) => ({ n: a.n + s.n, counted: a.counted + s.counted, match: a.match + s.match, plus: a.plus + s.plus, minus: a.minus + s.minus }),
     { n: 0, counted: 0, match: 0, plus: 0, minus: 0 });
-  const pct = (a, b) => (b ? `${fmtNum((a / b) * 100, 1)}%` : '–');
+  const pct = (a, b) => (b ? `${pct1(a / b)}%` : '–');
   const diffs = summary.flatMap((s) => s.lines.filter((x) => x.r.counted && !x.r.match).map((x) => ({ c: s.c, ...x, key: `${s.c.id}-${x.l.no}` })));
   const togg = (k) => setPick((p) => { const n = new Set(p); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   const allOn = diffs.length > 0 && diffs.every((d) => pick.has(d.key));
@@ -301,9 +302,9 @@ function Report({ counts }) {
       {data && (
         <>
           <div className="stats">
-            <div className="stat"><div className="stat-label">Dòng đã đếm / tổng</div><div className="stat-value">{fmtNum(tot.counted)} / {fmtNum(tot.n)}</div><div className="stat-sub">{pct(tot.counted, tot.n)} hoàn thành</div></div>
-            <div className="stat green"><div className="stat-label">Độ chính xác (dòng khớp / đã đếm)</div><div className="stat-value">{pct(tot.match, tot.counted)}</div><div className="stat-sub">{fmtNum(tot.match)} dòng khớp</div></div>
-            <div className="stat red"><div className="stat-label">Dòng lệch</div><div className="stat-value">{fmtNum(tot.counted - tot.match)}</div><div className="stat-sub">thừa {fmtNum(tot.plus, 3)} kg · thiếu {fmtNum(-tot.minus, 3)} kg</div></div>
+            <div className="stat"><div className="stat-label">Dòng đã đếm / tổng</div><div className="stat-value">{fmtInt(tot.counted)} / {fmtInt(tot.n)}</div><div className="stat-sub">{pct(tot.counted, tot.n)} hoàn thành</div></div>
+            <div className="stat green"><div className="stat-label">Độ chính xác (dòng khớp / đã đếm)</div><div className="stat-value">{pct(tot.match, tot.counted)}</div><div className="stat-sub">{fmtInt(tot.match)} dòng khớp</div></div>
+            <div className="stat red"><div className="stat-label">Dòng lệch</div><div className="stat-value">{fmtInt(tot.counted - tot.match)}</div><div className="stat-sub">thừa {fmtNum(tot.plus)} kg · thiếu {fmtNum(-tot.minus)} kg</div></div>
           </div>
           <h3>Theo phiếu</h3>
           <div className="table-wrap">
@@ -313,7 +314,7 @@ function Report({ counts }) {
                 <tr key={s.c.id}>
                   <td className="mono">{s.c.id}</td><td>{fmtDate(s.c.date)}</td><td className="small">{whsText(s.c)}</td><td className="small">{scopeText(s.c)}</td><td className="small">{assigneeText(s.c) || s.who}</td>
                   <td className="num">{s.n}</td><td className="num">{s.counted}</td><td className="num">{s.match}</td><td className="num">{s.counted - s.match}</td>
-                  <td className="num"><b>{pct(s.match, s.counted)}</b></td><td className="num">{fmtNum(s.plus, 3)}</td><td className="num">{fmtNum(-s.minus, 3)}</td>
+                  <td className="num"><b>{pct(s.match, s.counted)}</b></td><td className="num">{fmtNum(s.plus)}</td><td className="num">{fmtNum(-s.minus)}</td>
                   <td><StatusBadge s={s.c.status} /></td><td><Link className="btn sm" to={`/kho/kiem-ke/${s.c.id}`}>👁 Xem</Link></td>
                 </tr>
               ))}</tbody>
@@ -333,8 +334,8 @@ function Report({ counts }) {
                   <tr key={key}>
                     {isAdmin && <td><input type="checkbox" checked={pick.has(key)} onChange={() => togg(key)} /></td>}
                     <td className="mono small">{c.id}</td><td className="small">{whLabel(lineWh(l, c))}</td><td><b>{l.location}</b></td><td>{l.item}{l.extra ? <span className="badge amber"> ngoài hệ thống</span> : null}</td><td>{l.itemName}</td><td>{l.lot}</td><td>{l.goodsStatus}</td>
-                    <td className="num">{fmtNum(l.sysKg, 3)}</td><td className="num">{l.c1 ? fmtNum(l.c1.kg, 3) : ''}</td><td className="num">{l.c2 ? fmtNum(l.c2.kg, 3) : ''}</td>
-                    <td className="num">{fmtNum(r.final.kg, 3)}</td><td className="num" style={{ color: r.diffKg < 0 ? 'var(--red)' : 'var(--green)' }}><b>{r.diffKg > 0 ? '+' : ''}{fmtNum(r.diffKg, 3)}</b>{l.bpp ? <div className="small">{r.diffBags > 0 ? '+' : ''}{fmtNum(r.diffBags)} bao</div> : null}</td>
+                    <td className="num">{fmtNum(l.sysKg)}</td><td className="num">{l.c1 ? fmtNum(l.c1.kg) : ''}</td><td className="num">{l.c2 ? fmtNum(l.c2.kg) : ''}</td>
+                    <td className="num">{fmtNum(r.final.kg)}</td><td className="num" style={{ color: r.diffKg < 0 ? 'var(--red)' : 'var(--green)' }}><b>{r.diffKg > 0 ? '+' : ''}{fmtNum(r.diffKg)}</b>{l.bpp ? <div className="small">{r.diffBags > 0 ? '+' : ''}{fmtInt(r.diffBags)} bao</div> : null}</td>
                     <td className="small">{(l.c2 || l.c1)?.byName}</td>
                   </tr>
                 ))}</tbody>

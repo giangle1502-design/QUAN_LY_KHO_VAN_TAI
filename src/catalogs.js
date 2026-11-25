@@ -185,6 +185,11 @@ export const CATALOGS = [
       { key: 'property', label: 'Tính chất', type: 'text' },
       { key: 'code', label: 'Mã hàng', type: 'text', required: true, help: 'Nên trùng mã trên Ecount' },
       { key: 'name', label: 'Tên hàng', type: 'text', required: true },
+      // Giá bán hiện tại: cập nhật bằng File mẫu báo giá → Nhập báo giá (chỉ kinh doanh, kế toán, quản trị thấy)
+      { key: 'price', label: 'Giá hiện tại', type: 'currency', system: true, priceOnly: true,
+        help: 'Giá bán đang áp dụng. Cập nhật: Mã hàng → 💲 File mẫu báo giá, ghi cột Giá mới rồi ⬆ Nhập báo giá' },
+      { key: 'priceOld', label: 'Giá trước', type: 'currency', system: true, priceOnly: true },
+      { key: 'priceDate', label: 'Ngày cập nhật giá', type: 'date', system: true, priceOnly: true },
       { key: 'unit', label: 'Đơn vị tính', type: 'select', options: ['Bao', 'Kg', 'Tấn', 'Jumbo'], default: 'Bao' },
       { key: 'bagWeight', label: 'Trọng lượng bao (kg)', type: 'number' },
       { key: 'bagsPerLayer', label: 'Số bao/lớp', type: 'number' },
