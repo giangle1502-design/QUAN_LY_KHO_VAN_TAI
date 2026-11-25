@@ -220,15 +220,26 @@ export function applyOrder(order, m, sign) {
 export function matchOrderLine(order, item, usedKg = {}, moveType = 'out', opts = {}) {
   let best = null;
   let bestLeft = -Infinity;
-  for (const l of order?.lines || []) {
-    if (l.item !== item) continue;
-    if (opts.warehouse && !isReturn(order, moveType) && !['DRT', 'RTV'].includes(order.type) && lineWh(order, l, moveType) && lineWh(order, l, moveType) !== opts.warehouse) continue;
-    // opts.status: 1 tình trạng hoặc danh sách (hàng HTC tự giải chấp khi xuất khớp cả dòng HTC lẫn DGC/KTC)
-    if (opts.status && l.goodsStatus && ![].concat(opts.status).includes(l.goodsStatus)) continue;
+  for (const l of orderLineChoices(order, item, moveType, opts)) {
     const left = openKg(order, l, moveType) - (usedKg[l.no] || 0);
     if (left > bestLeft) { best = l.no; bestLeft = left; }
   }
   return best;
+}
+
+// Các dòng đơn cùng mã hàng mà 1 dòng phiếu gắn vào được (đúng kho, đúng TTHH)
+export function orderLineChoices(order, item, moveType = 'out', opts = {}) {
+  return (order?.lines || []).filter((l) => l.item === item
+    && !(opts.warehouse && !isReturn(order, moveType) && !['DRT', 'RTV'].includes(order.type) && lineWh(order, l, moveType) && lineWh(order, l, moveType) !== opts.warehouse)
+    // opts.status: 1 tình trạng hoặc danh sách (hàng HTC tự giải chấp khi xuất khớp cả dòng HTC lẫn DGC/KTC)
+    && !(opts.status && l.goodsStatus && ![].concat(opts.status).includes(l.goodsStatus)));
+}
+
+// 1 mã hàng nằm ở nhiều dòng đơn (vd. 2 dòng khác đơn giá): dòng phiếu chưa chỉ định dòng đơn chỉ tự gắn khi còn đúng 1 dòng
+// còn hàng phải giao/nhận; còn từ 2 dòng trở lên thì trả về danh sách để người lập phiếu chọn dòng (trừ đúng dòng, đúng giá)
+export function ambiguousOrderLines(order, item, usedKg = {}, moveType = 'out', opts = {}) {
+  const open = orderLineChoices(order, item, moveType, opts).filter((l) => openKg(order, l, moveType) - (usedKg[l.no] || 0) > EPS);
+  return open.length > 1 ? open : [];
 }
 
 // Sửa đơn (kinh doanh / kế toán / quản trị): giữ "đã giao/nhận", không cho đặt ít hơn phần đã làm

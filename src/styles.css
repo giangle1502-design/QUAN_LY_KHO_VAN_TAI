@@ -951,6 +951,90 @@ table.resized .cell-add > input, table.resized .cell-add > select, table.resized
 .pick-cats { display: grid; gap: 8px; }
 .pick-cats .btn { justify-content: flex-start; text-align: left; padding: 10px 12px; }
 
+/* Form đơn SO / PO / STO gọn: vừa 1 màn hình, chỉ cuộn khi thật nhiều dòng.
+   Ghi chú trường hiện thành ⓘ (rê chuột xem), phần chung xếp nhiều cột, ô kho đủ rộng để đọc mã + tên kho */
+.modal.order-form { max-width: min(1560px, 98vw); }
+.order-form .modal-body { padding: 8px 12px; }
+.order-form .so-section { padding: 6px 10px; margin-bottom: 8px; }
+.order-form .so-section .section-head { font-size: 14px; margin-bottom: 4px; }
+.order-form .form-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 10px; }
+.order-form .field { gap: 2px; }
+.order-form .field-help { display: none; }
+.order-form .field input, .order-form .field select { padding: 5px 8px; }
+.order-form .field textarea { padding: 5px 8px; min-height: 32px; height: 32px; }
+.order-form .field.fh textarea { height: var(--fh); }
+.order-form table.so-lines td { padding: 3px; }
+.order-form table.so-lines th { white-space: normal; line-height: 1.2; }
+.order-form table.so-lines input, .order-form table.so-lines select { padding: 4px 6px; min-width: 70px; }
+table.so-lines td.w-wh { min-width: 262px; }
+.order-form table.so-lines td.w-item { min-width: 200px; }
+.order-form table.so-lines td.w-ship { min-width: 140px; }
+.order-form table.so-lines td.w-qty input { min-width: 90px; }
+.order-form .form-grid > .field.full:not(.fw) { grid-column: span 3; }
+table.so-lines td.w-sm { min-width: 120px; }
+table.so-lines td.w-wh .ss-trigger, table.so-lines td.w-wh select { text-overflow: ellipsis; }
+.modal-bg:has(.order-form) { padding: 8px; }
+.modal.order-form { max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px); }
+.order-form table.so-lines .cell-add { gap: 2px; }
+.order-form table.so-lines .cell-add .btn { padding: 3px 6px; min-width: 0; }
+.order-form table.so-lines input[type=date] { min-width: 120px; }
+.order-form table.so-lines td.w-sm { min-width: 95px; }
+.order-form table.so-lines td.w-name { min-width: 100px; }
+.order-form .form-actions { padding: 6px 0 8px; margin-top: 4px; }
+@media (max-width: 700px) { table.so-lines td.w-wh { min-width: 220px; } .order-form .form-grid > .field.full:not(.fw) { grid-column: 1 / -1; } }
+
+/* Form DO (lệnh giao hàng) theo SO: thông tin SO 1 dải, dòng bỏ tick (không xuất) mờ đi */
+.modal.do-form { max-width: min(1400px, 98vw); }
+.do-so-head { display: flex; flex-wrap: wrap; gap: 6px 22px; padding: 8px 12px; margin-bottom: 10px; background: var(--blue-soft, #eef4ff); border-radius: 8px; }
+.do-so-head .small { margin-right: 4px; }
+table.do-lines tr.row-off td { opacity: 0.45; }
+table.do-lines tr.row-off td:first-child { opacity: 1; }
+table.do-lines td, table.do-lines th { padding: 4px 6px; }
+/* Phiếu kho: 1 mã hàng nhiều dòng đơn → chọn trừ vào dòng nào */
+.ol-pick { display: flex; flex-direction: column; gap: 2px; min-width: 230px; max-width: 340px; }
+.ol-pick.need .ss-trigger, .ol-pick.need select { border-color: var(--amber); background: var(--amber-soft); }
+
+/* Form SO / PO / STO rộng toàn màn hình: bảng dòng hàng co theo bề ngang, không phải kéo qua lại.
+   Ô nhập co giãn (width 100%), nút +/✏ thu nhỏ, Tên hàng nằm dưới Mã hàng. Màn hình hẹp (< 1100px) mới cuộn ngang */
+.modal.order-form { width: calc(100vw - 12px); max-width: calc(100vw - 12px); }
+.modal-bg:has(.order-form) { padding: 6px; }
+.order-form .form-grid { grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); }
+.order-form table.so-lines { width: 100%; }
+.order-form table.so-lines td, .order-form table.so-lines th { min-width: 0; padding: 3px 4px; }
+.order-form table.so-lines td input, .order-form table.so-lines td select, .order-form table.so-lines td .ss-trigger { width: 100%; min-width: 0; box-sizing: border-box; }
+.order-form table.so-lines .cell-add { flex-wrap: wrap; gap: 2px; }
+.order-form table.so-lines .cell-add > input, .order-form table.so-lines .cell-add > select, .order-form table.so-lines .cell-add > .ss-trigger { flex: 1 1 0; min-width: 0; width: auto; }
+.order-form table.so-lines .cell-add .btn { padding: 2px 5px; font-size: 12px; line-height: 1.3; }
+.order-form table.so-lines .item-sub { flex: 1 0 100%; color: var(--muted, #667); font-size: 11.5px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.order-form table.so-lines { table-layout: fixed; }
+.order-form table.so-lines th { overflow: hidden; text-overflow: ellipsis; }
+.order-form table.so-lines th.w-no { width: 26px; }
+.order-form table.so-lines th.w-item { width: 140px; }
+.order-form table.so-lines th.w-wh { width: 120px; }
+.order-form table.so-lines th.w-ship { width: 105px; }
+.order-form table.so-lines th.w-qty { width: 82px; }
+.order-form table.so-lines th.w-t { width: 44px; }
+.order-form table.so-lines th.w-date { width: 112px; }
+.order-form table.so-lines th.w-sm { width: 72px; }
+.order-form table.so-lines th.w-money { width: 110px; }
+.order-form table.so-lines th.w-text { width: 85px; }
+.order-form table.so-lines th.w-long { width: 160px; }
+.order-form table.so-lines th.w-done { width: 70px; }
+.order-form table.so-lines th.w-act { width: 54px; }
+.order-form table.so-lines td input[type=date] { min-width: 0; padding-left: 4px; padding-right: 2px; }
+.order-form table.so-lines td.nowrap { width: 1%; white-space: nowrap; }
+.order-form table.so-lines td.nowrap .btn { padding: 2px 5px; }
+/* Ô chọn danh mục trong dòng hàng: ô nhập chiếm cả bề ngang, nút + / ✏ / 📦 và tên hàng xuống dòng dưới (đọc đủ mã, không phải kéo ngang) */
+.order-form table.so-lines .cell-add > input, .order-form table.so-lines .cell-add > select, .order-form table.so-lines .cell-add > .ss-trigger { flex: 1 0 100%; }
+.order-form table.so-lines .cell-add .item-sub { flex: 1 0 100%; order: 1; }
+.order-form table.so-lines td.w-item .cell-add > :not(input):not(.item-sub) { order: 2; }
+.order-form table.so-lines td.w-money .cell-add > input, .order-form table.so-lines td.w-qty .cell-add > input { flex: 1 1 0; }
+@media (min-width: 1600px) {
+  .order-form table.so-lines .cell-add > input, .order-form table.so-lines .cell-add > select, .order-form table.so-lines .cell-add > .ss-trigger { flex: 1 1 0; }
+  .order-form table.so-lines th.w-item { width: 190px; }
+  .order-form table.so-lines th.w-wh { width: 170px; }
+  .order-form table.so-lines th.w-ship { width: 150px; }
+}
 /* Nút ✏ Sửa / 👁 Xem đầu dòng (thay cho bấm cả dòng) */
 td.row-act, th.row-act { width: 1%; white-space: nowrap; text-align: center; }
 .btn.row-open { padding: 2px 8px; font-size: 12px; white-space: nowrap; }

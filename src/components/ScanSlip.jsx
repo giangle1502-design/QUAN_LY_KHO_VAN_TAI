@@ -23,7 +23,8 @@ export function buildDraft(scan, target, cat, prefs, extra = {}) {
   const dh = ducHoaWarehouse(cat.warehouses, company)?.code || '';
   const remembered = prefs.wh?.[`${target}|${company}`] || '';
   const whRead = scan.warehouse ? matchWarehouse(scan.warehouse, cat.warehouses) : null;
-  const wh = target === 'SO' ? remembered || dh : whRead?.code || remembered || dh;
+  // SO: không điền sẵn kho xuất (đến ngày giao mới biết hàng ở kho nào → chọn ở phiếu xuất)
+  const wh = target === 'SO' ? '' : whRead?.code || remembered || dh;
   const partyM = target === 'SO' ? matchParty(scan.buyer, cat.soldto) : { rec: cat.suppliers.find((s) => s.code === prefs.supplier?.[company]) || null, how: prefs.supplier?.[company] ? 'last' : '' };
   const car = matchCarrier(scan.carrier, cat.carriers);
   const lines = scan.lines.map((l) => {
@@ -37,7 +38,7 @@ export function buildDraft(scan, target, cat, prefs, extra = {}) {
   const no = scan.slipNo || '';
   return {
     type: target, scan, imageUrl: extra.imageUrl || '', fromText: !!extra.fromText,
-    match: { company: coM.how, party: partyM.how, carrier: car ? (car._near ? 'near' : 'exact') : '', warehouse: target === 'SO' ? (remembered ? 'last' : dh ? 'dh' : '') : whRead ? 'read' : remembered ? 'last' : dh ? 'dh' : '' },
+    match: { company: coM.how, party: partyM.how, carrier: car ? (car._near ? 'near' : 'exact') : '', warehouse: target === 'SO' ? '' : whRead ? 'read' : remembered ? 'last' : dh ? 'dh' : '' },
     head: {
       date: scan.date || vnDate(), company, partyCode: partyM.rec?.code || '', partyName: partyM.rec?.name || '',
       refNo: (sell ? scan.soNo : '') || no || '',
