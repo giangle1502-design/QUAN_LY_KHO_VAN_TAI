@@ -1,11 +1,21 @@
 import * as XLSX from 'xlsx';
+import { excelNumFmt } from './utils';
 
 // sheets: { 'Tên sheet': [ {cột: giá trị}, ... ] }
 export function exportSheets(fileName, sheets) {
   const wb = XLSX.utils.book_new();
   Object.entries(sheets).forEach(([name, rows]) => {
     const ws = XLSX.utils.json_to_sheet(rows);
+    // Ô số: hiển thị có dấu phẩy hàng nghìn + đúng số chữ số thập phân như trên màn hình (1,375.000)
+    // (trừ cột mã/STT/điện thoại/MST/năm… là số định danh, không phải số lượng)
+    const z = excelNumFmt();
     const cols = Object.keys(rows[0] || {});
+    const idCol = cols.map((c) => /^(stt|#|năm|year)$|mã|ma |code|\bid\b|điện thoại|sđt|phone|mst|mã số thuế|số xe|biển số|cmnd|cccd|tài khoản/i.test(c));
+    Object.keys(ws).forEach((a) => {
+      if (a[0] === '!' || ws[a].t !== 'n') return;
+      const { c, r } = XLSX.utils.decode_cell(a);
+      if (r > 0 && !idCol[c]) ws[a].z = z;
+    });
     ws['!cols'] = cols.map((c) => ({
       wch: Math.min(50, Math.max(c.length, ...rows.slice(0, 200).map((r) => String(r[c] ?? '').length)) + 2),
     }));

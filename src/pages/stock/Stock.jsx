@@ -60,7 +60,7 @@ export default function Stock() {
     { key: 'goodsStatus', label: 'Tình trạng', render: (r) => <span className={'badge ' + (r.goodsStatus === 'HTC' ? 'red' : r.goodsStatus === 'DGC' ? 'green' : '')}>{r.goodsStatus}{r.pledgee ? ` · ${r.pledgee}` : ''}</span>, excel: (r) => r.goodsStatus },
     { key: 'pledgee', label: 'Bên nhận thế chấp' },
     { key: 'bags', label: 'Số bao', num: true, sum: true }, { key: 'pallets', label: 'Pallet', num: true, digits: 2, sum: true }, { key: 'kg', label: 'Kg', num: true, digits: 2, sum: true },
-    { key: 'inDate', label: 'Ngày nhập', date: true, nowrap: true }, { key: 'age', label: 'Tuổi tồn (ngày)', num: true, sortVal: (r) => ageDays(r.inDate), render: (r) => ageDays(r.inDate), excel: (r) => ageDays(r.inDate) },
+    { key: 'inDate', label: 'Ngày nhập', date: true, nowrap: true }, { key: 'age', label: 'Tuổi tồn (ngày)', num: true, int: true, sortVal: (r) => ageDays(r.inDate), render: (r) => ageDays(r.inDate), excel: (r) => ageDays(r.inDate) },
   ];
   const byItemRows = byItem.map((x) => ({ ...x, _k: `${x.warehouse}__${x.company}__${x.item}`, ...Object.fromEntries(statusCodes.map((c) => [`st_${c}`, x.st[c] || 0])) }));
   const itemCols = [

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useCollection } from '../lib/hooks';
-import { locWh } from '../lib/whGroups';
+import { locWh, whFullName } from '../lib/whGroups';
 import { fmtDate, fmtNum } from '../lib/utils';
 import { exportSheets } from '../lib/excel';
 import { vnDate } from '../lib/trips';
@@ -51,7 +51,7 @@ export function StockDetailModal({ stock, filter, title, onClose }) {
   }, [rows]);
   const multiWh = new Set(rows.map((r) => r.warehouse)).size > 1;
   const cols = [
-    ...(multiWh || !filter.warehouse ? [{ key: 'warehouse', label: 'Kho', nowrap: true }, { key: 'whName', label: 'Tên kho' }] : []),
+    ...(multiWh || !filter.warehouse ? [{ key: 'warehouse', label: 'Kho', nowrap: true }] : []),
     { key: 'location', label: 'Vị trí', nowrap: true, render: (r) => <b>{r.location || '(chưa có vị trí)'}</b>, excel: (r) => r.location },
     { key: 'place', label: 'Nơi / địa chỉ' },
     ...(oneItem ? [] : [{ key: 'item', label: 'Mã hàng', nowrap: true }, { key: 'itemName', label: 'Tên hàng' }]),
@@ -64,11 +64,11 @@ export function StockDetailModal({ stock, filter, title, onClose }) {
   ];
   const excel = () => exportSheets(`Chi_tiet_ton_${filter.item || filter.warehouse || ''}_${vnDate()}`, { 'Chi tiết tồn': toSheet(cols, grouped) });
   return (
-    <Modal title={title || `🔍 Chi tiết tồn${filter.item ? ` ${filter.item}` : ''}${filter.warehouse ? ` tại ${filter.warehouse}` : ''}`} onClose={onClose} wide>
+    <Modal title={title || `🔍 Chi tiết tồn${filter.item ? ` ${filter.item}` : ''}${filter.warehouse ? ` tại ${whFullName(filter.warehouse)}` : ''}`} onClose={onClose} wide>
       <div className="card" style={{ background: 'var(--primary-soft)', marginBottom: 10 }}>
         <div><b>{filter.item || 'Mọi mã hàng'}</b>{rows[0]?.itemName && oneItem ? ` · ${rows[0].itemName}` : ''}
           {filter.location != null ? <> · vị trí <b>{filter.location || '(chưa có)'}</b></> : null}
-          {filter.locWh ? <> · kho chung / kho <b>{filter.locWh}</b></> : null}{filter.warehouse ? <> · kho <b>{filter.warehouse}</b> {whName.get(filter.warehouse) ? `(${whName.get(filter.warehouse)})` : ''}</> : filter.locWh ? '' : ' · mọi kho'}
+          {filter.locWh ? <> · kho chung / kho <b>{filter.locWh}</b></> : null}{filter.warehouse ? <> · kho <b>{whFullName(filter.warehouse)}</b> ({filter.warehouse})</> : filter.locWh ? '' : ' · mọi kho'}
           {' '}· tổng <b>{kg(total)}</b> kg</div>
         {byLoc.length > 0 && (
           <div className="small" style={{ marginTop: 4, lineHeight: 1.7 }}>
