@@ -12,7 +12,7 @@ import { MVT, MVT_GROUPS, moveCodes, signedTotal, stepOf, wasPosted } from '../.
 import { fmtTime, vnDate } from '../../lib/trips';
 import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum } from '../../lib/utils';
-import { Empty, ErrorBox, Modal } from '../../components/ui';
+import { Empty, ErrorBox, Modal, RowOpen } from '../../components/ui';
 import { WithAdd } from '../../components/FormTools';
 import EditSlip, { canEditSlip } from '../../components/EditSlip';
 import { ExtraView } from '../../components/ExtraFields';
@@ -102,14 +102,14 @@ export default function Movements() {
       <div className="table-wrap">
         {!list.length ? <Empty /> : (
           <table>
-            <thead><tr><th>Số phiếu</th><th title="Mã nghiệp vụ kiểu SAP, bấm ⓘ Bảng mã movetype để xem">MVT</th><th>Loại</th><th>Ngày</th><th>Tình trạng</th><th>Kho</th><th>Công ty</th><th>Số xe / chuyến</th><th>Đơn</th><th>Khách / NCC</th><th>Mặt hàng</th>
+            <thead><tr><th className="row-act"></th><th>Số phiếu</th><th title="Mã nghiệp vụ kiểu SAP, bấm ⓘ Bảng mã movetype để xem">MVT</th><th>Loại</th><th>Ngày</th><th>Tình trạng</th><th>Kho</th><th>Công ty</th><th>Số xe / chuyến</th><th>Đơn</th><th>Khách / NCC</th><th>Mặt hàng</th>
               <th className="num">Số bao</th><th className="num" title="Nhập vào +, xuất đi −">Kg (±)</th><th>Người lập</th><th></th></tr></thead>
             <tbody>
               {view.map(({ m, rev }) => {
                 const st = stepOf(m);
                 if (rev) return (
-                  <tr key={m.id + '#rev'} onClick={() => setOpen(m.id)} style={{ cursor: 'pointer', background: 'var(--red-bg, #fff5f5)' }}>
-                    <td className="mono nowrap">{m.id}</td><td className="mono nowrap" title={moveCodes(m, true).map((c) => `${c}: ${MVT[c]?.label}`).join('\n')}><b>{mvtText(m, true)}</b></td>
+                  <tr key={m.id + '#rev'} style={{ background: 'var(--red-bg, #fff5f5)' }}>
+                    <td className="row-act"><RowOpen edit={false} onClick={() => setOpen(m.id)} /></td><td className="mono nowrap">{m.id}</td><td className="mono nowrap" title={moveCodes(m, true).map((c) => `${c}: ${MVT[c]?.label}`).join('\n')}><b>{mvtText(m, true)}</b></td>
                     <td className="nowrap">↩ Hủy {MOVE_TYPES[m.type]?.label.toLowerCase()}</td><td className="nowrap">{fmtDate(String(m.cancelledAt || '').slice(0, 10))}</td>
                     <td className="nowrap"><span className="badge red">↩ Đảo tồn</span></td><td>{m.warehouse}</td><td colSpan={4} className="small">{m.cancelReason}</td>
                     <td>{[...new Set(m.lines.map((l) => l.item))].join(', ')}</td>
@@ -117,8 +117,8 @@ export default function Movements() {
                   </tr>
                 );
                 return (
-                <tr key={m.id} onClick={() => setOpen(m.id)} style={{ cursor: 'pointer', opacity: m.status === 'cancelled' ? 0.6 : 1 }}>
-                  <td className="mono nowrap">{m.id}</td><td className="mono nowrap" title={moveCodes(m).map((c) => `${c}: ${MVT[c]?.label}`).join('\n')}><b>{mvtText(m)}</b></td>
+                <tr key={m.id} style={{ opacity: m.status === 'cancelled' ? 0.6 : 1 }}>
+                  <td className="row-act"><RowOpen edit={false} onClick={() => setOpen(m.id)} /></td><td className="mono nowrap">{m.id}</td><td className="mono nowrap" title={moveCodes(m).map((c) => `${c}: ${MVT[c]?.label}`).join('\n')}><b>{mvtText(m)}</b></td>
                   <td className="nowrap">{MOVE_TYPES[m.type]?.icon} {MOVE_TYPES[m.type]?.label}</td>
                   <td className="nowrap">{fmtDate(m.date)}</td>
                   <td className="nowrap" title={st.title} onClick={(e) => e.stopPropagation()}>{m.status === 'pending' ? <Link className={'badge ' + st.tone} to={`/kho/nhan-hang/${m.id}`}>{st.label}</Link>

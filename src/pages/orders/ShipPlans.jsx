@@ -205,7 +205,9 @@ export default function ShipPlans() {
 
 // Tạo / sửa dự kiến xuất: chọn dòng đơn từ BẢNG (tìm theo khách, mã hàng, số SO; mỗi dòng SO đủ thông tin: ngày giao, kho, mã giao, đơn giá…)
 // Tích nhiều dòng của nhiều SO cùng khách, cùng công ty xuất = 1 xe đi nhiều đơn: lưu mỗi SO 1 dự kiến, chung mã gộp xe
-function PlanForm({ plan, orderId, plans, onClose }) {
+// DO (lệnh giao hàng): mở từ SO (?so=… / nút Lập DO) thì form hiện sẵn MỌI dòng còn lại của SO:
+// tick ☑ = dòng xuất, bỏ tick = dòng không xuất lần này (vẫn còn trên SO cho DO sau); sửa SL thực xuất từng dòng
+export function PlanForm({ plan, orderId, plans, onClose, initCarrier }) {
   const { email, name } = useApp();
   const { rows: orders } = useOrders('SO', true);
   const shipto = useCollection('shipto').rows;
@@ -218,11 +220,14 @@ function PlanForm({ plan, orderId, plans, onClose }) {
   const ex = useExtraFields('shipPlan', plan);
   // Đơn vị vận tải: chỉ định ở đây thì chuyến tự vào Vận chuyển → DO chờ vận tải để admin kiểm tra, giao
   const carriers = useCollection('carriers').rows.filter((c) => c.active !== false);
-  const [carrier, setCarrier] = useState(plan?.carrier ?? null);
+  const [carrier, setCarrier] = useState(plan?.carrier ?? initCarrier ?? null);
   // Dòng đã chọn: `${SO}#${dòng}` → { qty, ship }
   const [sel, setSel] = useState(() => Object.fromEntries((plan?.lines || []).map((l) => [`${plan.orderId}#${l.orderLine}`, { qty: String(l.qtyKg), ship: l.shipCode || '' }])));
   const [q, setQ] = useState('');
   const [fCo, setFCo] = useState('');
+  // Mở từ 1 SO / sửa DO: bảng chọn dòng (gộp SO khác cùng xe) thu gọn, chỉ hiện dòng của SO đó
+  const soId = plan?.orderId || orderId || '';
+  const [showPick, setShowPick] = useState(!soId);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const planned = useMemo(() => plannedByLine(plans, plan?.id), [plans, plan]);
@@ -243,6 +248,10 @@ function PlanForm({ plan, orderId, plans, onClose }) {
   [orders, secMap, headSeen, lineSeen, planned, plan]); // eslint-disable-line react-hooks/exhaustive-deps
   const byKey = useMemo(() => new Map(all.map((r) => [r.key, r])), [all]);
   const chosen = Object.keys(sel).map((k) => byKey.get(k)).filter(Boolean);
+  // Bảng 2 (dòng của DO): mọi dòng còn lại của các SO đang lập, dòng bỏ tick vẫn hiện (mờ) để tick lại được
+  const doIds = new Set([soId, ...chosen.map((r) => r.o.id)].filter(Boolean));
+  const doRows = all.filter((r) => doIds.has(r.o.id) && (r.free > 0.001 || sel[r.key]));
+  const soHead = all.find((r) => r.o.id === soId)?.o;
   // Gộp 1 xe chỉ trong cùng khách hàng + cùng công ty xuất
   const anchor = chosen[0]?.o;
   const clash = (r) => anchor && (r.o.partyCode !== anchor.partyCode || (r.o.company || '') !== (anchor.company || ''));
@@ -282,14 +291,14 @@ function PlanForm({ plan, orderId, plans, onClose }) {
   const save = async () => {
     setErr('');
     if (!date) return setErr('Chọn ngày dự kiến xuất.');
-    if (!chosen.length) return setErr('Tích chọn ít nhất 1 dòng đơn trong bảng.');
+    if (!chosen.length) return setErr('Tick ☑ ít nhất 1 dòng sẽ xuất.');
     if (ex.missing()) return setErr(`Vui lòng nhập: ${ex.missing()}`);
     if (chosen.some(clash)) return setErr('Chỉ gộp 1 xe các dòng cùng khách hàng và cùng công ty xuất. Bỏ tích các dòng khác khách / khác công ty.');
     const byOrder = new Map();
     for (const r of chosen) {
       const { qty, ship } = sel[r.key];
       const v = Number(qty) || 0;
-      if (v <= 0) return setErr(`${r.o.id} · ${r.l.item}: nhập số lượng cần xuất (hoặc bỏ tích dòng).`);
+      if (v <= 0) return setErr(`${r.o.id} · dòng ${r.l.no} ${r.l.item}: nhập SL thực xuất, hoặc bỏ tick nếu dòng này không xuất.`);
       const max = r.free * (1 + (Number(r.o.tolerancePct) || 0) / 100);
       if (v > max + 0.5) return setErr(`${r.o.id} · ${r.l.item}: chỉ còn ${kg(r.free)} kg chưa có dự kiến xuất (SO còn ${kg(r.left)} kg, các dự kiến khác ${kg(r.inPlans)} kg).`);
       const my = shipsOf(r.o.partyCode);
@@ -311,16 +320,26 @@ function PlanForm({ plan, orderId, plans, onClose }) {
         if (plan) await updatePlan(plan.id, { ...head, lines: g.lines.map((l) => ({ ...l, doneKg: 0 })) }, { email, name });
         else await createPlan({ ...head, lines: g.lines }, { email, name });
       }
-      onClose();
+      onClose(true);
     } catch (e) {
-      setErr(e.code === 'permission-denied' ? 'Bạn không có quyền lập dự kiến xuất cho đơn này.' : e.message);
+      setErr(e.code === 'permission-denied' ? 'Bạn không có quyền lập DO cho đơn này.' : e.message);
     }
     setBusy(false);
   };
 
   const nOrders = new Set(chosen.map((r) => r.o.id)).size;
   return (
-    <Modal title={plan ? `Sửa dự kiến xuất ${plan.id}` : 'Tạo dự kiến xuất kho'} onClose={onClose} wide>
+    <Modal title={plan ? `Sửa DO ${plan.id} · ${plan.orderId}` : soId ? `Lập DO (lệnh giao hàng) cho ${soId}` : 'Lập DO (lệnh giao hàng)'} onClose={onClose} wide cls="do-form">
+      {soHead && (
+        <div className="do-so-head">
+          <span><span className="small">Đơn bán</span> <b className="mono">{soHead.id}</b>{soHead.refNo ? <span className="small"> · Ecount {soHead.refNo}</span> : null}</span>
+          <span><span className="small">Khách hàng</span> <b>{soHead.partyCode}</b> {soHead.partyName}</span>
+          {soHead.company && <span><span className="small">Công ty xuất</span> <b>{soHead.company}</b></span>}
+          <span><span className="small">Ngày đơn</span> {fmtDate(soHead.date)}</span>
+          {(soHead.salesName || soHead.sales) && <span><span className="small">Sale</span> {soHead.salesName || soHead.sales}</span>}
+        </div>
+      )}
+      {soId && !soHead && <div className="hint" style={{ color: 'var(--amber)' }}>Đơn {soId} không còn dòng nào phải giao (đã giao đủ, đã có DO cho toàn bộ, hoặc đã đóng).</div>}
       <div className="form-grid">
         <Field label="Ngày dự kiến xuất" required><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
         <Field label="Đơn vị vận tải"><WithAdd cat="carriers" onAdded={(id) => setCarrier(id)}><Select value={carrierVal} onChange={(e) => setCarrier(e.target.value)}>
@@ -328,9 +347,67 @@ function PlanForm({ plan, orderId, plans, onClose }) {
         <Field label="Ghi chú"><input value={note} onChange={(e) => setNote(e.target.value)} /></Field>
       </div>
       <ExtraFields ex={ex} />
-      <div className="section-head" style={{ marginTop: 10 }}>1. Chọn dòng đơn bán (SO) {!plan && <span className="small">· tích nhiều dòng, nhiều SO cùng khách = 1 xe đi nhiều đơn</span>}</div>
+      {doRows.length > 0 && (
+        <>
+          <div className="section-head" style={{ marginTop: 10 }}>
+            <span className="grow">Dòng hàng của DO · tick ☑ dòng sẽ xuất, bỏ tick dòng không xuất ({chosen.length}/{doRows.length} dòng · {nOrders} đơn{nOrders > 1 ? ' · 🚚 1 xe gộp nhiều đơn' : ''})</span>
+          </div>
+          <div className="table-wrap">
+            <table className="do-lines">
+              <thead><tr>
+                <th title="Tick = xuất; bỏ tick = không xuất lần này"><input type="checkbox" checked={chosen.length === doRows.length} ref={(el) => { if (el) el.indeterminate = chosen.length > 0 && chosen.length < doRows.length; }}
+                  onChange={(e) => setSel(e.target.checked ? Object.fromEntries(doRows.map((r) => [r.key, sel[r.key] || { qty: r.free > 0.001 ? String(r3(r.free)) : '', ship: defShip(r) }])) : {})} /> Xuất</th>
+                {nOrders > 1 && <th>Đơn bán</th>}<th>Dòng</th><th>Mã hàng</th><th>Kiện/Xá</th><th>Kho (theo SO)</th><th>Ngày giao</th>{priceField && <th className="num">{priceField.label}</th>}
+                <th className="num">SO đặt</th><th className="num">Đã giao</th><th className="num">DO khác</th><th className="num">Còn lập được</th>
+                <th className="num">SL thực xuất (kg)</th><th>Mã giao</th></tr></thead>
+              <tbody>
+                {doRows.map((r) => {
+                  const my = shipsOf(r.o.partyCode);
+                  const v = sel[r.key];
+                  const on = !!v;
+                  return (
+                    <tr key={r.key} className={(on ? '' : 'row-off ') + (on && clash(r) ? 'row-bad' : '')}>
+                      <td><input type="checkbox" checked={on} onChange={() => toggle(r)} title={on ? 'Bỏ tick: dòng này không xuất' : 'Tick để xuất dòng này'} /></td>
+                      {nOrders > 1 && <td className="mono">{r.o.id}</td>}
+                      <td className="small">{r.l.no}</td>
+                      <td><b>{r.l.item}</b><div className="small">{r.l.itemName}</div></td>
+                      <td>{r.l.packing || ''}</td>
+                      <td className="small">{r.wh || 'chọn khi xuất'}</td>
+                      <td>{fmtDate(r.due)}</td>
+                      {priceField && <td className="num">{money(r)}</td>}
+                      <td className="num">{kg(r.l.qtyKg)}</td>
+                      <td className="num">{Number(r.l.doneKg) ? kg(r.l.doneKg) : ''}</td>
+                      <td className="num">{r.inPlans ? kg(r.inPlans) : ''}</td>
+                      <td className="num"><b>{kg(r.free)}</b></td>
+                      <td className="num" style={{ whiteSpace: 'nowrap' }}>
+                        {on ? <>
+                          <input type="number" min="0" step="any" style={{ width: 110 }} value={v.qty} onChange={(e) => setOne(r.key, { qty: e.target.value })} />
+                          {r.free > 0.001 && Number(v.qty) !== r3(r.free) && <button type="button" className="btn ghost sm" title="Lấy hết phần còn lại" onClick={() => setOne(r.key, { qty: String(r3(r.free)) })}>hết</button>}
+                        </> : <span className="small">không xuất</span>}
+                      </td>
+                      <td>
+                        {on && <WithAdd cat="shipto" preset={{ customerCode: r.o.partyCode, customerName: r.o.partyName }} onAdded={(id, rec) => setOne(r.key, { ship: rec?.shipCode || id })}>
+                          <Select value={v.ship || ''} onChange={(e) => setOne(r.key, { ship: e.target.value })}>
+                            <option value="">-- Chọn --</option>
+                            {my.map((s) => <option key={s.shipCode} value={s.shipCode}>{s.shipCode} – {s.address}</option>)}
+                          </Select>
+                        </WithAdd>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot><tr><td colSpan={(nOrders > 1 ? 11 : 10) + (priceField ? 1 : 0)}>Cộng thực xuất</td><td className="num"><b>{kg(chosen.reduce((a, r) => a + (Number(sel[r.key].qty) || 0), 0))}</b></td><td></td></tr></tfoot>
+            </table>
+          </div>
+          {nOrders > 1 && <p className="hint">Lưu thành {nOrders} DO (mỗi SO 1 DO) chung 1 mã gộp xe. Kho bấm <b>📤 Lập phiếu xuất gộp</b> sẽ ra 1 phiếu soạn hàng (cùng mã hàng gộp 1 dòng) và 1 phiếu giao hàng ghi đủ các SO.</p>}
+        </>
+      )}
+      {soId && !plan && !showPick && <button type="button" className="btn sm" style={{ marginTop: 8 }} onClick={() => setShowPick(true)}>➕ Gộp thêm SO khác cùng khách (1 xe)</button>}
+      {showPick && <>
+        <div className="section-head" style={{ marginTop: 10 }}>{soId ? 'Gộp thêm dòng SO khác cùng khách (1 xe)' : 'Chọn dòng đơn bán (SO)'} {!plan && <span className="small">· tích nhiều dòng, nhiều SO cùng khách = 1 xe đi nhiều đơn</span>}</div>
       <div className="filters">
-        <input type="search" autoFocus placeholder="Tìm khách hàng, mã hàng, số SO, mã giao, kho…" value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: 1, minWidth: 240 }} />
+        <input type="search" autoFocus={!soId} placeholder="Tìm khách hàng, mã hàng, số SO, mã giao, kho…" value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: 1, minWidth: 240 }} />
         {companies.length > 1 && <Select value={fCo} onChange={(e) => setFCo(e.target.value)}>
           <option value="">Mọi công ty xuất</option>{companies.map((c) => <option key={c} value={c}>{c}</option>)}</Select>}
         <span className="small">{shown.length} dòng</span>
@@ -370,51 +447,10 @@ function PlanForm({ plan, orderId, plans, onClose }) {
         {!shown.length && <Empty text={q ? 'Không có dòng đơn nào khớp' : 'Không có đơn bán nào còn hàng phải giao'} />}
         {shown.length > LIMIT && <p className="small">Đang hiện {LIMIT}/{shown.length} dòng: gõ thêm từ khóa để lọc.</p>}
       </div>
-      {chosen.length > 0 && (
-        <>
-          <div className="section-head" style={{ marginTop: 10 }}>2. Số lượng cần xuất, mã giao ({chosen.length} dòng · {nOrders} đơn{nOrders > 1 ? ' · 🚚 1 xe gộp nhiều đơn' : ''})</div>
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>Đơn bán</th><th>Mã hàng</th><th>Kiện/Xá</th><th>Kho (theo SO)</th>{priceField && <th className="num">{priceField.label}</th>}<th className="num">Còn lập được</th>
-                <th className="num">SL cần xuất (kg)</th><th>Mã giao</th><th></th></tr></thead>
-              <tbody>
-                {chosen.map((r) => {
-                  const my = shipsOf(r.o.partyCode);
-                  const v = sel[r.key];
-                  return (
-                    <tr key={r.key} className={clash(r) ? 'row-bad' : ''}>
-                      <td className="mono">{r.o.id}<div className="small">{r.o.partyCode}</div></td>
-                      <td>{r.l.item}<div className="small">{r.l.itemName}</div></td>
-                      <td>{r.l.packing || ''}</td>
-                      <td className="small">{r.wh || 'chưa chọn'}</td>
-                      {priceField && <td className="num">{money(r)}</td>}
-                      <td className="num">{kg(r.free)}</td>
-                      <td className="num" style={{ whiteSpace: 'nowrap' }}>
-                        <input type="number" min="0" step="any" style={{ width: 110 }} value={v.qty} onChange={(e) => setOne(r.key, { qty: e.target.value })} />
-                        {r.free > 0.001 && Number(v.qty) !== r3(r.free) && <button type="button" className="btn ghost sm" title="Lấy hết phần còn lại" onClick={() => setOne(r.key, { qty: String(r3(r.free)) })}>hết</button>}
-                      </td>
-                      <td>
-                        <WithAdd cat="shipto" preset={{ customerCode: r.o.partyCode, customerName: r.o.partyName }} onAdded={(id, rec) => setOne(r.key, { ship: rec?.shipCode || id })}>
-                          <Select value={v.ship || ''} onChange={(e) => setOne(r.key, { ship: e.target.value })}>
-                            <option value="">-- Chọn --</option>
-                            {my.map((s) => <option key={s.shipCode} value={s.shipCode}>{s.shipCode} – {s.address}</option>)}
-                          </Select>
-                        </WithAdd>
-                      </td>
-                      <td><button type="button" className="btn ghost sm" title="Bỏ dòng" onClick={() => toggle(r)}>✕</button></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              <tfoot><tr><td colSpan={priceField ? 6 : 5}>Cộng</td><td className="num"><b>{kg(chosen.reduce((a, r) => a + (Number(sel[r.key].qty) || 0), 0))}</b></td><td colSpan={2}></td></tr></tfoot>
-            </table>
-          </div>
-          {nOrders > 1 && <p className="hint">Lưu thành {nOrders} dự kiến (mỗi SO 1 dự kiến) chung 1 mã gộp xe. Kho bấm <b>📤 Lập phiếu xuất gộp</b> sẽ ra 1 phiếu soạn hàng (cùng mã hàng gộp 1 dòng) và 1 phiếu giao hàng ghi đủ các SO.</p>}
-        </>
-      )}
+      </>}
       <ErrorBox error={err} />
       <div className="actions" style={{ marginTop: 12 }}>
-        <button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Đang lưu…' : nOrders > 1 ? `Lưu dự kiến xuất (${nOrders} đơn, 1 xe)` : 'Lưu dự kiến xuất'}</button>
+        <button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Đang lưu…' : nOrders > 1 ? `Lưu DO (${nOrders} đơn, 1 xe)` : 'Lưu DO'}</button>
         <button className="btn" onClick={onClose}>Đóng</button>
       </div>
     </Modal>

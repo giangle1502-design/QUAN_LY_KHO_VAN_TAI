@@ -151,6 +151,12 @@ service cloud.firestore {
       allow create, update: if (isStaff() || (txOk() && request.resource.data.carrier == txCarrier()))
         && id.matches('^' + request.resource.data.carrier + '__.*');
     }
+    // Job = 1 xe nhiều Shipment (nhiều điểm lấy / giao): quản trị, điều phối của đơn vị, kế toán
+    match /jobs/{id} {
+      allow read: if isStaff() || (txOk() && resource.data.get('carrier', '') == txCarrier());
+      allow create, update: if isAdmin() || hasRole('ke_toan')
+        || (hasRole('van_tai') && myCarrier() != '' && request.resource.data.carrier == myCarrier() && (resource == null || resource.data.carrier == myCarrier()));
+    }
     match /carrierLinks/{code} {
       allow read: if isAdmin() || ((hasRole('van_tai') || hasRole('tpl')) && myCarrier() == code);
       allow write: if isAdmin() || (hasRole('van_tai') && myCarrier() == code);
@@ -181,7 +187,7 @@ service cloud.firestore {
         // Điều phối vận tải: sửa chuyến, làm thay tài xế, nhập chi phí
         || (hasRole('van_tai') && ownCarrierTrip() && stepStatus(true) && costOk(['entered'])
           && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(driverKeys().concat(costKeys()).concat(['plannedDate', 'note', 'cancelReason', 'cancelTime', 'pickup', 'pickupName', 'pickupAddress', 'pickupMap'])))
+            .hasOnly(driverKeys().concat(costKeys()).concat(['plannedDate', 'note', 'cancelReason', 'cancelTime', 'pickup', 'pickupName', 'pickupAddress', 'pickupMap', 'jobId', 'jobSeq', 'jobTrips'])))
         // Tài xế: nhập số xe (chuyến chưa có xe) hoặc chạy chuyến điều phối đã chỉ định cho xe đó, xác nhận từng bước;
         // không đổi được xe điều phối đã chỉ định, không nhập / sửa cước. Xe thuê ngoài không cần có trong danh mục, không cần CCCD
         || (hasRole('tai_xe') && ownCarrierTrip()

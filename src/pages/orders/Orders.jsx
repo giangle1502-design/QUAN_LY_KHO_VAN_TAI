@@ -13,7 +13,7 @@ import { kindOf } from '../../catalogs';
 import { STATUS_META, fmtTime, vnDate } from '../../lib/trips';
 import { exportSheets, exportTemplate, readFirstSheet, toNumber, toYmd } from '../../lib/excel';
 import { fmtDate, fmtNum, norm } from '../../lib/utils';
-import { Empty, ErrorBox, Modal } from '../../components/ui';
+import { Empty, ErrorBox, Modal, RowOpen } from '../../components/ui';
 import Balance from './Balance';
 import SlipList from './Slips';
 import SOForm from './SOForm';
@@ -370,13 +370,14 @@ function OrderList({ type, initialQ = '', startNew = false, startScan = false, o
       <div className="table-wrap">
         {!list.length ? <Empty /> : (
           <table>
-            <thead><tr>{shownCols.map((c) => <th key={c.key} className={(c.num ? 'num ' : '') + 'col-drag'} {...dragHeadProps(c.key, colKeys, setColOrder)} {...tools.headProps(c)}>{c.label}{tools.headMark(c)}</th>)}<th></th></tr></thead>
+            <thead><tr><th className="row-act"></th>{shownCols.map((c) => <th key={c.key} className={(c.num ? 'num ' : '') + 'col-drag'} {...dragHeadProps(c.key, colKeys, setColOrder)} {...tools.headProps(c)}>{c.label}{tools.headMark(c)}</th>)}<th></th></tr></thead>
             <tbody>
-              {!view.length && <tr><td colSpan={shownCols.length + 1}><Empty text="Không có đơn nào khớp điều kiện lọc của cột." /></td></tr>}
+              {!view.length && <tr><td colSpan={shownCols.length + 2}><Empty text="Không có đơn nào khớp điều kiện lọc của cột." /></td></tr>}
               {view.map((o) => {
                 const ctx = { x: orderTotals(o), isLate: OPEN_STATUSES.includes(o.status) && o.dueDate && o.dueDate < today };
                 return (
-                  <tr key={o.id} onClick={() => setOpen(o.id)} style={{ cursor: 'pointer', opacity: ['closed', 'cancelled'].includes(o.status) ? 0.6 : 1 }}>
+                  <tr key={o.id} style={{ opacity: ['closed', 'cancelled'].includes(o.status) ? 0.6 : 1 }}>
+                    <td className="row-act"><RowOpen edit={false} onClick={() => setOpen(o.id)} /></td>
                     {shownCols.map((c) => <td key={c.key} className={(c.num ? 'num ' : '') + (c.cls || '')} style={c.style?.(o, ctx)}>{c.render(o, ctx)}</td>)}
                     <td className="nowrap"><MoveButtons o={o} sm pend={pendIn.get(o.id)} wait={waitOut.get(o.id)} /></td>
                   </tr>
@@ -531,7 +532,7 @@ function OrderDetail({ o, onClose, onEdit }) {
       {canManage && (
         <div className="form-actions" style={{ flexWrap: 'wrap' }}>
           {o.status !== 'cancelled' && <button className="btn" onClick={onEdit} title={isOpen ? '' : 'Sửa giá, thông tin đơn đã hoàn tất / đã đóng (ghi lý do, lưu lịch sử)'}>✏️ Sửa đơn</button>}
-          {isOpen && o.type === 'SO' && <Link className="btn primary" to={`/du-kien-xuat?so=${o.id}`}>📅 Tạo dự kiến xuất kho</Link>}
+          {isOpen && o.type === 'SO' && <Link className="btn primary" to={`/du-kien-xuat?so=${o.id}`}>📝 Lập DO (lệnh giao hàng)</Link>}
           {isOpen && <input placeholder="Lý do đóng / hủy" value={reason} onChange={(e) => setReason(e.target.value)} />}
           {isOpen && <button className="btn" disabled={!reason.trim() || busy} onClick={() => act('close')} title="Không giao/nhận tiếp phần còn lại">Đóng đơn</button>}
           {isOpen && x.done === 0 && <button className="btn danger" disabled={!reason.trim() || busy} onClick={() => act('cancel')}>Hủy đơn</button>}

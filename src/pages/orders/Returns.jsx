@@ -9,7 +9,7 @@ import { MOVE_TYPES } from '../../lib/stock';
 import { vnDate } from '../../lib/trips';
 import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum, matchQ } from '../../lib/utils';
-import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
+import { Empty, ErrorBox, Field, Modal, RowOpen } from '../../components/ui';
 import { WithAdd } from '../../components/FormTools';
 import Select from '../../components/Select';
 import { ExtraFields, useExtraFields } from '../../components/ExtraFields';
@@ -195,13 +195,13 @@ export default function DrtList({ initialQ = '' }) {
       <div className="table-wrap">
         {loading ? <Empty text="Đang tải…" /> : !list.length ? <Empty text="Chưa có đơn trả hàng." /> : (
           <table>
-            <thead><tr><th>Số DRT</th><th>Ngày</th><th>SO gốc</th><th>Khách hàng</th><th>Kho nhận</th><th>Mã hàng</th><th>Lý do</th><th className="num">Trả về (kg)</th><th className="num">Đã nhận về</th><th>Trạng thái</th><th /></tr></thead>
+            <thead><tr><th className="row-act"></th><th>Số DRT</th><th>Ngày</th><th>SO gốc</th><th>Khách hàng</th><th>Kho nhận</th><th>Mã hàng</th><th>Lý do</th><th className="num">Trả về (kg)</th><th className="num">Đã nhận về</th><th>Trạng thái</th><th /></tr></thead>
             <tbody>{list.map((o) => {
               const x = orderTotals(o);
               const pend = (o.lines || []).reduce((a, l) => a + (pendIn.get(o.id)?.byLine?.[l.no] || 0), 0);
               return (
-                <tr key={o.id} style={{ cursor: 'pointer' }} onClick={() => setOpen(o.id)}>
-                  <td className="mono">{o.id}</td><td className="nowrap">{fmtDate(o.date)}</td>
+                <tr key={o.id}>
+                  <td className="row-act"><RowOpen edit={false} onClick={() => setOpen(o.id)} /></td><td className="mono">{o.id}</td><td className="nowrap">{fmtDate(o.date)}</td>
                   <td className="mono"><Link to={`/don-hang?tab=SO&q=${o.originalSoId}`} onClick={(e) => e.stopPropagation()}>{o.originalSoId}</Link></td>
                   <td>{o.partyCode} <span className="small">{o.partyName}</span></td><td>{o.warehouse}</td>
                   <td>{[...new Set(o.lines.map((l) => l.item))].join(', ')}</td>

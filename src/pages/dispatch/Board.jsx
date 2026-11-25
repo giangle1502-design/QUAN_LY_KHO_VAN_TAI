@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { ScopeFilters, useOpScope } from '../../components/ScopeFilter';
-import { Modal } from '../../components/ui';
+import { Modal, noSel } from '../../components/ui';
 import Select from '../../components/Select';
 import { usePref } from '../../lib/prefs';
 import { addDays, nextAction, scopeMove, scopeRow, scopeTrip, usePendingData } from '../../lib/pending';
@@ -105,7 +105,7 @@ export default function Board() {
                 <div className="dp-stage" key={c.key}>
                   <div className="dp-stage-h">{c.label}<span className="n">{done.length}</span></div>
                   {done.slice(0, cfg.perStage).map((m) => (
-                    <div key={m.id} className="dp-card" role="button" tabIndex={0} onClick={() => setOpenMove(m)}>
+                    <div key={m.id} className="dp-card" role="button" tabIndex={0} onClick={noSel(() => setOpenMove(m))}>
                       <div className="top"><TypeTag type={m.orderType || String(m.orderId || '').replace(/\d+$/, '')} /><span className="mono">{m.id}</span><span className="tm">{clock(m.createdAt || m.postedAt)}</span></div>
                       <div className="p">{m.partyName || m.orderId}</div>
                       <div className="m"><b>{kg(mkg([m]))} kg</b>{m.plate ? <span className="plate">{m.plate}</span> : null}<span className="small">{m.warehouse}</span></div>

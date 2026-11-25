@@ -7,7 +7,7 @@ import { cleanValue, defaultsOf } from '../lib/fields';
 import { addRole, createMissingPartners, dupTaxGroups, mergeInto, mergePartners, PARTNER_STATUS, PARTNER_TYPES, roleOnlyFields, roleText, savePartner } from '../lib/partners';
 import { saleSeesCustomer } from '../lib/plasticSales';
 import FieldInput from '../components/FieldInput';
-import { Empty, ErrorBox, Field, Modal } from '../components/ui';
+import { Empty, ErrorBox, Field, Modal, RowOpen } from '../components/ui';
 import Select from '../components/Select';
 import { AddFieldButton } from '../components/FormTools';
 import { EditForm } from './CatalogPage';
@@ -245,9 +245,9 @@ function ShipTos({ code, partner, saved }) {
       </div>
       {msg && <div className="ok-box">{msg}</div>}
       {list.length ? (
-        <table><thead><tr><th>Mã giao</th><th>Địa chỉ</th><th>Người nhận</th><th>Điện thoại</th></tr></thead>
+        <table><thead><tr><th className="row-act"></th><th>Mã giao</th><th>Địa chỉ</th><th>Người nhận</th><th>Điện thoại</th></tr></thead>
           <tbody>{list.map((s) => (
-            <tr key={s._id} style={{ cursor: 'pointer' }} onClick={() => setEditing(s)}><td className="mono">{s.shipCode}</td><td>{s.address}</td><td>{s.contact}</td><td>{s.phone}</td></tr>
+            <tr key={s._id}><td className="row-act"><RowOpen onClick={() => setEditing(s)} /></td><td className="mono">{s.shipCode}</td><td>{s.address}</td><td>{s.contact}</td><td>{s.phone}</td></tr>
           ))}</tbody></table>
       ) : <p className="small">Chưa có điểm giao hàng.</p>}
       {editing && <EditForm cat={cat} fields={fieldsOf('shipto')} row={editing} existing={rows} onClose={() => setEditing(null)} onSaved={(t) => { setEditing(null); setMsg(t); }} />}
