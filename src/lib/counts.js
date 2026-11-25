@@ -1,7 +1,9 @@
-import { collection, doc, getDocs, query, runTransaction, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { arrayUnion, collection, doc, getDocs, query, runTransaction, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { postMovement } from './stock';
 import { vnDate } from './trips';
+import { notifyUsers } from './chat';
+import { whLabel } from './whGroups';
 
 // ============================================================================
 // Kiểm kê / cycle count: `stockCounts/{KKyymmddNN}` (đầu phiếu) + `stockCounts/{id}/lines/{00001}`
@@ -54,11 +56,18 @@ export function lineResult(l) {
   return { counted: true, final: fin, diffKg, diffBags, match: Math.abs(diffKg) < MATCH_KG, recount: !!l.c2 };
 }
 
-// Chọn dòng tồn theo phạm vi: vị trí (từ - đến, khu vực = đầu mã vị trí) và mã hàng (danh sách / có giao dịch trong ngày)
+// Các kho của phiếu (phiếu mới chọn nhiều kho pháp nhân ở Đức Hòa; phiếu cũ chỉ 1 kho)
+export const countWhs = (c) => (c?.warehouses?.length ? c.warehouses : [c?.warehouse].filter(Boolean));
+export const lineWh = (l, c) => l.warehouse || c?.warehouse || '';
+const listOf = (v) => (Array.isArray(v) ? v.map((x) => String(x).toUpperCase()) : splitList(v));
+
+// Chọn dòng tồn theo phạm vi: vị trí (từ - đến, khu vực = đầu mã vị trí) và mã hàng (danh sách chọn / có giao dịch)
 export function pickStock(rows, scope, movedItems) {
   const areas = splitList(scope.areas);
-  const items = splitList(scope.items);
+  const items = listOf(scope.items);
+  const whs = scope.warehouses?.length ? new Set(scope.warehouses) : null;
   return rows.filter((r) => (n(r.bags) > 0 || n(r.pallets) > 0 || n(r.kg) > 0)
+    && (!whs || whs.has(r.warehouse))
     && (!scope.company || r.company === scope.company)
     && inLocRange(r.location, scope.locFrom, scope.locTo)
     && (!areas.length || areas.some((a) => String(r.location).toUpperCase().startsWith(a)))
@@ -67,64 +76,125 @@ export function pickStock(rows, scope, movedItems) {
     .sort((a, b) => locCmp(a.location, b.location) || String(a.item).localeCompare(String(b.item)) || String(a.lot).localeCompare(String(b.lot)));
 }
 
-// Mã hàng có phiếu kho (đã ghi) trong ngày ở kho này
-export async function itemsMovedOn(warehouse, date) {
-  const snap = await getDocs(query(collection(db, 'movements'), where('date', '==', date)));
+// Mã hàng có phiếu kho (nhập / xuất / chuyển, chưa hủy) từ ngày → đến ngày ở các kho này
+export async function itemsMoved(warehouses, from, to) {
+  const whs = new Set(warehouses);
+  const snap = await getDocs(query(collection(db, 'movements'), where('date', '>=', from), where('date', '<=', to || from)));
   const set = new Set();
   snap.docs.forEach((d) => {
     const m = d.data();
-    if (m.warehouse !== warehouse || m.status === 'cancelled') return;
-    (m.lines || []).forEach((l) => l.item && set.add(l.item));
+    if (m.status === 'cancelled') return;
+    const mine = whs.has(m.warehouse) || whs.has(m.toWarehouse) || whs.has(m.fromWarehouse);
+    (m.lines || []).forEach((l) => l.item && (mine || whs.has(l.warehouse) || whs.has(l.toWarehouse)) && set.add(l.item));
   });
   return set;
 }
+export const itemsMovedOn = (warehouse, date) => itemsMoved([warehouse], date, date);
 
+const dmy = (x) => String(x || '').split('-').reverse().join('/');
 export function scopeText(c) {
   const s = c.scope || {};
   const parts = [];
+  if (s.recountOf) parts.push(`đếm lại dòng lệch của ${[].concat(s.recountOf).join(', ')}`);
   if (s.locFrom || s.locTo) parts.push(`vị trí ${s.locFrom || '…'} → ${s.locTo || '…'}`);
   if (s.areas) parts.push(`khu vực ${s.areas}`);
-  if (s.items) parts.push(`mã ${s.items}`);
-  if (s.movedOn) parts.push(`mã có giao dịch ngày ${s.movedOn.split('-').reverse().join('/')}`);
-  return parts.join(' · ') || 'toàn kho';
+  if (Array.isArray(s.items) ? s.items.length : s.items) {
+    const it = [].concat(s.items);
+    parts.push(Array.isArray(s.items) ? `${it.length} mã chọn: ${it.slice(0, 6).join(', ')}${it.length > 6 ? '…' : ''}` : `mã ${s.items}`);
+  }
+  if (s.movedFrom) parts.push(s.movedTo && s.movedTo !== s.movedFrom ? `mã có giao dịch ${dmy(s.movedFrom)} → ${dmy(s.movedTo)}` : `mã có giao dịch ngày ${dmy(s.movedFrom)}`);
+  else if (s.movedOn) parts.push(`mã có giao dịch ngày ${dmy(s.movedOn)}`);
+  return parts.join(' · ') || 'toàn bộ tồn';
 }
+export const whsText = (c) => countWhs(c).map(whLabel).join(', ');
+export const assigneeText = (c) => (c.assignees || []).map((a) => a.name || a.email).join(', ');
+export const isAssigned = (c, email) => (c.assigneeEmails || []).includes(String(email || '').toLowerCase());
 
-// Lập phiếu: cấp số KK + yymmdd + NN, chụp số tồn hệ thống thành các dòng
-export async function createCount(data, stockRows, itemMap, user) {
-  const moved = data.scope.movedOn ? await itemsMovedOn(data.warehouse, data.scope.movedOn) : null;
-  const rows = pickStock(stockRows, { ...data.scope, company: data.company }, moved);
-  if (!rows.length) throw new Error(moved && !moved.size ? `Không có mã hàng nào có giao dịch ngày ${data.scope.movedOn} ở kho ${data.warehouse}.` : 'Không có dòng tồn nào trong phạm vi đã chọn.');
-  if (rows.length > MAX_LINES) throw new Error(`Phạm vi có ${rows.length} dòng tồn, quá ${MAX_LINES}. Chia nhỏ theo khu vực / vị trí.`);
+// Ghi đầu phiếu + các dòng (dùng chung cho lập phiếu và lệnh đếm lại)
+async function writeCount(data, lines, user, action) {
   const ymd = vnDate().slice(2).replace(/-/g, '');
   const cRef = doc(db, 'counters', `KK-${ymd}`);
   const at = new Date().toISOString();
+  const assignees = (data.assignees || []).map((a) => ({ email: String(a.email).toLowerCase(), name: a.name || '' }));
   const id = await runTransaction(db, async (tx) => {
     const c = await tx.get(cRef);
     const no = c.exists() ? n(c.data().next) || 1 : 1;
     const newId = `KK${ymd}${String(no).padStart(2, '0')}`;
     tx.set(cRef, { next: no + 1 });
     tx.set(doc(db, 'stockCounts', newId), {
-      ...data, id: newId, status: 'preparing', nLines: rows.length, nextNo: rows.length + 1,
+      ...data, assignees, assigneeEmails: assignees.map((a) => a.email),
+      id: newId, status: 'preparing', nLines: lines.length, nextNo: lines.length + 1,
       createdAt: at, createdBy: user.email, createdByName: user.name,
-      history: [{ at, by: user.email, byName: user.name, action: `Lập phiếu ${COUNT_KINDS[data.kind].toLowerCase()} (${rows.length} dòng)` }],
+      history: [{ at, by: user.email, byName: user.name, action: `${action} (${lines.length} dòng)${assignees.length ? `, giao ${assignees.map((a) => a.name || a.email).join(', ')}` : ''}` }],
     });
     return newId;
   });
-  for (let i = 0; i < rows.length; i += 400) {
+  for (let i = 0; i < lines.length; i += 400) {
     const b = writeBatch(db);
-    rows.slice(i, i + 400).forEach((r, j) => {
+    lines.slice(i, i + 400).forEach((l, j) => {
       const no = i + j + 1;
-      const it = itemMap.get(r.item);
-      b.set(doc(db, 'stockCounts', id, 'lines', lineId(no)), {
-        no, stockId: r._id, location: r.location, item: r.item, itemName: r.itemName || it?.name || '', lot: r.lot || '',
-        goodsStatus: r.goodsStatus || '', pledgee: r.pledgee || '', company: r.company || '', inDate: r.inDate || '',
-        mfgDate: r.mfgDate || '', expDate: r.expDate || '',
-        sysBags: n(r.bags), sysPallets: n(r.pallets), sysKg: n(r.kg), ...specOf(it),
-      });
+      b.set(doc(db, 'stockCounts', id, 'lines', lineId(no)), { ...l, no });
     });
     await b.commit();
   }
   await updateDoc(doc(db, 'stockCounts', id), { status: 'open' });
+  if (assignees.length) {
+    notifyUsers(assignees.map((a) => a.email),
+      `🧮 ${user.name || user.email} giao cho bạn ${COUNT_KINDS[data.kind].toLowerCase()} ${id} · ${countWhs(data).join(', ')} · ${lines.length} dòng. Mở app: Kho → Kiểm kê & cycle count → 📱 Đếm.`,
+      { event: 'count_assign', ref: id, link: `/kho/kiem-ke/${id}/dem` }, user);
+  }
+  return id;
+}
+
+const snapLine = (r, it) => ({
+  stockId: r._id, warehouse: r.warehouse || '', location: r.location, item: r.item, itemName: r.itemName || it?.name || '', lot: r.lot || '',
+  goodsStatus: r.goodsStatus || '', pledgee: r.pledgee || '', company: r.company || '', inDate: r.inDate || '',
+  mfgDate: r.mfgDate || '', expDate: r.expDate || '',
+  sysBags: n(r.bags), sysPallets: n(r.pallets), sysKg: n(r.kg), ...specOf(it),
+});
+
+// Lập phiếu: cấp số KK + yymmdd + NN, chụp số tồn hệ thống của các kho đã chọn thành các dòng
+export async function createCount(data, stockRows, itemMap, user) {
+  const whs = countWhs(data);
+  const s = data.scope || {};
+  const moved = s.movedFrom ? await itemsMoved(whs, s.movedFrom, s.movedTo) : null;
+  const rows = pickStock(stockRows, { ...s, warehouses: whs, company: data.company }, moved);
+  if (!rows.length) throw new Error(moved && !moved.size ? `Không có mã hàng nào có giao dịch từ ${dmy(s.movedFrom)} đến ${dmy(s.movedTo || s.movedFrom)} ở kho đã chọn.` : 'Không có dòng tồn nào trong phạm vi đã chọn.');
+  if (rows.length > MAX_LINES) throw new Error(`Phạm vi có ${rows.length} dòng tồn, quá ${MAX_LINES}. Chia nhỏ theo khu vực / vị trí.`);
+  return writeCount({ ...data, warehouse: whs[0], warehouses: whs }, rows.map((r) => snapLine(r, itemMap.get(r.item))), user, `Lập phiếu ${COUNT_KINDS[data.kind].toLowerCase()}`);
+}
+
+// Lệnh đếm lại: các dòng lệch (của 1 hay nhiều phiếu) → phiếu cycle count mới, số hệ thống chụp lại theo tồn HIỆN TẠI
+// srcLines: [{ ...dòng, warehouse, countId }]
+export async function createRecount(srcLines, opts, user) {
+  if (!srcLines.length) throw new Error('Chưa chọn dòng lệch nào để đếm lại.');
+  const whs = [...new Set(srcLines.map((l) => l.warehouse).filter(Boolean))].sort();
+  const cur = new Map();
+  for (const wh of whs) {
+    const snap = await getDocs(query(collection(db, 'stock'), where('warehouse', '==', wh)));
+    snap.docs.forEach((d) => cur.set(d.id, { _id: d.id, ...d.data() }));
+  }
+  const lines = [...srcLines].sort((a, b) => locCmp(a.location, b.location) || String(a.item).localeCompare(String(b.item))).map((l) => {
+    const s = l.stockId ? cur.get(l.stockId) : null;
+    const prev = (l.c2 || l.c1)?.kg;
+    return {
+      stockId: s ? l.stockId : '', extra: !s, warehouse: l.warehouse, location: l.location, item: l.item, itemName: l.itemName || '', lot: l.lot || '',
+      goodsStatus: l.goodsStatus || '', pledgee: l.pledgee || '', company: l.company || '', inDate: l.inDate || '', mfgDate: l.mfgDate || '', expDate: l.expDate || '',
+      sysBags: n(s?.bags), sysPallets: n(s?.pallets), sysKg: n(s?.kg), bpp: n(l.bpp), bagWeight: n(l.bagWeight),
+      prev: { countId: l.countId || '', no: l.no || 0, kg: prev == null ? null : n(prev), sysKg: n(l.sysKg) },
+    };
+  });
+  const from = [...new Set(srcLines.map((l) => l.countId).filter(Boolean))];
+  const companies = [...new Set(srcLines.map((l) => l.companyOfCount ?? '').filter((x) => x !== ''))];
+  const id = await writeCount({
+    kind: 'cycle', company: companies.length === 1 ? companies[0] : '', warehouse: whs[0], warehouses: whs, date: opts.date || vnDate(),
+    scope: { recountOf: from }, blind: !!opts.blind, note: opts.note || '', assignees: opts.assignees || [],
+  }, lines, user, `Lệnh đếm lại dòng lệch của ${from.join(', ')}`);
+  const at = new Date().toISOString();
+  for (const c of from) {
+    // Ghi ngược vào phiếu gốc (bỏ qua nếu không có quyền, vd. phiếu đã duyệt)
+    await updateDoc(doc(db, 'stockCounts', c), { recountIds: arrayUnion(id), updatedAt: at, updatedBy: user.email }).catch(() => {});
+  }
   return id;
 }
 
@@ -167,8 +237,11 @@ export async function loadLines(id) {
 
 // Điều chỉnh tồn theo số final: chênh lệch so với tồn HIỆN TẠI (hàng có thể đã nhập/xuất sau khi đếm)
 export async function adjustPlan(count, lines) {
-  const snap = await getDocs(query(collection(db, 'stock'), where('warehouse', '==', count.warehouse)));
-  const cur = new Map(snap.docs.map((d) => [d.id, d.data()]));
+  const cur = new Map();
+  for (const wh of countWhs(count)) {
+    const snap = await getDocs(query(collection(db, 'stock'), where('warehouse', '==', wh)));
+    snap.docs.forEach((d) => cur.set(d.id, d.data()));
+  }
   const out = [];
   for (const l of lines) {
     const r = lineResult(l);
@@ -188,10 +261,12 @@ export async function adjustPlan(count, lines) {
 
 export async function postAdjust(count, plan, reason, user) {
   const ids = [];
-  for (let i = 0; i < plan.length; i += 150) {
-    const part = plan.slice(i, i + 150);
+  const byWh = new Map();
+  for (const x of plan) { const w = lineWh(x.l, count); if (!byWh.has(w)) byWh.set(w, []); byWh.get(w).push(x); }
+  for (const [wh, all] of byWh) for (let i = 0; i < all.length; i += 150) {
+    const part = all.slice(i, i + 150);
     ids.push(await postMovement({
-      type: 'adjust', warehouse: count.warehouse, company: count.company || '', date: vnDate(), tripId: '', orderId: '', partyCode: '', partyName: '', shipCode: '',
+      type: 'adjust', warehouse: wh, company: count.company || '', date: vnDate(), tripId: '', orderId: '', partyCode: '', partyName: '', shipCode: '',
       reason, note: `Điều chỉnh theo ${COUNT_KINDS[count.kind].toLowerCase()} ${count.id}`, countId: count.id,
       lines: part.map(({ l, d }) => ({
         item: l.item, itemName: l.itemName, lot: l.lot, mfgDate: l.mfgDate || '', expDate: l.expDate || '', inDate: l.inDate || count.date,

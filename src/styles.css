@@ -1119,3 +1119,22 @@ table.out-table select.need, table.out-table .need { border-color: var(--amber);
 .guard-btn:hover:not(:disabled) { background: #15803d; }
 .guard-queue { display: flex; flex-direction: column; gap: 6px; }
 .guard-queue > div { display: flex; align-items: center; gap: 6px; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+/* Màn hình thủ kho đếm (điện thoại): bảng Vị trí · Mã hàng · SL hệ thống · SL thực kiểm */
+.cnt-mine { background: #fff8e6; border: 1px solid #f0d58a; border-radius: 10px; padding: 10px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 6px; }
+.cnt-mine .cnt-locbtn { margin: 0; text-decoration: none; color: inherit; flex-wrap: wrap; gap: 4px; }
+.cnt-tblwrap { overflow: auto; max-height: calc(100vh - 230px); border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.cnt-tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+.cnt-tbl th { position: sticky; top: 0; z-index: 2; padding: 6px; }
+.cnt-tbl td { padding: 6px; border-top: 1px solid var(--line); vertical-align: top; }
+.cnt-tbl tr.cnt-newloc td { border-top: 2px solid #b9c3cf; }
+.cnt-tbl tr.cnt-ok td { background: #f3faf3; }
+.cnt-tbl tr.cnt-diff td { background: #fff4f4; }
+.cnt-locb { font-size: 16px; color: #c77e00; }
+.cnt-cell2 { display: flex; flex-direction: column; gap: 3px; min-width: 96px; }
+.cnt-pb { display: flex; gap: 4px; }
+.cnt-in2 { width: 100%; min-width: 0; font-size: 17px; padding: 7px 6px; text-align: center; }
+.cnt-pb .cnt-in2 { width: 50%; }
+.cnt-tag { font-size: 12px; font-weight: 700; border-radius: 6px; padding: 2px 6px; align-self: flex-start; }
+.cnt-tag.ok { background: var(--green-soft); color: var(--green); }
+.cnt-tag.diff { background: var(--red-soft); color: var(--red); }
+@media (max-width: 600px) { .cnt-tbl { font-size: 13px; } .cnt-tbl td, .cnt-tbl th { padding: 5px 4px; } }
