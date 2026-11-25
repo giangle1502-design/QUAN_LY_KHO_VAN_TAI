@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useItemStock } from '../lib/hooks';
 import { ageDays } from '../lib/stock';
 import { fmtDate, fmtNum } from '../lib/utils';
-import { Modal } from './ui';
+import { Modal, noSel } from './ui';
 
 const num = (v) => (v === '' || v == null ? 0 : Number(v));
 const STATUS_COLS = ['HTC', 'KTC', 'DGC'];
@@ -72,7 +72,7 @@ export function ItemStockModal({ item, itemName, whCode, warehouses, company, bl
             {groups.map((g) => {
               const isOpen = openWh === g.code;
               return [
-                <tr key={g.code} className={'wh-row' + (g.code === whCode ? ' cur' : '')} onClick={() => setOpenWh(isOpen ? '' : g.code)} style={{ cursor: 'pointer' }}>
+                <tr key={g.code} className={'wh-row' + (g.code === whCode ? ' cur' : '')} onClick={noSel(() => setOpenWh(isOpen ? '' : g.code))} style={{ cursor: 'pointer' }}>
                   <td>{isOpen ? '▾' : '▸'}</td>
                   <td colSpan={5}><b>{g.code}</b> {whName.get(g.code) || ''} <small className="small">· {g.rs.length} dòng tồn{g.code === whCode ? ' · kho đang chọn' : ''}</small></td>
                   {cols.map((c) => <td key={c} className="num">{g.by[c] ? fmtNum(g.by[c], 2) : ''}</td>)}
@@ -87,7 +87,7 @@ export function ItemStockModal({ item, itemName, whCode, warehouses, company, bl
                   const lock = blocked(r); const had = g.code === whCode && chosen.has(r._id);
                   const can = pickRows && g.ok && !lock && !had;
                   return (
-                    <tr key={r._id} className={'sub' + (lock ? ' locked' : sel.has(r._id) ? ' picked' : '')} onClick={() => can && toggle(r)} style={{ cursor: can ? 'pointer' : pickRows ? 'not-allowed' : 'default' }}>
+                    <tr key={r._id} className={'sub' + (lock ? ' locked' : sel.has(r._id) ? ' picked' : '')} onClick={noSel(() => can && toggle(r))} style={{ cursor: can ? 'pointer' : pickRows ? 'not-allowed' : 'default' }}>
                       <td></td>
                       <td>{lock ? '🔒' : !pickRows ? '' : <input type="checkbox" checked={had || sel.has(r._id)} disabled={!can} onChange={() => toggle(r)} onClick={(e) => e.stopPropagation()} />}</td>
                       <td>{r.lot || '-'}</td><td>{r.location}</td><td>{fmtDate(r.inDate)} <small className="small">({ageDays(r.inDate)} ngày)</small></td><td>{r.company || ''}</td>

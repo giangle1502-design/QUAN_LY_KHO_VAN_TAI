@@ -14,7 +14,7 @@ import { fieldNote, matchOption, optionLabel, TRUE_WORDS } from '../lib/template
 import { norm, today } from '../lib/utils';
 import FieldInput, { displayValue } from '../components/FieldInput';
 import { AddFieldButton } from '../components/FormTools';
-import { Empty, ErrorBox, Field, Modal } from '../components/ui';
+import { Empty, ErrorBox, Field, Modal, RowOpen } from '../components/ui';
 import { deleteOrRequest } from '../lib/deletes';
 import { usePref } from '../lib/prefs';
 import DynamicFilterPanel, { AdvButton, activeConds, applyFilter, EMPTY_FILTER } from '../components/DynamicFilterPanel';
@@ -115,6 +115,12 @@ function Catalog({ cat }) {
     exportSheets(`${cat.short}_${today()}`, { [cat.short]: data.length ? data : [{ STT: '' }] });
   };
 
+  // Cột nhập được (giống File mẫu): Xuất đầy đủ dùng đúng các cột này để sửa trong Excel rồi Nhập lại
+  const tplFields = shown.filter((f) => !f.computed && !f.system && f.type !== 'formula' && f.type !== 'image');
+  const downloadTemplate = () => exportTemplate(`Mau_${cat.short}`, tplFields.map((f) => f.label), tplFields.map((f) => fieldNote(cat, f)));
+  const exportFull = () => exportTemplate(`${cat.short}_day_du_${today()}`, tplFields.map((f) => f.label), tplFields.map((f) => fieldNote(cat, f)),
+    list.map((r) => tplFields.map((f) => { const v = displayValue(f, r[f.key], true); return v == null ? '' : v; })));
+
   const seed = async (list = cat.seed) => {
     const batch = writeBatch(db);
     list.forEach((s) => {
@@ -150,12 +156,13 @@ function Catalog({ cat }) {
         <h1>{cat.icon} {cat.title}</h1>
         <div className="actions">
           {editable && <button className="btn primary" onClick={() => setEditing(cat.carrierField && app.myCarrier ? { [cat.carrierField]: app.myCarrier } : {})}>+ Thêm</button>}
-          <button className="btn" onClick={exportExcel}>⬇ Excel</button>
+          <button className="btn" onClick={exportExcel} title="Tải về Excel các cột đang hiển thị, theo bộ lọc hiện tại">⬇ Xuất Excel</button>
+          <button className="btn" onClick={exportFull} title="Tải về tất cả các cột nhập được (giống File mẫu, có ghi chú từng cột), theo bộ lọc hiện tại: sửa trong Excel rồi bấm Nhập Excel để cập nhật lại">⬇ Xuất đầy đủ</button>
           {canDesign && <Link className="btn" to={`/hang-muc?dm=${cat.key}`} title="Đổi tên, ẩn, thêm trường cho danh mục này">🧩 Quản lý trường</Link>}
           {editable && (
             <>
               <button className="btn" onClick={() => fileRef.current.click()}>⬆ Nhập Excel</button>
-              <button className="btn ghost" onClick={() => { const tf = shown.filter((f) => !f.computed && !f.system && f.type !== 'formula' && f.type !== 'image'); exportTemplate(`Mau_${cat.short}`, tf.map((f) => f.label), tf.map((f) => fieldNote(cat, f))); }}>File mẫu</button>
+              <button className="btn ghost" onClick={downloadTemplate} title="File Excel trống, mỗi cột có ghi chú hướng dẫn (kiểu dữ liệu, bắt buộc, ví dụ) và sheet Huong dan">📄 Tải file mẫu</button>
               <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" hidden onChange={(e) => e.target.files[0] && importExcel(e.target.files[0])} />
             </>
           )}
@@ -164,7 +171,7 @@ function Catalog({ cat }) {
       {cat.help && <p className="hint">{cat.help}</p>}
       {editable && (
         <p className="hint">
-          Nhập Excel: dòng đầu là tiêu đề cột, đặt đúng tên trường như File mẫu. Dòng trùng {keyFieldsOf(cat).map((k) => fields.find((f) => f.key === k)?.label).join(' + ')} sẽ được cập nhật.
+          Nhập Excel: dòng đầu là tiêu đề cột, đặt đúng tên trường như File mẫu (hoặc dùng file Xuất đầy đủ, sửa rồi nhập lại). Dòng trùng {keyFieldsOf(cat).map((k) => fields.find((f) => f.key === k)?.label).join(' + ')} sẽ được cập nhật.
         </p>
       )}
       <div className="toolbar">
@@ -209,16 +216,18 @@ function Catalog({ cat }) {
             <thead>
               <tr>
                 <th className="stt">STT</th>
+                <th className="row-act"></th>
                 {viewCols.map((c) => <th key={c.key} className={(c.num ? 'num ' : '') + 'col-drag'} {...dragHeadProps(c.key, colKeys, setColOrder)} {...tools.headProps(c)}>{c.label}{tools.headMark(c)}</th>)}
               </tr>
             </thead>
             <tbody>
-              {!list.length && <tr><td colSpan={viewCols.length + 1}><Empty text="Không có dòng nào khớp điều kiện lọc." /></td></tr>}
+              {!list.length && <tr><td colSpan={viewCols.length + 2}><Empty text="Không có dòng nào khớp điều kiện lọc." /></td></tr>}
               {list.map((r, i) => (
-                <tr key={r._id} onClick={() => setEditing(r)} style={{ cursor: 'pointer' }} title={app.canEdit(cat, r) ? 'Bấm để sửa / xóa' : 'Bấm để xem'}>
+                <tr key={r._id}>
                   <td className="stt" title={missingOf(r).length ? 'Còn thiếu: ' + missingOf(r).map((f) => f.label).join(', ') : undefined}>
                     {i + 1}{missingOf(r).length ? <span style={{ color: 'var(--amber)' }}> ⚠</span> : null}
                   </td>
+                  <td className="row-act"><RowOpen edit={app.canEdit(cat, r)} onClick={() => setEditing(r)} /></td>
                   {viewCols.map(({ f }) => <td key={f.key} className={NUMERIC_TYPES.includes(f.type) ? 'num' : f.type === 'textarea' ? '' : 'nowrap'}><Cell f={f} r={r} /></td>)}
                 </tr>
               ))}

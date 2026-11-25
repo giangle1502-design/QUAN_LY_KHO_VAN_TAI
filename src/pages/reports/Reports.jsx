@@ -16,7 +16,7 @@ import { moneyUnit } from '../../lib/currency';
 import { fmtDate, fmtDateTime, fmtNum, norm } from '../../lib/utils';
 import { ScopeContext, ScopeFilters, useOpScope, useScope } from '../../components/ScopeFilter';
 import { locWh, noCapacity, whsOfLocWh } from '../../lib/whGroups';
-import { Empty, ErrorBox } from '../../components/ui';
+import { Empty, ErrorBox, RowOpen } from '../../components/ui';
 import { ViewPresets, useTableTools } from '../../components/TableTools';
 import { StockDetailModal } from '../../components/StockDetail';
 import SalesAnalysis from './SalesAnalysis';
@@ -121,12 +121,13 @@ export function ReportTable({ cols: baseCols, rows, empty = 'Không có dữ li�
       {tools.popup}
       <div className="table-wrap report-table">
         <table>
-          <thead><tr><th className="stt">STT</th>{cols.map((c) => <th key={c.key} className={(c.num || c.ton ? 'num ' : '') + 'col-drag'} {...dragHeadProps(c.key, keys, setOrder)} {...tools.headProps(c)}>{c.label}{tools.headMark(c)}</th>)}</tr></thead>
+          <thead><tr><th className="stt">STT</th>{onRowClick && <th className="row-act no-print"></th>}{cols.map((c) => <th key={c.key} className={(c.num || c.ton ? 'num ' : '') + 'col-drag'} {...dragHeadProps(c.key, keys, setOrder)} {...tools.headProps(c)}>{c.label}{tools.headMark(c)}</th>)}</tr></thead>
           <tbody>
-            {!list.length && <tr><td colSpan={cols.length + 1}><Empty text="Không có dòng nào khớp điều kiện lọc." /></td></tr>}
+            {!list.length && <tr><td colSpan={cols.length + (onRowClick ? 2 : 1)}><Empty text="Không có dòng nào khớp điều kiện lọc." /></td></tr>}
             {list.map((r, i) => (
-              <tr key={r._k ?? i} style={{ ...(rowStyle?.(r) || {}), ...(onRowClick ? { cursor: 'pointer' } : {}) }} onClick={onRowClick ? () => onRowClick(r) : undefined} title={rowTitle}>
+              <tr key={r._k ?? i} style={rowStyle?.(r)}>
                 <td className="stt">{i + 1}</td>
+                {onRowClick && <td className="row-act no-print"><RowOpen edit={false} label="🔍 Xem" title={rowTitle} onClick={() => onRowClick(r)} /></td>}
                 {cols.map((c) => (
                   <td key={c.key} className={(c.num || c.ton ? 'num' : '') + (c.nowrap ? ' nowrap' : '') + (c.onClick ? ' cell-link' : '')} style={c.style?.(r)}
                     onClick={c.onClick ? (e) => { e.stopPropagation(); c.onClick(r); } : undefined} title={c.onClick ? c.clickTitle || 'Bấm để xem chi tiết' : undefined}>{show(c, r)}</td>
@@ -135,7 +136,7 @@ export function ReportTable({ cols: baseCols, rows, empty = 'Không có dữ li�
             ))}
           </tbody>
           {hasSum && list.length > 0 && (
-            <tfoot><tr><td />{cols.map((c, i) => (
+            <tfoot><tr><td />{onRowClick && <td className="no-print" />}{cols.map((c, i) => (
               <td key={c.key} className={c.num || c.ton ? 'num' : ''}>
                 {c.sum ? (c.ton ? t3(list.reduce((s, r) => s + n(r[c.key]), 0)) : fmtNum(list.reduce((s, r) => s + n(r[c.key]), 0), c.digits ?? 0)) : i === 0 ? 'Cộng' : ''}
               </td>

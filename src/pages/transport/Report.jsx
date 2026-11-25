@@ -7,7 +7,7 @@ import { kindText, placeOf } from '../../lib/dispatch';
 import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum } from '../../lib/utils';
 import { Pipeline, StatusBadge } from '../../components/TripBits';
-import { Empty } from '../../components/ui';
+import { Empty, noSel } from '../../components/ui';
 import Select from '../../components/Select';
 
 // ============================================================================
@@ -91,7 +91,7 @@ export default function TripReport({ trips, priv }) {
             const isOpen = open === t.id;
             return (
               <div key={t.id} className="rep-row">
-                <div className="rep-line" role="button" tabIndex={0} onClick={() => setOpen(isOpen ? null : t.id)} onKeyDown={(e) => e.key === 'Enter' && setOpen(isOpen ? null : t.id)}>
+                <div className="rep-line" role="button" tabIndex={0} onClick={noSel(() => setOpen(isOpen ? null : t.id))} onKeyDown={(e) => e.key === 'Enter' && setOpen(isOpen ? null : t.id)}>
                   <span className="small">{isOpen ? '▾' : '▸'}</span>
                   <span className="mono small">{t.id}</span>
                   {t.plate ? <span className="plate">{t.plate}</span> : <span className="small">chưa có xe</span>}
