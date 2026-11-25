@@ -10,7 +10,7 @@ import {
 import { exportSheets } from '../../lib/excel';
 import { fmtNum } from '../../lib/utils';
 import { Pipeline, StatusBadge, WarehousePicker, totalPayload } from '../../components/TripBits';
-import { Empty, ErrorBox, Field, Modal } from '../../components/ui';
+import { Empty, ErrorBox, Field, Modal, RowOpen } from '../../components/ui';
 import { useTripAction } from './Ops';
 import { QuickAdd } from '../../components/FormTools';
 import Select from '../../components/Select';
@@ -102,11 +102,12 @@ export default function Overview() {
         {list.length === 0 ? <Empty /> : (
           <table>
             <thead>
-              <tr><th>Tiến trình</th><th>Mã chuyến</th><th>Biển số</th><th>Mục đích</th><th>Kho</th><th>Khách / NCC</th><th className="num">Tấn</th><th>Đến kho</th><th>Chờ vào cửa</th><th>Xuất/nhập</th><th>Trạng thái</th></tr>
+              <tr><th className="row-act"></th><th>Tiến trình</th><th>Mã chuyến</th><th>Biển số</th><th>Mục đích</th><th>Kho</th><th>Khách / NCC</th><th className="num">Tấn</th><th>Đến kho</th><th>Chờ vào cửa</th><th>Xuất/nhập</th><th>Trạng thái</th></tr>
             </thead>
             <tbody>
               {list.map((t) => (
-                <tr key={t.id} onClick={() => setOpen(t.id)} style={{ cursor: 'pointer' }}>
+                <tr key={t.id}>
+                  <td className="row-act"><RowOpen edit={false} onClick={() => setOpen(t.id)} /></td>
                   <td><Pipeline trip={t} /></td>
                   <td className="mono nowrap">{t.id}</td>
                   <td className="nowrap"><span className="plate">{t.plate}</span></td>

@@ -24,7 +24,7 @@ import { usePref } from '../../lib/prefs';
 import { ColumnPicker } from '../../components/FormTools';
 import { dragHeadProps, orderCols } from '../../lib/colOrder';
 import { useTableTools } from '../../components/TableTools';
-import { CloseButton, ErrorBox, Field, Modal } from '../../components/ui';
+import { CloseButton, ErrorBox, Field, Modal, noSel } from '../../components/ui';
 import { QuickAdd, WithAdd } from '../../components/FormTools';
 import { ItemCode, ItemStockModal } from '../../components/ItemStock';
 import PalletChoice from '../../components/PalletChoice';
@@ -1475,7 +1475,7 @@ function StockPicker({ rows, blocked, whName, filter, setFilter, chosen, onClose
             {rows.map((r) => {
               const lock = blocked(r); const had = chosen.has(r._id);
               return (
-                <tr key={r._id} className={lock ? 'locked' : sel.has(r._id) ? 'picked' : ''} onClick={() => !lock && !had && toggle(r._id)} style={{ cursor: lock || had ? 'not-allowed' : 'pointer' }}>
+                <tr key={r._id} className={lock ? 'locked' : sel.has(r._id) ? 'picked' : ''} onClick={noSel(() => !lock && !had && toggle(r._id))} style={{ cursor: lock || had ? 'not-allowed' : 'pointer' }}>
                   <td>{lock ? '🔒' : <input type="checkbox" checked={had || sel.has(r._id)} disabled={had} onChange={() => toggle(r._id)} onClick={(e) => e.stopPropagation()} />}</td>
                   <td style={crossLabel && company && r.company && r.company !== company ? { background: 'var(--amber-soft)', fontWeight: 600 } : undefined}>{r.company || ''}</td><td>{r.warehouse}</td><td>{r.item}</td><td>{r.itemName}</td><td>{r.lot || '-'}</td><td>{r.location}</td>
                   <td>{fmtDate(r.inDate)} <small className="small">({ageDays(r.inDate)} ngày)</small></td>
@@ -1739,7 +1739,7 @@ function OrderPicker({ orders, type, openK, myWh, whCode, onClose, onPick }) {
               const on = !!sel[r.id];
               const ls = shownLines(r);
               return [
-                <tr key={r.id} className={on ? 'picked' : ''} style={{ cursor: 'pointer' }} onClick={() => toggleOrder(r)}>
+                <tr key={r.id} className={on ? 'picked' : ''} style={{ cursor: 'pointer' }} onClick={noSel(() => toggleOrder(r))}>
                   <td className="nowrap" onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" checked={on} onChange={() => toggleOrder(r)} />
                     <button type="button" className="btn ghost sm" title="Xem / chọn từng dòng hàng, sửa số kg" onClick={() => setOpen((x) => ({ ...x, [r.id]: !x[r.id] }))}>{open[r.id] ? '▾' : '▸'} {ls.length}</button>
@@ -1753,7 +1753,7 @@ function OrderPicker({ orders, type, openK, myWh, whCode, onClose, onPick }) {
                       <tbody>{ls.map((x) => {
                         const v = sel[r.id]?.[x.l.no];
                         return (
-                          <tr key={x.key} className={v != null ? 'picked' : ''} style={{ cursor: 'pointer' }} onClick={() => toggleLine(r, x)}>
+                          <tr key={x.key} className={v != null ? 'picked' : ''} style={{ cursor: 'pointer' }} onClick={noSel(() => toggleLine(r, x))}>
                             <td><input type="checkbox" checked={v != null} readOnly /></td><td>{x.l.item}</td><td>{x.l.itemName}</td>
                             <td>{x.l.goodsStatus || (r.o.type === 'SO' ? 'KTC/DGC' : 'Tất cả')}</td>{!isIn && <td>{x.ship}</td>}<td>{x.wh || 'Kho nào cũng được'}</td><td>{fmtDate(x.due)}</td>
                             <td className="num">{fmtNum(x.left, 2)}</td>

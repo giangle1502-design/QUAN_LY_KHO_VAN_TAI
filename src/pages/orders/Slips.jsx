@@ -12,7 +12,7 @@ import { vnDate } from '../../lib/trips';
 import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum, norm } from '../../lib/utils';
 import { usePref } from '../../lib/prefs';
-import { Empty, ErrorBox } from '../../components/ui';
+import { Empty, ErrorBox, RowOpen } from '../../components/ui';
 import { MovementDetail } from '../stock/Movements';
 import EditSlip, { canEditSlip } from '../../components/EditSlip';
 import { ColumnPicker } from '../../components/FormTools';
@@ -292,14 +292,15 @@ export default function SlipList({ kind, loai = '' }) {
         {!list.length ? <Empty text={isDO ? 'Chưa có DO trong khoảng ngày này' : 'Không có đơn chờ nhập'} /> : (
           <table>
             <thead><tr>
-              {shown.map((c) => <th key={c.key} className={c.num ? 'num' : undefined} title={c.title} {...dragHeadProps(c.key, colKeys, setColOrder)} {...tools.headProps(c)}>{c.label}{tools.headMark(c)}</th>)}<th></th>
+              <th className="row-act"></th>{shown.map((c) => <th key={c.key} className={c.num ? 'num' : undefined} title={c.title} {...dragHeadProps(c.key, colKeys, setColOrder)} {...tools.headProps(c)}>{c.label}{tools.headMark(c)}</th>)}<th></th>
             </tr></thead>
             <tbody>
-              {!view.length && <tr><td colSpan={shown.length + 1}><Empty text="Không có dòng nào khớp điều kiện lọc." /></td></tr>}
+              {!view.length && <tr><td colSpan={shown.length + 2}><Empty text="Không có dòng nào khớp điều kiện lọc." /></td></tr>}
               {view.map((r) => {
                 const m = r.m;
                 return (
-                  <tr key={r.key} onClick={() => !r.virtual && setOpen(m.id)} style={{ cursor: r.virtual ? 'default' : 'pointer', opacity: m.status === 'cancelled' ? 0.55 : 1 }}>
+                  <tr key={r.key} style={{ opacity: m.status === 'cancelled' ? 0.55 : 1 }}>
+                    <td className="row-act">{!r.virtual && <RowOpen edit={false} onClick={() => setOpen(m.id)} />}</td>
                     {shown.map((c) => <td key={c.key} className={c.cls || (c.num ? 'num' : undefined)}>{c.render(r)}</td>)}
                     <td className="nowrap" onClick={(e) => e.stopPropagation()}>{actions(r)}</td>
                   </tr>
