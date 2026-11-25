@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useLocation, useParams } from 'react-router-dom';
 import { catalogByKey } from '../../catalogs';
 import { ColumnPicker } from '../../components/FormTools';
@@ -23,7 +23,7 @@ import SalesAnalysis from './SalesAnalysis';
 import IOPlan from './IOPlan';
 import Overview from './Overview';
 import LegalTransfer from './LegalTransfer';
-import StockInbound, { SaleItemModal } from './StockInbound';
+import StockInbound, { SaleItemInline } from './StockInbound';
 
 // ============================================================================
 // Báo cáo: mỗi báo cáo = bộ lọc + 1 hoặc nhiều bảng; bảng nào cũng xuất Excel và in được.
@@ -60,7 +60,7 @@ const SHOWN = new WeakMap();
 // Mỗi người tự chọn / sắp xếp cột (⚙ Cột hiển thị, lưu trên trình duyệt) và thêm cột:
 //  - extra: cột tùy chọn bảng tự có (vd. trường tự thêm của đơn hàng), mặc định ẩn
 //  - links: [{ key, cat, label?, id?(row) }] → mọi trường (có sẵn + tự thêm) của danh mục liên kết, vd. Mã hàng › Nhóm hàng
-export function ReportTable({ cols: baseCols, rows, empty = 'Không có dữ liệu.', rowStyle, id, links, extra = [], onRowClick, rowTitle, defaultSort }) {
+export function ReportTable({ cols: baseCols, rows, empty = 'Không có dữ liệu.', rowStyle, id, links, extra = [], onRowClick, rowTitle, defaultSort, expandKey, renderExpand }) {
   const { pathname } = useLocation();
   const { seenFieldsOf } = useApp();
   const pid = id || `${pathname}|${baseCols.slice(0, 3).map((c) => c.key).join(',')}`;
@@ -125,7 +125,8 @@ export function ReportTable({ cols: baseCols, rows, empty = 'Không có dữ li�
           <tbody>
             {!list.length && <tr><td colSpan={cols.length + (onRowClick ? 2 : 1)}><Empty text="Không có dòng nào khớp điều kiện lọc." /></td></tr>}
             {list.map((r, i) => (
-              <tr key={r._k ?? i} style={rowStyle?.(r)}>
+              <Fragment key={r._k ?? i}>
+              <tr style={{ ...rowStyle?.(r), ...(expandKey != null && r._k === expandKey ? { background: 'var(--primary-soft)' } : null) }}>
                 <td className="stt">{i + 1}</td>
                 {onRowClick && <td className="row-act no-print"><RowOpen edit={false} label="🔍 Xem" title={rowTitle} onClick={() => onRowClick(r)} /></td>}
                 {cols.map((c) => (
@@ -133,6 +134,11 @@ export function ReportTable({ cols: baseCols, rows, empty = 'Không có dữ li�
                     onClick={c.onClick ? (e) => { e.stopPropagation(); c.onClick(r); } : undefined} title={c.onClick ? c.clickTitle || 'Bấm để xem chi tiết' : undefined}>{show(c, r)}</td>
                 ))}
               </tr>
+              {expandKey != null && r._k === expandKey && renderExpand && (
+                <tr className="row-expand"><td colSpan={cols.length + (onRowClick ? 2 : 1)} style={{ background: '#fafbfd', whiteSpace: 'normal' }}>
+                  <ExpandBox>{renderExpand(r)}</ExpandBox></td></tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
           {hasSum && list.length > 0 && (
@@ -146,6 +152,20 @@ export function ReportTable({ cols: baseCols, rows, empty = 'Không có dữ li�
       </div>
     </>
   );
+}
+// Chi tiết mở dưới dòng: rộng đúng phần bảng đang nhìn thấy, đứng yên khi cuộn ngang bảng (không bị cắt cột bên phải)
+function ExpandBox({ children }) {
+  const ref = useRef(null);
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const wrap = ref.current?.closest('.table-wrap');
+    if (!wrap) return undefined;
+    const fit = () => setW(wrap.clientWidth - 24);
+    fit();
+    const ro = new ResizeObserver(fit); ro.observe(wrap);
+    return () => ro.disconnect();
+  }, []);
+  return <div ref={ref} style={{ position: 'sticky', left: 8, width: w || undefined, maxWidth: w || undefined }}>{children}</div>;
 }
 const NUM_TYPES = ['number', 'currency', 'percent'];
 // Dòng Excel theo đúng cột trên màn hình (cột người dùng đã chọn; số kg xuất dạng số)
@@ -431,7 +451,7 @@ function useOpenOrders(wh, co) {
 // 4. Tồn kho cho Sale: tồn, sắp về, chưa giao, có thể bán
 function ForSales({ wh, co, q }) {
   const { stock, error, locked, itemMap, S } = useBase(wh, co);
-  const [pick, setPick] = useState(''); // mã hàng đang xem chi tiết (đơn chưa xuất, hàng về theo ngày, vị trí)
+  const [pick, setPick] = useState(''); // mã hàng đang mở chi tiết ngay dưới dòng (đơn chưa xuất, hàng về theo ngày, NCC, khách)
   const { orders, inScope } = useOpenOrders(wh, co);
   const today = vnDate();
   const rows = useMemo(() => {
@@ -478,7 +498,9 @@ function ForSales({ wh, co, q }) {
   }, [stock, orders, locked, itemMap, q, wh, S]); // eslint-disable-line react-hooks/exhaustive-deps
   const neg = (k) => (r) => (r[k] < 0 ? { color: 'var(--red)', fontWeight: 700 } : { fontWeight: 600 });
   const cols = [
-    { key: 'item', label: 'Mã hàng', nowrap: true }, { key: 'itemName', label: 'Tên hàng' },
+    { key: 'item', label: 'Mã hàng', nowrap: true, onClick: (r) => setPick(pick === r.item ? '' : r.item), clickTitle: 'Bấm để xem / đóng chi tiết: đơn chưa xuất, hàng sắp về (ETA, NCC), khách hàng',
+      render: (r) => <b>{pick === r.item ? '▾' : '▸'} {r.item}</b>, excel: (r) => r.item },
+    { key: 'itemName', label: 'Tên hàng' },
     { key: 'stock', label: 'Tồn kho', ton: true, sum: true },
     { key: 'locked', label: 'Trong đó HTC (khóa)', ton: true, sum: true },
     { key: 'usable', label: 'Tồn được bán', ton: true, sum: true },
@@ -497,9 +519,8 @@ function ForSales({ wh, co, q }) {
       </p>
       <ErrorBox error={error} />
       <Actions onExcel={excel} />
-      <p className="hint no-print">Bấm vào một dòng để xem: đơn chưa xuất còn bao nhiêu, ai đặt; hàng sắp về ngày gần nhất, các ngày khác, phần chưa có lịch; tồn từng kho / vị trí.</p>
-      <ReportTable cols={cols} rows={rows} empty="Chưa có tồn kho hoặc đơn hàng." onRowClick={(r) => setPick(r.item)} rowTitle="Bấm để xem chi tiết" />
-      {pick && <SaleItemModal item={pick} wh={wh} co={co} onClose={() => setPick('')} />}
+      <p className="hint no-print">Bấm vào <b>mã hàng</b> để mở chi tiết ngay dưới dòng: tồn từng kho, đơn chưa xuất (khách hàng, còn bao nhiêu, sale), hàng sắp về (ETA, số lượng, nơi nhận, NCC). Bấm lại để đóng.</p>
+      <ReportTable cols={cols} rows={rows} empty="Chưa có tồn kho hoặc đơn hàng." expandKey={pick || null} renderExpand={(r) => <SaleItemInline item={r.item} wh={wh} co={co} />} />
     </>
   );
 }
