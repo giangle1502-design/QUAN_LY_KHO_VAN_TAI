@@ -83,6 +83,29 @@ export function useStock(wh) {
   return { error: state.error, loading: state.loading || stale, rows };
 }
 
+// Tồn của nhiều kho (phiếu xuất 1 xe lấy hàng ở nhiều kho): nghe từng kho qua kết nối dùng chung (cùng khóa với useStock)
+export function useStockMulti(codes) {
+  const { inMyWarehouses } = useApp();
+  const key = [...new Set((codes || []).filter(Boolean))].sort().join(',');
+  const [st, setSt] = useState({ key: '', byWh: {}, loading: false });
+  useEffect(() => {
+    const list = key ? key.split(',') : [];
+    setSt({ key, byWh: {}, loading: list.length > 0 });
+    if (!list.length) return undefined;
+    const offs = list.map((wh) => listenShared(`stock|${wh}`, () => query(collection(db, 'stock'), where('warehouse', '==', wh)), (s) => {
+      setSt((x) => {
+        if (x.key !== key) return x;
+        const byWh = { ...x.byWh, [wh]: s.snap ? s.snap.docs.map((d) => ({ _id: d.id, ...d.data() })) : [] };
+        return { key, byWh, loading: list.some((c) => !byWh[c]) };
+      });
+    }));
+    return () => offs.forEach((f) => f());
+  }, [key]);
+  const rows = useMemo(() => Object.values(st.key === key ? st.byWh : {}).flat()
+    .filter((r) => inMyWarehouses(r.warehouse) && (Number(r.bags) > 0 || Number(r.pallets) > 0 || Number(r.kg) > 0.001)), [st, key, inMyWarehouses]);
+  return { rows, loading: st.key !== key || st.loading };
+}
+
 // Tồn của một mã hàng ở mọi kho mình được xem (để chọn kho xuất khi chưa biết hàng nằm ở đâu)
 export function useItemStock(item) {
   const { inMyWarehouses } = useApp();

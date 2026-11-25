@@ -1090,3 +1090,5 @@ table.do-lines td, table.do-lines th { padding: 4px 6px; }
 /* Nút ✏ Sửa / 👁 Xem đầu dòng (thay cho bấm cả dòng) */
 td.row-act, th.row-act { width: 1%; white-space: nowrap; text-align: center; }
 .btn.row-open { padding: 2px 8px; font-size: 12px; white-space: nowrap; }
+table.out-table select.wh-pick, table.out-table .wh-pick { min-width: 230px; max-width: 320px; padding: 4px 6px; font-weight: 600; }
+table.out-table select.need, table.out-table .need { border-color: var(--amber); background: var(--amber-soft); }
