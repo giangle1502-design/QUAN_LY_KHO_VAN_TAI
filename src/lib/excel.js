@@ -17,9 +17,10 @@ export function exportSheets(fileName, sheets) {
 // File mẫu: dòng tiêu đề + ghi chú (comment) hướng dẫn trên từng ô tiêu đề
 // notes: mảng song song với headers (kiểu dữ liệu, bắt buộc hay không, giá trị hợp lệ, ví dụ).
 // Thêm sheet "Huong dan" liệt kê lại toàn bộ ghi chú (sheet nhập vẫn là sheet đầu tiên).
-export function exportTemplate(fileName, headers, notes = []) {
+// rows (tùy chọn): kèm dữ liệu từ dòng 2, dùng để xuất đầy đủ danh mục rồi sửa và nhập lại
+export function exportTemplate(fileName, headers, notes = [], rows = []) {
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet([headers]);
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
   ws['!cols'] = headers.map((h) => ({ wch: Math.max(14, String(h).length + 4) }));
   headers.forEach((h, i) => {
     if (!notes[i]) return;

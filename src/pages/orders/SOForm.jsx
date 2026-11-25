@@ -72,7 +72,9 @@ export default function SOForm({ type = 'SO', order, onClose, draft }) {
   // Trường "sale phụ trách xem được" (vd. Giá bán): sale chỉ nhập / xem trong đơn của mình
   const me = { isAdmin, email, role, saleAdmin: role === 'kinh_doanh' && !salesOnly, ownSale: order ? order.sales === email : role === 'kinh_doanh' };
   const headFields = visibleFields(fieldsOf(cfg.head), me, fieldsOf(cfg.line)).filter((f) => !f.hidden);
-  const lineFields = visibleFields(fieldsOf(cfg.line), me, fieldsOf(cfg.head)).filter((f) => !f.hidden);
+  // SO: kho xuất không bắt buộc, không mặc định, không tự lấy theo liên kết (đến ngày giao mới biết hàng ở kho nào → chọn ở phiếu xuất)
+  const lineFields = visibleFields(fieldsOf(cfg.line), me, fieldsOf(cfg.head)).filter((f) => !f.hidden)
+    .map((f) => (type === 'SO' && f.key === 'warehouse' ? { ...f, required: false, default: undefined, link: undefined } : f));
   const salesUsers = useCollection(sto || salesOnly ? '' : 'users').rows.filter((u) => u.role === 'kinh_doanh' && u.active !== false);
   // Liên kết được với mọi trường chọn danh mục trên form (có sẵn hoặc tự thêm); dòng hàng còn liên kết được với phần chung (h:…)
   const HEAD_VIAS = headFields.filter((f) => f.type === 'ref' && f.ref).map((f) => ({ key: f.key, label: f.label, ref: f.ref }));
@@ -138,7 +140,13 @@ export default function SOForm({ type = 'SO', order, onClose, draft }) {
   const [lineOrder, setLineOrder] = usePref(`${type}LineOrder`, []);
   const orderedLine = orderCols(lineFields, lineOrder);
   const lineKeys = orderedLine.map((f) => f.key);
-  const shownLine = orderedLine.filter((f) => f.required || !hiddenCols.includes(f.key));
+  // Tên hàng không chiếm 1 cột riêng: hiện chữ nhỏ ngay dưới ô Mã hàng (ẩn / hiện bằng ⚙ Cột hiển thị như cũ) → bảng dòng hàng hẹp lại, không phải kéo ngang
+  const showName = !hiddenCols.includes('itemName');
+  // Lớp độ rộng cột của bảng dòng hàng (bảng table-layout: fixed, độ rộng đặt ở tiêu đề)
+  const colCls = (f) => (f.key === 'item' ? 'w-item' : ['warehouse', 'fromWarehouse', 'toWarehouse'].includes(f.key) ? 'w-wh' : f.key === 'shipCode' ? 'w-ship'
+    : f.key === 'qtyKg' ? 'w-qty' : f.key === 'qtyT' ? 'w-t' : ['goodsStatus', 'packing'].includes(f.key) ? 'w-sm' : f.type === 'date' ? 'w-date'
+      : ['currency', 'number', 'formula', 'percent'].includes(f.type) ? 'w-money' : f.type === 'textarea' ? 'w-long' : 'w-text');
+  const shownLine = orderedLine.filter((f) => (f.required || !hiddenCols.includes(f.key)) && f.key !== 'itemName');
   const myShips = shipto.filter((s) => s.customerCode === h.partyCode);
   // Loại hạt nhựa (SO): sale chỉ thấy khách mình được gán, chỉ chọn mã hàng loại mình phụ trách; mỗi SO một loại
   const isSO = type === 'SO';
@@ -341,7 +349,7 @@ export default function SOForm({ type = 'SO', order, onClose, draft }) {
       case 'warehouse': return (
         <WithAdd cat="warehouses" onAdded={(id) => set(id)}>
           <Select value={l.warehouse} onChange={(e) => set(e.target.value)}>
-            <option value="">-- Kho nào cũng được --</option>
+            <option value="">{type === 'SO' ? '-- Chọn khi xuất --' : '-- Kho nào cũng được --'}</option>
             {warehouses.filter((w) => type !== 'PO' || buysInto(w.code) || w.code === l.warehouse).map((w) => <option key={w.code} value={w.code}>{w.code} – {w.name}</option>)}
           </Select>
         </WithAdd>
@@ -362,7 +370,8 @@ export default function SOForm({ type = 'SO', order, onClose, draft }) {
         <div className="cell-add">
           <input list="dl-so-item" value={l.item} disabled={done} title={done ? 'Dòng đã giao, không đổi mã hàng được' : ''} onChange={(e) => set(e.target.value)} />
           {!done && <QuickAdd catKey="items" value={l.item} onAdded={(id, rec) => set(id, rec)} />}
-          {canStock && itemMap.has(l.item) && !done && <ItemCode code={l.item} label="📦 Tồn" onStock={() => setStockAt(i)} />}
+          {canStock && itemMap.has(l.item) && !done && <ItemCode code={l.item} label="📦" onStock={() => setStockAt(i)} />}
+          {showName && (itemMap.get(l.item)?.name || l.itemName) && <small className="item-sub">{itemMap.get(l.item)?.name || l.itemName}</small>}
         </div>
       );
       case 'itemName': return <span className="small">{itemMap.get(l.item)?.name || l.itemName}</span>;
@@ -387,7 +396,7 @@ export default function SOForm({ type = 'SO', order, onClose, draft }) {
       );
       case 'goodsStatus': return (
         <Select value={l.goodsStatus} onChange={(e) => set(e.target.value)}>
-          <option value="">{type === 'PO' ? '-- Theo thực tế --' : sto ? '-- Loại nào cũng được --' : 'KTC hoặc DGC'}</option>
+          <option value="">{type === 'PO' ? '-- Theo thực tế --' : sto ? '-- Loại nào cũng được --' : 'KTC/DGC đều được'}</option>
           {(f.options || ['KTC', 'DGC']).map((o) => <option key={o} value={o}>{o}</option>)}
         </Select>
       );
@@ -407,7 +416,7 @@ export default function SOForm({ type = 'SO', order, onClose, draft }) {
   const chg = useDirty({ h, lines });
 
   return (
-    <Modal title={order ? `Sửa ${order.id}` : `Lập ${cfg.title}${draft ? ' từ ảnh phiếu Ecount' : ''}`} onClose={() => onClose()} wide dirty={() => !busy && chg.dirty}>
+    <Modal title={order ? `Sửa ${order.id}` : `Lập ${cfg.title}${draft ? ' từ ảnh phiếu Ecount' : ''}`} onClose={() => onClose()} wide cls="order-form" dirty={() => !busy && chg.dirty}>
       <form onSubmit={submit} {...chg.bind}>
         {finished && (
           <div style={{ marginBottom: 10, padding: 10, border: '1px solid var(--amber)', background: 'var(--amber-soft)', borderRadius: 8 }}>
@@ -438,15 +447,15 @@ export default function SOForm({ type = 'SO', order, onClose, draft }) {
           <div className="table-wrap" style={{ overflowX: 'auto' }}>
             <table className="so-lines">
               <thead>
-                <tr><th>#</th>{shownLine.map((f) => <th key={f.key} className={(['qtyT', 'qtyKg'].includes(f.key) ? 'num ' : '') + 'col-drag'} {...dragHeadProps(f.key, lineKeys, setLineOrder)} title={f.link ? `Tự lấy theo ${viaLabel(LINE_VIAS, f.link.via)}` : !sto && headFxKey(f) ? 'Tự lấy theo phần chung của đơn' : f.help || ''}>{f.label}{f.required && <b className="req"> *</b>}{f.link || (!sto && headFxKey(f)) ? ' ↳' : ''}</th>)}
-                  {order && <th className="num">{cfg.done}</th>}{order && sto && <th className="num">{cfg.received}</th>}<th></th></tr>
+                <tr><th className="w-no">#</th>{shownLine.map((f) => <th key={f.key} className={(['qtyT', 'qtyKg'].includes(f.key) ? 'num ' : '') + 'col-drag ' + colCls(f)} style={f.width ? { width: Math.min(f.width, 600) } : undefined} {...dragHeadProps(f.key, lineKeys, setLineOrder)} title={f.link ? `Tự lấy theo ${viaLabel(LINE_VIAS, f.link.via)}` : !sto && headFxKey(f) ? 'Tự lấy theo phần chung của đơn' : f.help || ''}>{f.label}{f.required && <b className="req"> *</b>}{f.link || (!sto && headFxKey(f)) ? ' ↳' : ''}</th>)}
+                  {order && <th className="num w-done">{cfg.done}</th>}{order && sto && <th className="num w-done">{cfg.received}</th>}<th className="w-act"></th></tr>
               </thead>
               <tbody>
                 {lines.map((l, i) => (
                   <tr key={i}>
                     <td className="small">{i + 1}</td>
                     {shownLine.map((f) => <td key={f.key} style={{ ...(f.width ? { minWidth: Math.min(f.width, 600) } : {}), ...(f.height ? { '--fh': `${f.height}px` } : {}) }}
-                      className={(f.key === 'item' ? 'w-item' : ['shipCode', 'fromWarehouse', 'toWarehouse'].includes(f.key) ? 'w-ship' : f.key === 'qtyKg' ? 'w-qty' : '') + (f.height ? ' fh' : '')}>{lineInput(f, l, i)}</td>)}
+                      className={colCls(f) + (f.height ? ' fh' : '')}>{lineInput(f, l, i)}</td>)}
                     {order && <td className="num">{n(l.doneKg) ? fmtNum(n(l.doneKg), 2) : ''}</td>}
                     {order && sto && <td className="num">{n(l.receivedKg) ? fmtNum(n(l.receivedKg), 2) : ''}</td>}
                     <td className="nowrap">

@@ -10,7 +10,7 @@ import { usePref } from '../../lib/prefs';
 import { vnDate } from '../../lib/trips';
 import { exportSheets } from '../../lib/excel';
 import { fmtDate, fmtNum, norm } from '../../lib/utils';
-import { Empty, ErrorBox, Modal } from '../../components/ui';
+import { Empty, ErrorBox, Modal, noSel } from '../../components/ui';
 import Select from '../../components/Select';
 import { StockDetailModal } from '../../components/StockDetail';
 import { ColumnPicker } from '../../components/FormTools';
@@ -243,7 +243,7 @@ export default function StockInbound({ wh, co, q }) {
                 const isOpen = open === x.item;
                 return (
                   <Fragment key={x.item}>
-                    <tr onClick={() => setOpen(isOpen ? '' : x.item)} title="Bấm để xem đơn chưa xuất, hàng sắp về theo ngày, tồn từng kho / vị trí"
+                    <tr onClick={noSel(() => setOpen(isOpen ? '' : x.item))} title="Bấm để xem đơn chưa xuất, hàng sắp về theo ngày, tồn từng kho / vị trí"
                       style={{ cursor: 'pointer', background: x.avail < 0 ? 'var(--red-soft)' : isOpen ? 'var(--primary-soft)' : undefined }}>
                       {shownCols.map((c) => <td key={c.key} className={c.num ? 'num' : ''}>{c.render(x, isOpen)}</td>)}
                     </tr>

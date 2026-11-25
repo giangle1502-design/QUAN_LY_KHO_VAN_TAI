@@ -6,6 +6,7 @@ import { ST, firstStatus, noYard, nowISO, reserveCodes, vnDate } from './trips';
 import { calcFreight, matchRate } from './freight';
 import { fmtNum } from './utils';
 import { savePlateHistory } from './plates';
+import { shareVehicle } from './jobs';
 
 // ============================================================================
 // Vận tải theo chuyến: admin giao đơn vị vận tải trên đơn → điều phối chia xe thành chuyến (status 'planned')
@@ -83,6 +84,8 @@ export async function doStep(t, step, user, data = {}, database = db) {
   await updateDoc(doc(database, 'trips', t.id), { ...upd, updatedAt: at, updatedBy: shown.email,
     history: hist(t, shown, STEPS[step] + (data.note ? `: ${data.note}` : ''), upd.status) });
   // Lịch sử số xe → tài xế: lần sau gõ số xe là tự hiện tài xế, CCCD
+  // Job: xe / tài xế nhập 1 lần dùng cho mọi Shipment của Job
+  if (step === 'reg' && t.jobTrips?.length > 1) await shareVehicle(t, { ...upd, by: shown.email }, database);
   if (step === 'reg') await savePlateHistory({ carrier: t.carrier, plate: upd.plate, vehicleType: upd.vehicleType, driverName: upd.driverName, idCard: upd.idCard, driverPhone: upd.driverPhone }, database);
 }
 

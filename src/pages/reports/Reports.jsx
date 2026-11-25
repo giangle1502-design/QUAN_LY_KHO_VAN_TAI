@@ -15,8 +15,8 @@ import { useOrderSecrets, viewOrder } from '../../lib/orderSecrets';
 import { moneyUnit } from '../../lib/currency';
 import { fmtDate, fmtDateTime, fmtNum, norm } from '../../lib/utils';
 import { ScopeContext, ScopeFilters, useOpScope, useScope } from '../../components/ScopeFilter';
-import { locWh, noCapacity } from '../../lib/whGroups';
-import { Empty, ErrorBox } from '../../components/ui';
+import { locWh } from '../../lib/whGroups';
+import { Empty, ErrorBox, RowOpen } from '../../components/ui';
 import { ViewPresets, useTableTools } from '../../components/TableTools';
 import { StockDetailModal } from '../../components/StockDetail';
 import SalesAnalysis from './SalesAnalysis';
@@ -121,12 +121,13 @@ export function ReportTable({ cols: baseCols, rows, empty = 'Không có dữ li�
       {tools.popup}
       <div className="table-wrap report-table">
         <table>
-          <thead><tr><th className="stt">STT</th>{cols.map((c) => <th key={c.key} className={(c.num || c.ton ? 'num ' : '') + 'col-drag'} {...dragHeadProps(c.key, keys, setOrder)} {...tools.headProps(c)}>{c.label}{tools.headMark(c)}</th>)}</tr></thead>
+          <thead><tr><th className="stt">STT</th>{onRowClick && <th className="row-act no-print"></th>}{cols.map((c) => <th key={c.key} className={(c.num || c.ton ? 'num ' : '') + 'col-drag'} {...dragHeadProps(c.key, keys, setOrder)} {...tools.headProps(c)}>{c.label}{tools.headMark(c)}</th>)}</tr></thead>
           <tbody>
-            {!list.length && <tr><td colSpan={cols.length + 1}><Empty text="Không có dòng nào khớp điều kiện lọc." /></td></tr>}
+            {!list.length && <tr><td colSpan={cols.length + (onRowClick ? 2 : 1)}><Empty text="Không có dòng nào khớp điều kiện lọc." /></td></tr>}
             {list.map((r, i) => (
-              <tr key={r._k ?? i} style={{ ...(rowStyle?.(r) || {}), ...(onRowClick ? { cursor: 'pointer' } : {}) }} onClick={onRowClick ? () => onRowClick(r) : undefined} title={rowTitle}>
+              <tr key={r._k ?? i} style={rowStyle?.(r)}>
                 <td className="stt">{i + 1}</td>
+                {onRowClick && <td className="row-act no-print"><RowOpen edit={false} label="🔍 Xem" title={rowTitle} onClick={() => onRowClick(r)} /></td>}
                 {cols.map((c) => (
                   <td key={c.key} className={(c.num || c.ton ? 'num' : '') + (c.nowrap ? ' nowrap' : '') + (c.onClick ? ' cell-link' : '')} style={c.style?.(r)}
                     onClick={c.onClick ? (e) => { e.stopPropagation(); c.onClick(r); } : undefined} title={c.onClick ? c.clickTitle || 'Bấm để xem chi tiết' : undefined}>{show(c, r)}</td>
@@ -135,7 +136,7 @@ export function ReportTable({ cols: baseCols, rows, empty = 'Không có dữ li�
             ))}
           </tbody>
           {hasSum && list.length > 0 && (
-            <tfoot><tr><td />{cols.map((c, i) => (
+            <tfoot><tr><td />{onRowClick && <td className="no-print" />}{cols.map((c, i) => (
               <td key={c.key} className={c.num || c.ton ? 'num' : ''}>
                 {c.sum ? (c.ton ? t3(list.reduce((s, r) => s + n(r[c.key]), 0)) : fmtNum(list.reduce((s, r) => s + n(r[c.key]), 0), c.digits ?? 0)) : i === 0 ? 'Cộng' : ''}
               </td>
@@ -220,39 +221,10 @@ const matchItem = (q, ...xs) => !q || norm(xs.join(' ')).includes(q);
 const DetailBtn = ({ onClick }) => <button type="button" className="btn sm" onClick={(e) => { e.stopPropagation(); onClick(); }} title="Xem hàng đang nằm ở vị trí nào">🔍 Xem chi tiết</button>;
 
 function ByWarehouse({ wh, co, q }) {
-  const { stock, error, statusCodes, warehouses } = useBase(wh, co);
-  const locations = useCollection('locations').rows;
+  const { stock, error, warehouses } = useBase(wh, co);
   const [detail, setDetail] = useState(null); // { item?, warehouse? } → bảng tồn theo vị trí
   const list = stock.filter((r) => matchItem(q, r.item, r.itemName));
 
-  const whRows = warehouses.map((w) => {
-    const rs = list.filter((r) => r.warehouse === w.code);
-    // Kho thuộc kho chung: vị trí, sức chứa là của cả kho chung (dùng chung với các pháp nhân khác)
-    const lw = locWh(w.code);
-    const locs = locations.filter((l) => l.warehouse === lw);
-    const cap = noCapacity(w.code) ? 0 : locs.reduce((s, l) => s + n(l.capacity), 0);
-    const pal = locs.reduce((s, l) => s + n(l.currentPallets), 0);
-    return {
-      _k: w.code, code: w.code, name: w.name, kg: rs.reduce((s, r) => s + n(r.kg), 0), bags: rs.reduce((s, r) => s + n(r.bags), 0),
-      pallets: rs.reduce((s, r) => s + n(r.pallets), 0), items: new Set(rs.map((r) => r.item)).size,
-      used: locs.filter((l) => n(l.currentPallets) > 0).length, locs: locs.length, cap, fill: cap ? Math.round((pal / cap) * 1000) / 10 : null, shared: lw !== w.code ? lw : '',
-      ...Object.fromEntries(statusCodes.map((c) => [`st_${c}`, rs.filter((r) => r.goodsStatus === c).reduce((s, r) => s + n(r.kg), 0)])),
-    };
-  });
-  const whCols = [
-    { key: 'code', label: 'Kho', onClick: (r) => setDetail({ warehouse: r.code }), clickTitle: 'Bấm để xem tồn từng vị trí của kho' }, { key: 'name', label: 'Tên kho' },
-    { key: 'kg', label: 'Tồn (kg)', ton: true, sum: true },
-    ...statusCodes.map((c) => ({ key: `st_${c}`, label: c, ton: true, sum: true })),
-    { key: 'bags', label: 'Số bao', num: true, sum: true }, { key: 'pallets', label: 'Pallet', num: true, digits: 1, sum: true },
-    { key: 'items', label: 'Số mã hàng', num: true },
-    { key: 'used', label: 'Vị trí đang dùng', render: (r) => `${r.used}/${r.locs}`, excel: (r) => `${r.used}/${r.locs}` },
-    { key: 'shared', label: 'Kho chung', hideDefault: true },
-    { key: 'cap', label: 'Sức chứa (pallet)', num: true },
-    { key: 'fill', label: '% lấp đầy', num: true, digits: 1 },
-    { key: 'detail', label: 'Chi tiết', noSort: true, noFilter: true, noExcel: true, render: (r) => <DetailBtn onClick={() => setDetail({ warehouse: r.code })} /> },
-  ];
-
-  // Ma trận mã hàng × kho
   const pivot = useMemo(() => {
     const m = new Map();
     for (const r of list) {
@@ -270,14 +242,12 @@ function ByWarehouse({ wh, co, q }) {
     { key: 'total', label: 'Tổng', ton: true, sum: true, onClick: (r) => setDetail({ item: r.item }) },
     { key: 'detail', label: 'Chi tiết', noSort: true, noFilter: true, noExcel: true, render: (r) => <DetailBtn onClick={() => setDetail({ item: r.item })} /> }];
 
-  const excel = () => exportSheets(`BC_ton_theo_kho_${vnDate()}`, { 'Theo kho': toSheet(whCols, whRows), 'Mã hàng x kho': toSheet(pivotCols, pivot) });
+  const excel = () => exportSheets(`BC_ton_theo_kho_${vnDate()}`, { 'Mã hàng x kho': toSheet(pivotCols, pivot) });
   return (
     <>
       <ErrorBox error={error} />
       <Actions onExcel={excel} />
-      <div className="section-head">Tổng theo kho</div>
-      <ReportTable cols={whCols} rows={whRows} links={[{ key: 'code', cat: 'warehouses' }]} />
-      <div className="section-head" style={{ marginTop: 16 }}>Theo mã hàng và kho (kg)</div>
+      <div className="section-head">Theo mã hàng và kho (kg)</div>
       <p className="hint no-print">Bấm vào số tồn của một kho (hoặc nút 🔍 Xem chi tiết) để xem hàng đang nằm ở vị trí nào.</p>
       <ReportTable cols={pivotCols} rows={pivot} empty="Chưa có tồn kho." />
       {detail && <StockDetailModal stock={list} filter={detail} onClose={() => setDetail(null)} />}

@@ -46,7 +46,7 @@ export function CloseButton({ to = '/', dirty, label = '✕ Đóng', className =
 }
 
 // dirty: form trong hộp thoại có thay đổi chưa lưu (true/false hoặc hàm) → hỏi lại trước khi đóng
-export function Modal({ title, onClose, children, wide, dirty }) {
+export function Modal({ title, onClose, children, wide, dirty, cls }) {
   const ref = useRef();
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
@@ -62,7 +62,7 @@ export function Modal({ title, onClose, children, wide, dirty }) {
   }, [close]);
   return createPortal(
     <div ref={ref} className="modal-bg" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className={'modal' + (wide ? ' wide' : '')}>
+      <div className={'modal' + (wide ? ' wide' : '') + (cls ? ` ${cls}` : '')}>
         <div className="modal-head">
           <h3>{title}</h3>
           <button type="button" className="btn modal-close" onClick={close} title="Đóng (Esc)">✕ Đóng</button>
@@ -88,7 +88,7 @@ export function Field({ label, required, help, children, full, size }) {
     <label className={'field' + (wide ? ' full' : '') + (w && !wide ? ' fw' : '') + (h ? ' fh' : '')} style={style}>
       <span>{label}{required && <b className="req"> *</b>}{typeof help === 'string' && help && <i className="help-tip" title={help}> ⓘ</i>}</span>
       {children}
-      {help && <small className="small">{help}</small>}
+      {help && <small className="small field-help">{help}</small>}
     </label>
   );
 }
@@ -100,4 +100,21 @@ export function Empty({ text = 'Chưa có dữ liệu' }) {
 export function ErrorBox({ error }) {
   if (!error) return null;
   return <div className="error-box">{error}</div>;
+}
+
+// Nút mở bản ghi trong bảng (thay cho bấm cả dòng): bấm vào chữ trong dòng không tự mở, bôi đen / copy thoải mái
+export function RowOpen({ onClick, edit = true, label, title }) {
+  return (
+    <button type="button" className="btn sm ghost row-open" title={title || (edit ? 'Mở để sửa / xóa' : 'Mở xem chi tiết')}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}>{label || (edit ? '✏ Sửa' : '👁 Xem')}</button>
+  );
+}
+
+// Bấm dòng để chọn / mở rộng: bỏ qua khi người dùng đang bôi đen chữ để copy
+export function noSel(fn) {
+  return (...args) => {
+    const s = typeof window !== 'undefined' && window.getSelection ? String(window.getSelection()) : '';
+    if (s.trim()) return;
+    fn(...args);
+  };
 }
