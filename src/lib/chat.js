@@ -172,6 +172,17 @@ export async function resolveTargets(rule, d, sender) {
   return { chats: [...chats], emails: [...emails] };
 }
 
+// Tin nhắn hệ thống gửi thẳng cho vài người (vd. thủ kho được giao lệnh kiểm đếm). Lỗi chỉ ghi ra console.
+export async function notifyUsers(emails, text, meta, user) {
+  try {
+    const list = [...new Set(emails.map((e) => String(e).toLowerCase()))].filter((e) => e && e !== String(user.email || '').toLowerCase());
+    return await postSystem({ chats: [], emails: list }, text, meta, user);
+  } catch (e) {
+    console.warn('Không gửi được tin nhắn hệ thống', e);
+    return 0;
+  }
+}
+
 async function postSystem(targets, text, meta, user) {
   const { chats, emails } = targets;
   if (!chats.length && !emails.length) return 0;

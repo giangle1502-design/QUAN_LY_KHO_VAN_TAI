@@ -59,6 +59,15 @@ export const hasKeeper = (wh) => {
   return whRows.get(wh)?.hasGuard !== false;
 };
 
+// Kiểm kê / cycle count chỉ làm ở kho mình tự quản lý (Kho Đức Hòa): kho thuộc Kho chung có thủ kho, hoặc kho lẻ tên / mã có "Đức Hòa"
+export const countable = (wh) => {
+  if (!wh) return false;
+  const g = byWh.get(wh);
+  if (g) return hasKeeper(wh);
+  const w = whRows.get(wh);
+  return w?.hasGuard === true || isDucHoa(w || { code: wh });
+};
+
 // In nhãn pallet / lot: chỉ kho mình tự quản lý (Kho Đức Hòa). Kho khách (Cảng, Mua nội địa, Ngoại quan, 3PL…) không in nhãn.
 // Kho thuộc Kho chung: theo ô "In nhãn pallet" của Kho chung (chưa đặt: Kho chung tên / mã có "Đức Hòa" = có).
 // Kho lẻ: ô "In nhãn pallet" của kho (chưa đặt: tên / mã có "Đức Hòa" = có)
