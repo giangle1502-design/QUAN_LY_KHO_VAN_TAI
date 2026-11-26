@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, doc, getDocs, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDocs, query, where, writeBatch } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { useCollection } from '../../lib/hooks';
@@ -15,6 +15,7 @@ import Select from '../../components/Select';
 //  1. Kiểm tra thiết lập (kho thuộc 2 kho chung, kho chưa ghi pháp nhân)
 //  2. Gộp vị trí: vị trí đang khai báo riêng ở từng kho pháp nhân → 1 vị trí của kho chung
 //  3. Tạo vị trí hàng loạt theo dãy (A01→A29…)
+//  2b. Gộp cửa khác mã cùng tên (VD PC1 của PLA + VC1 của VAP = 1 cửa thật C1), đổi cửa trên các chuyến xe
 //  4. Tính lại số pallet đang chứa của mọi vị trí từ tồn kho thực tế
 // ============================================================================
 const n = (v) => Number(v) || 0;
@@ -39,6 +40,16 @@ export function mergeLocRecords(recs, capRule = 'max') {
     locked: recs.some((r) => r.locked), blockStock: recs.some((r) => r.blockStock), needInvoice: recs.some((r) => r.needInvoice),
     invoiceInfo: firstText('invoiceInfo'), address: firstText('address'), mapLink: firstText('mapLink'), note: firstText('note'), zone: firstText('zone'),
   };
+}
+
+// Tên cửa chuẩn hóa để nhận ra cửa trùng (VD "CỬA SỐ 1" ≈ "Cửa số 1")
+const dockName = (d) => String(d.name || '').normalize('NFC').trim().toUpperCase().replace(/\s+/g, ' ');
+// Mã gợi ý cho cửa gộp: các mã chỉ khác ký tự đầu (PC1, VC1) → phần chung (C1); không thì mã ngắn nhất
+export function suggestDockCode(codes) {
+  const cs = [...new Set(codes.map((c) => String(c).trim()))].sort((a, b) => a.length - b.length || a.localeCompare(b));
+  const tails = new Set(cs.map((c) => c.slice(1)));
+  if (cs.length > 1 && tails.size === 1 && cs[0].length > 1) return cs[0].slice(1);
+  return cs[0] || '';
 }
 
 // Dãy vị trí: "A-E" hoặc "A,B,C" + số từ..đến, đủ chữ số → [A01, A02…]
@@ -109,6 +120,23 @@ export default function WarehouseGroups() {
     return rows.sort((a, b) => a.group.localeCompare(b.group) || a.code.localeCompare(b.code, 'vi', { numeric: true }));
   }, [groups, docks]);
 
+  // 2b. Cửa cùng tên nhưng khác mã trong 1 kho chung (mỗi pháp nhân từng khai báo 1 bộ cửa riêng)
+  const [dockTo, setDockTo] = useState({});
+  const dockDup = useMemo(() => {
+    const rows = [];
+    for (const g of groups) {
+      const fam = [g.code, ...g.members];
+      const byName = new Map();
+      for (const d of docks.filter((x) => fam.includes(x.warehouse) && dockName(x))) byName.set(dockName(d), [...(byName.get(dockName(d)) || []), d]);
+      for (const [name, recs] of byName) {
+        const codes = [...new Set(recs.map((r) => r.code))];
+        if (codes.length > 1) rows.push({ group: g.code, fam, name, recs, codes, key: `${g.code}|${name}` });
+      }
+    }
+    return rows.sort((a, b) => a.group.localeCompare(b.group) || a.name.localeCompare(b.name, 'vi', { numeric: true }));
+  }, [groups, docks]);
+  const targetOf = (r) => String(dockTo[r.key] ?? suggestDockCode(r.codes)).trim();
+
   const run = async (label, fn) => {
     setErr(''); setMsg(''); setBusy(label);
     try { setMsg(await fn()); } catch (e) { setErr(e.message || String(e)); } finally { setBusy(''); }
@@ -154,6 +182,41 @@ export default function WarehouseGroups() {
     }
     await commitAll(ops);
     return `Đã gộp ${plan.length} vị trí${dockPlan.length ? ` và ${dockPlan.length} cửa xuất/nhập` : ''} vào kho chung, tính lại số pallet đang chứa.`;
+  });
+
+  const doMergeDocks = () => run('docks', async () => {
+    if (!dockDup.length) return 'Không có cửa trùng tên cần gộp.';
+    const bad = dockDup.find((r) => !targetOf(r) || /[/]/.test(targetOf(r)));
+    if (bad) throw new Error(`Nhập mã cửa sau gộp cho "${bad.name}" (không dùng dấu /).`);
+    const tgt = dockDup.map((r) => `${r.codes.join(' + ')} → ${targetOf(r)}`).join('\n');
+    if (!window.confirm(`Gộp ${dockDup.length} cửa:\n${tgt}\n\nCác chuyến xe đang / đã ghi cửa cũ sẽ đổi sang mã mới. Bản ghi cửa cũ bị xóa.`)) return '';
+    const at = nowISO();
+    const ops = [];
+    let tripN = 0;
+    for (const r of dockDup) {
+      const to = targetOf(r);
+      const keepId = locDocId(r.group, to);
+      const first = r.recs.find((x) => x.code === to) || r.recs[0];
+      ops.push({ ref: doc(db, 'docks', keepId), merge: true, data: {
+        warehouse: r.group, code: to, name: first.name || '', usage: r.recs.some((x) => (x.usage || 'Nhập và xuất') === 'Nhập và xuất') ? 'Nhập và xuất' : first.usage || 'Nhập và xuất',
+        active: r.recs.some((x) => x.active !== false), oldCodes: [...new Set([...(first.oldCodes || []), ...r.codes.filter((c) => c !== to)])],
+        mergedFrom: r.recs.map((x) => `${x.warehouse}:${x.code}`), updatedAt: at, updatedBy: email } });
+      for (const x of r.recs) if (x._id !== keepId) ops.push({ ref: doc(db, 'docks', x._id), del: true });
+      // Chuyến xe ghi cửa cũ ở kho này (kể cả chuyến giao vào kho) → cửa mới
+      const olds = r.codes.filter((c) => c !== to);
+      for (let i = 0; i < olds.length; i += 10) {
+        const qs = await getDocs(query(collection(db, 'trips'), where('dock', 'in', olds.slice(i, i + 10))));
+        for (const d of qs.docs) {
+          const t = d.data();
+          if (!r.fam.includes(t.warehouse) && !r.fam.includes(t.destWarehouse)) continue;
+          ops.push({ ref: d.ref, merge: true, data: { dock: to, dockOld: t.dock } });
+          tripN += 1;
+        }
+      }
+    }
+    await commitAll(ops);
+    setDockTo({});
+    return `Đã gộp ${dockDup.length} cửa, đổi cửa trên ${tripN} chuyến xe.`;
   });
 
   const doRecount = () => run('recount', async () => {
@@ -231,8 +294,27 @@ export default function WarehouseGroups() {
         ) : <p className="small">Không còn vị trí nào khai báo riêng ở kho pháp nhân thuộc kho chung.</p>}
         {dockPlan.length > 0 && (
           <p className="small">🚪 Cửa xuất/nhập sẽ chuyển về kho chung: {dockPlan.map((p) => `${p.group} ${p.code} (từ ${p.from.join(', ')})`).join(' · ')}.
-            Cửa khác mã ở mỗi kho (VD PC1 và VC1) đều được giữ; cửa thừa thì xóa sau ở danh mục Cửa xuất/nhập.</p>
+            Cửa khác mã ở mỗi kho (VD PC1 và VC1) đều được giữ; gộp tiếp ở mục 🚪 Gộp cửa xuất/nhập dùng chung bên dưới.</p>
         )}
+      </div>
+
+      <div className="card">
+        <h3>🚪 Gộp cửa xuất/nhập dùng chung</h3>
+        <p className="hint">Cửa cùng tên nhưng mỗi pháp nhân đặt 1 mã (VD PC1 của PLA và VC1 của VAP đều là "Cửa số 1") gộp thành 1 cửa của kho chung.
+          Thủ kho chỉ còn thấy 1 bộ cửa. Chuyến xe đang / đã ghi mã cũ tự đổi sang mã mới. Sửa ô "Mã sau gộp" nếu muốn mã khác.</p>
+        {dockDup.length > 0 ? (
+          <>
+            <div className="table-wrap"><table>
+              <thead><tr><th>Kho chung</th><th>Tên cửa</th><th>Các mã đang có</th><th>Mã sau gộp</th></tr></thead>
+              <tbody>{dockDup.map((r) => (
+                <tr key={r.key}><td className="mono">{r.group}</td><td>{r.recs[0].name}</td>
+                  <td>{r.recs.map((x) => `${x.code} (${x.warehouse})`).join(', ')}</td>
+                  <td><input className="mono" style={{ width: 110 }} value={dockTo[r.key] ?? suggestDockCode(r.codes)} onChange={(e) => setDockTo({ ...dockTo, [r.key]: e.target.value.toUpperCase() })} /></td></tr>
+              ))}</tbody>
+            </table></div>
+            <button className="btn primary" disabled={!!busy || !isSuper} title={isSuper ? '' : 'Chỉ quản trị gốc (được xóa bản ghi cửa cũ)'} onClick={doMergeDocks}>{busy === 'docks' ? 'Đang gộp…' : `🔗 Gộp ${dockDup.length} cửa`}</button>
+          </>
+        ) : <p className="small">Không có cửa trùng tên khác mã trong kho chung.</p>}
       </div>
 
       <div className="card">
