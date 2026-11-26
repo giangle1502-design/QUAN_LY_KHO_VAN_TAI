@@ -24,6 +24,8 @@ service cloud.firestore {
     // Bảo vệ chỉ dùng màn hình Bảo vệ cổng: không đọc dữ liệu khác (đơn hàng, tồn kho, phiếu…)
     function isStaff() { return isSuper() || (isActive() && profile().get('role', '') != 'bao_ve'); }
     function isGuard() { return hasRole('bao_ve'); }
+    // Thủ kho chỉ dùng Xe & cửa + Kiểm kê: không đọc đơn hàng, kế hoạch xuất, phân bổ, giá
+    function isOffice() { return isStaff() && profile().get('role', '') != 'thu_kho'; }
     function isAdmin() { return isSuper() || (isActive() && profile().role == 'admin'); }
     function hasRole(r) { return isActive() && profile().role == r; }
     // Kho được giao: danh sách rỗng hoặc không khai báo = tất cả kho
@@ -442,7 +444,7 @@ service cloud.firestore {
     }
     match /orders/{id} {
       // Sale chỉ bị giới hạn ở đơn bán (SO); đơn mua / hàng nhập (PO, STO, DRT, RTV) mọi sale đều xem được
-      allow read: if isStaff() && (resource.data.type != 'SO' || mySale(resource.data));
+      allow read: if isOffice() && (resource.data.type != 'SO' || mySale(resource.data));
       allow create: if (isAdmin() || (orderMgr() && mySale(request.resource.data))
           || (hasRole('thu_kho') && request.resource.data.type == 'STO' && stoFromMine(request.resource.data)))
         && request.resource.data.id == id && request.resource.data.createdBy == me()
@@ -466,7 +468,7 @@ service cloud.firestore {
     // Kế hoạch phân bổ hàng mua: kinh doanh, kế toán, quản trị lập / sửa; chỉ quản trị gốc xóa (duyệt yêu cầu xóa)
     // Dự kiến xuất kho: Sale lập từ SO của mình; quản trị kho / thủ kho lập phiếu xuất từ đó, cập nhật số đã xuất
     match /shipPlans/{id} {
-      allow read: if isStaff() && mySale(resource.data);
+      allow read: if isOffice() && mySale(resource.data);
       allow create: if (isAdmin() || orderMgr()) && mySale(request.resource.data)
         && request.resource.data.id == id && request.resource.data.createdBy == me() && request.resource.data.status == 'open';
       allow update: if (isAdmin() || (orderMgr() && mySale(resource.data) && mySale(request.resource.data)))
@@ -476,7 +478,7 @@ service cloud.firestore {
     }
 
     match /allocations/{id} {
-      allow read: if isStaff();
+      allow read: if isOffice();
       allow create: if (isAdmin() || orderMgr()) && request.resource.data.id == id && request.resource.data.createdBy == me();
       allow update: if (isAdmin() || orderMgr()) && request.resource.data.id == resource.data.id
         && request.resource.data.createdBy == resource.data.createdBy && request.resource.data.poId == resource.data.poId;
@@ -491,7 +493,7 @@ service cloud.firestore {
         || ('sale_admin' in d.viewers && hasRole('kinh_doanh') && profile().get('seeAllOrders', false) == true);
     }
     match /orderSecrets/{id} {
-      allow read: if isStaff() && seesSecret(resource.data);
+      allow read: if isOffice() && seesSecret(resource.data);
       allow create: if isStaff() && (isAdmin() || orderMgr() || hasRole('thu_kho')) && seesSecret(request.resource.data)
         && id == request.resource.data.orderId + '__' + request.resource.data.field;
       allow update: if isStaff() && (isAdmin() || ((orderMgr() || hasRole('thu_kho')) && seesSecret(resource.data)
@@ -534,7 +536,8 @@ service cloud.firestore {
       allow read: if coll == 'vehicles' && txOk() && resource.data.get('carrier', '') == txCarrier();
       allow read: if isStaff() && coll in [
         'companies', 'partners', 'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses', 'warehouseGroups',
-        'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'codeRules', 'freightRates', 'pallets', 'pickupPoints'];
+        'locations', 'docks', 'reasons', 'carriers', 'vehicles', 'drivers', 'codeRules', 'pallets', 'pickupPoints'];
+      allow read: if isOffice() && coll == 'freightRates';
       allow read: if isGuard() && coll in ['warehouses', 'warehouseGroups', 'docks', 'reasons', 'carriers'];
       allow create, update: if isAdmin() && coll in [
         'companies', 'partners', 'soldto', 'shipto', 'items', 'goodsStatus', 'pledgees', 'suppliers', 'warehouses', 'warehouseGroups',

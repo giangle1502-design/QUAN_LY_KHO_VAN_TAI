@@ -9,7 +9,7 @@ import Home from './pages/Home';
 import CatalogPage from './pages/CatalogPage';
 import FieldManager from './pages/FieldManager';
 import Register from './pages/transport/Register';
-import { Delivery, Dock, Guard, GuardApp } from './pages/transport/Ops';
+import { Delivery, Dock, Guard, GuardApp, KeeperApp } from './pages/transport/Ops';
 import Overview from './pages/transport/Overview';
 import Stock from './pages/stock/Stock';
 import Movements from './pages/stock/Movements';
@@ -59,6 +59,19 @@ export default function App() {
     );
   // Bảo vệ: chỉ màn hình Bảo vệ cổng (2 tab Đăng ký xe / Xác nhận xe ra cổng), không menu, không trang khác
   if (role === 'bao_ve') return <Routes><Route path="*" element={<GuardApp />} /></Routes>;
+  // Thủ kho: chỉ Xe & cửa (chờ vào cửa, chỉ định cửa, xuất/nhập xong) và Kiểm kê, không menu, không trang khác
+  if (role === 'thu_kho')
+    return (
+      <Routes>
+        <Route path="kho/kiem-ke/:id/in" element={<PrintCount />} />
+        <Route path="kho/phieu/:id/in" element={<PrintMovement />} />
+        <Route path="xe/thu-kho" element={<KeeperApp><Dock /></KeeperApp>} />
+        <Route path="kho/kiem-ke" element={<KeeperApp><Counts /></KeeperApp>} />
+        <Route path="kho/kiem-ke/:id" element={<KeeperApp><CountDetail /></KeeperApp>} />
+        <Route path="kho/kiem-ke/:id/dem" element={<KeeperApp><CountMobile /></KeeperApp>} />
+        <Route path="*" element={<Navigate to="/xe/thu-kho" replace />} />
+      </Routes>
+    );
   return (
     <Routes>
       <Route path="kho/phieu/:id/in" element={<PrintMovement />} />

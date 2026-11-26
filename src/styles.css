@@ -1163,3 +1163,7 @@ table.out-table select.need, table.out-table .need { border-color: var(--amber);
 .trip-qr-box { background: #fff; border-radius: 16px; padding: 18px; width: 100%; max-width: 380px; text-align: center; }
 .trip-qr-box img { width: 100%; max-width: 320px; image-rendering: pixelated; }
 .trip-qr-plate { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 26px; font-weight: 800; margin-bottom: 6px; }
+/* Thủ kho: màn hình riêng 2 tab */
+.keeper-app { max-width: 1100px; }
+.keeper-tabs a.guard-tab { flex: 1; text-align: center; border: 2px solid var(--line); background: #fff; color: inherit; border-radius: 12px; padding: 12px 8px; font-size: 17px; font-weight: 700; text-decoration: none; }
+.keeper-tabs a.guard-tab.on { background: var(--primary); border-color: var(--primary); color: #fff; }
