@@ -157,6 +157,7 @@ export function fieldDefs(docType, fieldsOf) {
     { g: 'Xe', label: 'Điện thoại tài xế', key: 'driverPhone', get: (d) => m(d).driverPhone || tr(d).driverPhone },
     { g: 'Xe', label: 'Đơn vị vận tải', key: 'carrierName', get: (d) => carrierText(d.m, d.trip, d.carrier) },
     { g: 'Xe', label: 'Số chuyến xe', key: 'tripId', get: (d) => m(d).tripId },
+    { g: 'Phiếu', label: 'Mã QR phiếu', key: 'qr', type: 'image', get: (d) => d.qr || '' },
     { g: 'Xe', label: 'Cửa kho', key: 'dock', get: (d) => tr(d).dock },
     { g: 'Tổng', label: 'Tổng kg', key: 'totalKg', type: 'num', dec: 2, get: (d) => lineSum(d, 'kg') },
     { g: 'Tổng', label: 'Tổng tấn', key: 'totalT', get: (d) => fmtNum(lineSum(d, 'kg') / 1000, 3, 3) },
@@ -372,6 +373,8 @@ export function renderBody(tpl, d, fieldsOf, { preview = false } = {}) {
   });
   // Mẫu chưa có {{BẢNG PALLET}}: bảng pallet tự đặt ngay dưới bảng hàng (hoặc cuối nội dung)
   if (['px', 'pn'].includes(tpl.docType) && d.palletRows?.length && !html.includes('\u0001P\u0001')) html = html.includes('\u0001T\u0001') ? html.replace('\u0001T\u0001', '\u0001T\u0001\u0001P\u0001') : `${html}\u0001P\u0001`;
+  // Mẫu tự thiết kế chưa đặt {{Mã QR phiếu}}: tự in mã QR ở góc trên bên phải (bảo vệ quét khi xe ra cổng)
+  if (['px', 'pn'].includes(tpl.docType) && d.qr && !/m[aã]\s*qr/i.test(html)) html += `<img class="tpl-qr-auto" src="${esc(d.qr)}" alt="QR">`;
   html = fill(html, lookup, preview);
   html = html.replace(/\u0001T\u0001/g, () => tableHtml(tpl, d, defs, headMap, preview)).replace(/\u0001S\u0001/g, () => signsHtml(tpl, lookup, preview))
     .replace(/\u0001P\u0001/g, () => palletTableHtml(d));
@@ -409,6 +412,7 @@ export function pageCss(tpl) {
 .tpl-sheet table.tpl-signs td { border: none; padding: 0 4px; text-align: center; }
 .tpl-sheet .tpl-small { font-size: .85em; font-weight: 400; }
 .tpl-sheet img { max-width: 100%; }
+.tpl-sheet img.tpl-qr-auto { position: absolute; top: 2mm; right: 2mm; width: 18mm; height: 18mm; }
 .tpl-unknown { color: #c00; background: #ffecec; }
 @media print {
   body, .tpl-screen { background: #fff !important; }

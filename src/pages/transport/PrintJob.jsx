@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { SlipQr } from '../../lib/qr';
 import { Link, useParams } from 'react-router-dom';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -49,7 +50,10 @@ export default function PrintJob() {
           <div key={d.key} className="print-page" style={{ pageBreakAfter: 'always', padding: 24 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>{co?.logo && <img src={co.logo} alt="" style={{ height: 48 }} />}<div><b>{co?.name || t0.company}</b></div>{co?.address && <div className="small">{co.address}</div>}</div>
-              <div style={{ textAlign: 'right' }} className="small">Số: <b>{id}{drops.length > 1 ? `-${drops.indexOf(d) + 1}` : ''}</b><br />Ngày: {fmtDate(job.date || t0.plannedDate)}</div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <div style={{ textAlign: 'right' }} className="small">Số: <b>{id}{drops.length > 1 ? `-${drops.indexOf(d) + 1}` : ''}</b><br />Ngày: {fmtDate(job.date || t0.plannedDate)}</div>
+                <SlipQr id={id} tripId={ts[0].id} size={20} />
+              </div>
             </div>
             <h2 style={{ textAlign: 'center', margin: '14px 0 4px' }}>PHIẾU GIAO HÀNG</h2>
             <div style={{ textAlign: 'center' }} className="small">(gộp {ts.length} Shipment: {ts.map((t) => t.id).join(', ')})</div>

@@ -1,3 +1,4 @@
+import { qrDataUrl, slipQrText } from './qr';
 import { palletManaged } from './pallets';
 // Nạp dữ liệu liên quan của 1 phiếu để điền vào mẫu in tự thiết kế
 import { useEffect, useState } from 'react';
@@ -98,7 +99,9 @@ export async function loadMovementData(m) {
   const carrierCode = m.carrier || trip?.carrier || '';
   const carrier = carrierCode && !(m.carrierName || (!m.carrier && trip?.carrierName)) ? await one('carriers', carrierCode) : null;
   const orders = m.orderIds?.length > 1 ? new Map((await Promise.all(m.orderIds.map((id) => one('orders', id)))).map((o, i) => [m.orderIds[i], o]).filter(([, o]) => o)) : null;
-  return { m, toWh, carrier, co: co || (company ? { code: company, name: company } : null), wh, trip, party, supplier, order, orders, items, shipto, lines: m.lines || [],
+  // Mã QR phiếu (bảo vệ quét khi xe ra cổng)
+  const qr = ['in', 'out'].includes(m.type) ? await qrDataUrl(slipQrText(m.id, m.tripId)).catch(() => '') : '';
+  return { m, qr, toWh, carrier, co: co || (company ? { code: company, name: company } : null), wh, trip, party, supplier, order, orders, items, shipto, lines: m.lines || [],
     palletRows: m.palletMode === 'pallet' && ['in', 'out'].includes(m.type) && palletManaged(wh) && m.palletTracked !== false ? m.pallets || [] : [] };
 }
 

@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { signInAnonymously } from 'firebase/auth';
 import { collection, doc, getDoc, onSnapshot, query, setDoc, where } from 'firebase/firestore';
 import { txFirebase } from '../firebase';
-import { STATUS_META, fmtTime } from '../lib/trips';
+import { STATUS_META, fmtTime, inYard } from '../lib/trips';
+import { TripQrButton } from '../lib/qr';
 import { STEPS, compressImage, doStep, nextStep, plateKey, stepBlocked, tripKg } from '../lib/transport';
 import { fmtDate, fmtNum } from '../lib/utils';
 import { navUrl } from '../lib/dispatch';
@@ -143,6 +144,8 @@ export default function LinkDriver() {
         <div className="small">{t.lines.map((l) => `${l.item} ${fmtNum(n(l.plannedKg) / 1000, 3)} t`).join(' · ')} · Tổng {fmtNum(tripKg(t) / 1000, 3)} tấn</div>
         {t.driverName && <div className="small">Tài xế: {t.driverName}{t.driverPhone ? ` · ${t.driverPhone}` : ''}</div>}
         <div className="small">{[['driverArrivedAt', 'Đến điểm nhận'], ['driverLoadedAt', 'Lấy hàng xong'], ['driverAtDestAt', 'Đến điểm giao'], ['driverDeliveredAt', 'Hoàn thành']].filter(([k]) => t[k]).map(([k, l]) => `${l} ${fmtTime(t[k])}`).join(' · ')}</div>
+        {/* Kho có bảo vệ (Đức Hòa): tài xế đưa mã QR cho bảo vệ quét khi vào / ra cổng */}
+        {!claim && inYard(t) && <TripQrButton trip={t} />}
         {st && (blocked ? <p className="small" style={{ marginBottom: 0 }}>⏳ {blocked}</p>
           : !isOpen && <button className="btn primary" style={big} onClick={() => { setErr(''); setPhotos([]); setOpen({ t, st }); }}>{label}</button>)}
         {isOpen && (
