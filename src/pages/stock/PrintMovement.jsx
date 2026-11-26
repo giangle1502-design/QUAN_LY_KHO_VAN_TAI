@@ -15,6 +15,7 @@ import { MODE_LABEL, palletError, palletManaged, palletText, palletToText, setSl
 import Select from '../../components/Select';
 import { useCollection } from '../../lib/hooks';
 import { lotRequired } from '../../lib/lots';
+import { SlipQr } from '../../lib/qr';
 
 // Phiếu giao hàng in 3 liên giống hệt nhau (không ghi liên nào giao vận tải / khách / kho giữ, người dùng tự chia)
 const COPIES = [{ key: 'l1', label: '' }, { key: 'l2', label: '' }, { key: 'l3', label: '' }];
@@ -137,7 +138,11 @@ export default function PrintMovement({ pick = false }) {
     <>
       <div className="print-head">
         <div><b>{co?.name || settings.companyName}</b>{(co ? co.address : settings.companyAddress) ? <><br /><span className="small">{co ? co.address : settings.companyAddress}</span></> : null}{co?.taxCode ? <><br /><span className="small">MST {co.taxCode}</span></> : null}<br /><span className="small">{wh ? `${wh.name}${wh.address ? ' – ' + wh.address : ''}` : `Kho ${m.warehouse}`}</span></div>
-        <div style={{ textAlign: 'right' }}>Số: <b>{m.id}</b>{m.groupMoves && <><br /><span className="small">Gộp phiếu {m.groupMoves.map((x) => x.id).join(', ')}</span></>}<br /><span className="small">Ngày {fmtDate(m.date)}</span></div>
+        <div style={{ textAlign: 'right', display: 'flex', gap: 8, alignItems: 'flex-start', justifyContent: 'flex-end' }}>
+          <div>Số: <b>{m.id}</b>{m.groupMoves && <><br /><span className="small">Gộp phiếu {m.groupMoves.map((x) => x.id).join(', ')}</span></>}<br /><span className="small">Ngày {fmtDate(m.date)}</span></div>
+          {/* QR: bảo vệ quét khi xe ra cổng */}
+          {!pick && ['in', 'out'].includes(m.type) && <SlipQr id={m.id} tripId={m.tripId} size={20} />}
+        </div>
       </div>
       <h2 className="print-title">{pick ? 'PHIẾU SOẠN HÀNG' : `PHIẾU ${meta.label.toUpperCase()}`}</h2>
       {copy?.label && <p className="print-copy-label">{copy.label}</p>}
@@ -249,7 +254,7 @@ function DeliveryNote({ m, carrier, co, wh, buyer, trip, groups, multi, tot, pal
       <div className="dn-head">
         <div className="dn-side small">{wh ? <>{wh.name}{wh.address ? <><br />{wh.address}</> : null}</> : `Kho ${m.warehouse}`}</div>
         <h2 className="dn-title">{sto ? 'PHIẾU XUẤT KHO KIÊM VẬN CHUYỂN NỘI BỘ' : deliveryTitle(c, m.partyName)}</h2>
-        <div className="dn-side" style={{ textAlign: 'right' }}>Số: <b>{m.id}</b></div>
+        <div className="dn-side" style={{ textAlign: 'right', display: 'flex', gap: 8, alignItems: 'flex-start', justifyContent: 'flex-end' }}><div>Số: <b>{m.id}</b></div><SlipQr id={m.id} tripId={m.tripId} size={20} /></div>
       </div>
       {m.status === 'cancelled' && <div className="error-box">PHIẾU ĐÃ HỦY: {m.cancelReason}</div>}
       {m.status === 'wait_release' && <p className="small" style={{ textAlign: 'center' }}>Phiếu chờ giải chấp hàng HTC: soạn hàng được, chỉ giao hàng khi đã lập lệnh giải chấp.</p>}

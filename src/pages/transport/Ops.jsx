@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import jsQR from 'jsqr';
+import { parseScan, parseTripQr, verifyTripQr } from '../../lib/qr';
 import { Link } from 'react-router-dom';
-import { arrayUnion, doc, updateDoc } from 'firebase/firestore';
+import { arrayUnion, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { useCollection, useMyWarehouses, useOpWarehouse, useTrips } from '../../lib/hooks';
@@ -126,13 +128,80 @@ function GuardCard({ trips, stt, time, children, note }) {
         <span className={'badge ' + (isUnloading(t) || destPhase(t) ? 'teal' : 'blue')}>{isUnloading(t) || destPhase(t) ? '⬇ Giao hàng vào kho' : '⬆ Lấy hàng'}</span>
       </div>
       <div className="guard-info">
-        {t.driverName ? <div>👤 <b>{t.driverName}</b>{t.idCard ? ` · CCCD ${t.idCard}` : ''}{t.driverPhone ? ` · ☎ ${t.driverPhone}` : ''}</div> : null}
-        {t.carrierName ? <div>🚚 {t.carrierName}</div> : null}
+        {/* Bảo vệ đối chiếu giấy tờ: tên tài xế, CCCD, đơn vị vận tải */}
+        <div>👤 Tài xế: <b>{t.driverName || '—'}</b>{t.driverPhone ? ` · ☎ ${t.driverPhone}` : ''}</div>
+        <div>🪪 CCCD: <b>{t.idCard || '—'}</b></div>
+        <div>🚚 Vận tải: <b>{t.carrierName || t.carrier || '—'}</b></div>
         {parties.length ? <div>🏢 {parties.join(', ')}</div> : null}
         {time ? <div className="small">🕒 {time}</div> : null}
         {note ? <div className="guard-note">{note}</div> : null}
       </div>
       <div className="guard-acts">{children}</div>
+    </div>
+  );
+}
+
+// Tìm chuyến theo chuỗi quét QR (KVT-<số phiếu>-<số chuyến>, số Job) hoặc số phiếu gõ tay
+async function findByScan(raw, all) {
+  // QR trên điện thoại tài xế (tự đổi 30 giây): kiểm tra mã còn hạn, đúng chuyến
+  const tq = parseTripQr(raw);
+  if (tq) {
+    const t = all.find((x) => x.id === tq.id);
+    if (!t) return { codes: [tq.id], hits: [] };
+    const v = await verifyTripQr(tq, t);
+    if (v !== 'ok') return { codes: [tq.id], hits: [], err: v === 'expired' ? 'Mã QR đã hết hạn (ảnh chụp cũ?). Bảo tài xế mở lại mã QR trên điện thoại.' : 'Mã QR không đúng. Bảo tài xế mở lại mã QR trên điện thoại.' };
+    return { codes: [tq.id], hits: [t] };
+  }
+  // QR trên phiếu in (dự phòng) hoặc gõ số phiếu / số chuyến
+  const codes = parseScan(raw);
+  if (!codes.length) return { codes, hits: [] };
+  let hits = all.filter((t) => codes.includes(t.id) || (t.jobId && codes.includes(t.jobId)));
+  if (!hits.length) {
+    for (const c of codes) {
+      const s = await getDoc(doc(db, 'movements', c)).catch(() => null);
+      if (!s?.exists()) continue;
+      const m = s.data();
+      hits = m.tripId ? all.filter((t) => t.id === m.tripId) : [];
+      // Phiếu chưa gắn chuyến: tìm theo số xe ghi trên phiếu
+      if (!hits.length && m.plate) hits = all.filter((t) => plateKey(t.plate) === plateKey(m.plate));
+      if (hits.length) break;
+    }
+  }
+  return { codes, hits };
+}
+
+// Quét QR bằng camera điện thoại (máy scan cầm tay gõ thẳng vào ô quét, không cần mở camera)
+function CameraScan({ onCode, onClose }) {
+  const videoRef = useRef(null);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    let stream; let raf; let stop = false;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+        const v = videoRef.current; if (!v) return;
+        v.srcObject = stream; await v.play();
+        const tick = () => {
+          if (stop) return;
+          if (v.videoWidth) {
+            const w = 480; const h = Math.round((v.videoHeight / v.videoWidth) * w);
+            canvas.width = w; canvas.height = h; ctx.drawImage(v, 0, 0, w, h);
+            const code = jsQR(ctx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: 'dontInvert' });
+            if (code?.data) { stop = true; onCode(code.data); return; }
+          }
+          raf = requestAnimationFrame(tick);
+        };
+        tick();
+      } catch (e) { setErr('Không mở được camera: ' + (e.message || e.name) + '. Cho phép trình duyệt dùng camera rồi thử lại.'); }
+    })();
+    return () => { stop = true; cancelAnimationFrame(raf); stream?.getTracks().forEach((t) => t.stop()); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div className="guard-cam">
+      {err ? <div className="error-box">{err}</div> : <video ref={videoRef} playsInline muted />}
+      <button className="btn guard-btn ghost-dark" onClick={onClose}>✕ Đóng camera</button>
     </div>
   );
 }
@@ -143,65 +212,147 @@ export function Guard() {
   const myWhs = useMyWarehouses();
   const [tab, setTab] = useState('in');
   const [q, setQ] = useState('');
+  const [scan, setScan] = useState('');
+  const [cam, setCam] = useState(false);
+  const [result, setResult] = useState(null); // { ok, text }
+  const [picked, setPicked] = useState(null); // xe vừa quét QR ở tab Đăng ký xe
   const [busy, setBusy] = useState('');
+  const scanRef = useRef(null);
   const { rows, error } = useTrips([ST.PLANNED, ST.ARRIVED, ST.WAITING_GATE, ST.PROCESSING, ST.WAITING_EXIT, ST.WAITING_DELIVERY], wh, true);
   const [act, err] = useTripAction();
   // Chỉ chuyến chưa hoàn thành cần bảo vệ kho này: xe đến lấy hàng, xe giao hàng vào kho; chuyến kế hoạch phải có số xe
   const all = rows.filter(inYard);
   const k = plateKey(q);
   const hit = (t) => !q || (k && plateKey(t.plate).includes(k)) || matchesTrip(t, q);
-  const toIn = groupByPlate(all.filter((t) => waitingIn(t) && hit(t)))
+  const toIn = groupByPlate(all.filter((t) => waitingIn(t) && (picked ? picked.includes(t.id) : hit(t))))
     .sort((a, b) => (minOf(a, 'arrivalTime') ? 0 : 1) - (minOf(b, 'arrivalTime') ? 0 : 1)
       || (minOf(a, 'arrivalTime') || minOf(a, 'plannedDate')).localeCompare(minOf(b, 'arrivalTime') || minOf(b, 'plannedDate')));
   const queue = groupByPlate(all.filter((t) => t.status === ST.WAITING_GATE))
     .sort((a, b) => minOf(a, 'gateConfirmTime').localeCompare(minOf(b, 'gateConfirmTime')));
   const outAll = all.filter((t) => t.status === ST.WAITING_EXIT);
-  const toOut = groupByPlate(outAll.filter(hit)).sort((a, b) => minOf(a, 'processDoneTime').localeCompare(minOf(b, 'processDoneTime')));
+  const toOut = groupByPlate(outAll).sort((a, b) => minOf(a, 'processDoneTime').localeCompare(minOf(b, 'processDoneTime')));
   const stillIn = (g) => all.filter((t) => plateKey(t.plate) && plateKey(t.plate) === plateKey(g[0].plate) && [ST.WAITING_GATE, ST.PROCESSING].includes(t.status)).length;
   const run = async (key, fn) => { setBusy(key); try { await fn(); setQ(''); } finally { setBusy(''); } };
+  const focusScan = () => setTimeout(() => scanRef.current?.focus(), 50);
+  useEffect(() => { if (tab === 'out') focusScan(); }, [tab]);
+
+  // Quét QR (điện thoại tài xế / phiếu in):
+  //  • tab Đăng ký xe: hiện đúng xe đó để đối chiếu giấy tờ rồi bấm ĐĂNG KÝ
+  //  • tab Ra cổng: hợp lệ (thủ kho đã xong) thì xác nhận xe ra cổng luôn
+  const onScan = async (raw) => {
+    const text = String(raw || '').trim();
+    setScan(''); setCam(false);
+    if (!text) return;
+    setBusy('scan');
+    try {
+      const { codes, hits, err: bad } = await findByScan(text, all);
+      if (bad) return setResult({ ok: false, text: bad });
+      if (!codes.length) return setResult({ ok: false, text: 'Không đọc được mã. Quét lại mã QR.' });
+      if (!hits.length) return setResult({ ok: false, text: `Mã ${codes.join(' ')} không có xe đang chờ ở kho này (xe đã ra cổng, chuyến đã hủy, hoặc của kho khác).` });
+      const t0 = hits[0];
+      if (tab === 'in') {
+        const wait = hits.filter(waitingIn);
+        if (!wait.length) {
+          const stt = queue.findIndex((g) => g.some((x) => hits.some((h) => h.id === x.id)));
+          return setResult({ ok: false, text: stt >= 0 ? `Xe ${t0.plate} đã đăng ký rồi, số thứ tự ${stt + 1}.` : `Xe ${t0.plate} không chờ đăng ký: ${STATUS_META[t0.status]?.label || t0.status}.` });
+        }
+        setPicked(wait.map((x) => x.id));
+        return setResult({ ok: true, text: `Mã QR đúng xe ${t0.plate}.`, sub: 'Đối chiếu tên tài xế, CCCD, đơn vị vận tải với giấy tờ rồi bấm ĐĂNG KÝ.' });
+      }
+      const ready = hits.filter((t) => t.status === ST.WAITING_EXIT);
+      if (!ready.length) return setResult({ ok: false, text: `Xe ${t0.plate} CHƯA được ra: ${STATUS_META[t0.status]?.label || t0.status}. Chờ thủ kho xác nhận xuất/nhập xong.` });
+      // Cùng xe (Job / nhiều Shipment): ra cổng cùng lúc
+      const group = outAll.filter((t) => ready.some((r) => r.id === t.id) || (plateKey(t.plate) && plateKey(t.plate) === plateKey(ready[0].plate)));
+      await guardExit(act, group);
+      setResult({ ok: true, text: `Xe ${ready[0].plate} đã ra cổng lúc ${fmtTime(nowISO())}.`, sub: `Mã ${codes.join(' ')} hợp lệ` });
+    } finally { setBusy(''); focusScan(); }
+  };
+  // Ô quét: máy scan cầm tay gõ mã + Enter; gõ tay số xe thì lọc danh sách (tab Đăng ký xe)
+  const scanBox = (
+    <div className="guard-scan">
+      {!cam && <button className="btn guard-btn blue" onClick={() => { setResult(null); setCam(true); }}>📷 Quét mã QR trên điện thoại tài xế</button>}
+      {cam && <CameraScan onCode={onScan} onClose={() => { setCam(false); focusScan(); }} />}
+      <input ref={scanRef} className="guard-search" type="search" placeholder={tab === 'in' ? '🔍 hoặc nhập số xe (vd 51C12345)' : 'Máy scan: bấm vào đây rồi quét'}
+        value={tab === 'in' ? q : scan} disabled={busy === 'scan'}
+        onChange={(e) => { setResult(null); setPicked(null); if (tab === 'in') setQ(e.target.value); else setScan(e.target.value); }}
+        onKeyDown={(e) => {
+          if (e.key !== 'Enter') return;
+          const v = tab === 'in' ? q : scan;
+          if (tab === 'out' || /^KVT/i.test(v.trim())) { e.preventDefault(); if (tab === 'in') setQ(''); onScan(v); }
+        }} />
+      {busy === 'scan' && <div className="guard-result">Đang kiểm tra…</div>}
+      {result && (
+        <div className={'guard-result ' + (result.ok ? 'ok' : 'bad')}>
+          <div className="guard-result-icon">{result.ok ? '✅' : '❌'}</div>
+          <div><b>{result.text}</b>{result.sub ? <div className="small">{result.sub}</div> : null}</div>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="guard-page">
-      <div className="page-head"><h1>🛡️ Bảo vệ cổng</h1>{(isAdmin || myWhs.length > 1) && <WarehousePicker value={wh} onChange={setWh} />}</div>
+      {(isAdmin || myWhs.length > 1) && <div style={{ marginBottom: 8 }}><WarehousePicker value={wh} onChange={setWh} /></div>}
       <div className="guard-tabs">
-        <button className={tab === 'in' ? 'on' : ''} onClick={() => setTab('in')}>🚚 Xe chờ vào kho <span className="count">{toIn.length}</span></button>
-        <button className={tab === 'out' ? 'on' : ''} onClick={() => setTab('out')}>🚪 Xe chờ ra cổng <span className="count">{groupByPlate(outAll).length}</span></button>
+        <button className={tab === 'in' ? 'on' : ''} onClick={() => { setTab('in'); setResult(null); setPicked(null); setCam(false); }}>📝 Đăng ký xe <span className="count">{toIn.length}</span></button>
+        <button className={tab === 'out' ? 'on' : ''} onClick={() => { setTab('out'); setResult(null); setCam(false); }}>🚪 Xác nhận xe ra cổng <span className="count">{toOut.length}</span></button>
       </div>
-      <input className="guard-search" type="search" inputMode="search" placeholder="🔍 Nhập số xe (vd 51C12345)" value={q} onChange={(e) => setQ(e.target.value)} />
       <ErrorBox error={error || err} />
       {tab === 'in' ? (
         <>
+          {scanBox}
+          {picked && <button className="btn ghost" style={{ marginBottom: 8 }} onClick={() => { setPicked(null); setResult(null); }}>← Xem tất cả xe chờ đăng ký</button>}
           {toIn.length ? toIn.map((g) => (
             <GuardCard key={g[0].id} trips={g}
               time={destPhase(g[0]) ? `Tài xế lấy hàng lúc ${fmtTime(minOf(g, 'driverLoadedAt'))} tại ${g[0].pickupName || g[0].warehouseName || g[0].warehouse}`
                 : g.some((t) => t.status === ST.ARRIVED) ? `Tài xế báo đến lúc ${fmtTime(minOf(g, 'arrivalTime'))}` : g[0].plannedDate ? `Ngày dự kiến ${fmtDate(g[0].plannedDate)}` : ''}>
-              <button className="btn guard-btn" disabled={!!busy} onClick={() => window.confirm(`Xe ${g[0].plate} đã đến kho?`) && run(g[0].id, () => guardArrive(act, g))}>
-                {busy === g[0].id ? 'Đang lưu…' : '✅ XE ĐÃ ĐẾN KHO'}
+              <button className="btn guard-btn" disabled={!!busy} onClick={() => window.confirm(`Đăng ký xe ${g[0].plate} vào kho?\nĐã đối chiếu tên tài xế, CCCD, đơn vị vận tải.`) && run(g[0].id, async () => { await guardArrive(act, g); setPicked(null); setResult({ ok: true, text: `Đã đăng ký xe ${g[0].plate}.` }); })}>
+                {busy === g[0].id ? 'Đang lưu…' : '✅ ĐĂNG KÝ'}
               </button>
               <CancelTrip trips={g} act={act} />
             </GuardCard>
-          )) : <Empty text={q ? `Không thấy xe "${q}" trong danh sách chờ vào. Xe chưa có số xe hoặc chưa được giao chuyến: báo quản trị / điều phối.` : 'Không có xe chờ vào kho.'} />}
-          <div className="section-head" style={{ marginTop: 16 }}>Thứ tự xe đã vào (thủ kho gọi vào cửa theo số này) <span className="count">{queue.length}</span></div>
+          )) : <Empty text={q ? `Không thấy xe "${q}". Xe chưa có số xe hoặc chưa được giao chuyến: báo quản trị / điều phối.` : 'Không có xe chờ đăng ký.'} />}
+          <div className="section-head" style={{ marginTop: 16 }}>Thứ tự xe đã đăng ký (thủ kho gọi vào cửa theo số này) <span className="count">{queue.length}</span></div>
           {queue.length ? (
             <div className="guard-queue">
               {queue.map((g, i) => <div key={g[0].id}><span className="guard-stt sm">{i + 1}</span><b className="plate">{g[0].plate}</b> <span className="small">{fmtTime(minOf(g, 'gateConfirmTime'))}</span></div>)}
             </div>
           ) : <Empty text="Chưa có xe nào đang chờ thủ kho." />}
-          {(isAdmin || myWhs.length) ? <div className="small" style={{ marginTop: 12 }}>Xe không có trong danh sách (xe nhập hàng, khách đến không báo trước): <Link to="/xe/dang-ky">+ Đăng ký xe tại cổng</Link></div> : null}
+          {isAdmin ? <div className="small" style={{ marginTop: 12 }}>Xe không có trong danh sách (xe nhập hàng, khách đến không báo trước): <Link to="/xe/dang-ky">+ Đăng ký xe tại cổng</Link></div> : null}
         </>
       ) : (
-        toOut.length ? toOut.map((g) => {
-          const left = stillIn(g);
-          return (
-            <GuardCard key={g[0].id} trips={g} time={`Thủ kho báo xong lúc ${fmtTime(minOf(g, 'processDoneTime'))}${g[0].dock ? ` · cửa ${g[0].dock}` : ''}`}
-              note={left ? `⚠ Xe này còn ${left} chuyến chưa xuất/nhập xong` : ''}>
-              <button className="btn guard-btn" disabled={!!busy} onClick={() => window.confirm(`Cho xe ${g[0].plate} ra cổng?`) && run(g[0].id, () => guardExit(act, g))}>
-                {busy === g[0].id ? 'Đang lưu…' : '🚪 XÁC NHẬN XE RA CỔNG'}
-              </button>
-            </GuardCard>
-          );
-        }) : <Empty text={q ? `Không thấy xe "${q}" đang chờ ra cổng.` : 'Không có xe chờ ra cổng.'} />
+        <>
+          {scanBox}
+          <div className="section-head" style={{ marginTop: 16 }}>Xe đã xuất/nhập xong, chờ ra cổng <span className="count">{toOut.length}</span></div>
+          {toOut.length ? toOut.map((g) => {
+            const left = stillIn(g);
+            return (
+              <GuardCard key={g[0].id} trips={g} time={`Thủ kho báo xong lúc ${fmtTime(minOf(g, 'processDoneTime'))}${g[0].dock ? ` · cửa ${g[0].dock}` : ''}`}
+                note={left ? `⚠ Xe này còn ${left} chuyến chưa xuất/nhập xong` : ''}>
+                {/* Bảo vệ phải quét QR; quản trị (làm thay) bấm được */}
+                {isAdmin && <button className="btn guard-btn" disabled={!!busy} onClick={() => window.confirm(`Cho xe ${g[0].plate} ra cổng (không quét QR)?`) && run(g[0].id, () => guardExit(act, g))}>
+                  {busy === g[0].id ? 'Đang lưu…' : '🚪 XÁC NHẬN XE RA CỔNG'}
+                </button>}
+              </GuardCard>
+            );
+          }) : <Empty text="Không có xe chờ ra cổng." />}
+        </>
       )}
+    </div>
+  );
+}
+
+// Bảo vệ đăng nhập: chỉ có màn hình Bảo vệ cổng (không menu, không trang khác)
+export function GuardApp() {
+  const { name, email, logout } = useApp();
+  return (
+    <div className="guard-app">
+      <div className="guard-appbar">
+        <b>🛡️ Bảo vệ cổng</b>
+        <span className="small">{name || email}</span>
+        <button className="btn sm" onClick={logout}>Đăng xuất</button>
+      </div>
+      <Guard />
     </div>
   );
 }

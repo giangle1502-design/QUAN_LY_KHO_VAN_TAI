@@ -3,7 +3,8 @@ import { Navigate } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
-import { STATUS_META, fmtTime } from '../../lib/trips';
+import { STATUS_META, fmtTime, inYard } from '../../lib/trips';
+import { TripQrButton } from '../../lib/qr';
 import { STEPS, nextStep, plateKey, stepBlocked, tripKg } from '../../lib/transport';
 import { usePref } from '../../lib/prefs';
 import { fmtDate, fmtNum } from '../../lib/utils';
@@ -39,6 +40,7 @@ export default function Driver() {
         <div className="small">Ngày {fmtDate(t.plannedDate)} · Kho <b>{whText(t.warehouse, warehouses)}</b> · {fmtNum(tripKg(t) / 1000, 3)} tấn{t.plate ? <> · Xe <b>{t.plate}</b></> : null}</div>
         {t.lines.map((l) => { const pl = placeOf(l, warehouses); return <div key={l.id} className="small">→ {pl.sto ? pl.name : pl.short}{pl.address ? `, ${pl.address}` : ''}{l.contactPhone ? <> · <a href={`tel:${l.contactPhone}`}>📞 {l.contactPhone}</a></> : null}{navUrl({ mapLink: l.mapLink, address: pl.address }) ? <> · <a href={navUrl({ mapLink: l.mapLink, address: pl.address })} target="_blank" rel="noreferrer">📍 Chỉ đường</a></> : null} · {l.item} {fmtNum(n(l.plannedKg) / 1000, 3)} t</div>; })}
         <div className="small">{[['driverArrivedAt', 'Đến điểm nhận'], ['driverLoadedAt', 'Lấy hàng xong'], ['driverAtDestAt', 'Đến điểm giao'], ['driverDeliveredAt', 'Hoàn thành']].filter(([k]) => t[k]).map(([k, l]) => `${l} ${fmtTime(t[k])}`).join(' · ')}</div>
+        {!claim && inYard(t) && <TripQrButton trip={t} />}
         {st && (blocked ? <p className="small" style={{ marginBottom: 0 }}>⏳ {blocked}</p>
           : <button className="btn primary" style={{ width: '100%', marginTop: 8, padding: 12, fontSize: 16 }} onClick={() => setStep({ t, st })}>{claim ? `✋ Nhận chuyến này${pk ? ` cho xe ${plate}` : ''}` : STEPS[st]}</button>)}
       </div>
