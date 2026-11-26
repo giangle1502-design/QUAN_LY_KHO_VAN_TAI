@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import jsQR from 'jsqr';
 import { parseScan, parseTripQr, verifyTripQr } from '../../lib/qr';
-import { Link } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import { arrayUnion, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useApp } from '../../context/AppContext';
@@ -357,8 +357,28 @@ export function GuardApp() {
   );
 }
 
+// Thủ kho: chỉ 2 màn hình (Xe & cửa: chờ vào cửa, chỉ định cửa, xuất/nhập xong · Kiểm kê), không menu
+export function KeeperApp({ children }) {
+  const { name, email, logout } = useApp();
+  return (
+    <div className="guard-app keeper-app">
+      <div className="guard-appbar">
+        <b>📦 Thủ kho</b>
+        <span className="small">{name || email}</span>
+        <button className="btn sm" onClick={logout}>Đăng xuất</button>
+      </div>
+      <div className="guard-tabs keeper-tabs">
+        <NavLink to="/xe/thu-kho" className={({ isActive }) => `guard-tab${isActive ? ' on' : ''}`}>🚚 Xe & cửa</NavLink>
+        <NavLink to="/kho/kiem-ke" className={({ isActive }) => `guard-tab${isActive ? ' on' : ''}`}>🧮 Kiểm kê</NavLink>
+      </div>
+      {children}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- Thủ kho
 export function Dock() {
+  const { role } = useApp();
   const [wh, setWh] = useOpWarehouse();
   const [q, setQ] = useState('');
   const { rows, error } = useTrips([ST.WAITING_GATE, ST.PROCESSING], wh, true);
@@ -376,7 +396,7 @@ export function Dock() {
   return (
     <div>
       <OpsHead title="📦 Thủ kho điều phối cửa" wh={wh} setWh={setWh} q={q} setQ={setQ} />
-      <div className="small" style={{ margin: '-4px 0 10px' }}>Việc của thủ kho: ① chỉ định cửa cho xe theo thứ tự bảo vệ đã xếp · ② bấm <b>Xuất xong</b> (xe lấy hàng) hoặc <b>Nhập xong (hoàn thành)</b> (xe giao hàng vào kho) · ③ <Link to="/kho/kiem-ke">🧮 Kiểm kê / cycle count</Link></div>
+      <div className="small" style={{ margin: '-4px 0 10px' }}>Việc của thủ kho: ① chỉ định cửa cho xe theo thứ tự bảo vệ đã xếp · ② bấm <b>Xuất xong</b> (xe lấy hàng) hoặc <b>Nhập xong (hoàn thành)</b> (xe giao hàng vào kho){role !== 'thu_kho' && <> · ③ <Link to="/kho/kiem-ke">🧮 Kiểm kê / cycle count</Link></>}</div>
       <ErrorBox error={error || err} />
       <Section title="Chờ vào cửa (theo thứ tự xếp tài)" count={waiting.length}>
         {waiting.length ? waiting.map((t, i) => {
@@ -413,7 +433,7 @@ export function Dock() {
       <Section title="Đang xuất/nhập" count={processing.length}>
         {processing.length ? processing.map((t) => (
           <TripCard key={t.id} trip={t} timeLabel="Vào cửa" timeValue={t.dockAssignTime}>
-            {t.yard !== 'dest' && <Link className="btn" to={`/kho/${t.purpose === 'import' ? 'in' : 'out'}?trip=${t.id}`}>Lập phiếu {t.purpose === 'import' ? 'nhập' : 'xuất'}</Link>}
+            {t.yard !== 'dest' && role !== 'thu_kho' && <Link className="btn" to={`/kho/${t.purpose === 'import' ? 'in' : 'out'}?trip=${t.id}`}>Lập phiếu {t.purpose === 'import' ? 'nhập' : 'xuất'}</Link>}
             <button className="btn primary" onClick={() => {
               const status = afterProcess(t);
               const at = nowISO();
